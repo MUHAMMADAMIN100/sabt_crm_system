@@ -29,6 +29,13 @@ export class StoriesController {
     return this.service.check(from, to);
   }
 
+  /** Один день проверки — карточки SMM-специалистов с их проектами. */
+  @Get('check/day')
+  @RequirePerm('stories.view')
+  checkDay(@Query('date') date: string) {
+    return this.service.checkDay(date);
+  }
+
   @Post()
   @RequirePerm('stories.manage')
   upsert(@Request() req, @Body() body: { projectId: string; date: string; storiesCount: number }) {

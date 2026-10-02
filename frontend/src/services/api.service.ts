@@ -296,6 +296,8 @@ export const storiesApi = {
   all: (from: string, to: string) => api.get('/stories', { params: { from, to } }).then(r => r.data),
   /** Сводка «кто делал сторис, кто нет» — страница «Проверка сторис». */
   check: (from: string, to: string) => api.get('/stories/check', { params: { from, to } }).then(r => r.data),
+  /** Один день проверки: проекты с нормой и кто сколько выложил, специалисты и их проекты. */
+  checkDay: (date: string) => api.get('/stories/check/day', { params: { date } }).then(r => r.data),
   upsert: (data: { projectId: string; date: string; storiesCount: number }) => api.post('/stories', data).then(r => r.data),
 }
 

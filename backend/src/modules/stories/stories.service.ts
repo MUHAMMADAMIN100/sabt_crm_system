@@ -31,6 +31,16 @@ function daysInMonthOf(dateStr: string): number {
   const [y, m] = dateStr.split('-').map(Number);
   return new Date(y, m, 0).getDate();
 }
+/** Дневная норма сторис проекта на дату: месячная / дни месяца (минимум 1;
+ *  0 — проект без сторис), фолбэк — сохранённый storiesPerDay, иначе 3.
+ *  Та же формула, что в вечернем отчёте 18:00. */
+function dailyTarget(p: Project, date: string): number {
+  const sd: any = p.smmData || {};
+  const mNorm = sd.storiesPerMonth;
+  return (mNorm != null && Number.isFinite(Number(mNorm)))
+    ? (Number(mNorm) > 0 ? Math.max(1, Math.round(Number(mNorm) / daysInMonthOf(date))) : 0)
+    : (Number(sd.storiesPerDay) || 3);
+}
 
 @Injectable()
 export class StoriesService {
@@ -112,16 +122,51 @@ export class StoriesService {
     return saved;
   }
 
+  /** Активные SMM-проекты со сторис и команда каждого — только
+   *  SMM-специалисты (isStoryCrew): участники с этой ролью и назначенные
+   *  через smmData.smmSpecialistIds. Общая часть проверки по месяцу и по дню. */
+  private async storyCrews() {
+    const projects = await this.projectRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.members', 'members')
+      .where('p.projectType = :type', { type: 'SMM' })
+      .andWhere('p.isArchived = false')
+      .andWhere('p."storiesArchived" = false')
+      .getMany();
+
+    const known = new Map<string, any>();
+    for (const p of projects) for (const m of p.members || []) known.set(m.id, m);
+    const assignedOf = (p: Project): string[] => {
+      const ids = (p.smmData as any)?.smmSpecialistIds;
+      return Array.isArray(ids) ? ids.filter((x: any) => typeof x === 'string') : [];
+    };
+    const unknownIds = new Set<string>();
+    for (const p of projects) for (const id of assignedOf(p)) if (!known.has(id)) unknownIds.add(id);
+    if (unknownIds.size) {
+      const extra = await this.userRepo.find({ where: { id: In([...unknownIds]) } }).catch(() => [] as User[]);
+      for (const u of extra) known.set(u.id, u);
+    }
+
+    // Неизвестный/удалённый id в smmSpecialistIds и не-специалисты отпадают.
+    const crewOf = new Map<string, string[]>();
+    for (const p of projects) {
+      const ids = new Set<string>((p.members || []).map(m => m.id));
+      for (const id of assignedOf(p)) ids.add(id);
+      crewOf.set(p.id, [...ids].filter(id => isStoryCrew(known.get(id))));
+    }
+    return { projects, known, crewOf };
+  }
+
   /**
    * Сводка «кто делал сторис, а кто нет» за период — для роли «Проверяющий
-   * сторис» (только чтение) и руководства. Считает ровно по тем же правилам,
-   * что и вечерний cron 18:00, чтобы цифры на странице и в Telegram сходились:
+   * сторис» (только чтение) и руководства. Считает по тем же правилам, что
+   * и вечерний cron 18:00, чтобы цифры на странице и в Telegram сходились:
    *   • команда сторис проекта = SMM-специалисты: участники с этой ролью и
    *     назначенные через smmData.smmSpecialistIds (isStoryCrew);
-   *   • дневная норма проекта = месячная / дни месяца (фолбэк storiesPerDay);
+   *   • дневная норма проекта = месячная / дни месяца (dailyTarget);
    *   • день проекта закрыт, если команда СУММАРНО выполнила норму.
-   * Срез по людям: норма человека на день = сумма норм его проектов, факт —
-   * его собственные отметки. Будущие дни не считаются (там «не отмечено» нет).
+   * Срез по специалистам: день закрыт, когда закрыты ВСЕ его проекты — кем
+   * угодно из команды (общий проект засчитывается команде; раньше на каждого
+   * вешалась полная норма общего проекта). Будущие дни не считаются.
    *
    * Всё считается на сервере: роли-проверяющему не нужен доступ ни к списку
    * проектов, ни к календарю — только этот эндпоинт.
@@ -138,48 +183,15 @@ export class StoriesService {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
     const past = days.filter(d => d <= today);
 
-    const projects = await this.projectRepo.createQueryBuilder('p')
-      .leftJoinAndSelect('p.members', 'members')
-      .where('p.projectType = :type', { type: 'SMM' })
-      .andWhere('p.isArchived = false')
-      .andWhere('p."storiesArchived" = false')
-      .getMany();
+    const { projects, known, crewOf } = await this.storyCrews();
 
-    // Люди: участники проектов + назначенные специалисты, которых нет в участниках.
-    const known = new Map<string, any>();
-    for (const p of projects) for (const m of p.members || []) known.set(m.id, m);
-    const assignedOf = (p: Project): string[] => {
-      const ids = (p.smmData as any)?.smmSpecialistIds;
-      return Array.isArray(ids) ? ids.filter((x: any) => typeof x === 'string') : [];
-    };
-    const unknownIds = new Set<string>();
-    for (const p of projects) for (const id of assignedOf(p)) if (!known.has(id)) unknownIds.add(id);
-    if (unknownIds.size) {
-      const extra = await this.userRepo.find({ where: { id: In([...unknownIds]) } }).catch(() => [] as User[]);
-      for (const u of extra) known.set(u.id, u);
-    }
-
-    // Команда каждого проекта — действующие SMM-специалисты (isStoryCrew):
-    // участники с этой ролью и назначенные. Неизвестный/удалённый id
-    // в smmSpecialistIds пропускаем.
-    const crewOf = new Map<string, string[]>();
-    for (const p of projects) {
-      const ids = new Set<string>((p.members || []).map(m => m.id));
-      for (const id of assignedOf(p)) ids.add(id);
-      crewOf.set(p.id, [...ids].filter(id => isStoryCrew(known.get(id))));
-    }
-
-    // Дневная норма проекта в конкретном месяце (кешируем по projectId|YYYY-MM).
+    // Норма проекта в конкретном месяце (кешируем по projectId|YYYY-MM).
     const targetCache = new Map<string, number>();
     const targetOf = (p: Project, date: string): number => {
       const key = `${p.id}|${date.slice(0, 7)}`;
       const hit = targetCache.get(key);
       if (hit !== undefined) return hit;
-      const sd: any = p.smmData || {};
-      const mNorm = sd.storiesPerMonth;
-      const val = (mNorm != null && Number.isFinite(Number(mNorm)))
-        ? (Number(mNorm) > 0 ? Math.max(1, Math.round(Number(mNorm) / daysInMonthOf(date))) : 0)
-        : (Number(sd.storiesPerDay) || 3);
+      const val = dailyTarget(p, date);
       targetCache.set(key, val);
       return val;
     };
@@ -206,6 +218,7 @@ export class StoriesService {
       for (const v of Object.values(byDay)) c[v]++;
       return c;
     };
+    const nameOf = (id: string) => known.get(id)?.name || 'Сотрудник';
 
     // ── Срез по проектам ─────────────────────────────────────────────
     const projectRows = projects.map(p => {
@@ -218,15 +231,19 @@ export class StoriesService {
         byDay[d] = statusOf(actual, target);
         marked += actual; expected += target;
       }
+      const crew = crewOf.get(p.id) || [];
       return {
-        id: p.id, name: p.name, crew: (crewOf.get(p.id) || []).length,
+        id: p.id, name: p.name, crew: crew.length,
+        team: crew.map(id => ({ id, name: nameOf(id) })),
         target: targetOf(p, past[past.length - 1] || to),
         days: byDay, marked, expected, ...tally(byDay),
       };
     }).filter(r => Object.keys(r.days).length > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const projectDay = new Map<string, Record<string, CheckDay>>();
+    for (const r of projectRows) projectDay.set(r.id, r.days);
 
-    // ── Срез по людям ────────────────────────────────────────────────
+    // ── Срез по специалистам ─────────────────────────────────────────
     const projectsOf = new Map<string, Project[]>();
     for (const p of projects) {
       for (const uid of crewOf.get(p.id) || []) {
@@ -240,16 +257,16 @@ export class StoriesService {
       const byDay: Record<string, CheckDay> = {};
       let marked = 0, expected = 0;
       for (const d of past) {
-        let target = 0, actual = 0;
+        const sts: CheckDay[] = [];
         for (const p of list) {
-          const t = targetOf(p, d);
-          if (t <= 0) continue;
-          target += t;
-          actual += byPerson.get(`${p.id}|${d}|${uid}`) || 0;
+          const st = projectDay.get(p.id)?.[d];
+          if (!st) continue;
+          sts.push(st);
+          marked += byPerson.get(`${p.id}|${d}|${uid}`) || 0;   // свои отметки — для справки
+          expected += targetOf(p, d);
         }
-        if (target <= 0) continue;
-        byDay[d] = statusOf(actual, target);
-        marked += actual; expected += target;
+        if (!sts.length) continue;
+        byDay[d] = sts.every(x => x === 'done') ? 'done' : sts.every(x => x === 'none') ? 'none' : 'partial';
       }
       return {
         id: uid, name: u.name || 'Сотрудник', role: u.role ?? null, position: u.position ?? null,
@@ -260,7 +277,7 @@ export class StoriesService {
     }).filter(r => Object.keys(r.days).length > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 
-    // ── Кто не закрыл сегодняшний день ───────────────────────────────
+    // ── Кто не закрыл сегодняшний день (проекты — по команде) ────────
     const inRange = today >= from && today <= to;
     const missingToday = !inRange ? [] : peopleRows
       .filter(r => r.days[today] && r.days[today] !== 'done')
@@ -271,7 +288,7 @@ export class StoriesService {
           projects: list.map(p => ({
             id: p.id, name: p.name,
             target: targetOf(p, today),
-            actual: byPerson.get(`${p.id}|${today}|${r.id}`) || 0,
+            actual: byProject.get(`${p.id}|${today}`) || 0,
           })).filter(x => x.target > 0 && x.actual < x.target),
         };
       });
@@ -286,6 +303,75 @@ export class StoriesService {
     };
 
     return { from, to, today, days, people: peopleRows, projects: projectRows, missingToday, totals };
+  }
+
+  /**
+   * Один день проверки сторис — вид «День» на странице проверки: карточка на
+   * каждого SMM-специалиста с его проектами. По проекту — норма дня, сколько
+   * выложено всего и кем. Общий проект засчитывается команде: выложил один —
+   * у второго проект тоже закрыт, с подписью, кем выложено.
+   */
+  async checkDay(date: string) {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('Некорректная дата');
+    }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    const { projects, known, crewOf } = await this.storyCrews();
+
+    const logs = await this.repo.find({ where: { date } as any });
+    const posted = new Map<string, Map<string, number>>();   // projectId → (кто → сколько)
+    for (const l of logs) {
+      const n = Number(l.storiesCount) || 0;
+      if (n <= 0) continue;
+      const per = posted.get(l.projectId) || new Map<string, number>();
+      per.set(l.employeeId, (per.get(l.employeeId) || 0) + n);
+      posted.set(l.projectId, per);
+    }
+    // Имена отметивших вне команд (руководитель выложил сам).
+    const strangers = new Set<string>();
+    for (const per of posted.values()) for (const id of per.keys()) if (!known.has(id)) strangers.add(id);
+    if (strangers.size) {
+      const extra = await this.userRepo.find({ where: { id: In([...strangers]) } }).catch(() => [] as User[]);
+      for (const u of extra) known.set(u.id, u);
+    }
+    const nameOf = (id: string) => known.get(id)?.name || 'Сотрудник';
+
+    const rows = projects.map(p => {
+      const target = dailyTarget(p, date);
+      const per = posted.get(p.id) || new Map<string, number>();
+      let actual = 0;
+      for (const n of per.values()) actual += n;
+      const status: CheckDay = actual >= target ? 'done' : actual > 0 ? 'partial' : 'none';
+      return {
+        id: p.id, name: p.name, target, actual, status,
+        crew: (crewOf.get(p.id) || []).map(id => ({ id, name: nameOf(id) })),
+        posters: [...per.entries()]
+          .map(([id, count]) => ({ id, name: nameOf(id), count }))
+          .sort((a, b) => b.count - a.count),
+      };
+    }).filter(r => r.target > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+    const mine = new Map<string, string[]>();
+    for (const r of rows) {
+      for (const c of r.crew) {
+        const list = mine.get(c.id) || [];
+        list.push(r.id);
+        mine.set(c.id, list);
+      }
+    }
+    const people = [...mine.entries()].map(([id, projectIds]) => {
+      const u = known.get(id) || {};
+      return { id, name: u.name || 'Сотрудник', avatar: u.avatar ?? null, projectIds };
+    }).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+    const totals = {
+      projects: rows.length,
+      done: rows.filter(r => r.status === 'done').length,
+      partial: rows.filter(r => r.status === 'partial').length,
+      none: rows.filter(r => r.status === 'none').length,
+    };
+    return { date, today, future: date > today, projects: rows, people, totals };
   }
 
   /**
