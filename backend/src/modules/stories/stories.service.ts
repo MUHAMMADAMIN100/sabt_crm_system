@@ -15,6 +15,15 @@ import { AppGateway } from '../gateway/app.gateway';
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
 const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
 const STORY_MGMT_ROLES = ['admin', 'founder', 'smm_director'];
+/** Кто ведёт сторис проекта: только SMM-специалисты (основная или вторая
+ *  роль) — участники проекта и назначенные через smmData.smmSpecialistIds.
+ *  Раньше «командой» считались ВСЕ участники проекта, и основатель числился
+ *  ответственным за сторис в десяти проектах (замечание владельца 02.10.2026).
+ *  Руководство, видеографы и дизайнеры сторис не ведут; если кто-то из них
+ *  всё же отметил сторис, факт засчитывается проекту, но норма на них не
+ *  вешается. */
+const isStoryCrew = (u?: { role?: string | null; secondaryRole?: string | null; isActive?: boolean } | null) =>
+  !!u && u.isActive !== false && [u.role, u.secondaryRole].includes('smm_specialist');
 /** Статус дня в сводке проверки: выполнено / частично / не отмечено. */
 type CheckDay = 'done' | 'partial' | 'none';
 /** Число дней в месяце даты 'YYYY-MM-DD' — дневная норма = месячная / дни месяца. */
@@ -107,8 +116,8 @@ export class StoriesService {
    * Сводка «кто делал сторис, а кто нет» за период — для роли «Проверяющий
    * сторис» (только чтение) и руководства. Считает ровно по тем же правилам,
    * что и вечерний cron 18:00, чтобы цифры на странице и в Telegram сходились:
-   *   • команда сторис проекта = участники + назначенные SMM-специалисты
-   *     (smmData.smmSpecialistIds);
+   *   • команда сторис проекта = SMM-специалисты: участники с этой ролью и
+   *     назначенные через smmData.smmSpecialistIds (isStoryCrew);
    *   • дневная норма проекта = месячная / дни месяца (фолбэк storiesPerDay);
    *   • день проекта закрыт, если команда СУММАРНО выполнила норму.
    * Срез по людям: норма человека на день = сумма норм его проектов, факт —
@@ -150,15 +159,14 @@ export class StoriesService {
       for (const u of extra) known.set(u.id, u);
     }
 
-    // Команда каждого проекта — только действующие сотрудники.
+    // Команда каждого проекта — действующие SMM-специалисты (isStoryCrew):
+    // участники с этой ролью и назначенные. Неизвестный/удалённый id
+    // в smmSpecialistIds пропускаем.
     const crewOf = new Map<string, string[]>();
     for (const p of projects) {
       const ids = new Set<string>((p.members || []).map(m => m.id));
       for (const id of assignedOf(p)) ids.add(id);
-      crewOf.set(p.id, [...ids].filter(id => {
-        const u = known.get(id);           // неизвестный/удалённый id в smmSpecialistIds — пропускаем
-        return !!u && u.isActive !== false;
-      }));
+      crewOf.set(p.id, [...ids].filter(id => isStoryCrew(known.get(id))));
     }
 
     // Дневная норма проекта в конкретном месяце (кешируем по projectId|YYYY-MM).
@@ -316,8 +324,8 @@ export class StoriesService {
       const extraUsers = extraIds.length
         ? await this.userRepo.find({ where: { id: In(extraIds) } }).catch(() => [] as User[])
         : [];
-      const crew = [...(project.members || []), ...extraUsers];
-      if (!crew.length) continue;
+      // Только SMM-специалисты (isStoryCrew) — так же, как на странице проверки.
+      const crew = [...(project.members || []), ...extraUsers].filter(isStoryCrew);
 
       // План на день для этого проекта (на проект, не на каждого участника).
       // Сторис — это командная работа: достаточно, чтобы любой участник
@@ -339,13 +347,20 @@ export class StoriesService {
         countByUser[log.employeeId] = (countByUser[log.employeeId] || 0) + (log.storiesCount || 0);
       }
 
-      const memberStats = crew.map(m => ({
+      // Отметившие вне команды (руководитель сам выложил сторис) — их вклад
+      // засчитывается проекту и виден в сводке, но норма на них не вешается.
+      const crewIds = new Set(crew.map(m => m.id));
+      const outsiderIds = Object.keys(countByUser).filter(id => !crewIds.has(id) && countByUser[id] > 0);
+      const outsiders = outsiderIds.length
+        ? await this.userRepo.find({ where: { id: In(outsiderIds) } }).catch(() => [] as User[])
+        : [];
+      const memberStats = [...crew, ...outsiders].map(m => ({
         id: m.id,
         name: m.name,
         count: countByUser[m.id] || 0,
       }));
 
-      // Факт = суммарно опубликовано всеми участниками
+      // Факт = суммарно опубликовано по проекту, кем бы ни было отмечено
       const totalActual = memberStats.reduce((s, m) => s + m.count, 0);
       const pct = target > 0 ? Math.min(100, Math.round((totalActual / target) * 100)) : 0;
 
@@ -377,12 +392,14 @@ export class StoriesService {
 
       const contributorsBlock = contributors.length > 0
         ? `\n\n<b>Опубликовали:</b>\n${contributorLines}${overflowLine}`
-        : `\n\nНикто из команды (${project.members.length} чел.) не отмечал сторис сегодня.`;
+        : crew.length > 0
+          ? `\n\nНикто из SMM-специалистов проекта (${crew.length} чел.) не отмечал сторис сегодня.`
+          : `\n\nSMM-специалист на проект не назначен — сторис вести некому.`;
 
       const tgMsg =
         `📊 <b>Сводка по сторис — ${project.name}</b>\n\n` +
         `📅 Дата: ${today}\n` +
-        `🎯 План: <b>${target}</b> сторис/день на проект · команда из ${project.members.length} чел.\n` +
+        `🎯 План: <b>${target}</b> сторис/день на проект · SMM-специалистов: ${crew.length}\n` +
         `📈 Факт: <b>${totalActual}/${target}</b> (${pct}%)\n\n` +
         statusLine +
         contributorsBlock +
