@@ -3967,6 +3967,22 @@ export class FinanceService implements OnModuleInit {
    *  сопоставляем по ТОЧНОМУ совпадению имени и запоминаем результат.
    *  Совпадение должно быть единственным с обеих сторон: два одинаковых
    *  имени не сопоставляем вовсе — пусть владелец свяжет вручную. */
+  /** Строки ведомости, привязанные к ОТКЛЮЧЁННЫМ аккаунтам, считаем свободными
+   *  (только в памяти — в базу пишется лишь та, что нашла нового хозяина).
+   *  Чаще всего это старый аккаунт того же человека: ему завели новый, а
+   *  строка осталась на старом — и в профиле «зарплата не привязана», а в
+   *  настройках строку не видно, потому что она «занята». Перепривязка идёт
+   *  только по тем же строгим правилам имени и единственному кандидату. */
+  private async freeInactiveLinks(emps: FinanceEmployee[]): Promise<FinanceEmployee[]> {
+    const ids = [...new Set(emps.map(e => e.userId).filter(Boolean) as string[])];
+    if (!ids.length) return emps;
+    const off: Array<{ id: string }> = await this.ds.query(
+      `SELECT id FROM users WHERE id = ANY($1::uuid[]) AND "isActive" = false`, [ids]);
+    const offIds = new Set(off.map(r => r.id));
+    if (offIds.size) for (const e of emps) if (e.userId && offIds.has(e.userId)) e.userId = null as any;
+    return emps;
+  }
+
   private async resolveMyEmployee(userId: string): Promise<FinanceEmployee | null> {
     const linked = await this.empRepo.findOne({ where: { userId } });
     if (linked) return linked;
@@ -3977,7 +3993,7 @@ export class FinanceService implements OnModuleInit {
     // человек не видел зарплату (Рохила, 02.10.2026).
     const users: Array<{ id: string; name: string }> = await this.ds.query(
       `SELECT id, name FROM users WHERE "isActive" IS DISTINCT FROM false OR id = $1`, [userId]);
-    const emps = await this.empRepo.find();
+    const emps = await this.freeInactiveLinks(await this.empRepo.find());
     const found = matchEmployeeToUser({ id: userId, name: me[0]?.name || '' }, users, emps);
     if (!found) return null;
     found.userId = userId;
@@ -3991,7 +4007,7 @@ export class FinanceService implements OnModuleInit {
    *  зарплату только после того, как САМ откроет профиль, а владелец до
    *  этого момента видит его как «не привязан» и идёт связывать руками. */
   private async backfillEmployeeLinks() {
-    const emps = await this.empRepo.find();
+    const emps = await this.freeInactiveLinks(await this.empRepo.find());
     if (!emps.some(e => !e.userId)) return;
     const users: Array<{ id: string; name: string }> = await this.ds.query(
       `SELECT u.id, u.name FROM users u

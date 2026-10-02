@@ -47,8 +47,14 @@ function payrollOrder(users: any[], free: any[]): any[] {
  *  строки нет», а список обрезался на двадцати людях — владелец не мог понять,
  *  что строка есть, и человек оставался без зарплаты в профиле. Угадываем
  *  по-прежнему только единственного кандидата; остальное решает человек. */
-function PayrollLinkRow({ user, free, onCreate }: { user: any; free: any[]; onCreate: () => void }) {
+function PayrollLinkRow({ user, free, taken, userById, onCreate }: {
+  user: any; free: any[]; taken: any[]; userById: Map<string, any>; onCreate: () => void;
+}) {
   const qc = useQueryClient();
+  // Похожая строка, привязанная к ДРУГОМУ аккаунту, — часто старый аккаунт
+  // этого же человека. Раньше её здесь не было видно вовсе, и владелец мог
+  // завести вторую строку — тогда зарплата посчиталась бы дважды.
+  const elsewhere = taken.filter((e: any) => e.userId !== user.id && nameCloseness(user.name, e.name) >= 60);
   const scored = free
     .map((e: any) => ({ e, score: nameCloseness(user.name, e.name) }))
     .sort((a: any, b: any) => b.score - a.score || String(a.e.name).localeCompare(String(b.e.name), 'ru'));
@@ -57,10 +63,29 @@ function PayrollLinkRow({ user, free, onCreate }: { user: any; free: any[]; onCr
   const guess = top && top.score > 0 && tie === 1 ? top.e.id : '';
   const [pick, setPick] = useState<string>(guess);
   const [busy, setBusy] = useState(false);
-  const hint = !free.length ? 'Свободных строк в ведомости нет — заведите новую.'
+  const hint = elsewhere.length && !guess ? 'Похоже, строка этого человека привязана к другому аккаунту — проверьте и перепривяжите.'
+    : !free.length ? 'Свободных строк в ведомости нет — заведите новую.'
     : tie > 1 ? `Похожих строк несколько (${tie}) — выберите нужную.`
       : guess ? 'Похожая строка выбрана — проверьте и нажмите «Привязать».'
         : 'Похожей по имени строки нет — выберите вручную или заведите новую.';
+
+  async function relink(row: any) {
+    const owner = userById.get(row.userId);
+    const ok = await finConfirm(
+      `Строка «${row.name}» сейчас привязана к аккаунту «${owner?.name || 'другой аккаунт'}». Привязать её к «${user.name}»? У прежнего аккаунта зарплата в профиле пропадёт.`,
+      { title: 'Перепривязать строку', confirmLabel: 'Перепривязать' },
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await financeApi.updateEmployee(row.id, { userId: user.id });
+      invalidateFinanceAll(qc);
+      toast.success(`${user.name} — зарплата привязана`);
+    } catch (e) {
+      toast.error(apiErr(e));
+      setBusy(false);
+    }
+  }
 
   async function link() {
     if (!pick || busy) return;
@@ -93,6 +118,17 @@ function PayrollLinkRow({ user, free, onCreate }: { user: any; free: any[]; onCr
       )}
       <button className="btn sm ghost" onClick={onCreate}>Завести строку</button>
       <span className="mini muted" style={{ flexBasis: '100%' }}>{hint}</span>
+      {elsewhere.map((row: any) => {
+        const owner = userById.get(row.userId);
+        return (
+          <span key={row.id} style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="mini" style={{ color: 'var(--amber)' }}>
+              Похожая строка «{row.name}» привязана к аккаунту «{owner?.name || 'другой аккаунт'}»{owner?.isActive === false ? ' — он отключён' : ''}
+            </span>
+            <button className="btn sm" disabled={busy} onClick={() => relink(row)}>Перепривязать</button>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -127,6 +163,9 @@ export default function FinanceSettingsPage() {
     (u: any) => u.isActive !== false && !employees.some((e: any) => e.userId === u.id));
   // Действующие строки ведомости без аккаунта — кандидаты на привязку.
   const freePayroll = employees.filter((e: any) => !e.userId && e.status === 'active');
+  // Занятые строки: похожая может висеть на чужом или старом аккаунте человека.
+  const takenPayroll = employees.filter((e: any) => e.userId && e.status === 'active');
+  const crmUserById = new Map<string, any>((crmUsersQ.data ?? []).map((u: any) => [u.id, u]));
   const subs = subsQ.data ?? [];
   const debts = debtsQ.data ?? [];
   const referenceQueries = [accountsQ, balancesQ, categoriesQ, projectsQ, employeesQ, subsQ, debtsQ];
@@ -329,7 +368,7 @@ export default function FinanceSettingsPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {payrollOrder(noPayroll, freePayroll).map((u: any) => (
-              <PayrollLinkRow key={u.id} user={u} free={freePayroll}
+              <PayrollLinkRow key={u.id} user={u} free={freePayroll} taken={takenPayroll} userById={crmUserById}
                 onCreate={() => setModal(<EmployeeFormModal initial={{ name: u.name, userId: u.id }} categories={empCategories} onClose={() => setModal(null)} />)} />
             ))}
           </div>
