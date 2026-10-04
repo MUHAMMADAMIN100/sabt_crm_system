@@ -70,6 +70,7 @@ const ProjectDetailPage = lazy(() => import('@/pages/projects/ProjectDetailPage'
 const SmmProjectsPage   = lazy(() => import('@/pages/smm/SmmProjectsPage'))
 const SmmProjectPage    = lazy(() => import('@/pages/smm/SmmProjectPage'))
 const SmmStoriesPage    = lazy(() => import('@/pages/smm/SmmStoriesPage'))
+const SmmControlPage    = lazy(() => import('@/pages/smm/SmmControlPage'))
 const StoriesCheckPage  = lazy(() => import('@/pages/stories/StoriesCheckPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
 const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'))
@@ -202,6 +203,7 @@ export default function App() {
           <Route path="smm" element={<RoleGuard><SmmPage /></RoleGuard>} />
           <Route path="smm/stories" element={<RoleGuard><SmmStoriesPage /></RoleGuard>} />
           <Route path="smm/projects" element={<RoleGuard><SmmProjectsPage /></RoleGuard>} />
+          <Route path="smm/control" element={<RoleGuard><SmmControlPage /></RoleGuard>} />
           <Route path="smm/projects/:id" element={<RoleGuard><SmmProjectPage /></RoleGuard>} />
           {/* Раздел «Разработка» — те же страницы, что у СММ, но провайдер
               переключает их на dev-проекты (см. SmmSectionContext). */}

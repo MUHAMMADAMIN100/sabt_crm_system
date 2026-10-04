@@ -44,6 +44,7 @@ const SMM_SUBNAV: SubNavItem[] = [
   { to: '/smm', label: 'Умный календарь', icon: CalendarRange, exact: true },
   { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },
   { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
+  { to: '/smm/control', label: 'Контроль', icon: ClipboardCheck },
 ]
 
 /** Подпункты раздела «Разработка» — один заголовок с пятью подпунктами:

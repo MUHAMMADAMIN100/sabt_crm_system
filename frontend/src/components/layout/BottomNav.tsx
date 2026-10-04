@@ -105,6 +105,18 @@ export default function BottomNav() {
     return list.filter(l => userCan(user, l.perm))
   }, [user])
 
+  // Подразделы «СММ» для шторки «Ещё»: на телефоне субменю нет, и до
+  // «Сторисов», «Проектов» и «Контроля» иначе не добраться.
+  const smmLinks = useMemo(() => {
+    if (!canSeeSmmSection(user?.role)) return []
+    return [
+      { to: '/smm', label: 'Умный календарь', icon: CalendarRange },
+      { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },
+      { to: '/smm/projects', label: 'Проекты', icon: FolderKanban },
+      { to: '/smm/control', label: 'Контроль', icon: ClipboardCheck },
+    ]
+  }, [user])
+
   // Подразделы Финансов для шторки «Ещё». На компьютере в них заходят
   // плитками с обзора, а на телефоне обзор — длинная простыня, и до
   // «Зарплаты» или «Транзакций» приходилось прокручивать её целиком.
@@ -134,7 +146,8 @@ export default function BottomNav() {
   const restF = rest.filter(i => match(i.label))
   const financeF = financeLinks.filter(l => match(l.label))
   const devF = devLinks.filter(l => match(l.label))
-  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length
+  const smmF = smmLinks.filter(l => match(l.label))
+  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length && !smmF.length
 
   // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
   // части: два слева от неё, остальное справа.
@@ -257,6 +270,10 @@ export default function BottomNav() {
                 ))}
                 {financeF.length > 0 && <SheetGroup title="Финансы" />}
                 {financeF.map(l => (
+                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
+                ))}
+                {smmF.length > 0 && <SheetGroup title="СММ" />}
+                {smmF.map(l => (
                   <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
                 ))}
                 {devF.length > 0 && <SheetGroup title="Разработка" />}

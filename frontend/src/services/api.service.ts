@@ -389,6 +389,16 @@ export const smmTariffsApi = {
 }
 
 // ─── Content Plan (Wave 4) ───────────────────────────────
+// ─── «СММ → Контроль»: доволен ли клиент, свежий ли аккаунт, обязательное ──
+export const smmControlApi = {
+  /** Сводка за месяц по всем активным SMM-проектам. */
+  list: (ym: string) => api.get('/smm-control', { params: { ym } }).then(r => r.data),
+  /** Отметка: отзыв клиента, «на связи», «отчёт отправлен». */
+  update: (projectId: string, data: {
+    ym: string; mood?: 'good' | 'meh' | 'bad' | null; moodNote?: string | null; contact?: boolean; report?: boolean
+  }) => api.patch(`/smm-control/${projectId}`, data).then(r => r.data),
+}
+
 export const contentPlanApi = {
   list: (params?: any) => api.get('/content-plan', { params }).then(r => r.data),
   get: (id: string) => api.get(`/content-plan/${id}`).then(r => r.data),
