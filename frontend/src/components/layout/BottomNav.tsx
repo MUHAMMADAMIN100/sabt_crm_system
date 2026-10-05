@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon,
   KanbanSquare, BarChart3, FileText, CalendarRange, Search, Wallet, TrendingUp, TrendingDown, Users,
-  Building2, Package, Activity, Settings } from 'lucide-react'
+  Building2, Package, Activity, Settings, Car } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection, canSeeDevSection, userCan } from '@/lib/permissions'
@@ -128,6 +128,7 @@ export default function BottomNav() {
       { to: '/finance/expense', label: 'Расходы', icon: TrendingDown },
       { to: '/finance/planning', label: 'Планирование', icon: CalendarRange },
       { to: '/finance/transactions', label: 'Транзакции', icon: FileText },
+      { to: '/finance/transport', label: 'Транспорт сотрудникам', icon: Car },
       { to: '/finance/expense/salary', label: 'Зарплата', icon: Users },
       { to: '/finance/expense/rent_subs', label: 'Аренда и подписки', icon: Building2 },
       { to: '/finance/expense/debts', label: 'Долги', icon: BarChart3 },

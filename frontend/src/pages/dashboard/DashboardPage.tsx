@@ -24,6 +24,7 @@ const MyPlainTasks = lazy(() => import('./components/MyPlainTasks'))
 const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'))
 // Кабинет SMM-специалиста: главные задачи из контент-плана + отметка сторис за день.
 const SmmSpecialistDashboard = lazy(() => import('./components/SmmSpecialistDashboard'))
+const TransportCard = lazy(() => import('@/components/transport/TransportCard'))
 const ProductionDashboard = lazy(() => import('./components/ProductionDashboard'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
@@ -154,6 +155,10 @@ function DashboardContent() {
   const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'developer', 'videographer', 'targetologist', 'employee'].includes(role)
   const isManagerPlus = ['admin', 'founder', 'smm_director'].includes(role)
   const isAdmin = ['admin', 'founder'].includes(role)
+  // «Транспорт по работе» — SMM-специалист и видеограф (05.10.2026): строка
+  // над панелью, сама панель не меняется.
+  const TRANSPORT_ROLES = ['smm_specialist', 'videographer']
+  const canAskTransport = TRANSPORT_ROLES.includes(role) || TRANSPORT_ROLES.includes(user?.secondaryRole || '')
   const { t } = useTranslation()
   // Палитра графиков следует персональному цвету системы.
   const PIE_COLORS = useChartColors()
@@ -202,6 +207,11 @@ function DashboardContent() {
   if (user?.isStoryMaker) {
     return (
       <div className="space-y-6">
+        {canAskTransport && (
+          <Suspense fallback={null}>
+            <TransportCard />
+          </Suspense>
+        )}
         <Suspense fallback={<PageLoader />}>
           <StorymakerDashboard />
         </Suspense>
@@ -218,6 +228,11 @@ function DashboardContent() {
     const isProduction = PROD_ROLES.includes(role) || PROD_ROLES.includes(user?.secondaryRole || '')
     return (
       <div className="space-y-6">
+        {canAskTransport && (
+          <Suspense fallback={null}>
+            <TransportCard />
+          </Suspense>
+        )}
         {/* SMM-специалист: главные задачи из контент-плана + отметка сторис за день. */}
         {isSmmSpecialist && (
           <Suspense fallback={<PageLoader />}>

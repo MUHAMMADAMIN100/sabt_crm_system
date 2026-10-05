@@ -389,6 +389,30 @@ export const smmTariffsApi = {
 }
 
 // ─── Content Plan (Wave 4) ───────────────────────────────
+// ─── Транспорт по работе: заявки на возврат денег за проезд ─────────────
+export const transportApi = {
+  /** Мои заявки и итоги (ждёт оплаты / вернули в этом месяце). */
+  my: () => api.get('/transport-requests/my').then(r => r.data),
+  /** Проекты для выбора — свои первыми. */
+  projects: () => api.get('/transport-requests/projects').then(r => r.data),
+  /** Подать заявку. Фото чека (необязательно) едет тем же запросом и
+   *  ложится в БД вместе с заявкой. */
+  create: (data: { projectId: string; amount: number; date: string; note?: string }, receipt?: File | null) => {
+    const fd = new FormData()
+    fd.append('projectId', data.projectId)
+    fd.append('amount', String(data.amount))
+    fd.append('date', data.date)
+    if (data.note) fd.append('note', data.note)
+    if (receipt) fd.append('receipt', receipt)
+    return api.post('/transport-requests', fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+  },
+  cancel: (id: string) => api.delete(`/transport-requests/${id}`).then(r => r.data),
+  /** Владелец: ждут оплаты + решённые за месяц. */
+  list: (ym?: string) => api.get('/transport-requests', { params: { ym } }).then(r => r.data),
+  pay: (id: string, accountId: string) => api.post(`/transport-requests/${id}/pay`, { accountId }).then(r => r.data),
+  reject: (id: string, reason: string) => api.post(`/transport-requests/${id}/reject`, { reason }).then(r => r.data),
+}
+
 // ─── «СММ → Контроль»: доволен ли клиент, свежий ли аккаунт, обязательное ──
 export const smmControlApi = {
   /** Сводка за месяц по всем активным SMM-проектам. */

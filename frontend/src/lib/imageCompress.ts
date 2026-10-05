@@ -153,3 +153,16 @@ export async function prepareAvatar(file: File): Promise<File> {
   })
   return new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
 }
+
+/** Фото чека или скриншот поездки: на нём читают сумму и маршрут, поэтому
+ *  сторона крупнее, чем у аватарки. Вес — до ~400 КБ: картинка лежит в БД. */
+const RECEIPT_MAX_SIDE = 1600
+const RECEIPT_TARGET_BYTES = 400 * 1024
+
+export async function prepareReceipt(file: File): Promise<File> {
+  const { blob } = await compressImage(file, {
+    maxSide: RECEIPT_MAX_SIDE,
+    targetBytes: RECEIPT_TARGET_BYTES,
+  })
+  return new File([blob], 'receipt.jpg', { type: 'image/jpeg' })
+}

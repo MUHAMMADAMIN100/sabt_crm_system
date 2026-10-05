@@ -10,7 +10,7 @@ import {
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
-  Activity, KanbanSquare,
+  Activity, KanbanSquare, Car,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavItems } from './navItems'
@@ -23,6 +23,7 @@ const FINANCE_SUBNAV = [
   { to: '/finance/expense', label: 'Расход', icon: TrendingDown },
   { to: '/finance/planning', label: 'Планирование', icon: LineChart },
   { to: '/finance/transactions', label: 'Транзакции', icon: ArrowLeftRight },
+  { to: '/finance/transport', label: 'Транспорт', icon: Car },
   { to: '/finance/inventory', label: 'Инвентарь', icon: Package },
   { to: '/finance/activity', label: 'Активность', icon: RotateCcw },
   { to: '/finance/settings', label: 'Настройки', icon: SlidersHorizontal },
