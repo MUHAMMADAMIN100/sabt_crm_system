@@ -98,8 +98,8 @@ export class ContentPlanController {
    *  иначе перехватит вайлдкард. */
   @Get('smm-calendar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
-  smmCalendar(@Query('from') from?: string, @Query('to') to?: string, @Query('segment') segment?: string) {
-    return this.service.smmCalendar(from, to, segment === 'dev' ? 'dev' : 'smm');
+  smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('segment') segment?: string) {
+    return this.service.smmCalendar(from, to, segment === 'dev' ? 'dev' : 'smm', req.user?.id);
   }
 
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —
@@ -127,6 +127,14 @@ export class ContentPlanController {
 
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
    *  побочных эффектов. Объявлено ДО ':id'. Руководящие роли SMM + разработка. */
+  /** Авторасстановка: сохранить правила проекта (дни, время, съёмка) и
+   *  поставить публикации на даты из планировщика. */
+  @Post('auto-plan/:projectId')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  applyAutoPlan(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
+    return this.service.applyAutoPlan(projectId, body || {}, { id: req.user?.id, name: req.user?.name });
+  }
+
   @Patch('smart-item/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
   smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, @Request() req) {

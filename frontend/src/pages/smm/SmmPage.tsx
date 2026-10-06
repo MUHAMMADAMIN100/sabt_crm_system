@@ -8,12 +8,13 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useSmmSection, SECTION_BASE } from './smmShared'
+import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 
 export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -40,7 +41,11 @@ const addMinToTime = (t: string, add: number) => { const p = /^(\d{1,2}):(\d{2})
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
 const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
-type Proj = { id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; cycleAnchor?: string | null; normReels?: number | null; normPosts?: number | null }
+type Proj = {
+  id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; cycleAnchor?: string | null; normReels?: number | null; normPosts?: number | null
+  // Авторасстановка: специалисты проекта, «мой ли проект» (для «Мои / Все») и сохранённые правила.
+  specialistIds?: string[]; mine?: boolean; autoPlan?: AutoRules | null
+}
 type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
 
@@ -254,10 +259,28 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     placeholderData: keepPreviousData,
   })
 
+  // «Мои проекты / Все»: SMM-специалист по умолчанию видит только свои проекты
+  // (менеджер, участник или назначенный специалист) — решение владельца 06.10.2026.
+  const isSpecialist = user?.role === 'smm_specialist' || (user as any)?.secondaryRole === 'smm_specialist'
+  const [scope, setScopeState] = useState<'mine' | 'all'>(() => {
+    try { const v = localStorage.getItem('smmScope'); if (v === 'mine' || v === 'all') return v } catch { /* нет доступа */ }
+    return isSpecialist ? 'mine' : 'all'
+  })
+  // Смена «Мои / Все» сбрасывает фильтр по проектам: иначе мог остаться выбранным проект вне списка.
+  const setScope = (v: 'mine' | 'all') => {
+    setScopeState(v); setSelProjects(new Set())
+    try { localStorage.setItem('smmScope', v) } catch { /* нет доступа */ }
+  }
+  const rawProjects = data?.projects ?? []
+  const mineIds = new Set(rawProjects.filter(p => p.mine).map(p => p.id))
+  // Только раздел СММ: тот же календарь в «Разработке» живёт по-старому.
+  const showScope = section === 'smm' && !embeddedProjectId && mineIds.size > 0 && mineIds.size < rawProjects.length
+  const mineOnly = showScope && scope === 'mine'
+  const inScope = (pid: string) => !mineOnly || mineIds.has(pid)
   // Встроенный режим: показываем только выбранный проект (ограничиваем данные у истока).
-  const allEvents = (data?.events ?? []).filter(e => !embeddedProjectId || e.projectId === embeddedProjectId)
-  const projects = (data?.projects ?? []).filter(p => !embeddedProjectId || p.id === embeddedProjectId)
-  const backlog = (data?.backlog ?? []).filter(b => !embeddedProjectId || b.projectId === embeddedProjectId)
+  const allEvents = (data?.events ?? []).filter(e => (!embeddedProjectId || e.projectId === embeddedProjectId) && inScope(e.projectId))
+  const projects = rawProjects.filter(p => (!embeddedProjectId || p.id === embeddedProjectId) && inScope(p.id))
+  const backlog = (data?.backlog ?? []).filter(b => (!embeddedProjectId || b.projectId === embeddedProjectId) && inScope(b.projectId))
   const today = todayIso()
   // Родитель карточки подготовки: по нему берём дату выхода и понимаем, вышел ли он.
   const pubByItem = useMemo(() => {
@@ -269,13 +292,15 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
 
   // Назначаем каждому проекту свой цвет по индексу — все id из проектов,
   // событий и бэклога, чтобы у любого проекта цвет был уникальным.
+  // Берём ВСЕ проекты из ответа, а не отфильтрованные: иначе при «Мои / Все»
+  // у проекта менялся бы цвет.
   const projIds = useMemo(() => {
     const s = new Set<string>()
-    for (const p of projects) s.add(String(p.id))
-    for (const e of allEvents) if (e.projectId) s.add(String(e.projectId))
-    for (const b of backlog) if (b.projectId) s.add(String(b.projectId))
+    for (const p of data?.projects ?? []) s.add(String(p.id))
+    for (const e of data?.events ?? []) if (e.projectId) s.add(String(e.projectId))
+    for (const b of data?.backlog ?? []) if (b.projectId) s.add(String(b.projectId))
     return [...s].sort()
-  }, [projects, allEvents, backlog])
+  }, [data])
   useMemo(() => assignProjectColors(projIds), [projIds.join(',')])
 
   const qc = useQueryClient()
@@ -445,7 +470,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const [dragRange, setDragRange] = useState<{ start: string; end: string } | null>(null)
   const [dragDuration, setDragDuration] = useState<number>(DEFAULT_DUR) // длительность перетаскиваемой задачи
   const projCycle = (projectId: string): { start: string; end: string } | null => {
-    const p = projects.find(x => x.id === projectId)
+    const p = rawProjects.find(x => x.id === projectId)
     if (!p?.cycleStartDay) return null
     return activeCycle(p.cycleStartDay, p.cycleAnchor, new Date())
   }
@@ -580,6 +605,42 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     return projects.map(p => ({ id: p.id, name: p.name, items: byProj.get(p.id) ?? [], norm: (p.normReels ?? 0) + (p.normPosts ?? 0) }))
   }, [backlog, search, projects])
 
+  // Авторасстановка: сколько публикаций проекту осталось поставить в цикле —
+  // до нормы (если задана) или все незапланированные. В виде «День» данные
+  // есть только за день, поэтому там считаем по «Не запланировано».
+  const autoNeed = useMemo(() => {
+    const m = new Map<string, number>()
+    if (section !== 'smm') return m   // рилсы и посты — только у SMM-проектов
+    for (const p of projects) {
+      const bl = backlog.filter(b => b.projectId === p.id && b.kind === 'publication')
+      const cyc = projCycle(p.id)
+      let need = bl.length
+      if (cyc && view !== 'day') {
+        const sched = allEvents.filter(e => e.projectId === p.id && e.kind === 'publication' && e.contentType !== 'story'
+          && e.date >= cyc.start && e.date <= cyc.end)
+        const sr = sched.filter(e => e.contentType === 'reel').length
+        const br = bl.filter(b => b.contentType === 'reel').length
+        const nr = (p.normReels ?? 0) > 0 ? Math.max(0, (p.normReels ?? 0) - sr) : br
+        const np = (p.normPosts ?? 0) > 0 ? Math.max(0, (p.normPosts ?? 0) - (sched.length - sr)) : bl.length - br
+        need = nr + np
+      }
+      m.set(p.id, need)
+    }
+    return m
+  }, [projects, backlog, allEvents, view, section])
+  const [autoProj, setAutoProj] = useState<string | null>(null)
+  const autoWindow = (projectId: string) => {
+    const cyc = projCycle(projectId)
+    return cyc ?? { start: todayIso(), end: iso(addDays(new Date(), 30)) }
+  }
+  const autoModal = autoProj ? (
+    <AutoPlanModal key={autoProj} projectId={autoProj} segment={section}
+      window={autoWindow(autoProj)} hasCycle={!!projCycle(autoProj)}
+      color={projColor(autoProj)} isPhone={isPhone}
+      busyWho={isSpecialist ? 'у вас' : 'у специалиста'}
+      onClose={() => setAutoProj(null)} />
+  ) : null
+
   const monthStr = format(cursor, 'yyyy-MM')
   const cells = useMemo(() => buildCells(monthStr), [monthStr])
 
@@ -611,7 +672,11 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         onMark={(e, done) => markMut.mutate({ ev: e, done })}
         onMove={(e, dateStr) => moveMut.mutate({ ev: e, dateStr, time: null })}
         cycleOf={cycleFor}
-        onSettings={openProjSettings} />
+        onSettings={openProjSettings}
+        autoNeed={autoNeed} onAuto={setAutoProj}
+        scope={scope} setScope={setScope} showScope={showScope} />
+
+      {autoModal}
 
       {detail && (
         <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
@@ -699,6 +764,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
             onSettings={openProjSettings} wide={!!embeddedProjectId}
+            autoNeed={autoNeed} onAuto={setAutoProj}
+            scope={scope} setScope={setScope} showScope={showScope}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
           <PubCtx.Provider value={{ byItem: pubByItem, today, soon: soonIso }}>
@@ -740,6 +807,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onClear={() => clearMut.mutate(projSettings.id)}
           onOpen={() => navigate(`${SECTION_BASE[section]}/projects/${projSettings.id}`)} />
       )}
+
+      {autoModal}
     </div>
   )
 }
@@ -1634,12 +1703,31 @@ export function StoriesTab({ projects, cells, statusByProject, today, monthLabel
 }
 
 // ─── панель «Не запланировано» ─────────────────────────────────────────
-function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver, wide = false }: {
+/** «Мои проекты / Все» — что показывает календарь SMM-специалисту. */
+function ScopeSwitch({ scope, setScope, big = false }: { scope: 'mine' | 'all'; setScope: (v: 'mine' | 'all') => void; big?: boolean }) {
+  return (
+    <span className="inline-flex shrink-0 rounded-lg bg-gray-100 dark:bg-gray-800/70 p-0.5">
+      {([['mine', 'Мои проекты'], ['all', 'Все']] as const).map(([k, label]) => (
+        <button key={k} type="button" aria-pressed={scope === k} onClick={() => setScope(k)}
+          className={(big ? 'h-9 px-3 text-[13px] ' : 'h-7 px-2.5 text-[12px] ') + 'rounded-md font-semibold transition ' + (scope === k
+            ? 'bg-white dark:bg-gray-900 shadow-sm text-gray-900 dark:text-gray-100'
+            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+          {label}
+        </button>
+      ))}
+    </span>
+  )
+}
+
+function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDrop, over, setOver, wide = false, autoNeed, onAuto, scope, setScope, showScope }: {
   groups: { id: string; name: string; items: Ev[]; norm: number }[]; activeIds: Set<string>; onPick: (id: string) => void
   onSettings: (id: string) => void
   onDragStart: (e: Ev) => void; onDrop: () => void; over: boolean; setOver: (v: boolean) => void
   /** Широкий режим (страница проекта): карточка на всю ширину, слоты крупнее (иконка+название). */
   wide?: boolean
+  /** Авторасстановка: сколько публикаций проекта осталось поставить; кнопка «Расставить». */
+  autoNeed: Map<string, number>; onAuto: (projectId: string) => void
+  scope: 'mine' | 'all'; setScope: (v: 'mine' | 'all') => void; showScope: boolean
 }) {
   // Панель сворачивается в одну строку-кнопку, чтобы отдать место календарю (запоминаем выбор).
   const [open, setOpen] = useState(() => { try { return localStorage.getItem('smmBacklogOpen') === '1' } catch { return false } })
@@ -1654,13 +1742,16 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
         ? 'border-gray-400 dark:border-gray-500 bg-gray-100/50 dark:bg-gray-800/50'
         : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40')}>
       {/* Заголовок-переключатель: клик сворачивает/разворачивает панель */}
-      <button type="button" onClick={toggle}
-        className="w-full flex items-center gap-2 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-        <Inbox size={13} className="shrink-0" />
-        <span>Не запланировано</span>
-        {total > 0 && <span className="text-gray-400/70 font-semibold normal-case">· {total}</span>}
-        <ChevronDown size={14} className={'ml-auto shrink-0 transition-transform ' + (open ? 'rotate-180' : '')} />
-      </button>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={toggle}
+          className="flex-1 min-w-0 flex items-center gap-2 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+          <Inbox size={13} className="shrink-0" />
+          <span>Не запланировано</span>
+          {total > 0 && <span className="text-gray-400/70 font-semibold normal-case">· {total}</span>}
+          <ChevronDown size={14} className={'ml-auto shrink-0 transition-transform ' + (open ? 'rotate-180' : '')} />
+        </button>
+        {showScope && <ScopeSwitch scope={scope} setScope={setScope} />}
+      </div>
       {open && (groups.length === 0 ? (
         <div className="text-[12.5px] text-gray-400 px-1 py-2">Нет SMM-проектов.</div>
       ) : (
@@ -1694,6 +1785,13 @@ function BacklogPanel({ groups, activeIds, onPick, onSettings, onDragStart, onDr
                   ? <span className="text-[11px] text-gray-400/60">—</span>
                   : g.items.map(it => <BacklogCard key={it.id} e={it} onDragStart={onDragStart} wide={wide} />)}
               </div>
+              {(autoNeed.get(g.id) ?? 0) > 0 && (
+                <button type="button" onClick={() => onAuto(g.id)}
+                  title="Расставить публикации проекта по правилам: дни, время, съёмка"
+                  className={'mt-1.5 w-full rounded-md font-semibold inline-flex items-center justify-center gap-1 bg-primary-600 text-white hover:bg-primary-700 transition ' + (wide ? 'h-9 text-[13px]' : 'h-7 text-[11.5px]')}>
+                  <Sparkles size={wide ? 14 : 12} className="shrink-0" /> Расставить {autoNeed.get(g.id)}
+                </button>
+              )}
             </div>
           )
         })}
@@ -2000,6 +2098,7 @@ function MobilePlanner({
   cursor, setCursor, cells, byDate, today, backlogGroups,
   selTypes, toggleType, clearTypes, loading,
   onOpen, onMark, onMove, cycleOf, onSettings,
+  autoNeed, onAuto, scope, setScope, showScope,
 }: {
   cursor: Date; setCursor: (f: (d: Date) => Date) => void
   cells: { label: number; inMonth: boolean; iso: string | null }[]
@@ -2012,6 +2111,9 @@ function MobilePlanner({
   onMove: (e: Ev, dateStr: string | null) => void
   cycleOf: (e: Ev) => { start: string; end: string } | null
   onSettings: (projectId: string) => void
+  /** Авторасстановка: сколько публикаций проекта осталось поставить; открыть планировщик. */
+  autoNeed: Map<string, number>; onAuto: (projectId: string) => void
+  scope: 'mine' | 'all'; setScope: (v: 'mine' | 'all') => void; showScope: boolean
 }) {
   const monthStr = format(cursor, 'yyyy-MM')
   const [selDay, setSelDay] = useState<string>(today)
@@ -2243,7 +2345,9 @@ function MobilePlanner({
               <>
                 <div className="px-4 pb-2 flex items-center gap-2 shrink-0">
                   <span className="text-[17px] font-bold flex-1">Не запланировано</span>
-                  <span className="text-xs text-gray-400">{backlogList.length}</span>
+                  {showScope
+                    ? <ScopeSwitch big scope={scope} setScope={setScope} />
+                    : <span className="text-xs text-gray-400">{backlogList.length}</span>}
                 </div>
                 <div className="px-4 pb-3 flex gap-2 overflow-x-auto shrink-0">
                   <button onClick={() => setBacklogProj(null)}
@@ -2263,6 +2367,19 @@ function MobilePlanner({
                   ))}
                 </div>
                 <div className="px-4 pb-4 overflow-y-auto flex flex-col gap-2">
+                  {/* Авторасстановка: выбран проект — его публикации ставятся разом по правилам. */}
+                  {backlogProj && (autoNeed.get(backlogProj) ?? 0) > 0 && (
+                    <button type="button" onClick={() => { setSheet('none'); onAuto(backlogProj) }}
+                      className="w-full min-h-[52px] rounded-2xl bg-primary-600 text-white text-[15px] font-bold inline-flex items-center justify-center gap-2">
+                      <Sparkles size={16} className="shrink-0" />
+                      Расставить {autoNeed.get(backlogProj)} по правилам
+                    </button>
+                  )}
+                  {!backlogProj && [...autoNeed.values()].some(n => n > 0) && (
+                    <p className="text-[12px] text-gray-400 dark:text-gray-500">
+                      Выберите проект сверху — его публикации можно расставить разом по правилам.
+                    </p>
+                  )}
                   {backlogList.length === 0 ? (
                     <p className="text-sm text-gray-400 py-8 text-center">Здесь пусто — всё разложено по дням</p>
                   ) : backlogList.map(b => {

@@ -25,6 +25,16 @@ export interface ContentPlanFilters {
   to?: string;    // YYYY-MM-DD — верхняя граница publishDate
 }
 
+/** Правила авторасстановки публикаций проекта (smmData.autoPlan, 06.10.2026).
+ *  Дни недели: 0 — понедельник … 6 — воскресенье. Та же раскладка живёт во
+ *  фронте (pages/smm/AutoPlanModal.tsx, planDates) — держать их одинаковыми. */
+export type AutoPlanRules = {
+  reelDays: number[]; postDays: number[]; reelTime: string; postTime: string;
+  shootLead: number; shootTime: string; sep: boolean; spread: boolean; auto: boolean;
+};
+const AUTO_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 const CONTENT_TYPE_LABEL: Record<string, string> = {
   reel: 'Reel',
   story: 'История',
@@ -408,7 +418,12 @@ export class ContentPlanService {
    *  — карточки нет (удалили) → создаём заново на своём смещении;
    *  — карточка есть НА ДАТЕ → не трогаем (двигается независимо от родителя);
    *  — карточка есть БЕЗ даты (сняли в «Не запланировано») → возвращаем. */
-  private async ensurePrepForItem(parent: ContentPlanItem | null): Promise<void> {
+  private async ensurePrepForItem(
+    parent: ContentPlanItem | null,
+    // Авторасстановка: съёмка — за shootLead дней в своё время, монтаж и
+    // дизайн — без времени. Без opts всё как раньше (время родителя).
+    opts?: { shootLead?: number; shootTime?: string | null },
+  ): Promise<void> {
     if (!parent) return;
     if (parent.shootForItemId) return;                    // сама подготовка — не плодим задачу под задачей
     const stages = this.prepStagesFor(parent.contentType);
@@ -435,8 +450,12 @@ export class ContentPlanService {
 
       for (const st of stages) {
         const cur = existing.find(e => (e.prepStage || legacy) === st.stage);
+        const daysBefore = st.stage === 'shoot' && opts?.shootLead ? opts.shootLead : st.daysBefore;
+        const prepTime = opts
+          ? (st.stage === 'shoot' ? (opts.shootTime ?? null) : null)
+          : (parent.publishTime ?? null);
         let date = new Date(parent.publishDate);
-        date.setDate(date.getDate() - st.daysBefore);
+        date.setDate(date.getDate() - daysBefore);
         if (cycleStart && date < cycleStart) date = cycleStart;
 
         if (cur) {
@@ -455,7 +474,7 @@ export class ContentPlanService {
           }
           await this.repo.update(cur.id, {                // была снята с даты — возвращаем
             publishDate: date,
-            publishTime: parent.publishTime ?? null,
+            publishTime: prepTime,
             status: ContentPlanStatus.PLANNED,
           });
           continue;
@@ -469,7 +488,7 @@ export class ContentPlanService {
           shootForItemId: parent.id,
           prepStage: st.stage,
           publishDate: date,
-          publishTime: parent.publishTime ?? null,
+          publishTime: prepTime,
           durationMin: parent.durationMin ?? null,
           status: ContentPlanStatus.PLANNED,
         }));
@@ -783,6 +802,267 @@ export class ContentPlanService {
     return { start: iso(start), end: iso(end) };
   }
 
+  // ─── Авторасстановка публикаций (вариант 2, 06.10.2026) ────────────────
+
+  /** Правила из smmData.autoPlan → проверенный вид с умолчаниями. */
+  sanitizeAutoPlan(raw: any): AutoPlanRules {
+    const days = (v: any, def: number[]): number[] => Array.isArray(v)
+      ? [...new Set<number>(v.map(Number).filter((n: number) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b)
+      : def;
+    const time = (v: any, def: string): string => (typeof v === 'string' && AUTO_TIME_RE.test(v) ? v : def);
+    const lead = Math.trunc(Number(raw?.shootLead));
+    return {
+      reelDays: days(raw?.reelDays, [0, 2, 4]),
+      postDays: days(raw?.postDays, [1, 3]),
+      reelTime: time(raw?.reelTime, '19:00'),
+      postTime: time(raw?.postTime, '12:00'),
+      shootLead: Number.isFinite(lead) && lead >= 1 && lead <= 5 ? lead : 2,
+      shootTime: time(raw?.shootTime, '11:00'),
+      sep: raw?.sep !== false,
+      spread: raw?.spread !== false,
+      auto: raw?.auto === true,
+    };
+  }
+
+  /** Сегодня по Душанбе, YYYY-MM-DD. */
+  private todayDushanbe(): string {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' });
+  }
+
+  private static isoOf(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  private static addDaysIso(iso: string, n: number): string {
+    const d = new Date(`${iso}T00:00:00`);
+    d.setDate(d.getDate() + n);
+    return ContentPlanService.isoOf(d);
+  }
+
+  /** Окно цикла так же, как его видит календарь (activeCycle на фронте): если
+   *  задан якорь и сегодня раньше него — предстоящий цикл, иначе цикл с сегодняшним днём. */
+  private activeCycleWindow(project: Project | null | undefined, todayIso: string): { start: string; end: string } | null {
+    const day = Number(project?.smmData?.cycleStartDay);
+    if (!Number.isFinite(day) || day < 1) return null;
+    const anchor = project?.smmData?.cycleAnchor;
+    const ref = typeof anchor === 'string' && ISO_DAY_RE.test(anchor) && todayIso < anchor ? anchor : todayIso;
+    const r = new Date(`${ref}T00:00:00`);
+    const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+    const y = r.getFullYear(), m = r.getMonth(), d = r.getDate();
+    const anchorThis = Math.min(day, dim(y, m));
+    let sy = y, sm = m;
+    if (d < anchorThis) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1; } }
+    const start = new Date(sy, sm, Math.min(day, dim(sy, sm)));
+    const nAnchor = Math.min(day, dim(start.getFullYear(), start.getMonth() + 1));
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, nAnchor);
+    end.setDate(end.getDate() - 1);
+    return { start: ContentPlanService.isoOf(start), end: ContentPlanService.isoOf(end) };
+  }
+
+  /** Раскладка по правилам: подходящие дни недели внутри цикла, равномерно.
+   *  Рилс — когда съёмка успевает (не раньше завтра), пост — когда успевает
+   *  дизайн. Занятые дни проекта, дни рилсов (для постов) и дни других проектов
+   *  специалиста обходим, если подходящих дней хватает. */
+  static planDates(input: {
+    window: { start: string; end: string }; today: string; startFrom?: string | null;
+    rules: AutoPlanRules; reels: number; posts: number; taken: Set<string>; busy: Set<string>;
+  }): { reels: string[]; posts: string[] } {
+    const { window: w, today, rules } = input;
+    const add = ContentPlanService.addDaysIso;
+    const maxIso = (...xs: string[]) => xs.reduce((a, b) => (a > b ? a : b));
+    const from = input.startFrom && ISO_DAY_RE.test(input.startFrom) ? input.startFrom : add(today, 1);
+    const rMin = maxIso(w.start, from, add(today, 1 + rules.shootLead));
+    const pMin = maxIso(w.start, from, add(today, 2));
+    const weekday = (d: string) => (new Date(`${d}T00:00:00`).getDay() + 6) % 7;
+    const cands = (min: string, days: number[]) => {
+      const out: string[] = [];
+      for (let d = min, guard = 0; d <= w.end && guard < 400; d = add(d, 1), guard++) {
+        if (days.includes(weekday(d))) out.push(d);
+      }
+      return out;
+    };
+    const prefer = (pool: string[], bad: Set<string>, k: number) => {
+      const ok = pool.filter(d => !bad.has(d));
+      return ok.length >= k ? ok : pool;
+    };
+    const pick = (pool: string[], k: number) => {
+      if (k <= 0) return [];
+      if (pool.length <= k) return pool.slice();
+      const out: string[] = [];
+      for (let i = 0; i < k; i++) out.push(pool[Math.floor((i + 0.5) * pool.length / k)]);
+      return out;
+    };
+    let rPool = prefer(cands(rMin, rules.reelDays), input.taken, input.reels);
+    if (rules.spread) rPool = prefer(rPool, input.busy, input.reels);
+    const reels = pick(rPool, input.reels);
+    let pPool = prefer(cands(pMin, rules.postDays), input.taken, input.posts);
+    if (rules.sep) pPool = prefer(pPool, new Set(reels), input.posts);
+    if (rules.spread) pPool = prefer(pPool, input.busy, input.posts);
+    return { reels, posts: pick(pPool, input.posts) };
+  }
+
+  /** Сохранить правила проекта и поставить публикации на даты, которые
+   *  показал планировщик. Позиция без itemId — недостающая до нормы: заводим
+   *  заготовку «Рилс N» / «Пост N». */
+  async applyAutoPlan(projectId: string, body: any, actor?: { id?: string; name?: string }) {
+    const projectRepo = this.repo.manager.getRepository(Project);
+    const project = await projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Проект не найден');
+    if (project.projectType !== 'SMM') throw new BadRequestException('Авторасстановка — только для SMM-проектов');
+    const rules = this.sanitizeAutoPlan(body?.rules);
+    const today = this.todayDushanbe();
+    const win = this.activeCycleWindow(project, today);
+    const list = [
+      ...(Array.isArray(body?.reels) ? body.reels : []).map((x: any) => ({ itemId: x?.itemId ?? null, date: x?.date, type: ContentItemType.REEL })),
+      ...(Array.isArray(body?.posts) ? body.posts : []).map((x: any) => ({ itemId: x?.itemId ?? null, date: x?.date, type: ContentItemType.POST })),
+    ].slice(0, 120);
+    const res = await this.placeItems(project, list, rules, win, today, actor);
+    // Правила — в проект. Этот цикл расставлен руками, поэтому автозапуск
+    // отмечаем как сделанный: следующий сработает в начале нового цикла.
+    const fresh = await projectRepo.findOne({ where: { id: projectId } });
+    const sd: any = { ...(fresh?.smmData || project.smmData || {}) };
+    sd.autoPlan = { ...rules, lastCycle: win?.start ?? sd.autoPlan?.lastCycle ?? null };
+    await projectRepo.update(projectId, { smmData: sd });
+    if (res.placed) this.emitTasksChanged(projectId);
+    return { ok: true, ...res };
+  }
+
+  private async placeItems(
+    project: Project,
+    list: Array<{ itemId: string | null; date: any; type: ContentItemType }>,
+    rules: AutoPlanRules,
+    win: { start: string; end: string } | null,
+    today: string,
+    actor?: { id?: string; name?: string },
+  ): Promise<{ placed: number; skipped: number }> {
+    const tomorrow = ContentPlanService.addDaysIso(today, 1);
+    // Номер следующей заготовки «Рилс N» — после уже заведённых в этом цикле.
+    const stubNo: Record<string, number> = {};
+    const nextStubNo = async (type: ContentItemType, label: string) => {
+      if (stubNo[type] == null) {
+        const rows: any[] = await this.repo.manager.query(
+          `SELECT topic FROM content_plan_items
+            WHERE "projectId" = $1 AND "contentType"::text = $2 AND "shootForItemId" IS NULL
+              AND topic ~ ('^' || $3 || ' [0-9]+$')
+              AND ("publishDate" IS NULL${win ? ` OR "publishDate"::date >= $4::date` : ''})`,
+          win ? [project.id, String(type), label, win.start] : [project.id, String(type), label],
+        ).catch(() => []);
+        stubNo[type] = rows.reduce((mx, r) => Math.max(mx, Number(String(r.topic).replace(/\D+/g, '')) || 0), 0);
+      }
+      stubNo[type] += 1;
+      return stubNo[type];
+    };
+    let placed = 0, skipped = 0;
+    for (const pl of list) {
+      const date = String(pl?.date || '');
+      if (!ISO_DAY_RE.test(date) || date < tomorrow || (win && (date < win.start || date > win.end))) { skipped++; continue; }
+      let item: ContentPlanItem | null = null;
+      if (pl.itemId) {
+        item = await this.repo.findOne({ where: { id: String(pl.itemId) } }).catch(() => null);
+        // Чужая позиция, задача подготовки или её уже поставили на дату — не трогаем.
+        if (!item || item.projectId !== project.id || item.shootForItemId || item.publishDate) { skipped++; continue; }
+      } else {
+        const label = pl.type === ContentItemType.REEL ? 'Рилс' : 'Пост';
+        const n = await nextStubNo(pl.type, label);
+        item = await this.repo.save(this.repo.create({
+          projectId: project.id, contentType: pl.type, topic: `${label} ${n}`, status: ContentPlanStatus.PLANNED,
+        }));
+      }
+      const isReel = item.contentType === ContentItemType.REEL;
+      await this.repo.update(item.id, { publishDate: new Date(date), publishTime: isReel ? rules.reelTime : rules.postTime });
+      const fresh = await this.repo.findOne({ where: { id: item.id } });
+      await this.ensurePrepForItem(fresh, { shootLead: rules.shootLead, shootTime: rules.shootTime });
+      if (fresh) await this.logItemAction(fresh, ActivityAction.TASK_UPDATE, { kind: 'move', from: null, to: date }, actor);
+      placed++;
+    }
+    return { placed, skipped };
+  }
+
+  /** Дни окна, где у специалистов проекта уже стоят публикации их других проектов. */
+  private async busyDaysFor(project: Project, win: { start: string; end: string }): Promise<Set<string>> {
+    const ids: string[] = Array.isArray(project.smmData?.smmSpecialistIds) ? project.smmData.smmSpecialistIds.map(String) : [];
+    if (!ids.length) return new Set();
+    const rows: any[] = await this.repo.manager.query(
+      `SELECT DISTINCT to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
+         FROM content_plan_items ci
+         JOIN projects pr ON pr.id = ci."projectId"
+        WHERE ci."projectId" <> $1 AND ci."shootForItemId" IS NULL AND ci."contentType" <> 'story'
+          AND ci."publishDate"::date >= $2::date AND ci."publishDate"::date <= $3::date
+          AND pr."smmData" -> 'smmSpecialistIds' ?| $4::text[]`,
+      [project.id, win.start, win.end, ids],
+    ).catch(() => []);
+    return new Set(rows.map(r => String(r.date)));
+  }
+
+  /** Расставить цикл проекта по его правилам (автозапуск в начале цикла). */
+  private async autoPlanProject(project: Project, win: { start: string; end: string }, today: string): Promise<number> {
+    const rules = this.sanitizeAutoPlan(project.smmData?.autoPlan);
+    const pubs: any[] = await this.repo.manager.query(
+      `SELECT "contentType"::text AS kind, to_char("publishDate"::date, 'YYYY-MM-DD') AS date
+         FROM content_plan_items
+        WHERE "projectId" = $1 AND "contentType" <> 'story' AND "shootForItemId" IS NULL
+          AND "publishDate"::date >= $2::date AND "publishDate"::date <= $3::date`,
+      [project.id, win.start, win.end],
+    ).catch(() => []);
+    const backlog: any[] = await this.repo.manager.query(
+      `SELECT id, "contentType"::text AS kind FROM content_plan_items
+        WHERE "projectId" = $1 AND "contentType" <> 'story' AND "shootForItemId" IS NULL
+          AND "publishDate" IS NULL AND status <> 'cancelled'
+        ORDER BY "createdAt" ASC, topic ASC`,
+      [project.id],
+    ).catch(() => []);
+    const schedR = pubs.filter(r => r.kind === 'reel').length;
+    const schedP = pubs.length - schedR;
+    const blR = backlog.filter(r => r.kind === 'reel');
+    const blP = backlog.filter(r => r.kind !== 'reel');
+    const normR = Number(project.smmData?.normReels), normP = Number(project.smmData?.normPosts);
+    const needR = Number.isFinite(normR) && normR > 0 ? Math.max(0, normR - schedR) : blR.length;
+    const needP = Number.isFinite(normP) && normP > 0 ? Math.max(0, normP - schedP) : blP.length;
+    if (!needR && !needP) return 0;
+    const plan = ContentPlanService.planDates({
+      window: win, today, startFrom: win.start, rules, reels: needR, posts: needP,
+      taken: new Set(pubs.map(r => String(r.date))),
+      busy: rules.spread ? await this.busyDaysFor(project, win) : new Set(),
+    });
+    const list = [
+      ...plan.reels.map((date, i) => ({ date, itemId: blR[i]?.id ?? null, type: ContentItemType.REEL })),
+      ...plan.posts.map((date, i) => ({ date, itemId: blP[i]?.id ?? null, type: ContentItemType.POST })),
+    ];
+    const res = await this.placeItems(project, list, rules, win, today, { name: 'Авторасстановка' });
+    if (res.placed) this.emitTasksChanged(project.id);
+    return res.placed;
+  }
+
+  /** Утренний проход: у кого с включённым «Каждый цикл — автоматически»
+   *  начался новый цикл — расставляем по правилам. Каждый цикл — один раз
+   *  (smmData.autoPlan.lastCycle). Возвращает, кого уведомить. */
+  async autoPlanTick(): Promise<Array<{ projectName: string; placed: number; window: { start: string; end: string }; notify: string[] }>> {
+    const projectRepo = this.repo.manager.getRepository(Project);
+    const projects = await projectRepo.find({ where: { projectType: 'SMM', isArchived: false } as any }).catch(() => [] as Project[]);
+    const today = this.todayDushanbe();
+    const out: Array<{ projectName: string; placed: number; window: { start: string; end: string }; notify: string[] }> = [];
+    for (const p of projects) {
+      if (String(p.status) === 'archived') continue;
+      const ap: any = p.smmData?.autoPlan;
+      if (!ap || ap.auto !== true) continue;
+      const win = this.activeCycleWindow(p, today);
+      if (!win || today < win.start || ap.lastCycle === win.start) continue;
+      try {
+        const placed = await this.autoPlanProject(p, win, today);
+        const fresh = await projectRepo.findOne({ where: { id: p.id } });
+        const sd: any = { ...(fresh?.smmData || p.smmData || {}) };
+        sd.autoPlan = { ...(sd.autoPlan || {}), lastCycle: win.start };
+        await projectRepo.update(p.id, { smmData: sd });
+        const spec: string[] = Array.isArray(sd.smmSpecialistIds) ? sd.smmSpecialistIds.map(String) : [];
+        const notify = spec.length ? spec : (p.managerId ? [p.managerId] : []);
+        out.push({ projectName: p.name, placed, window: win, notify });
+      } catch (e) {
+        this.logger.warn(`autoPlan ${p.id} failed: ${(e as Error).message}`);
+      }
+    }
+    return out;
+  }
+
   /**
    * Календарь производства за месяц: что и когда ПУБЛИКОВАТЬ (из контент-
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
@@ -792,7 +1072,7 @@ export class ContentPlanService {
    * «Разработка» использует тот же умный календарь, но с dev-проектами
    * (типы из DEV_PROJECT_TYPES; в БД legacy-значение 'Web сайт').
    */
-  async smmCalendar(from?: string, to?: string, segment: 'smm' | 'dev' = 'smm') {
+  async smmCalendar(from?: string, to?: string, segment: 'smm' | 'dev' = 'smm', actorId?: string) {
     // Диапазон дат [from, to] (YYYY-MM-DD). По умолчанию — текущий месяц.
     const ym = this.currentYm();
     const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : `${ym}-01`;
@@ -804,6 +1084,17 @@ export class ContentPlanService {
     const all = await projectRepo.find({ where: { projectType: In(types) } });
     const active = all.filter(p => String(p.status) !== 'archived');
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
+    // «Мои проекты» — то же правило, что в кабинете специалиста: менеджер,
+    // участник или назначенный SMM-специалист проекта.
+    const memberOf = new Set<string>();
+    if (actorId) {
+      const rows: any[] = await this.repo.manager.query(
+        `SELECT "projectsId" AS id FROM project_members WHERE "usersId" = $1`, [actorId],
+      ).catch(() => []);
+      rows.forEach(r => memberOf.add(String(r.id)));
+    }
+    const specIds = (p: Project): string[] =>
+      Array.isArray(p.smmData?.smmSpecialistIds) ? p.smmData.smmSpecialistIds.map(String) : [];
     // Даты проекта (начало работы / конец) — для окна «Настройки проекта».
     const dOnly = (v: any): string | null =>
       !v ? null : (typeof v === 'string' ? v.slice(0, 10) : new Date(v).toISOString().slice(0, 10));
@@ -825,6 +1116,11 @@ export class ContentPlanService {
         storiesArchived: !!(p as any).storiesArchived,
         isArchived: !!(p as any).isArchived,
         since: dOnly((p as any).createdAt),
+        // Авторасстановка: специалисты проекта (чьи другие проекты учитывать),
+        // «мой ли проект» для переключателя «Мои / Все» и сохранённые правила.
+        specialistIds: specIds(p),
+        mine: !!actorId && (p.managerId === actorId || memberOf.has(p.id) || specIds(p).includes(actorId)),
+        autoPlan: p.smmData?.autoPlan ? this.sanitizeAutoPlan(p.smmData.autoPlan) : null,
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
