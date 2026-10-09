@@ -5,6 +5,10 @@
 // одна строка цифр вместо карточек, без колонки «Итог» и полоски свежести,
 // «Рилсы» и «Посты» в одной колонке, «На связи» и «Отчёт» — тоже; проблему
 // показывает только красная полоса слева и красный текст причины.
+// В тот же день добавлены два главных сигнала сразу после названия проекта:
+// «Клиент» — цветной значок с лицом, «По плану» — галочка или «Отстаёт на N»
+// с полоской «вышло / норма цикла» и чёрточкой «должно было выйти к сегодня».
+// Красной полосы больше нет, остальные колонки — серые подробности.
 //
 // Отмечают люди (SMM-специалист — свои проекты, руководство — все):
 //   • клиент доволен / так себе / недоволен — с его словами и датой;
@@ -17,7 +21,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { Check, ChevronLeft, ChevronRight, Search, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Circle, Frown, Loader2, Meh, Search, Smile } from 'lucide-react'
 import { smmControlApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
@@ -33,11 +37,12 @@ type Row = {
   lastPost: string | null; daysSincePost: number | null
   strip: string; stories7: string
   reels: { done: number; norm: number }; posts: { done: number; norm: number }
+  /** По циклу проекта: вышло, норма, сколько должно было выйти к сегодня. null — нормы нет. */
+  plan: { done: number; norm: number; expected: number; start: string; end: string } | null
   payment?: 'paid' | 'wait' | 'late' | null
 }
 type Data = { ym: string; today: string; ref: string; seeMoney: boolean; projects: Row[] }
-type Status = 'bad' | 'warn' | 'ok'
-type Filter = 'all' | 'attention' | 'unhappy' | 'nocontact' | 'late'
+type Filter = 'all' | 'behind' | 'unhappy' | 'nocontact' | 'late'
 
 const MON = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -50,13 +55,16 @@ const MOOD_COLOR: Record<string, string> = {
   bad: 'text-red-600 dark:text-red-400',
   none: 'text-surface-500',
 }
+const MOOD_BG: Record<string, string> = {
+  good: 'bg-green-500/15', meh: 'bg-amber-500/15', bad: 'bg-red-500/15', none: '',
+}
+const MOOD_ICON: Record<string, any> = { good: Smile, meh: Meh, bad: Frown, none: Circle }
 const PAY_TXT: Record<string, string> = { paid: 'получена', wait: 'ждём', late: 'просрочена' }
 const PAY_COLOR: Record<string, string> = {
   paid: 'text-green-600 dark:text-green-400',
   wait: 'text-surface-500',
   late: 'text-red-600 dark:text-red-400',
 }
-const ORDER: Record<Status, number> = { bad: 0, warn: 1, ok: 2 }
 
 const thisYm = () => {
   const d = new Date()
@@ -82,21 +90,24 @@ const errText = (e: any, fallback: string) => {
   return Array.isArray(m) ? m.join(', ') : (typeof m === 'string' && m) || fallback
 }
 
-/** Итог по проекту. «Проблема» — то, из-за чего клиента можно потерять:
- *  недоволен, аккаунт стоит неделю без постов, оплата просрочена.
- *  «Внимание» — с клиентом не было связи, отзыва нет или постов не было 3+ дня. */
-function statusOf(r: Row): Status {
-  const d = r.daysSincePost
-  if (r.mood === 'bad' || d == null || d >= 7 || r.payment === 'late') return 'bad'
-  if (r.mood !== 'good' || d >= 3 || !r.contact) return 'warn'
-  return 'ok'
+/** На сколько публикаций проект отстаёт от плана цикла (0 — идёт по плану). */
+function lagOf(r: Row): number {
+  return r.plan ? Math.max(0, r.plan.expected - r.plan.done) : 0
 }
 
-function freshOf(d: number | null): { t: string; cls: string } {
-  if (d == null) return { t: 'публикаций не было', cls: 'text-red-600 dark:text-red-400' }
-  if (d <= 2) return { t: d === 0 ? 'пост сегодня' : d === 1 ? 'пост вчера' : 'пост 2 дн. назад', cls: 'text-green-600 dark:text-green-400' }
-  if (d <= 6) return { t: `${d} дн. без постов`, cls: 'text-amber-600 dark:text-amber-400' }
-  return { t: `${d} дн. без постов`, cls: 'text-red-600 dark:text-red-400' }
+/** Порядок в таблице: недовольный клиент, потом отстающие, потом остальные. */
+function rankOf(r: Row): number {
+  const lag = lagOf(r)
+  if (r.mood === 'bad') return 0
+  if (lag >= 2) return 1
+  if (lag === 1 || r.mood === 'meh') return 2
+  return 3
+}
+
+function freshOf(d: number | null): string {
+  if (d == null) return 'публикаций не было'
+  if (d <= 2) return d === 0 ? 'пост сегодня' : d === 1 ? 'пост вчера' : 'пост 2 дн. назад'
+  return `${d} дн. без постов`
 }
 
 export default function SmmControlPage() {
@@ -133,29 +144,29 @@ export default function SmmControlPage() {
   const toggle = (r: Row, field: 'contact' | 'report') =>
     save(r, { [field]: !r[field] } as Partial<Row>, { [field]: !r[field] })
 
-  const status = useMemo(() => new Map(rows.map(r => [r.id, statusOf(r)])), [rows])
   const counts = {
     all: rows.length,
-    attention: rows.filter(r => status.get(r.id) === 'bad').length,
+    behind: rows.filter(r => lagOf(r) > 0).length,
     unhappy: rows.filter(r => r.mood === 'bad').length,
     nocontact: rows.filter(r => !r.contact).length,
     late: rows.filter(r => r.payment === 'late').length,
   }
   const happy = rows.filter(r => r.mood === 'good').length
-  const freshN = rows.filter(r => r.daysSincePost != null && r.daysSincePost <= 2).length
+  const planKnown = rows.filter(r => r.plan)
+  const onPlanN = planKnown.filter(r => lagOf(r) === 0).length
   const payKnown = rows.filter(r => r.payment)
   const paidN = payKnown.filter(r => r.payment === 'paid').length
 
   const needle = q.trim().toLowerCase()
   const shown = rows.filter(r => {
     if (needle && !r.name.toLowerCase().includes(needle)) return false
-    if (filter === 'attention') return status.get(r.id) === 'bad'
+    if (filter === 'behind') return lagOf(r) > 0
     if (filter === 'unhappy') return r.mood === 'bad'
     if (filter === 'nocontact') return !r.contact
     if (filter === 'late') return r.payment === 'late'
     return true
   })
-  // По специалистам, как на доске «Схема»; проблемные — сверху.
+  // По специалистам, как на доске «Схема»; недовольные и отстающие — сверху.
   const groups = useMemo(() => {
     const m = new Map<string, Row[]>()
     for (const r of shown) {
@@ -167,17 +178,17 @@ export default function SmmControlPage() {
       .sort(([a], [b]) => (a === 'Не назначены' ? 1 : b === 'Не назначены' ? -1 : a.localeCompare(b, 'ru')))
       .map(([name, list]) => ({
         name,
-        rows: [...list].sort((a, b) => ORDER[status.get(a.id)!] - ORDER[status.get(b.id)!] || a.name.localeCompare(b.name, 'ru')),
+        rows: [...list].sort((a, b) => rankOf(a) - rankOf(b) || a.name.localeCompare(b.name, 'ru')),
       }))
-  }, [shown, status])
+  }, [shown])
 
   const [y, m] = ym.split('-').map(Number)
   const monthLabel = `${MON[m - 1]} ${y}`
-  const cols = `minmax(160px,2.2fr) minmax(96px,1.2fr) minmax(150px,1.7fr) 112px 100px ${seeMoney ? '96px ' : ''}84px`
+  const cols = `minmax(130px,1.4fr) minmax(130px,1.2fr) minmax(210px,1.9fr) minmax(130px,1.3fr) 100px ${seeMoney ? '96px ' : ''}84px`
 
   const filters: [Filter, string, number, string][] = [
     ['all', 'Все', counts.all, 'text-surface-600 dark:text-surface-300'],
-    ['attention', 'Требуют внимания', counts.attention, 'text-red-600 dark:text-red-400'],
+    ['behind', 'Отстают от плана', counts.behind, 'text-red-600 dark:text-red-400'],
     ['unhappy', 'Клиент недоволен', counts.unhappy, 'text-amber-600 dark:text-amber-400'],
     ['nocontact', 'Не на связи', counts.nocontact, 'text-surface-600 dark:text-surface-300'],
   ]
@@ -213,10 +224,10 @@ export default function SmmControlPage() {
         </div>
       ) : (
         <>
-          {/* Сводка: три цифры одной строкой. */}
+          {/* Сводка: те же два ответа, что в таблице, — по всем проектам. */}
           <div className="card px-5 py-3.5 flex flex-wrap gap-x-10 gap-y-2">
-            <Stat value={happy} of={rows.length} label="клиент доволен" />
-            <Stat value={freshN} of={rows.length} label="аккаунт свежий" />
+            {planKnown.length > 0 && <Stat value={onPlanN} of={planKnown.length} label="идут по плану" good />}
+            <Stat value={happy} of={rows.length} label="клиент доволен" good />
             {seeMoney && payKnown.length > 0 && <Stat value={paidN} of={payKnown.length} label="оплата получена" />}
           </div>
 
@@ -247,7 +258,7 @@ export default function SmmControlPage() {
                 <div key={g.name} className="space-y-2">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400">{g.name}</div>
                   {g.rows.map(r => (
-                    <ProjectCard key={r.id} r={r} st={status.get(r.id)!} seeMoney={seeMoney}
+                    <ProjectCard key={r.id} r={r} seeMoney={seeMoney}
                       onMood={() => setMoodFor(r)} onToggle={f => toggle(r, f)} />
                   ))}
                 </div>
@@ -255,10 +266,10 @@ export default function SmmControlPage() {
             </div>
           ) : (
             <div className="card p-0 overflow-x-auto">
-              <div className="min-w-[860px]">
+              <div className="min-w-[980px]">
                 <div className="grid items-end gap-x-3 px-4 py-2.5 border-b border-surface-200 dark:border-surface-700 text-[11px] font-semibold uppercase tracking-wide text-surface-400"
                   style={{ gridTemplateColumns: cols }}>
-                  <span>Проект</span><span>Клиент</span><span>Свежесть</span><span>Рилсы · посты</span><span>Сторис · 7 дн.</span>
+                  <span>Проект</span><span>Клиент</span><span>По плану</span><span>Свежесть</span><span>Сторис · 7 дн.</span>
                   {seeMoney && <span>Оплата</span>}
                   <span>Связь · отчёт</span>
                 </div>
@@ -268,28 +279,24 @@ export default function SmmControlPage() {
                       <b className="text-[13px] font-semibold">{g.name}</b>
                       <span className="text-[12px] text-surface-500">
                         {g.rows.length} {g.rows.length === 1 ? 'проект' : g.rows.length < 5 ? 'проекта' : 'проектов'}
-                        {g.rows.some(r => status.get(r.id) === 'bad') ? ` · проблем: ${g.rows.filter(r => status.get(r.id) === 'bad').length}` : ''}
+                        {g.rows.some(r => r.plan) ? ` · по плану ${g.rows.filter(r => r.plan && lagOf(r) === 0).length}` : ''}
                       </span>
                     </div>
                     {g.rows.map(r => {
-                      const f = freshOf(r.daysSincePost)
                       return (
-                        <div key={r.id} className="grid items-center gap-x-3 px-4 min-h-[52px] border-b border-surface-100 dark:border-surface-700/70"
-                          style={{
-                            gridTemplateColumns: cols,
-                            boxShadow: status.get(r.id) === 'bad' ? 'inset 3px 0 0 rgb(239 68 68)' : undefined,
-                          }}>
+                        <div key={r.id} className="grid items-center gap-x-3 px-4 min-h-[60px] border-b border-surface-100 dark:border-surface-700/70"
+                          style={{ gridTemplateColumns: cols }}>
                           <span className="flex items-center gap-2 min-w-0">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
-                            <b className="text-[14px] font-semibold truncate">{r.name}</b>
+                            <b className="text-[14px] font-semibold truncate" title={r.name}>{r.name}</b>
                           </span>
                           <MoodCell r={r} onClick={() => setMoodFor(r)} />
-                          <span className={clsx('text-[13px] font-semibold', f.cls)}>{f.t}</span>
-                          <Content r={r} />
+                          <PlanCell r={r} />
+                          <span className="text-[13px] text-surface-500">{freshOf(r.daysSincePost)}</span>
                           <Week s={r.stories7} />
                           {seeMoney && (
                             r.payment
-                              ? <span className={clsx('text-[13px] font-semibold', PAY_COLOR[r.payment])}>{PAY_TXT[r.payment]}</span>
+                              ? <span className={clsx('text-[13px]', r.payment === 'late' ? 'font-semibold text-red-600 dark:text-red-400' : 'text-surface-500')}>{PAY_TXT[r.payment]}</span>
                               : <span className="text-[13px] text-surface-400" title="Проект с таким названием в Финансах не найден или платежей в этом месяце нет">—</span>
                           )}
                           <span className="flex items-center gap-2">
@@ -323,36 +330,55 @@ export default function SmmControlPage() {
 }
 
 // ── части ───────────────────────────────────────────────────────────────
-function Stat({ value, of, label }: { value: number; of: number; label: string }) {
+function Stat({ value, of, label, good = false }: { value: number; of: number; label: string; good?: boolean }) {
   return (
     <span className="flex items-baseline gap-2">
-      <b className="text-[24px] font-bold leading-none">{value}</b>
+      <b className={clsx('text-[24px] font-bold leading-none', good && 'text-green-600 dark:text-green-400')}>{value}</b>
       <span className="text-[13px] text-surface-500">из {of} · {label}</span>
     </span>
   )
 }
 
-/** Отзыв клиента одной строкой; дата и слова клиента — в подсказке (на телефоне дата рядом). */
+/** Клиент: цветной значок с лицом и слово. Дата и слова клиента — в подсказке (на телефоне дата рядом). */
 function MoodCell({ r, onClick, withDate = false }: { r: Row; onClick: () => void; withDate?: boolean }) {
   const k = r.mood || 'none'
+  const Icon = MOOD_ICON[k]
   const when = r.mood ? `${dayMonth(r.moodAt)}${r.moodNote ? `: «${r.moodNote}»` : ''}` : ''
   return (
     <button type="button" onClick={onClick} disabled={!r.canEdit}
       title={[when, r.canEdit ? 'Нажмите, чтобы отметить, как клиент' : ''].filter(Boolean).join(' · ')}
-      className={clsx('min-h-[36px] min-w-0 text-left text-[13px] font-semibold truncate disabled:cursor-default', MOOD_COLOR[k])}>
-      {MOOD_TXT[k]}{withDate && when ? ` · ${when}` : ''}
+      className={clsx('min-h-[36px] min-w-0 inline-flex items-center gap-2 text-left text-[13px] font-semibold disabled:cursor-default', MOOD_COLOR[k])}>
+      <span className={clsx('w-[30px] h-[30px] rounded-full inline-flex items-center justify-center shrink-0', MOOD_BG[k])}>
+        <Icon size={20} strokeDasharray={k === 'none' ? '3 3.2' : undefined} />
+      </span>
+      <span className="truncate">{MOOD_TXT[k]}{withDate && when ? ` · ${when}` : ''}</span>
     </button>
   )
 }
 
-/** Рилсы и посты по норме одной ячейкой: «0/4 · 0/3». */
-function Content({ r }: { r: Row }) {
-  const short = (v: { done: number; norm: number }) => (v.norm ? `${v.done}/${v.norm}` : '—')
-  const long = (v: { done: number; norm: number }) => (v.norm ? `${v.done} из ${v.norm}` : 'нормы нет')
+/** По плану: вышло публикаций из нормы цикла; чёрточка — сколько должно было выйти к сегодня. */
+function PlanCell({ r }: { r: Row }) {
+  const p = r.plan
+  if (!p) return <span className="text-[13px] text-surface-400" title="У проекта не задана норма рилсов и постов">нормы нет</span>
+  const lag = lagOf(r)
+  const text = lag === 0 ? 'text-green-600 dark:text-green-400' : lag === 1 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+  const bar = lag === 0 ? 'bg-green-500' : lag === 1 ? 'bg-amber-500' : 'bg-red-500'
+  const pct = Math.min(100, Math.round((p.done / p.norm) * 100))
+  const exp = Math.min(100, Math.round((p.expected / p.norm) * 100))
   return (
-    <span className="text-[13px] text-surface-500 tabular-nums whitespace-nowrap"
-      title={`Рилсы: ${long(r.reels)} · посты: ${long(r.posts)}`}>
-      {short(r.reels)} · {short(r.posts)}
+    <span className="flex flex-col gap-1.5 min-w-0"
+      title={`Цикл ${dayMonth(p.start)} – ${dayMonth(p.end)}: вышло ${p.done} из ${p.norm}, к сегодня должно быть ${p.expected}`}>
+      <span className={clsx('inline-flex items-center gap-1.5 text-[13.5px] font-bold', text)}>
+        {lag === 0 ? <Check size={15} strokeWidth={3} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}
+        {lag === 0 ? 'По плану' : `Отстаёт на ${lag}`}
+      </span>
+      <span className="flex items-center gap-2.5">
+        <span className="relative w-[120px] h-1.5 rounded-full bg-surface-200 dark:bg-surface-700 shrink-0">
+          <span className={clsx('absolute left-0 top-0 h-1.5 rounded-full', bar)} style={{ width: `${pct}%` }} />
+          <span className="absolute -top-1 w-0.5 h-3.5 rounded-sm bg-surface-900 dark:bg-white" style={{ left: `${exp}%` }} />
+        </span>
+        <span className="text-[12px] text-surface-500 tabular-nums whitespace-nowrap">{p.done} из {p.norm}</span>
+      </span>
     </span>
   )
 }
@@ -381,10 +407,9 @@ function Tick({ on, disabled, label, title, onClick }: {
 }
 
 /** Телефон: карточка проекта вместо строки таблицы. */
-function ProjectCard({ r, st, seeMoney, onMood, onToggle }: {
-  r: Row; st: Status; seeMoney: boolean; onMood: () => void; onToggle: (f: 'contact' | 'report') => void
+function ProjectCard({ r, seeMoney, onMood, onToggle }: {
+  r: Row; seeMoney: boolean; onMood: () => void; onToggle: (f: 'contact' | 'report') => void
 }) {
-  const f = freshOf(r.daysSincePost)
   const big = (on: boolean, label: string, field: 'contact' | 'report') => (
     <button type="button" aria-pressed={on} disabled={!r.canEdit} onClick={() => onToggle(field)}
       className={clsx('flex-1 min-h-[44px] rounded-xl border px-3 inline-flex items-center gap-2 text-[13px] font-semibold disabled:cursor-default',
@@ -397,22 +422,19 @@ function ProjectCard({ r, st, seeMoney, onMood, onToggle }: {
     </button>
   )
   return (
-    <div className={clsx('card p-3.5 space-y-2.5', st === 'bad' && 'border-red-500/50')}>
+    <div className="card p-3.5 space-y-3">
       <div className="flex items-center gap-2">
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
         <b className="text-[15px] font-semibold truncate">{r.name}</b>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3">
-        <MoodCell r={r} onClick={onMood} withDate />
-        <span className={clsx('text-[13px] font-semibold', f.cls)}>{f.t}</span>
-      </div>
+      <MoodCell r={r} onClick={onMood} withDate />
+      <PlanCell r={r} />
       <div className="flex gap-2">
         {big(r.contact, 'На связи', 'contact')}
         {big(r.report, 'Отчёт', 'report')}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-surface-500">
-        <span>Рилсы <b className="text-surface-800 dark:text-surface-100">{r.reels.norm ? `${r.reels.done} из ${r.reels.norm}` : '—'}</b></span>
-        <span>Посты <b className="text-surface-800 dark:text-surface-100">{r.posts.norm ? `${r.posts.done} из ${r.posts.norm}` : '—'}</b></span>
+        <span>{freshOf(r.daysSincePost)}</span>
         <span className="inline-flex items-center gap-1.5">Сторис <Week s={r.stories7} /></span>
         {seeMoney && r.payment && (
           <span className={clsx('font-semibold', PAY_COLOR[r.payment])}>оплата {PAY_TXT[r.payment]}</span>

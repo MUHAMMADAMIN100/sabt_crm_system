@@ -21,6 +21,18 @@ const shiftDay = (iso: string, days: number) => {
 };
 const daysBetween = (a: string, b: string) =>
   Math.round((new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()) / 864e5);
+/** Цикл проекта, в который попадает день ref, по дню старта (как в умном календаре). */
+const cycleOf = (ref: string, day: number): { start: string; end: string } => {
+  const [y, m, d] = ref.split('-').map(Number);
+  const dim = (yy: number, mm0: number) => new Date(Date.UTC(yy, mm0 + 1, 0)).getUTCDate();
+  let sy = y, sm = m - 1;
+  if (d < Math.min(day, dim(sy, sm))) { sm -= 1; if (sm < 0) { sm = 11; sy -= 1; } }
+  const start = new Date(Date.UTC(sy, sm, Math.min(day, dim(sy, sm))));
+  const ny = sm === 11 ? sy + 1 : sy, nm = (sm + 1) % 12;
+  const end = new Date(Date.UTC(ny, nm, Math.min(day, dim(ny, nm))));
+  end.setUTCDate(end.getUTCDate() - 1);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+};
 /** Название без регистра, «ё» и знаков — чтобы связать SMM-проект с проектом в Финансах. */
 const nameKey = (s?: string | null) => String(s || '').toLowerCase().replace(/ё/g, 'е')
   .replace(/[^a-zа-я0-9]+/gi, ' ').trim();
@@ -39,7 +51,8 @@ export class SmmControlService {
    * Раздел «Контроль» за месяц: по каждому активному SMM-проекту — отметки
    * людей (клиент доволен, на связи, отчёт) и то, что считается само:
    * свежесть аккаунта (дни без постов, полоса за 14 дней), рилсы и посты
-   * по норме за месяц, сторис за 7 дней, оплата (только руководству).
+   * по норме за месяц, «по плану» — вышло / должно было выйти к сегодня в
+   * цикле проекта, сторис за 7 дней, оплата (только руководству).
    * Свежесть считается от сегодняшнего дня, у прошлых месяцев — от их конца.
    */
   async list(ym: string | undefined, actor: Actor) {
@@ -119,6 +132,24 @@ export class SmmControlService {
         GROUP BY 1, 2`,
       [ids, from14, ref],
     );
+    // «По плану»: сколько рилсов и постов вышло в ЦИКЛЕ проекта и сколько
+    // должно было выйти к опорному дню. Цикл не задан — считаем по месяцу.
+    const winOf = new Map<string, { start: string; end: string }>();
+    for (const p of live) {
+      const day = Number((p.smmData as any)?.cycleStartDay);
+      winOf.set(p.id, Number.isFinite(day) && day >= 1 ? cycleOf(ref, day) : { start: monthStart, end: monthEnd });
+    }
+    const minStart = [...winOf.values()].reduce((a, w) => (w.start < a ? w.start : a), monthStart);
+    const cyclePubs: Array<{ projectId: string; d: string }> = await this.ds.query(
+      `SELECT ci."projectId" AS "projectId", to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS d
+         FROM content_plan_items ci
+        WHERE ci."projectId" = ANY($1::uuid[])
+          AND ci."shootForItemId" IS NULL
+          AND ci.status = 'published'
+          AND ci."contentType" IN ('reel', 'video', 'post', 'design', 'carousel')
+          AND ci."publishDate"::date BETWEEN $2::date AND $3::date`,
+      [ids, minStart, ref],
+    );
     const postSet = new Set(postDays.map(r => `${r.projectId}|${r.d}`));
     const storySet = new Set(storyDays.map(r => `${r.projectId}|${r.d}`));
 
@@ -147,6 +178,16 @@ export class SmmControlService {
       const stories7: string[] = [];
       for (let k = 6; k >= 0; k--) stories7.push(storySet.has(`${p.id}|${shiftDay(ref, -k)}`) ? '1' : '0');
       const n = (kind: string) => counts.find(r => r.projectId === p.id && r.kind === kind)?.n || 0;
+      const win = winOf.get(p.id)!;
+      const norm = (Number(sd.normReels) || 0) + (Number(sd.normPosts) || 0);
+      const total = daysBetween(win.start, win.end) + 1;
+      const elapsed = Math.max(0, Math.min(total, daysBetween(win.start, ref) + 1));
+      const plan = norm > 0 ? {
+        done: cyclePubs.filter(r => r.projectId === p.id && r.d >= win.start && r.d <= ref).length,
+        norm,
+        expected: Math.floor(norm * elapsed / total),
+        start: win.start, end: win.end,
+      } : null;
       const isMine = p.managerId === actor.id
         || (p.members || []).some(x => x.id === actor.id)
         || spec.includes(actor.id);
@@ -162,6 +203,7 @@ export class SmmControlService {
         strip: strip.join(''), stories7: stories7.join(''),
         reels: { done: n('reel'), norm: Number(sd.normReels) || 0 },
         posts: { done: n('post'), norm: Number(sd.normPosts) || 0 },
+        plan,
         payment: seeMoney ? (payOf.get(nameKey(p.name)) ?? null) : undefined,
       };
     }).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
