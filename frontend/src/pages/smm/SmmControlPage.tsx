@@ -1,13 +1,16 @@
 // «СММ → Контроль» — главное по каждому SMM-проекту за месяц (вариант А,
 // утверждён владельцем 03.10.2026): доволен ли клиент, свежий ли аккаунт и
 // сделано ли обязательное. Сверху — сводка, ниже — таблица по специалистам,
-// проблемные проекты сверху.
+// проблемные проекты сверху. 09.10.2026 владелец выбрал упрощённый вид:
+// одна строка цифр вместо карточек, без колонки «Итог» и полоски свежести,
+// «Рилсы» и «Посты» в одной колонке, «На связи» и «Отчёт» — тоже; проблему
+// показывает только красная полоса слева и красный текст причины.
 //
 // Отмечают люди (SMM-специалист — свои проекты, руководство — все):
 //   • клиент доволен / так себе / недоволен — с его словами и датой;
 //   • на связи — в этом месяце был созвон или встреча;
 //   • отчёт клиенту отправлен.
-// Считается само: свежесть аккаунта (дни без постов и полоса за 14 дней),
+// Считается само: свежесть аккаунта (дни без постов),
 // рилсы и посты по норме за месяц, сторис за 7 дней, оплата из Финансов
 // (видит только руководство). Охваты и подписчики владелец убрал — не нужны.
 import { useMemo, useState } from 'react'
@@ -41,23 +44,17 @@ const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', '
 const DOTS = ['#e077c4', '#e07a7a', '#e8c04b', '#a8d06a', '#5ab0e0', '#a983e8', '#4bc0a8', '#e0865a', '#7b8cf0', '#c77ae0']
 
 const MOOD_TXT: Record<string, string> = { good: 'доволен', meh: 'так себе', bad: 'недоволен', none: 'нет отзыва' }
-const MOOD_CLS: Record<string, string> = {
-  good: 'bg-green-500/15 text-green-700 dark:text-green-400',
-  meh: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  bad: 'bg-red-500/15 text-red-700 dark:text-red-400',
-  none: 'bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300',
+const MOOD_COLOR: Record<string, string> = {
+  good: 'text-green-600 dark:text-green-400',
+  meh: 'text-amber-600 dark:text-amber-400',
+  bad: 'text-red-600 dark:text-red-400',
+  none: 'text-surface-500',
 }
 const PAY_TXT: Record<string, string> = { paid: 'получена', wait: 'ждём', late: 'просрочена' }
-const PAY_CLS: Record<string, string> = {
-  paid: 'bg-green-500/15 text-green-700 dark:text-green-400',
-  wait: 'bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300',
-  late: 'bg-red-500/15 text-red-700 dark:text-red-400',
-}
-const ST_TXT: Record<Status, string> = { bad: 'Проблема', warn: 'Внимание', ok: 'Хорошо' }
-const ST_CLS: Record<Status, string> = {
-  bad: 'bg-red-500/15 text-red-700 dark:text-red-400',
-  warn: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  ok: 'bg-green-500/15 text-green-700 dark:text-green-400',
+const PAY_COLOR: Record<string, string> = {
+  paid: 'text-green-600 dark:text-green-400',
+  wait: 'text-surface-500',
+  late: 'text-red-600 dark:text-red-400',
 }
 const ORDER: Record<Status, number> = { bad: 0, warn: 1, ok: 2 }
 
@@ -99,7 +96,7 @@ function freshOf(d: number | null): { t: string; cls: string } {
   if (d == null) return { t: 'публикаций не было', cls: 'text-red-600 dark:text-red-400' }
   if (d <= 2) return { t: d === 0 ? 'пост сегодня' : d === 1 ? 'пост вчера' : 'пост 2 дн. назад', cls: 'text-green-600 dark:text-green-400' }
   if (d <= 6) return { t: `${d} дн. без постов`, cls: 'text-amber-600 dark:text-amber-400' }
-  return { t: `${d} дн. без постов — застоялся`, cls: 'text-red-600 dark:text-red-400' }
+  return { t: `${d} дн. без постов`, cls: 'text-red-600 dark:text-red-400' }
 }
 
 export default function SmmControlPage() {
@@ -148,7 +145,6 @@ export default function SmmControlPage() {
   const freshN = rows.filter(r => r.daysSincePost != null && r.daysSincePost <= 2).length
   const payKnown = rows.filter(r => r.payment)
   const paidN = payKnown.filter(r => r.payment === 'paid').length
-  const attention = rows.filter(r => status.get(r.id) === 'bad')
 
   const needle = q.trim().toLowerCase()
   const shown = rows.filter(r => {
@@ -177,7 +173,7 @@ export default function SmmControlPage() {
 
   const [y, m] = ym.split('-').map(Number)
   const monthLabel = `${MON[m - 1]} ${y}`
-  const cols = `minmax(150px,1.3fr) 136px 172px 88px 88px 96px 70px ${seeMoney ? '104px ' : ''}70px 100px`
+  const cols = `minmax(160px,2.2fr) minmax(96px,1.2fr) minmax(150px,1.7fr) 112px 100px ${seeMoney ? '96px ' : ''}84px`
 
   const filters: [Filter, string, number, string][] = [
     ['all', 'Все', counts.all, 'text-surface-600 dark:text-surface-300'],
@@ -186,13 +182,14 @@ export default function SmmControlPage() {
     ['nocontact', 'Не на связи', counts.nocontact, 'text-surface-600 dark:text-surface-300'],
   ]
   if (seeMoney) filters.push(['late', 'Оплата просрочена', counts.late, 'text-surface-600 dark:text-surface-300'])
+  // Фильтр с нулём ничего не покажет — прячем (кроме «Все» и выбранного).
+  const shownFilters = filters.filter(([k, , n]) => k === 'all' || n > 0 || filter === k)
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold">Контроль проектов</h1>
-          <p className="text-[13px] text-surface-500">Доволен ли клиент, свежий ли аккаунт и сделано ли обязательное — по каждому SMM-проекту</p>
         </div>
         <div className="ml-auto inline-flex items-center gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700">
           <button type="button" aria-label="Прошлый месяц" onClick={() => setYm(v => shiftYm(v, -1))}
@@ -216,32 +213,16 @@ export default function SmmControlPage() {
         </div>
       ) : (
         <>
-          {/* Сводка сверху: с одного взгляда понятно, где плохо. */}
-          <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
-            <Tile label="Клиент доволен" value={happy} of={rows.length}
-              note={`так себе — ${rows.filter(r => r.mood === 'meh').length} · недовольны — ${counts.unhappy} · нет отзыва — ${rows.filter(r => !r.mood).length}`}
-              segs={rows.map(r => r.mood === 'good' ? 'g' : r.mood === 'bad' ? 'r' : r.mood === 'meh' ? 'a' : 'n')} />
-            <Tile label="Аккаунт свежий — пост за 2 дня" value={freshN} of={rows.length}
-              note={`3–6 дней без постов — ${rows.filter(r => r.daysSincePost != null && r.daysSincePost >= 3 && r.daysSincePost <= 6).length} · застоялись — ${rows.filter(r => r.daysSincePost == null || r.daysSincePost >= 7).length}`}
-              segs={rows.map(r => r.daysSincePost != null && r.daysSincePost <= 2 ? 'g' : r.daysSincePost != null && r.daysSincePost <= 6 ? 'a' : 'r')} />
-            {seeMoney && payKnown.length > 0 && (
-              <Tile label={`Оплата за ${MON[m - 1].toLowerCase()} получена`} value={paidN} of={payKnown.length}
-                note={`ждём по сроку — ${payKnown.filter(r => r.payment === 'wait').length} · просрочены — ${counts.late}`}
-                segs={payKnown.map(r => r.payment === 'paid' ? 'g' : r.payment === 'late' ? 'r' : 'n')} />
-            )}
-            <div className={clsx('rounded-2xl border p-4 space-y-1.5',
-              attention.length ? 'border-red-500/45 bg-red-500/[0.06]' : 'border-green-500/40 bg-green-500/[0.05]')}>
-              <div className={clsx('text-[12.5px]', attention.length ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400')}>Требуют внимания</div>
-              <div className="text-[26px] font-bold leading-tight">{attention.length}</div>
-              <div className="text-[12.5px] leading-snug">
-                {attention.length ? attention.map(r => r.name).join(' · ') : 'Проблемных проектов нет'}
-              </div>
-            </div>
+          {/* Сводка: три цифры одной строкой. */}
+          <div className="card px-5 py-3.5 flex flex-wrap gap-x-10 gap-y-2">
+            <Stat value={happy} of={rows.length} label="клиент доволен" />
+            <Stat value={freshN} of={rows.length} label="аккаунт свежий" />
+            {seeMoney && payKnown.length > 0 && <Stat value={paidN} of={payKnown.length} label="оплата получена" />}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div role="group" aria-label="Какие проекты показать" className="inline-flex flex-wrap gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700">
-              {filters.map(([k, l, n, cls]) => (
+              {shownFilters.map(([k, l, n, cls]) => (
                 <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
                   className={clsx('min-h-[36px] px-3 rounded-lg text-[12.5px] font-semibold whitespace-nowrap',
                     filter === k ? 'bg-surface-200 dark:bg-surface-700 text-surface-900 dark:text-white' : cls)}>
@@ -274,14 +255,12 @@ export default function SmmControlPage() {
             </div>
           ) : (
             <div className="card p-0 overflow-x-auto">
-              <div className="min-w-[1080px]">
-                <div className="grid items-end gap-x-2.5 px-4 py-2.5 border-b border-surface-200 dark:border-surface-700 text-[11px] font-semibold uppercase tracking-wide text-surface-400"
+              <div className="min-w-[860px]">
+                <div className="grid items-end gap-x-3 px-4 py-2.5 border-b border-surface-200 dark:border-surface-700 text-[11px] font-semibold uppercase tracking-wide text-surface-400"
                   style={{ gridTemplateColumns: cols }}>
-                  <span>Проект</span><span>Клиент</span><span>Свежесть · 14 дн.</span><span>Рилсы</span><span>Посты</span><span>Сторис · 7 дн.</span>
-                  <span className="text-center">На&nbsp;связи</span>
-                  {seeMoney && <span className="text-center">Оплата</span>}
-                  <span className="text-center">Отчёт клиенту</span>
-                  <span className="text-right">Итог</span>
+                  <span>Проект</span><span>Клиент</span><span>Свежесть</span><span>Рилсы · посты</span><span>Сторис · 7 дн.</span>
+                  {seeMoney && <span>Оплата</span>}
+                  <span>Связь · отчёт</span>
                 </div>
                 {groups.map(g => (
                   <div key={g.name}>
@@ -293,43 +272,31 @@ export default function SmmControlPage() {
                       </span>
                     </div>
                     {g.rows.map(r => {
-                      const st = status.get(r.id)!
                       const f = freshOf(r.daysSincePost)
                       return (
-                        <div key={r.id} className="grid items-center gap-x-2.5 px-4 py-2.5 border-b border-surface-100 dark:border-surface-700/70"
+                        <div key={r.id} className="grid items-center gap-x-3 px-4 min-h-[52px] border-b border-surface-100 dark:border-surface-700/70"
                           style={{
                             gridTemplateColumns: cols,
-                            boxShadow: st === 'bad' ? 'inset 3px 0 0 rgb(239 68 68)' : st === 'warn' ? 'inset 3px 0 0 rgba(245,158,11,.55)' : undefined,
+                            boxShadow: status.get(r.id) === 'bad' ? 'inset 3px 0 0 rgb(239 68 68)' : undefined,
                           }}>
                           <span className="flex items-center gap-2 min-w-0">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
                             <b className="text-[14px] font-semibold truncate">{r.name}</b>
                           </span>
                           <MoodCell r={r} onClick={() => setMoodFor(r)} />
-                          <span className="flex flex-col gap-1">
-                            <Strip s={r.strip} />
-                            <span className={clsx('text-[11.5px] font-semibold', f.cls)}>{f.t}</span>
-                          </span>
-                          <Norm v={r.reels} color="bg-blue-500" />
-                          <Norm v={r.posts} color="bg-violet-500" />
+                          <span className={clsx('text-[13px] font-semibold', f.cls)}>{f.t}</span>
+                          <Content r={r} />
                           <Week s={r.stories7} />
-                          <span className="flex justify-center">
-                            <Tick on={r.contact} disabled={!r.canEdit} label="На связи с клиентом в этом месяце"
-                              title={r.contact ? `Отмечено ${dayMonth(r.contactAt)}` : 'Был созвон или встреча в этом месяце'} onClick={() => toggle(r, 'contact')} />
-                          </span>
                           {seeMoney && (
-                            <span className="flex justify-center">
-                              {r.payment
-                                ? <span className={clsx('px-2.5 py-0.5 rounded-full text-[12px] font-semibold whitespace-nowrap', PAY_CLS[r.payment])}>{PAY_TXT[r.payment]}</span>
-                                : <span className="text-[12px] text-surface-400" title="Проект с таким названием в Финансах не найден или платежей в этом месяце нет">—</span>}
-                            </span>
+                            r.payment
+                              ? <span className={clsx('text-[13px] font-semibold', PAY_COLOR[r.payment])}>{PAY_TXT[r.payment]}</span>
+                              : <span className="text-[13px] text-surface-400" title="Проект с таким названием в Финансах не найден или платежей в этом месяце нет">—</span>
                           )}
-                          <span className="flex justify-center">
+                          <span className="flex items-center gap-2">
+                            <Tick on={r.contact} disabled={!r.canEdit} label="На связи с клиентом в этом месяце"
+                              title={r.contact ? `На связи · отмечено ${dayMonth(r.contactAt)}` : 'На связи: был созвон или встреча в этом месяце'} onClick={() => toggle(r, 'contact')} />
                             <Tick on={r.report} disabled={!r.canEdit} label="Отчёт клиенту отправлен"
-                              title={r.report ? `Отправлен ${dayMonth(r.reportAt)}` : 'Отчёт за месяц отправлен клиенту'} onClick={() => toggle(r, 'report')} />
-                          </span>
-                          <span className="flex justify-end">
-                            <span className={clsx('px-2.5 py-1 rounded-full text-[12px] font-bold', ST_CLS[st])}>{ST_TXT[st]}</span>
+                              title={r.report ? `Отчёт · отправлен ${dayMonth(r.reportAt)}` : 'Отчёт за месяц отправлен клиенту'} onClick={() => toggle(r, 'report')} />
                           </span>
                         </div>
                       )
@@ -339,13 +306,6 @@ export default function SmmControlPage() {
               </div>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-surface-500">
-            <span className="inline-flex items-center gap-1.5"><i className="w-2 h-3.5 rounded-sm bg-green-500" />пост или рилс</span>
-            <span className="inline-flex items-center gap-1.5"><i className="w-2 h-3.5 rounded-sm bg-green-800" />только сторис</span>
-            <span className="inline-flex items-center gap-1.5"><i className="w-2 h-3.5 rounded-sm bg-surface-300 dark:bg-surface-700" />ничего</span>
-            <span>«Клиент», «На связи» и «Отчёт» отмечает SMM-специалист по своим проектам{seeMoney ? ' · оплата — из Финансов, видит только руководство' : ''} · остальное считается само</span>
-          </div>
         </>
       )}
 
@@ -363,41 +323,36 @@ export default function SmmControlPage() {
 }
 
 // ── части ───────────────────────────────────────────────────────────────
-function Tile({ label, value, of, note, segs }: { label: string; value: number; of: number; note: string; segs: string[] }) {
-  const COL: Record<string, string> = { g: 'bg-green-500', a: 'bg-amber-500', r: 'bg-red-500', n: 'bg-surface-300 dark:bg-surface-600' }
-  const order: Record<string, number> = { g: 0, a: 1, n: 2, r: 3 }
+function Stat({ value, of, label }: { value: number; of: number; label: string }) {
   return (
-    <div className="card p-4 space-y-2">
-      <div className="text-[12.5px] text-surface-500">{label}</div>
-      <div className="text-[26px] font-bold leading-tight">{value} <span className="text-[14px] font-medium text-surface-400">из {of}</span></div>
-      <div className="flex gap-[3px]">
-        {[...segs].sort((a, b) => order[a] - order[b]).map((c, i) => <span key={i} className={clsx('flex-1 h-[7px] rounded-sm', COL[c])} />)}
-      </div>
-      <div className="text-[11.5px] text-surface-500">{note}</div>
-    </div>
+    <span className="flex items-baseline gap-2">
+      <b className="text-[24px] font-bold leading-none">{value}</b>
+      <span className="text-[13px] text-surface-500">из {of} · {label}</span>
+    </span>
   )
 }
 
-function MoodCell({ r, onClick }: { r: Row; onClick: () => void }) {
+/** Отзыв клиента одной строкой; дата и слова клиента — в подсказке (на телефоне дата рядом). */
+function MoodCell({ r, onClick, withDate = false }: { r: Row; onClick: () => void; withDate?: boolean }) {
   const k = r.mood || 'none'
-  const sub = r.mood ? `${dayMonth(r.moodAt)}${r.moodNote ? `: «${r.moodNote}»` : ''}` : 'в этом месяце не было'
+  const when = r.mood ? `${dayMonth(r.moodAt)}${r.moodNote ? `: «${r.moodNote}»` : ''}` : ''
   return (
     <button type="button" onClick={onClick} disabled={!r.canEdit}
-      title={r.canEdit ? 'Отметить, как клиент' : r.moodNote || ''}
-      className="flex flex-col items-start gap-1 min-w-0 text-left disabled:cursor-default">
-      <span className={clsx('px-2.5 py-0.5 rounded-full text-[12px] font-semibold', MOOD_CLS[k])}>{MOOD_TXT[k]}</span>
-      <span className="text-[11px] text-surface-500 truncate max-w-full">{sub}</span>
+      title={[when, r.canEdit ? 'Нажмите, чтобы отметить, как клиент' : ''].filter(Boolean).join(' · ')}
+      className={clsx('min-h-[36px] min-w-0 text-left text-[13px] font-semibold truncate disabled:cursor-default', MOOD_COLOR[k])}>
+      {MOOD_TXT[k]}{withDate && when ? ` · ${when}` : ''}
     </button>
   )
 }
 
-function Strip({ s }: { s: string }) {
+/** Рилсы и посты по норме одной ячейкой: «0/4 · 0/3». */
+function Content({ r }: { r: Row }) {
+  const short = (v: { done: number; norm: number }) => (v.norm ? `${v.done}/${v.norm}` : '—')
+  const long = (v: { done: number; norm: number }) => (v.norm ? `${v.done} из ${v.norm}` : 'нормы нет')
   return (
-    <span className="flex gap-[2px]" aria-hidden>
-      {s.split('').map((c, i) => (
-        <span key={i} className={clsx('w-2 h-[15px] rounded-[2px]',
-          c === 'p' ? 'bg-green-500' : c === 's' ? 'bg-green-800' : 'bg-surface-200 dark:bg-surface-700')} />
-      ))}
+    <span className="text-[13px] text-surface-500 tabular-nums whitespace-nowrap"
+      title={`Рилсы: ${long(r.reels)} · посты: ${long(r.posts)}`}>
+      {short(r.reels)} · {short(r.posts)}
     </span>
   )
 }
@@ -408,19 +363,6 @@ function Week({ s }: { s: string }) {
       {s.split('').map((c, i) => (
         <span key={i} className={clsx('w-2.5 h-2.5 rounded-[3px]', c === '1' ? 'bg-green-500' : 'bg-red-500/25')} />
       ))}
-    </span>
-  )
-}
-
-function Norm({ v, color }: { v: { done: number; norm: number }; color: string }) {
-  if (!v.norm) return <span className="text-[11.5px] text-surface-400">не в норме</span>
-  const pct = Math.min(100, Math.round((v.done / v.norm) * 100))
-  return (
-    <span className="flex flex-col gap-1">
-      <span className="block w-[72px] h-1.5 rounded-full bg-surface-200 dark:bg-surface-700 overflow-hidden">
-        <span className={clsx('block h-1.5 rounded-full', color)} style={{ width: `${Math.max(pct, v.done ? 6 : 0)}%` }} />
-      </span>
-      <span className="text-[11.5px] text-surface-500">{v.done} из {v.norm}</span>
     </span>
   )
 }
@@ -455,16 +397,14 @@ function ProjectCard({ r, st, seeMoney, onMood, onToggle }: {
     </button>
   )
   return (
-    <div className={clsx('card p-3.5 space-y-3', st === 'bad' && 'border-red-500/50', st === 'warn' && 'border-amber-500/40')}>
+    <div className={clsx('card p-3.5 space-y-2.5', st === 'bad' && 'border-red-500/50')}>
       <div className="flex items-center gap-2">
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
         <b className="text-[15px] font-semibold truncate">{r.name}</b>
-        <span className={clsx('ml-auto px-2.5 py-0.5 rounded-full text-[12px] font-bold shrink-0', ST_CLS[st])}>{ST_TXT[st]}</span>
       </div>
-      <MoodCell r={r} onClick={onMood} />
-      <div className="space-y-1">
-        <span className={clsx('block text-[12.5px] font-semibold', f.cls)}>{f.t}</span>
-        <Strip s={r.strip} />
+      <div className="flex flex-wrap items-center gap-x-3">
+        <MoodCell r={r} onClick={onMood} withDate />
+        <span className={clsx('text-[13px] font-semibold', f.cls)}>{f.t}</span>
       </div>
       <div className="flex gap-2">
         {big(r.contact, 'На связи', 'contact')}
@@ -475,7 +415,7 @@ function ProjectCard({ r, st, seeMoney, onMood, onToggle }: {
         <span>Посты <b className="text-surface-800 dark:text-surface-100">{r.posts.norm ? `${r.posts.done} из ${r.posts.norm}` : '—'}</b></span>
         <span className="inline-flex items-center gap-1.5">Сторис <Week s={r.stories7} /></span>
         {seeMoney && r.payment && (
-          <span className={clsx('px-2 py-0.5 rounded-full text-[11.5px] font-semibold', PAY_CLS[r.payment])}>оплата {PAY_TXT[r.payment]}</span>
+          <span className={clsx('font-semibold', PAY_COLOR[r.payment])}>оплата {PAY_TXT[r.payment]}</span>
         )}
       </div>
     </div>
