@@ -35,7 +35,7 @@ function DragCard({ p, fromSpecId, card, canDrag, onStart, onEnd, onOpen }: {
   )
 }
 
-function Column({ colKey, header, count, load, maxLoad, accent, over, onOver, onDrop, children }: {
+export function Column({ colKey, header, count, load, maxLoad, accent, over, onOver, onDrop, children }: {
   colKey: string; header: ReactNode; count: number; load: number; maxLoad: number
   accent: 'primary' | 'amber'; over: boolean; onOver: (k: string) => void; onDrop: (k: string) => void; children: ReactNode
 }) {

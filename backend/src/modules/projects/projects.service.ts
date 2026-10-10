@@ -2128,6 +2128,66 @@ export class ProjectsService implements OnModuleInit {
     return { specialists, unassigned };
   }
 
+  /** Ответственный менеджер SMM-проекта — любой менеджер по продажам
+   *  (решение владельца 10.10.2026): у проекта он один, хранится в
+   *  smmData.salesManagerId. */
+  private static readonly SALES_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
+
+  /** «Схема менеджеров»: каждый менеджер по продажам с его SMM-проектами +
+   *  проекты без менеджера. У проекта — имена его SMM-специалистов, чтобы
+   *  на карточке было видно, кто ведёт контент. */
+  async smmManagerLoad() {
+    const projects = await this.repo.find({ where: { projectType: 'SMM' } });
+    const active = projects.filter(p => String(p.status) !== 'archived');
+    const roles = ProjectsService.SALES_ROLES;
+    const users = await this.userRepo.find({
+      where: [{ role: In(roles), isActive: true }, { secondaryRole: In(roles), isActive: true }],
+    });
+    type Proj = { id: string; name: string; specialists: string[] };
+    const map = new Map<string, { id: string; name: string; avatar: string | null; projects: Proj[] }>();
+    for (const u of users) map.set(u.id, { id: u.id, name: u.name, avatar: u.avatar || null, projects: [] });
+
+    const specIds = new Set<string>();
+    for (const p of active) for (const x of ((p.smmData as any)?.smmSpecialistIds || [])) if (typeof x === 'string') specIds.add(x);
+    const specs = specIds.size ? await this.userRepo.find({ where: { id: In([...specIds]) } }) : [];
+    const specName = new Map(specs.map(u => [u.id, u.name]));
+
+    const unassigned: Proj[] = [];
+    for (const p of active) {
+      const sd: any = p.smmData || {};
+      const proj: Proj = {
+        id: p.id, name: p.name,
+        specialists: (Array.isArray(sd.smmSpecialistIds) ? sd.smmSpecialistIds : [])
+          .map((x: any) => specName.get(x)).filter(Boolean) as string[],
+      };
+      const m = typeof sd.salesManagerId === 'string' ? map.get(sd.salesManagerId) : undefined;
+      if (m) m.projects.push(proj); else unassigned.push(proj);
+    }
+    const collator = new Intl.Collator('ru');
+    const managers = [...map.values()].sort((a, b) => collator.compare(a.name, b.name));
+    for (const m of managers) m.projects.sort((a, b) => collator.compare(a.name, b.name));
+    unassigned.sort((a, b) => collator.compare(a.name, b.name));
+    return { managers, unassigned };
+  }
+
+  /** Назначить (или снять — null) ответственного менеджера SMM-проекта. */
+  async setSmmManager(id: string, managerId: string | null) {
+    const project = await this.repo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException('Проект не найден');
+    if (project.projectType !== 'SMM') throw new BadRequestException('Менеджера назначают только SMM-проектам');
+    if (managerId) {
+      const u = await this.userRepo.findOne({ where: { id: managerId } });
+      const roles = ProjectsService.SALES_ROLES as string[];
+      if (!u || !u.isActive || !(roles.includes(u.role as string) || roles.includes((u as any).secondaryRole as string))) {
+        throw new BadRequestException('Ответственным может быть только менеджер по продажам');
+      }
+    }
+    const sd: any = { ...(project.smmData || {}) };
+    sd.salesManagerId = managerId || null;
+    await this.repo.update(id, { smmData: sd });
+    return { ok: true, salesManagerId: sd.salesManagerId };
+  }
+
   async archive(id: string, user?: { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
     // smm_director может архивировать ТОЛЬКО SMM-проекты (его область).

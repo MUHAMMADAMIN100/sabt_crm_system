@@ -45,6 +45,15 @@ export class ProjectsController {
     return this.service.smmSpecialistLoad();
   }
 
+  /** «Схема менеджеров»: менеджеры по продажам с их SMM-проектами +
+   *  проекты без менеджера. Видят те же, кто видит «Схему» специалистов.
+   *  Объявлено ДО ':id'. */
+  @Get('smm-manager-load')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  smmManagerLoad() {
+    return this.service.smmManagerLoad();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req) {
     return this.service.findOne(id, req.user?.role);
@@ -97,6 +106,13 @@ export class ProjectsController {
   @Get(':id/smm-profile')
   getSmmProfile(@Param('id') id: string) {
     return this.service.getSmmProfile(id);
+  }
+
+  /** Ответственный менеджер SMM-проекта. Назначает только владелец. */
+  @Patch(':id/smm-manager')
+  @Roles(UserRole.FOUNDER)
+  setSmmManager(@Param('id') id: string, @Body() body: { managerId?: string | null }) {
+    return this.service.setSmmManager(id, typeof body?.managerId === 'string' && body.managerId ? body.managerId : null);
   }
 
   /** Редактируют SMM/разработка и владелец/руководство. */

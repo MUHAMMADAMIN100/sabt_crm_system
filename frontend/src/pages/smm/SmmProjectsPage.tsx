@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus, Archive, RotateCcw, LayoutGrid, Network } from 'lucide-react'
+import { Loader2, Plus, Archive, RotateCcw, LayoutGrid, Network, Briefcase } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
@@ -13,6 +13,7 @@ import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
 import { DevTeamStack } from '@/pages/dev/components/DevTeamStack'
 import type { DevTeamPerson } from '@/pages/dev/devTeam'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
+import SmmManagerBoard from './SmmManagerBoard'
 
 // Кто может создавать проекты (как на основной странице «Проекты») — по разделам.
 // СММ-специалист тоже может добавлять проект (по просьбе владельца); в
@@ -51,10 +52,16 @@ export default function SmmProjectsPage() {
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   const [tab, setTab] = useState<'active' | 'archived'>('active')
-  // Вид: сетка проектов ↔ схема «кто ведёт какие проекты» (плавно, без перехода).
-  const [view, setView] = useState<'grid' | 'schema'>('grid')
+  // Вид: сетка проектов ↔ схема SMM-специалистов ↔ схема менеджеров (плавно,
+  // без перехода). Вкладки вместо одной кнопки «Схема» — вариант А, 10.10.2026.
+  const [view, setView] = useState<'grid' | 'schema' | 'managers'>('grid')
   const [schemaSeen, setSchemaSeen] = useState(false)
-  const toggleSchema = () => { setView(v => (v === 'schema' ? 'grid' : 'schema')); setSchemaSeen(true) }
+  const [managersSeen, setManagersSeen] = useState(false)
+  const pickView = (v: 'grid' | 'schema' | 'managers') => {
+    setView(v)
+    if (v === 'schema') setSchemaSeen(true)
+    if (v === 'managers') setManagersSeen(true)
+  }
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
@@ -146,13 +153,17 @@ export default function SmmProjectsPage() {
         <h1 className="page-title">Проекты</h1>
         <div className="flex items-center gap-2">
           {canSeeLoad && (
-            <button onClick={toggleSchema} title="Кто ведёт какие проекты"
-              className={clsx('inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-xl border transition',
-                view === 'schema'
-                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800')}>
-              <Network size={16} /> Схема
-            </button>
+            <div role="group" aria-label="Вид страницы" className="inline-flex flex-wrap gap-0.5 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
+              {([['grid', 'Проекты', LayoutGrid], ['schema', 'Схема SMM', Network], ['managers', 'Схема менеджеров', Briefcase]] as const).map(([k, label, Ic]) => (
+                <button key={k} type="button" aria-pressed={view === k} onClick={() => pickView(k)}
+                  className={clsx('inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition',
+                    view === k
+                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
+                  <Ic size={15} /> {label}
+                </button>
+              ))}
+            </div>
           )}
           {canCreate && (
             <button onClick={() => setShowCreate(true)}
@@ -220,6 +231,12 @@ export default function SmmProjectsPage() {
         {schemaSeen && (
           <div className={layerCls(view === 'schema')}>
             <SmmSpecialistBoard cardById={id => cardById.get(id) ?? null} />
+          </div>
+        )}
+        {/* Слой «схема менеджеров» — кто из менеджеров по продажам отвечает за проект. */}
+        {managersSeen && (
+          <div className={layerCls(view === 'managers')}>
+            <SmmManagerBoard cardById={id => cardById.get(id) ?? null} />
           </div>
         )}
       </div>

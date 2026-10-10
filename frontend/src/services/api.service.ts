@@ -87,6 +87,10 @@ export const projectsApi = {
   stats: () => api.get('/projects/stats').then(r => r.data),
   // Схема нагрузки SMM: специалисты с их активными проектами + непривязанные.
   smmSpecialistLoad: () => api.get('/projects/smm-specialist-load').then(r => r.data),
+  /** «Схема менеджеров»: менеджеры по продажам с их SMM-проектами. */
+  smmManagerLoad: () => api.get('/projects/smm-manager-load').then(r => r.data),
+  /** Ответственный менеджер SMM-проекта (null — снять). Назначает только владелец. */
+  setSmmManager: (id: string, managerId: string | null) => api.patch(`/projects/${id}/smm-manager`, { managerId }).then(r => r.data),
   // SMM-бриф клиента
   saveBrief: (id: string, brief: any) => api.patch(`/projects/${id}/brief`, brief).then(r => r.data),
   clearBrief: (id: string) => api.delete(`/projects/${id}/brief`).then(r => r.data),
