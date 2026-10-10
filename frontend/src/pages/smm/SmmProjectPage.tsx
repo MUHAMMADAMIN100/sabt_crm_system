@@ -2,11 +2,11 @@ import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode }
 import { createPortal } from 'react-dom'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { Avatar } from '@/components/ui'
+import { Avatar, Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
@@ -265,21 +265,9 @@ export default function SmmProjectPage() {
 
   // ── Цикл (редактирование) ──
   const [cycEditing, setCycEditing] = useState(false)
-  const [cycDraft, setCycDraft] = useState({ day: '', reels: '', posts: '', spm: '' })
-  useEffect(() => {
-    if (p && !cycEditing) setCycDraft({
-      day: p.cycleStartDay != null ? String(p.cycleStartDay) : '',
-      reels: String(p.normReels ?? 0), posts: String(p.normPosts ?? 0),
-      spm: p.storiesPerMonth != null ? String(p.storiesPerMonth) : '20',
-    })
-  }, [p, cycEditing])
-  const perDayHint = (() => { const m = parseInt(cycDraft.spm, 10); return Number.isFinite(m) && m > 0 ? Math.max(1, Math.round(m / daysInMonth)) : 0 })()
-  const saveCycle = () => {
-    const nn = (s: string) => { const n = parseInt(s, 10); return Number.isFinite(n) ? n : null }
-    // Сторис в месяц ограничиваем 0–100 (как на бэкенде), чтобы не ловить 400.
-    const spmRaw = nn(cycDraft.spm)
-    const spm = spmRaw == null ? null : Math.max(0, Math.min(100, spmRaw))
-    cycleMut.mutate({ day: nn(cycDraft.day), normReels: nn(cycDraft.reels) ?? 0, normPosts: nn(cycDraft.posts) ?? 0, storiesPerMonth: spm })
+  // Правка — в отдельном окне (вариант А, 10.10.2026): карточка остаётся как была.
+  const saveCycle = (v: { day: number | null; reels: number; posts: number; spm: number }) => {
+    cycleMut.mutate({ day: v.day, normReels: v.reels, normPosts: v.posts, storiesPerMonth: v.spm })
     setCycEditing(false)
   }
 
@@ -554,8 +542,13 @@ export default function SmmProjectPage() {
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className={secLabel}>Цикл и норма</h2>
-            {cycEditing ? editActions(saveCycle, () => setCycEditing(false)) : editBtn(() => setCycEditing(true))}
+            {editBtn(() => setCycEditing(true))}
           </div>
+          {cycEditing && (
+            <CycleNormModal name={p.name} color={color} daysInMonth={daysInMonth}
+              initial={{ day: p.cycleStartDay ?? null, reels: p.normReels ?? 0, posts: p.normPosts ?? 0, spm: p.storiesPerMonth ?? 20 }}
+              onClose={() => setCycEditing(false)} onSave={saveCycle} />
+          )}
           <div>
             {/* SMM-специалист проекта — кто ведёт проект (влияет на его личный кабинет). */}
             <div className={fRow + ' relative'}>
@@ -626,21 +619,15 @@ export default function SmmProjectPage() {
                 видеограф или дизайнер. Компонент CrewRow и toggleCrew для этого
                 оставлены. */}
             <div className={fRow}><span className="text-sm text-gray-500">День старта цикла</span>
-              {cycEditing
-                ? <input type="number" min={1} max={31} value={cycDraft.day} onChange={e => setCycDraft(d => ({ ...d, day: e.target.value }))} className={editIn + ' w-16 text-center'} />
-                : <span className="text-sm font-semibold text-right">{p.cycleStartDay ? `${p.cycleStartDay}-е число` : '—'}</span>}
+              <span className="text-sm font-semibold text-right">{p.cycleStartDay ? `${p.cycleStartDay}-е число` : '—'}</span>
             </div>
             <div className={fRow}><span className="text-sm text-gray-500">Текущий цикл</span>
               <span className="text-sm font-semibold text-right">{cycle ? fmtCycleRange(cycle.start, cycle.end) : '—'}</span></div>
             <div className={fRow}><span className="text-sm text-gray-500">Норма за цикл</span>
-              {cycEditing
-                ? <span className="flex items-center gap-2 text-gray-500"><Film size={14} /><input type="number" min={0} value={cycDraft.reels} onChange={e => setCycDraft(d => ({ ...d, reels: e.target.value }))} className={editIn + ' w-14 text-center'} /><ImageIcon size={14} /><input type="number" min={0} value={cycDraft.posts} onChange={e => setCycDraft(d => ({ ...d, posts: e.target.value }))} className={editIn + ' w-14 text-center'} /></span>
-                : <span className="inline-flex items-center gap-3 text-sm font-semibold" style={{ color }}><span className="inline-flex items-center gap-1"><Film size={15} /> {p.normReels ?? 0}</span><span className="inline-flex items-center gap-1"><ImageIcon size={15} /> {p.normPosts ?? 0}</span></span>}
+              <span className="inline-flex items-center gap-3 text-sm font-semibold" style={{ color }}><span className="inline-flex items-center gap-1"><Film size={15} /> {p.normReels ?? 0}</span><span className="inline-flex items-center gap-1"><ImageIcon size={15} /> {p.normPosts ?? 0}</span></span>
             </div>
             <div className={fRow}><span className="text-sm text-gray-500">Сторис в месяц</span>
-              {cycEditing
-                ? <span className="flex items-center gap-2"><input type="number" min={0} max={100} value={cycDraft.spm} onChange={e => setCycDraft(d => ({ ...d, spm: e.target.value }))} placeholder="20" className={editIn + ' w-16 text-center'} /><span className="text-gray-400 text-[12.5px] whitespace-nowrap">· ≈ {perDayHint > 0 ? perDayHint : '—'}/день</span></span>
-                : <span className="text-sm font-semibold text-right">{p.storiesPerMonth != null ? (p.storiesPerMonth > 0 ? <>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></> : '0') : '—'}</span>}
+              <span className="text-sm font-semibold text-right">{p.storiesPerMonth != null ? (p.storiesPerMonth > 0 ? <>{p.storiesPerMonth} <span className="text-gray-400 font-medium text-[12.5px]">· ≈ {Math.max(1, Math.round(p.storiesPerMonth / daysInMonth))}/день</span></> : '0') : '—'}</span>
             </div>
             <div className={fRow}><span className="text-sm text-gray-500">Запланировано в календаре</span><span className="text-sm font-semibold text-right">{norm > 0 ? `${placed} из ${norm}` : '—'}</span></div>
             <div className={fRow}><span className="text-sm text-gray-500">Осталось в «Не запланировано»</span><span className="text-sm font-semibold text-right">{left}</span></div>
@@ -842,6 +829,79 @@ export default function SmmProjectPage() {
         document.body,
       )}
     </div>
+  )
+}
+
+/** Окно «Цикл и норма» (вариант А, 10.10.2026): день старта — на сетке чисел,
+ *  сразу видно, какой получится цикл; рилсы, посты и сторис — кнопками − и +.
+ *  Раньше поля появлялись прямо в карточке, и строки прыгали. */
+function CycleNormModal({ name, color, initial, daysInMonth, onClose, onSave }: {
+  name: string; color: string; daysInMonth: number
+  initial: { day: number | null; reels: number; posts: number; spm: number }
+  onClose: () => void
+  onSave: (v: { day: number | null; reels: number; posts: number; spm: number }) => void
+}) {
+  const [day, setDay] = useState<number | null>(initial.day)
+  const [reels, setReels] = useState(initial.reels)
+  const [posts, setPosts] = useState(initial.posts)
+  const [spm, setSpm] = useState(initial.spm)
+  const cyc = day ? cycleBoundsFor(new Date(), day) : null
+  const perDay = spm > 0 ? Math.max(1, Math.round(spm / daysInMonth)) : 0
+  const stepBtn = 'w-11 h-11 grid place-items-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+  // Сторис ограничены 0–100, как на сервере.
+  const row = (label: ReactNode, value: number, set: (n: number) => void, by: number, max: number) => (
+    <div className="flex items-center gap-3">
+      <span className="flex-1 min-w-0 text-[15px] text-gray-800 dark:text-gray-100">{label}</span>
+      <span className="inline-flex items-center rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+        <button type="button" aria-label="Меньше" onClick={() => set(Math.max(0, value - by))} className={stepBtn}><Minus size={16} /></button>
+        <b className="min-w-[48px] text-center text-[17px] tabular-nums">{value}</b>
+        <button type="button" aria-label="Больше" onClick={() => set(Math.min(max, value + by))} className={stepBtn}><Plus size={16} /></button>
+      </span>
+    </div>
+  )
+  return (
+    <Modal open onClose={onClose} title={`Цикл и норма — ${name}`} size="md">
+      <div className="space-y-5">
+        <div className="space-y-2.5">
+          <span className="block text-[12.5px] font-semibold text-gray-500">День старта цикла</span>
+          <div className="grid grid-cols-7 gap-1.5">
+            {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
+              const on = day === n
+              return (
+                <button key={n} type="button" aria-pressed={on} onClick={() => setDay(on ? null : n)}
+                  className={'h-11 rounded-xl text-[15px] transition ' + (on
+                    ? 'font-bold text-white'
+                    : 'font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700')}
+                  style={on ? { background: color } : undefined}>
+                  {n}
+                </button>
+              )
+            })}
+          </div>
+          <span className="block text-[13.5px] font-medium" style={cyc ? { color } : undefined}>
+            {cyc ? `Цикл: ${fmtCycleRange(cyc.start, cyc.end)}` : 'Цикл не задан — выберите день старта.'}
+          </span>
+        </div>
+
+        <div className="space-y-2.5">
+          <span className="block text-[12.5px] font-semibold text-gray-500">Норма за цикл</span>
+          {row('Рилсы', reels, setReels, 1, 99)}
+          {row('Посты', posts, setPosts, 1, 99)}
+          {row(<>Сторис в месяц{perDay > 0 && <span className="text-gray-400 text-[13px]"> · ≈ {perDay} в день</span>}</>, spm, setSpm, 5, 100)}
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2 pt-3.5 border-t border-gray-100 dark:border-gray-800">
+          <button type="button" onClick={onClose}
+            className="min-h-[46px] px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+            Отмена
+          </button>
+          <button type="button" onClick={() => onSave({ day, reels, posts, spm })}
+            className="min-h-[46px] px-5 rounded-xl bg-[#3f7a58] text-white text-[15px] font-semibold inline-flex items-center gap-1.5 hover:brightness-110">
+            <Check size={16} /> Сохранить
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
