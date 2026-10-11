@@ -327,10 +327,20 @@ export function canCheckStories(role?: string | null, secondaryRole?: string | n
   return [role, secondaryRole].some(r => !!r && CHECKERS.includes(r))
 }
 
-/** Раздел «СММ» (Умный календарь / Сторисы / Проекты) — вся СММ-команда
- *  и топ-менеджмент. Роли совпадают с бэкендом (эндпоинт smm-calendar). */
+/** Раздел «СММ» (Умный календарь / Сторисы / Проекты / Контроль) — вся
+ *  СММ-команда, топ-менеджмент и менеджеры по продажам (11.10.2026: видят
+ *  раздел целиком, но только смотрят — см. isSmmViewOnly). Роли совпадают
+ *  с бэкендом (эндпоинт smm-calendar). */
 export function canSeeSmmSection(role?: string | null): boolean {
-  return ['founder', 'admin', 'smm_director', 'smm_specialist'].includes(role || '')
+  return ['founder', 'admin', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'].includes(role || '')
+}
+
+/** Менеджеры по продажам в разделе «СММ» — наблюдатели: календарь, сторис
+ *  и проекты только смотрят, отмечают лишь на странице «Контроль». Сервер
+ *  держит то же правило сам — у изменяющих ручек этих ролей нет; здесь
+ *  флаг нужен, чтобы не показывать кнопки, которые всё равно не сработают. */
+export function isSmmViewOnly(role?: string | null): boolean {
+  return role === 'sales_manager_smm' || role === 'sales_manager_dev'
 }
 
 /** Раздел «Разработка» (Умный календарь / Проекты) — команда разработки

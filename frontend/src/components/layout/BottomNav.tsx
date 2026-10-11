@@ -7,7 +7,7 @@ import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, Fold
   Building2, Package, Activity, Settings, Car } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, canSeeDevSection, userCan } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeDevSection, isSmmViewOnly, userCan } from '@/lib/permissions'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
@@ -74,7 +74,8 @@ export default function BottomNav() {
   // Действия веера — только те, что реально есть в системе и разрешены роли.
   const actions = useMemo(() => {
     const list: { key: string; label: string; icon: any; run: () => void }[] = []
-    if (canSeeSmmSection(user?.role)) {
+    // Сторис отмечает СММ-команда; менеджер по продажам раздел только смотрит.
+    if (canSeeSmmSection(user?.role) && !isSmmViewOnly(user?.role)) {
       list.push({ key: 'story', label: 'Отметить сторис', icon: ImageIcon, run: () => navigate('/?day=today') })
     }
     if (userCan(user, 'tasks.create')) {

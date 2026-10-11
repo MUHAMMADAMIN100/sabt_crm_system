@@ -7,8 +7,13 @@ import { Project } from '../projects/project.entity';
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Кто видит и правит все проекты раздела. */
 const MANAGE_ROLES = ['admin', 'founder', 'smm_director'];
-/** Кто видит оплату: деньги — только владельцу и админу. */
+/** Кто видит оплату: владелец, админ и менеджеры по продажам (ниже). */
 const MONEY_ROLES = ['admin', 'founder'];
+/** Менеджеры по продажам (решение владельца 11.10.2026): видят все проекты,
+ *  ставят отметки по любому из них и видят оплату — её они и так видят в
+ *  карточке проекта (projects.payments.view). Остальной раздел «СММ» для
+ *  них только на просмотр. */
+const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 const MOODS = ['good', 'meh', 'bad'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
@@ -65,8 +70,9 @@ export class SmmControlService {
     const from14 = shiftDay(ref, -13);
     const from7 = shiftDay(ref, -6);
     const roles = this.rolesOf(actor);
-    const manage = roles.some(r => MANAGE_ROLES.includes(r));
-    const seeMoney = roles.some(r => MONEY_ROLES.includes(r));
+    const sales = roles.some(r => SALES_ROLES.includes(r));
+    const manage = roles.some(r => MANAGE_ROLES.includes(r)) || sales;
+    const seeMoney = roles.some(r => MONEY_ROLES.includes(r)) || sales;
 
     const projects = await this.projectRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.members', 'members')
@@ -80,6 +86,10 @@ export class SmmControlService {
     // Имена специалистов (назначение «Схемы» — smmData.smmSpecialistIds).
     const specIds = new Set<string>();
     for (const p of live) for (const id of ((p.smmData as any)?.smmSpecialistIds || [])) if (typeof id === 'string') specIds.add(id);
+    // Ответственные менеджеры — в тот же запрос имён.
+    const managerOf = (p: Project): string | null =>
+      typeof (p.smmData as any)?.salesManagerId === 'string' ? (p.smmData as any).salesManagerId : null;
+    for (const p of live) { const mid = managerOf(p); if (mid) specIds.add(mid); }
     const users: Array<{ id: string; name: string }> = specIds.size
       ? await this.ds.query(`SELECT id, name FROM users WHERE id = ANY($1::uuid[])`, [[...specIds]])
       : [];
@@ -194,6 +204,9 @@ export class SmmControlService {
       return {
         id: p.id, name: p.name,
         specialists: spec.map(id => ({ id, name: userName.get(id) || 'Сотрудник' })),
+        // Ответственный менеджер по продажам и признак «это мой проект» для него.
+        manager: managerOf(p) ? { id: managerOf(p) as string, name: userName.get(managerOf(p) as string) || 'Менеджер' } : null,
+        mineAsManager: managerOf(p) === actor.id,
         canEdit: manage || isMine,
         mood: c?.mood ?? null, moodNote: c?.moodNote ?? null, moodAt: c?.moodAt ?? null,
         moodBy: c?.moodById ? userName.get(c.moodById) || null : null,
@@ -254,7 +267,7 @@ export class SmmControlService {
     const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
     if (!project) throw new NotFoundException('Проект не найден');
     const roles = this.rolesOf(actor);
-    if (!roles.some(r => MANAGE_ROLES.includes(r))) {
+    if (!roles.some(r => MANAGE_ROLES.includes(r) || SALES_ROLES.includes(r))) {
       const spec: string[] = ((project.smmData as any)?.smmSpecialistIds || []);
       const mine = project.managerId === actor.id
         || (project.members || []).some(x => x.id === actor.id)

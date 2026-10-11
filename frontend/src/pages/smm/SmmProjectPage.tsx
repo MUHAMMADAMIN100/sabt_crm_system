@@ -35,6 +35,8 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
   // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
   & { crewDefaults?: Partial<Record<CrewOut, SmmSpec>> }
+  // Ответственный менеджер по продажам (назначает владелец).
+  & { salesManager?: SmmSpec | null }
 
 const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
@@ -353,6 +355,35 @@ export default function SmmProjectPage() {
     onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
     onSettled: () => qc.invalidateQueries({ queryKey: ['smm-profile', id] }),
   })
+  // ── Ответственный менеджер по продажам ──
+  // Назначает только владелец — как в «Схеме менеджеров»; остальные видят имя.
+  const canAssignManager = (user as any)?.role === 'founder'
+  const { data: managerLoad } = useQuery<{ managers: { id: string; name: string; avatar: string | null }[] }>({
+    queryKey: ['smm-manager-load'],
+    queryFn: () => projectsApi.smmManagerLoad(),
+    enabled: canAssignManager && section === 'smm',
+  })
+  const [mgrOpen, setMgrOpen] = useState(false)
+  const salesManager = profile?.salesManager ?? null
+  const mgrMut = useMutation({
+    mutationFn: (managerId: string | null) => projectsApi.setSmmManager(id!, managerId),
+    onMutate: async (managerId: string | null) => {
+      await qc.cancelQueries({ queryKey: ['smm-profile', id] })
+      const prev = qc.getQueryData<SmmProfile>(['smm-profile', id])
+      const next = managerId ? managerLoad?.managers.find(m => m.id === managerId) : undefined
+      qc.setQueryData(['smm-profile', id], (old: any) => ({
+        ...(old || {}),
+        salesManager: next ? { id: next.id, name: next.name, avatar: next.avatar, role: 'sales_manager_smm' } : null,
+      }))
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['smm-profile', id] })
+      qc.invalidateQueries({ queryKey: ['smm-manager-load'] })
+      qc.invalidateQueries({ queryKey: ['smm-control'] })
+    },
+  })
   // Производственная команда проекта: кто снимает, монтирует и рисует. От
   // этого зависит, в чей кабинет попадёт карточка подготовки. Назначает и
   // СММ-специалист — распределить работу по своему проекту его задача.
@@ -611,6 +642,56 @@ export default function SmmProjectPage() {
                 )}
               </div>
             </div>
+            {/* Ответственный менеджер по продажам — виден всем, меняет владелец. */}
+            {section === 'smm' && (
+              <div className={fRow + ' relative'}>
+                <span className="text-sm text-gray-500">Менеджер</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  {salesManager ? (
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <Avatar name={salesManager.name} src={salesManager.avatar || undefined} size={20} />
+                      <span className="text-sm font-semibold truncate max-w-[160px]">{salesManager.name}</span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400">Не назначен</span>
+                  )}
+                  {canAssignManager && (
+                    <div className="relative shrink-0">
+                      <button onClick={() => setMgrOpen(o => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <Pencil size={12} /> {salesManager ? 'Изменить' : 'Назначить'}
+                      </button>
+                      {mgrOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setMgrOpen(false)} />
+                          <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
+                            <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Менеджеры по продажам</div>
+                            {!managerLoad?.managers?.length ? (
+                              <p className="px-3 py-3 text-sm text-gray-400">Нет менеджеров</p>
+                            ) : managerLoad.managers.map(u => {
+                              const on = salesManager?.id === u.id
+                              return (
+                                <button
+                                  key={u.id}
+                                  // У проекта один менеджер: повторный выбор снимает назначение.
+                                  onClick={() => { setMgrOpen(false); mgrMut.mutate(on ? null : u.id) }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                                >
+                                  <Avatar name={u.name} src={u.avatar || undefined} size={26} />
+                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
+                                  <span className={'w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
+                                    {on && <Check size={13} className="text-white" />}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Видеографа, монтажёра и дизайнера здесь НЕ показываем (решение
                 владельца, 23.09.2026): специалист каждой роли в агентстве один,
                 съёмка, монтаж и дизайн уходят ему сами, и три одинаковые строки

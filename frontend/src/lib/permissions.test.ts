@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission, userCan } from './permissions'
+import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -70,5 +70,34 @@ describe('userCan — персональные запреты', () => {
   it('запрет закрывает страницу, открытую персональным грантом', () => {
     expect(canAccessRoute('designer', '/clients', null, ['clients.view'], [])).toBe(true)
     expect(canAccessRoute('designer', '/clients', null, ['clients.view'], ['clients.view'])).toBe(false)
+  })
+})
+
+// Раздел «СММ» у менеджеров по продажам (решение владельца 11.10.2026):
+// раздел открыт обоим видам менеджеров, но только на просмотр — отмечают
+// они лишь в «Контроле». Сервер держит то же правило своими @Roles.
+describe('раздел «СММ» — менеджеры по продажам', () => {
+  const SALES: UserRole[] = ['sales_manager_smm', 'sales_manager_dev']
+  const ROUTES = ['/smm', '/smm/stories', '/smm/projects', '/smm/projects/abc', '/smm/control']
+
+  it('оба вида менеджеров открывают все страницы раздела', () => {
+    for (const role of SALES) {
+      expect(canSeeSmmSection(role)).toBe(true)
+      for (const route of ROUTES) expect(canAccessRoute(role, route)).toBe(true)
+    }
+  })
+
+  it('менеджеры — наблюдатели, СММ-команда и руководство — нет', () => {
+    for (const role of SALES) expect(isSmmViewOnly(role)).toBe(true)
+    for (const role of ['founder', 'admin', 'smm_director', 'smm_specialist'] as UserRole[]) {
+      expect(isSmmViewOnly(role)).toBe(false)
+    }
+  })
+
+  it('остальным ролям раздел по-прежнему закрыт', () => {
+    for (const role of ['designer', 'developer', 'videographer', 'pm_dev'] as UserRole[]) {
+      expect(canSeeSmmSection(role)).toBe(false)
+      expect(canAccessRoute(role, '/smm')).toBe(false)
+    }
   })
 })

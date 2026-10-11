@@ -97,9 +97,15 @@ export class ContentPlanController {
    *  помимо SMM-ролей допущена команда разработки. Объявлено ДО ':id',
    *  иначе перехватит вайлдкард. */
   @Get('smm-calendar')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('segment') segment?: string) {
-    return this.service.smmCalendar(from, to, segment === 'dev' ? 'dev' : 'smm', req.user?.id);
+    // Менеджеры по продажам (решение владельца 11.10.2026) смотрят раздел
+    // «СММ» целиком, но только его: календарь «Разработки» им не открываем,
+    // что бы ни пришло в segment. Править они ничего не могут — у всех
+    // изменяющих ручек ниже этих ролей в @Roles нет.
+    const sales = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV].includes(req.user?.role);
+    return this.service.smmCalendar(from, to, !sales && segment === 'dev' ? 'dev' : 'smm', req.user?.id);
   }
 
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —

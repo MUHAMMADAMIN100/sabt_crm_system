@@ -40,7 +40,8 @@ export class ProjectsController {
    *  и сам СММ-специалист (он ВИДИТ схему, но переставлять проекты не может —
    *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
   }
@@ -49,7 +50,8 @@ export class ProjectsController {
    *  проекты без менеджера. Видят те же, кто видит «Схему» специалистов.
    *  Объявлено ДО ':id'. */
   @Get('smm-manager-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmManagerLoad() {
     return this.service.smmManagerLoad();
   }

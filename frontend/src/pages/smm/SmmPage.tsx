@@ -14,6 +14,7 @@ import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useSmmSection, SECTION_BASE } from './smmShared'
+import { isSmmViewOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 
 export type Ev = {
@@ -210,12 +211,18 @@ const VIEWS: { k: View; label: string }[] = [
 ]
 
 // ═══════════════════════════════════════════════════════════════════════
+/** Наблюдателю авторасстановку не предлагаем — пустая карта «нечего расставлять». */
+const NO_AUTO = new Map<string, number>()
+
 export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: string } = {}) {
   const navigate = useNavigate()
   // Раздел: 'smm' — обычный СММ-календарь, 'dev' — тот же календарь, но
   // с проектами «Разработки» (провайдер стоит на роутах /dev/*).
   const section = useSmmSection()
   const user = useAuthStore(s => s.user)
+  // Менеджер по продажам календарь только смотрит (решение владельца
+  // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
+  const readOnly = isSmmViewOnly(user?.role)
   // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_editor'].includes(user?.role ?? '')
     || ['videographer', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
@@ -391,6 +398,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
+    // Наблюдателю настройки цикла не открываем — ведём на страницу проекта.
+    if (readOnly) { navigate(`${SECTION_BASE[section]}/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
     if (p) setProjSettings(p)
   }
@@ -679,13 +688,13 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         onMove={(e, dateStr) => moveMut.mutate({ ev: e, dateStr, time: null })}
         cycleOf={cycleFor}
         onSettings={openProjSettings}
-        autoNeed={autoNeed} onAuto={setAutoProj}
+        autoNeed={readOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj} readOnly={readOnly}
         scope={scope} setScope={setScope} showScope={showScope} />
 
       {autoModal}
 
       {detail && (
-        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
+        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
@@ -706,7 +715,10 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   return (
     // Календарные виды: страница на всю высоту (flex-колонка) — календарь растягивается на всё
     // свободное место, чтобы при сворачивании бэклога снизу не оставалось пустоты. Сторисы — обычный поток.
-    <div className={view === 'stories' ? 'space-y-5' : ('flex flex-col gap-5 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
+    <div
+      // Наблюдатель карточки не перетаскивает: гасим начало любого drag внутри страницы.
+      onDragStartCapture={readOnly ? (ev => ev.preventDefault()) : undefined}
+      className={view === 'stories' ? 'space-y-5' : ('flex flex-col gap-5 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
       {/* Навигация по разделу «Разработка» — в сайдбаре (DEV_SUBNAV),
           in-page полосы табов нет (убрана как дубль). */}
       {/* ── шапка ── */}
@@ -770,7 +782,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
             onSettings={openProjSettings} wide={!!embeddedProjectId}
-            autoNeed={autoNeed} onAuto={setAutoProj}
+            autoNeed={readOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj}
             scope={scope} setScope={setScope} showScope={showScope}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
@@ -798,7 +810,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       )}
 
       {detail && (
-        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)}
+        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
@@ -1942,14 +1954,14 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent }: { e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, readOnly = false }: { readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void }) {
   const isShoot = e.kind === 'shoot'
   const type = e.contentType || 'other'
   const done = isDone(e)
   const prep = isShoot ? prepMeta(e) : null
   const Ic = prep ? prep.Icon : (TYPE_ICON[type] || AlignLeft)
   const PIcon = prep?.parentIcon ?? Film   // иконка родителя (рилс/пост) для карточки
-  const canEdit = !isShoot && !!onSaveInfo
+  const canEdit = !readOnly && !isShoot && !!onSaveInfo
   const [topic, setTopic] = useState(e.topic || '')
   const [desc, setDesc] = useState(e.scriptText || '')
   const saveTopic = () => { const v = topic.trim(); if (onSaveInfo && v && v !== (e.topic || '')) onSaveInfo({ topic: v }) }
@@ -1962,7 +1974,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   }, [onClose])
   const inp = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500'
   const lab = 'text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5'
-  const returnBtn = e.date ? (
+  const returnBtn = !readOnly && e.date ? (
     <button onClick={onUnschedule}
       className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
       <Inbox size={15} /> Вернуть
@@ -1971,7 +1983,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
   // Съёмку, монтаж и дизайн тоже отмечают выполненными. Раньше кнопки здесь
   // не было вовсе: в списке дня галочка есть, а откроешь карточку — отметить
   // нечем. Операция та же, что в кабинете производства, — статус «выполнено».
-  const primaryBtn = (done ? (
+  const primaryBtn = readOnly ? null : (done ? (
     <button disabled={marking} onClick={() => onMark(false)}
       className="w-full flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60">
       <RotateCcw size={15} /> В работу
@@ -2053,7 +2065,7 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
           </>
         )}
 
-        {onDuration && (
+        {onDuration && !readOnly && (
           <div className="my-4">
             <p className={lab}>{isShoot ? 'Изменить длительность' : 'Длительность съёмки'}</p>
             <div className="flex flex-wrap gap-1.5">
@@ -2104,8 +2116,10 @@ function MobilePlanner({
   cursor, setCursor, cells, byDate, today, backlogGroups,
   selTypes, toggleType, clearTypes, loading,
   onOpen, onMark, onMove, cycleOf, onSettings,
-  autoNeed, onAuto, scope, setScope, showScope,
+  autoNeed, onAuto, scope, setScope, showScope, readOnly = false,
 }: {
+  /** Наблюдатель: без отметок и переноса. */
+  readOnly?: boolean
   cursor: Date; setCursor: (f: (d: Date) => Date) => void
   cells: { label: number; inMonth: boolean; iso: string | null }[]
   byDate: Map<string, Ev[]>; today: string
@@ -2159,6 +2173,7 @@ function MobilePlanner({
   const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const firedRef = useRef(false)
   const pressStart = (e: Ev) => {
+    if (readOnly) return
     firedRef.current = false
     pressRef.current = setTimeout(() => {
       firedRef.current = true
@@ -2205,7 +2220,7 @@ function MobilePlanner({
             {e.kind === 'shoot' && e.reelDate ? ` · выход ${e.reelDate.slice(8, 10)}.${e.reelDate.slice(5, 7)}` : ''}
           </span>
         </span>
-        {e.itemId && (
+        {e.itemId && !readOnly && (
           <button
             onClick={ev => { ev.stopPropagation(); onMark(e, !done) }}
             aria-label={done ? 'Снять отметку' : 'Отметить выполненной'}
@@ -2392,7 +2407,7 @@ function MobilePlanner({
                     const Icon = IconOf(b)
                     const color = projColor(b.projectId)
                     return (
-                      <button key={b.id} onClick={() => { setMoving(b); setPending(null); setSheet('none') }}
+                      <button key={b.id} onClick={() => { if (readOnly) return; setMoving(b); setPending(null); setSheet('none') }}
                         className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 min-h-[60px] text-left">
                         <span className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
                           style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}>
@@ -2406,9 +2421,11 @@ function MobilePlanner({
                       </button>
                     )
                   })}
-                  <p className="text-[11px] text-gray-400 dark:text-gray-500 pt-1">
-                    Нажмите карточку — дальше выберите день в календаре.
-                  </p>
+                  {!readOnly && (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 pt-1">
+                      Нажмите карточку — дальше выберите день в календаре.
+                    </p>
+                  )}
                   {backlogGroups.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
                       {backlogGroups.map(g => (

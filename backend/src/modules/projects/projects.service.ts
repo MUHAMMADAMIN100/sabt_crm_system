@@ -999,8 +999,11 @@ export class ProjectsService implements OnModuleInit {
     });
     if (!project) throw new NotFoundException('Project not found');
     // Менеджер продаж не может открыть проект чужого направления.
+    // Исключение — SMM-проекты: раздел «СММ» открыт всем менеджерам по
+    // продажам на просмотр, и ответственным за SMM-проект владелец может
+    // назначить любого из них (решение 11.10.2026).
     const segment = getSalesSegment(requestUserRole);
-    if (segment && !segment.projectTypes.includes(project.projectType as string)) {
+    if (segment && !segment.projectTypes.includes(project.projectType as string) && project.projectType !== 'SMM') {
       throw new ForbiddenException('Проект не относится к вашему направлению');
     }
     // ПМ по разработке — только dev-проекты (SMM/Дизайн не его направление).
@@ -2011,7 +2014,13 @@ export class ProjectsService implements OnModuleInit {
         .filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole)))
         .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
     }
-    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, ...crew, crewCandidates, crewDefaults };
+    // Ответственный менеджер по продажам (назначает владелец в «Схеме
+    // менеджеров») — тем же мини-объектом, чтобы карточка проекта показала
+    // его без доступа к /users.
+    const managerId = typeof (project.smmData as any)?.salesManagerId === 'string' ? (project.smmData as any).salesManagerId as string : null;
+    const mgr = managerId ? await this.userRepo.findOne({ where: { id: managerId } }).catch(() => null) : null;
+    const salesManager = mgr ? { id: mgr.id, name: mgr.name, avatar: mgr.avatar || null, role: mgr.role } : null;
+    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, salesManager, ...crew, crewCandidates, crewDefaults };
   }
 
   async setSmmProfile(

@@ -25,7 +25,8 @@ const CREATE_ROLES: Record<'smm' | 'dev', string[]> = {
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
 // но переставлять проекты не может (DnD-переназначение отключено в доске).
 // Схема — про СММ-специалистов, в разделе «Разработка» не показывается.
-const LOAD_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist']
+// Схемы видят и менеджеры по продажам (смотрят; переставлять не могут).
+const LOAD_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev']
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }

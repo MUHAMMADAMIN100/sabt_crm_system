@@ -30,6 +30,9 @@ type Mood = 'good' | 'meh' | 'bad' | null
 type Row = {
   id: string; name: string
   specialists: { id: string; name: string }[]
+  /** Ответственный менеджер по продажам; mineAsManager — это я. */
+  manager?: { id: string; name: string } | null
+  mineAsManager?: boolean
   canEdit: boolean
   mood: Mood; moodNote: string | null; moodAt: string | null; moodBy: string | null
   contact: boolean; contactAt: string | null
@@ -42,7 +45,7 @@ type Row = {
   payment?: 'paid' | 'wait' | 'late' | null
 }
 type Data = { ym: string; today: string; ref: string; seeMoney: boolean; projects: Row[] }
-type Filter = 'all' | 'behind' | 'unhappy' | 'nocontact' | 'late'
+type Filter = 'all' | 'mine' | 'behind' | 'unhappy' | 'nocontact' | 'late'
 
 const MON = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -146,6 +149,7 @@ export default function SmmControlPage() {
 
   const counts = {
     all: rows.length,
+    mine: rows.filter(r => r.mineAsManager).length,
     behind: rows.filter(r => lagOf(r) > 0).length,
     unhappy: rows.filter(r => r.mood === 'bad').length,
     nocontact: rows.filter(r => !r.contact).length,
@@ -160,6 +164,7 @@ export default function SmmControlPage() {
   const needle = q.trim().toLowerCase()
   const shown = rows.filter(r => {
     if (needle && !r.name.toLowerCase().includes(needle)) return false
+    if (filter === 'mine') return !!r.mineAsManager
     if (filter === 'behind') return lagOf(r) > 0
     if (filter === 'unhappy') return r.mood === 'bad'
     if (filter === 'nocontact') return !r.contact
@@ -188,6 +193,8 @@ export default function SmmControlPage() {
 
   const filters: [Filter, string, number, string][] = [
     ['all', 'Все', counts.all, 'text-surface-600 dark:text-surface-300'],
+    // Виден только менеджеру, у которого есть свои проекты (нулевой фильтр скрыт).
+    ['mine', 'Мои проекты', counts.mine, 'text-primary-600 dark:text-primary-400'],
     ['behind', 'Отстают от плана', counts.behind, 'text-red-600 dark:text-red-400'],
     ['unhappy', 'Клиент недоволен', counts.unhappy, 'text-amber-600 dark:text-amber-400'],
     ['nocontact', 'Не на связи', counts.nocontact, 'text-surface-600 dark:text-surface-300'],
@@ -286,9 +293,12 @@ export default function SmmControlPage() {
                       return (
                         <div key={r.id} className="grid items-center gap-x-3 px-4 min-h-[60px] border-b border-surface-100 dark:border-surface-700/70"
                           style={{ gridTemplateColumns: cols }}>
-                          <span className="flex items-center gap-2 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
-                            <b className="text-[14px] font-semibold truncate" title={r.name}>{r.name}</b>
+                          <span className="min-w-0 py-2">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
+                              <b className="text-[14px] font-semibold truncate" title={r.name}>{r.name}</b>
+                            </span>
+                            <ManagerLine r={r} className="ml-[18px]" />
                           </span>
                           <MoodCell r={r} onClick={() => setMoodFor(r)} />
                           <PlanCell r={r} />
@@ -407,6 +417,19 @@ function Tick({ on, disabled, label, title, onClick }: {
 }
 
 /** Телефон: карточка проекта вместо строки таблицы. */
+/** Ответственный менеджер по продажам — строкой под названием проекта.
+ *  Не назначен — янтарным: проект без менеджера владельцу стоит заметить. */
+function ManagerLine({ r, className }: { r: Row; className?: string }) {
+  return (
+    <span className={clsx('block text-[11.5px] leading-snug truncate', className,
+      r.manager ? 'text-surface-500 dark:text-surface-400' : 'text-amber-600 dark:text-amber-400')}>
+      {r.manager ? (
+        <>менеджер: <span className={r.mineAsManager ? 'font-semibold text-primary-600 dark:text-primary-400' : undefined}>{r.mineAsManager ? 'вы' : r.manager.name}</span></>
+      ) : 'менеджер не назначен'}
+    </span>
+  )
+}
+
 function ProjectCard({ r, seeMoney, onMood, onToggle }: {
   r: Row; seeMoney: boolean; onMood: () => void; onToggle: (f: 'contact' | 'report') => void
 }) {
@@ -423,9 +446,12 @@ function ProjectCard({ r, seeMoney, onMood, onToggle }: {
   )
   return (
     <div className="card p-3.5 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
-        <b className="text-[15px] font-semibold truncate">{r.name}</b>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotOf(r.name) }} />
+          <b className="text-[15px] font-semibold truncate">{r.name}</b>
+        </div>
+        <ManagerLine r={r} className="ml-[18px]" />
       </div>
       <MoodCell r={r} onClick={onMood} withDate />
       <PlanCell r={r} />
