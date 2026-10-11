@@ -101,6 +101,13 @@ export default function SmmSpecialistDashboard() {
   const todayKey = dk(new Date())
   // Свои задачи специалиста — ставит себе сам, прямо в дне календаря.
   const own = useOwnTasks(todayKey)
+  // Строка «новая своя задача»: открывается кнопкой «+» над календарём
+  // или кнопкой в самом дне.
+  const [ownForm, setOwnForm] = useState(false)
+  const addOwnToday = () => {
+    const now = new Date()
+    setCursor(now); setSel(now); setPendingStory({}); setOwnForm(true); setDayOpen(true)
+  }
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: cal } = useQuery({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
@@ -292,7 +299,7 @@ export default function SmmSpecialistDashboard() {
 
   // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
   // него остаётся висеть без списка, из которого её открыли.
-  const closeDay = () => { setDayOpen(false); setOpenId(null) }
+  const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnForm(false) }
 
   // Кнопка создания в нижней панели ведёт сюда с ?day=today: открываем
   // сегодняшний день сразу, чтобы отметить сторис в одно касание.
@@ -403,10 +410,15 @@ export default function SmmSpecialistDashboard() {
 
       {/* Мини-месяц */}
       <div className="card">
-        <div className="flex items-center justify-center gap-4 mb-3">
+        <div className="relative flex items-center justify-center gap-4 mb-3">
           <button onClick={() => goMonth(-1)} className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
           <b className="text-sm font-bold capitalize min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
           <button onClick={() => goMonth(1)} className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
+          {/* Своя задача на сегодня — в одно нажатие, не открывая день вручную. */}
+          <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня"
+            className="absolute right-0 top-0 h-8 px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
+            <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
+          </button>
         </div>
         <div className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
@@ -429,7 +441,7 @@ export default function SmmSpecialistDashboard() {
             return (
               <button
                 key={key}
-                onClick={() => { setSel(d); setPendingStory({}); setDayOpen(true) }}
+                onClick={() => { setSel(d); setPendingStory({}); setOwnForm(false); setDayOpen(true) }}
                 className={clsx(
                   'min-h-[66px] rounded-xl border p-1.5 flex flex-col text-left transition',
                   // «Сегодня» и «выбранный день» — два РАЗНЫХ сигнала, иначе они
@@ -530,7 +542,7 @@ export default function SmmSpecialistDashboard() {
           </div>
         )}
 
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
 
         {/* Сторис за выбранный день */}
         {trackedProjects.length > 0 && (

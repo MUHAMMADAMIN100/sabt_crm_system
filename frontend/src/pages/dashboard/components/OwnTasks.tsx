@@ -130,27 +130,35 @@ export function OwnMark({ done, className }: { done?: boolean; className?: strin
   )
 }
 
-/** Блок «Свои задачи» в окне дня: список и добавление. В прошлых днях
- *  добавлять нельзя — незакрытая задача всё равно переехала бы на сегодня. */
-export function OwnDayTasks({ dayKey, todayKey, own }: { dayKey: string; todayKey: string; own: OwnTasksApi }) {
+/** Блок «Свои задачи» в окне дня: список и добавление. Кнопка есть в любом
+ *  дне — без неё в прошедшем дне блок пропадал, и человек не находил, где
+ *  ставить задачу. Из прошедшего дня задача ставится на сегодня: незакрытая
+ *  всё равно переехала бы туда. */
+export function OwnDayTasks({ dayKey, todayKey, own, formOpen, onFormOpen }: {
+  dayKey: string; todayKey: string; own: OwnTasksApi
+  /** Строкой добавления управляет и кнопка «+» в шапке календаря. */
+  formOpen?: boolean; onFormOpen?: (open: boolean) => void
+}) {
   const tasks = own.of(dayKey)
-  const canAdd = dayKey >= todayKey
-  const [open, setOpen] = useState(false)
+  const past = dayKey < todayKey
+  const target = past ? todayKey : dayKey
+  const [openInner, setOpenInner] = useState(false)
+  const open = formOpen ?? openInner
+  const setOpen = (v: boolean) => { if (onFormOpen) onFormOpen(v); else setOpenInner(v) }
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('')
   const [timeOpen, setTimeOpen] = useState(false)
   const [confirmId, setConfirmId] = useState<string | null>(null)
 
-  if (!canAdd && tasks.length === 0) return null
-
   const close = () => { setOpen(false); setTitle(''); setTime(''); setTimeOpen(false) }
   const submit = () => {
     const v = title.trim()
     if (!v) return
-    own.add(v, dayKey, time || null)
+    own.add(v, target, time || null)
+    if (past) toast.success('Задача поставлена на сегодня')
     close()
   }
-  const dayLabel = dayKey === todayKey ? 'сегодня' : format(new Date(`${dayKey}T00:00:00`), 'd MMMM', { locale: ru })
+  const dayLabel = target === todayKey ? 'сегодня' : format(new Date(`${target}T00:00:00`), 'd MMMM', { locale: ru })
 
   return (
     <div className="mt-5">
@@ -205,14 +213,14 @@ export function OwnDayTasks({ dayKey, todayKey, own }: { dayKey: string; todayKe
           </div>
         ))}
 
-        {canAdd && !open && (
+        {!open && (
           <button type="button" onClick={() => setOpen(true)}
             className="w-full h-11 rounded-xl border border-dashed border-surface-300 dark:border-surface-600 text-[13px] font-semibold text-surface-500 dark:text-surface-400 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400 flex items-center justify-center gap-1.5 transition">
-            <Plus size={15} /> Своя задача
+            <Plus size={15} /> {past ? 'Своя задача на сегодня' : 'Своя задача'}
           </button>
         )}
 
-        {canAdd && open && (
+        {open && (
           <div className="rounded-xl border-[1.5px] border-primary-500 ring-[3px] ring-primary-500/20 bg-white dark:bg-surface-900 p-2.5 space-y-2.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold text-primary-600 dark:text-primary-400">Новая своя задача на {dayLabel}</span>

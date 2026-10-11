@@ -20,7 +20,7 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   Camera, Scissors, Palette, Film, Image as ImageIcon,
-  ChevronLeft, ChevronRight, AlertTriangle, X,
+  ChevronLeft, ChevronRight, AlertTriangle, X, Plus,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
@@ -154,6 +154,14 @@ export default function ProductionDashboard() {
   const todayKey = dk(new Date())
   // Свои задачи сотрудника — ставит себе сам, прямо в дне календаря.
   const own = useOwnTasks(todayKey)
+  // Строка «новая своя задача»: открывается кнопкой «+» над календарём
+  // или кнопкой в самом дне.
+  const [ownForm, setOwnForm] = useState(false)
+  const addOwnToday = () => {
+    const now = new Date()
+    setCursor(now); setSel(now); setOwnForm(true)
+    if (isPhone) setDayOpen(true)
+  }
 
   // Основного видеографа назначает руководитель видеографии (основатель и
   // админ — запасной ключ). Передать же СВОЮ съёмку может сам исполнитель:
@@ -347,10 +355,15 @@ export default function ProductionDashboard() {
 
       {/* Мини-месяц */}
       <div className="card">
-        <div className="flex items-center justify-center gap-4 mb-3">
+        <div className="relative flex items-center justify-center gap-4 mb-3">
           <button onClick={() => goMonth(-1)} className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
           <b className="text-sm font-bold capitalize min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
           <button onClick={() => goMonth(1)} className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
+          {/* Своя задача на сегодня — в одно нажатие, не открывая день вручную. */}
+          <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня"
+            className="absolute right-0 top-0 h-8 px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
+            <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
+          </button>
         </div>
         <div className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
@@ -368,7 +381,7 @@ export default function ProductionDashboard() {
             return (
               <button
                 key={key}
-                onClick={() => { setSel(d); if (isPhone) setDayOpen(true) }}
+                onClick={() => { setSel(d); setOwnForm(false); if (isPhone) setDayOpen(true) }}
                 className={clsx(
                   'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition bg-surface-50 dark:bg-surface-800/40',
                   // Сегодня — рамка с ореолом; выбранный день не подсвечиваем: его
@@ -429,7 +442,7 @@ export default function ProductionDashboard() {
             ))}
           </div>
         )}
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
       </div>
 
       {/* Окно дня — только на телефоне: снизу, как в кабинете СММ. */}
@@ -464,7 +477,7 @@ export default function ProductionDashboard() {
                   ))}
                 </div>
               )}
-              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
+              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
             </div>
           </div>
         </div>,
