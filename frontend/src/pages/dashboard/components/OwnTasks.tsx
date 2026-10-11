@@ -114,7 +114,9 @@ export function useOwnTasks(todayKey: string) {
     return { prev }
   }
   const refresh = () => qc.invalidateQueries({ queryKey: KEY })
-  const failed = (text: string) => (e: any, _v: unknown, ctx: any) => {
+  // Параметры — any: с unknown TypeScript выводил тип переменных запроса из
+  // этого обработчика, и v.title в mutationFn переставал существовать.
+  const failed = (text: string) => (e: any, _v: any, ctx: any) => {
     if (ctx?.prev) qc.setQueryData(KEY, ctx.prev)
     toast.error(e?.response?.data?.message || text)
   }
