@@ -4,14 +4,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown, User } from 'lucide-react'
+import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import toast from 'react-hot-toast'
-import { useOwnTasks, OwnDayTasks, OwnMark } from './OwnTasks'
+import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, CellBadge, ownLines, type CellLine } from './OwnTasks'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -101,12 +101,20 @@ export default function SmmSpecialistDashboard() {
   const todayKey = dk(new Date())
   // Свои задачи специалиста — ставит себе сам, прямо в дне календаря.
   const own = useOwnTasks(todayKey)
-  // Строка «новая своя задача»: открывается кнопкой «+» над календарём
-  // или кнопкой в самом дне.
-  const [ownForm, setOwnForm] = useState(false)
+  // Окошко своих задач у клетки дня (компьютер) и курсор в строке ввода,
+  // когда день открыт кнопкой «+ Своя задача» (телефон).
+  const [ownPop, setOwnPop] = useState<{ day: string; el: HTMLElement } | null>(null)
+  const [ownFocus, setOwnFocus] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
   const addOwnToday = () => {
     const now = new Date()
-    setCursor(now); setSel(now); setPendingStory({}); setOwnForm(true); setDayOpen(true)
+    setCursor(now); setSel(now); setPendingStory({})
+    if (window.matchMedia('(max-width: 639px)').matches) { setOwnFocus(true); setDayOpen(true); return }
+    // Сегодняшняя клетка появится после перерисовки месяца — ищем её следом.
+    setTimeout(() => {
+      const el = gridRef.current?.querySelector<HTMLElement>(`[data-own-cell="${dk(now)}"]`)
+      if (el) setOwnPop({ day: dk(now), el })
+    }, 0)
   }
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
@@ -299,7 +307,7 @@ export default function SmmSpecialistDashboard() {
 
   // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
   // него остаётся висеть без списка, из которого её открыли.
-  const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnForm(false) }
+  const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnFocus(false) }
 
   // Кнопка создания в нижней панели ведёт сюда с ?day=today: открываем
   // сегодняшний день сразу, чтобы отметить сторис в одно касание.
@@ -373,8 +381,25 @@ export default function SmmSpecialistDashboard() {
   // перестают отличаться.
   const dotSize = (n: number) => (n >= 5 ? 'w-2 h-2' : n >= 3 ? 'w-1.5 h-1.5' : 'w-1 h-1')
 
-  const Chip = ({ letter, n, g }: { letter: string; n: number; g: string }) =>
-    n > 0 ? <span className={clsx('text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none', GROUP_CLS[g])}>{letter} {n}</span> : null
+  // Строки клетки на компьютере (решение владельца 11.10.2026): публикации
+  // дня — рилсы и макеты — названиями, следом свои задачи. Сторис остаются
+  // числом. Задачи подготовки (съёмка, дизайн) в клетку не выносим — их и
+  // раньше там не было.
+  const cellLines = (key: string): CellLine[] => {
+    const pubs = (contentByDay[key] || [])
+      .filter((e: any) => e.kind === 'publication' && !isCancelled(e))
+      .sort((a: any, b: any) => taskTitle(a).localeCompare(taskTitle(b), 'ru')
+        || String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru')
+        || String(a.id).localeCompare(String(b.id)))
+      .map((e: any): CellLine => ({
+        key: e.id,
+        kind: e.contentType === 'reel' || e.contentType === 'video' ? 'reel' : 'maket',
+        proj: e.projectName,
+        text: taskTitle(e),
+        state: isDone(e) ? 'done' : key < todayKey ? 'late' : 'open',
+      }))
+    return [...pubs, ...ownLines(own.of(key))]
+  }
 
   return (
     <div className="space-y-4">
@@ -420,7 +445,7 @@ export default function SmmSpecialistDashboard() {
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        <div ref={gridRef} className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {
@@ -438,12 +463,21 @@ export default function SmmSpecialistDashboard() {
             const storyTarget = trackedProjects.reduce((sum: number, p: any) => sum + dailyTarget(p, d), 0)
             const isSel = isSameDay(d, sel)
             const t = isToday(d)
+            const openDay = () => { setSel(d); setPendingStory({}); setOwnFocus(false); setDayOpen(true) }
+            // Клетка — не <button>: внутри неё своя кнопка «+», а кнопку в
+            // кнопку вкладывать нельзя.
             return (
-              <button
+              <div
                 key={key}
-                onClick={() => { setSel(d); setPendingStory({}); setOwnForm(false); setDayOpen(true) }}
+                role="button"
+                tabIndex={0}
+                data-own-cell={key}
+                onClick={openDay}
+                onKeyDown={ev => {
+                  if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openDay() }
+                }}
                 className={clsx(
-                  'min-h-[66px] rounded-xl border p-1.5 flex flex-col text-left transition',
+                  'group min-h-[66px] sm:min-h-[104px] rounded-xl border p-1.5 flex flex-col sm:gap-1 text-left transition cursor-pointer',
                   // «Сегодня» и «выбранный день» — два РАЗНЫХ сигнала, иначе они
                   // сливаются: раньше и там и там была акцентная рамка, и стоило
                   // открыть другой день, как сегодняшний переставал читаться.
@@ -457,7 +491,16 @@ export default function SmmSpecialistDashboard() {
                 )}
               >
                 <span className="flex items-center justify-between leading-none">
-                  {allDone ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" /> : <span />}
+                  <span className="flex items-center gap-1">
+                    {key >= todayKey && (
+                      <CellPlus today={t} label={`Поставить себе задачу на ${format(d, 'd MMMM', { locale: ru })}`}
+                        onClick={ev => {
+                          const el = ev.currentTarget.closest<HTMLElement>('[data-own-cell]')
+                          if (el) setOwnPop({ day: key, el })
+                        }} />
+                    )}
+                    {allDone && <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" />}
+                  </span>
                   <span className={clsx('text-[11px] font-bold', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
                 </span>
 
@@ -478,22 +521,27 @@ export default function SmmSpecialistDashboard() {
                   )}
                 </span>
 
-                {/* Компьютер: ширины хватает, оставляем привычные цифры. */}
-                <span className="hidden sm:flex flex-wrap gap-1 mt-auto">
-                  {late > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-red-500/15 text-red-500 dark:text-red-400" title="Просрочено">! {late}</span>}
-                  <Chip letter="Р" n={c.reel} g="reel" />
-                  <Chip letter="М" n={c.maket} g="maket" />
-                  {c.story > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-emerald-500/12 text-emerald-500 dark:text-emerald-400">С {c.story}</span>}
-                  {ownDay.length > 0 && (
-                    <span title="Свои задачи" className="inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-surface-200 text-surface-600 dark:bg-surface-700 dark:text-surface-300">
-                      <User size={9} strokeWidth={3} />{ownDay.length}
-                    </span>
-                  )}
-                </span>
-              </button>
+                {/* Компьютер: рилсы, публикации и свои задачи — названиями,
+                    сторис — числом. Просроченное красным, сделанное зачёркнуто. */}
+                <CellLines lines={cellLines(key)} />
+                {c.story > 0 && (
+                  <span title="Сторис за день" className="hidden sm:inline-block self-start mt-auto text-[9.5px] font-semibold px-1.5 py-[3px] rounded leading-none bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">С {c.story}</span>
+                )}
+              </div>
             )
           })}
         </div>
+        {/* Что значат метки в клетках. */}
+        <div className="hidden sm:flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 text-[11px] text-surface-400 dark:text-surface-500">
+          <span className="inline-flex items-center gap-1.5"><CellBadge kind="reel" /> рилс</span>
+          <span className="inline-flex items-center gap-1.5"><CellBadge kind="maket" /> публикация</span>
+          <span className="inline-flex items-center gap-1.5"><OwnBox /> своя задача</span>
+          <span className="inline-flex items-center gap-1.5"><span className="text-[9.5px] font-semibold px-1.5 py-[3px] rounded leading-none bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">С 7</span> сторис за день</span>
+          <span><span className="font-medium text-red-500 dark:text-red-400">красным</span> — просрочено</span>
+        </div>
+        <p className="sm:hidden mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-surface-400 dark:text-surface-500">
+          <OwnMark /> своя задача · нажмите на день, чтобы поставить
+        </p>
       </div>
 
       {/* Просроченное */}
@@ -530,6 +578,8 @@ export default function SmmSpecialistDashboard() {
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
+
         <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
         {selEvents.length === 0 ? (
           <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
@@ -541,8 +591,6 @@ export default function SmmSpecialistDashboard() {
             ))}
           </div>
         )}
-
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
 
         {/* Сторис за выбранный день */}
         {trackedProjects.length > 0 && (
@@ -578,6 +626,11 @@ export default function SmmSpecialistDashboard() {
           </div>
         </div>,
         document.body,
+      )}
+
+      {/* Окошко своих задач у клетки дня — только на компьютере. */}
+      {ownPop && (
+        <OwnPopover anchor={ownPop.el} dayKey={ownPop.day} todayKey={todayKey} own={own} onClose={() => setOwnPop(null)} />
       )}
 
       {/* Модалка задачи */}

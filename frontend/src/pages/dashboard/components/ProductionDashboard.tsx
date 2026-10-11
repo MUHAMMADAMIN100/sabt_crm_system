@@ -10,7 +10,7 @@
 // задача всегда одного вида, и точки по ТИПАМ ничего не говорят. Вместо них
 // точки-прогресс — одна на задачу: зелёная сделана, цвет роли в работе,
 // красный контур просрочена. Видно и объём дня, и сколько уже закрыто.
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -26,7 +26,7 @@ import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { TaskPanel, TaskRow } from './SmmSpecialistDashboard'
-import { useOwnTasks, OwnDayTasks, OwnMark } from './OwnTasks'
+import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, CellBadge, ownLines, type CellLine } from './OwnTasks'
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const WEEK = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
@@ -154,13 +154,20 @@ export default function ProductionDashboard() {
   const todayKey = dk(new Date())
   // Свои задачи сотрудника — ставит себе сам, прямо в дне календаря.
   const own = useOwnTasks(todayKey)
-  // Строка «новая своя задача»: открывается кнопкой «+» над календарём
-  // или кнопкой в самом дне.
-  const [ownForm, setOwnForm] = useState(false)
+  // Окошко своих задач у клетки дня (компьютер) и курсор в строке ввода,
+  // когда день открыт кнопкой «+ Своя задача» (телефон).
+  const [ownPop, setOwnPop] = useState<{ day: string; el: HTMLElement } | null>(null)
+  const [ownFocus, setOwnFocus] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
   const addOwnToday = () => {
     const now = new Date()
-    setCursor(now); setSel(now); setOwnForm(true)
-    if (isPhone) setDayOpen(true)
+    setCursor(now); setSel(now)
+    if (window.matchMedia('(max-width: 639px)').matches) { setOwnFocus(true); setDayOpen(true); return }
+    // Сегодняшняя клетка появится после перерисовки месяца — ищем её следом.
+    setTimeout(() => {
+      const el = gridRef.current?.querySelector<HTMLElement>(`[data-own-cell="${dk(now)}"]`)
+      if (el) setOwnPop({ day: dk(now), el })
+    }, 0)
   }
 
   // Основного видеографа назначает руководитель видеографии (основатель и
@@ -303,6 +310,25 @@ export default function ProductionDashboard() {
   const navList: Item[] = (dayOpen || (openId && selItems.some(it => it.id === openId))) ? selItems : overdue
   const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
   const ownSel = own.of(selKey)
+  // Строки клетки на компьютере (решение владельца 11.10.2026): задачи дня
+  // названиями — съёмка, монтаж, дизайн — и следом свои задачи.
+  const cellLines = (key: string): CellLine[] => {
+    const prod = (byDay[key] || [])
+      .filter(it => !isCancelled(it))
+      .sort((a, b) => (a.time || '99').localeCompare(b.time || '99')
+        || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id))
+      .map((it): CellLine => ({
+        key: it.id,
+        kind: it.stage || (it.contentType === 'reel' ? 'reel' : 'maket'),
+        proj: it.projectName,
+        text: titleOf(it),
+        state: isDone(it) ? 'done' : it.date < todayKey ? 'late' : 'open',
+      }))
+    return [...prod, ...ownLines(own.of(key))]
+  }
+  // Подсказка под календарём — только те метки, что есть в этом месяце.
+  const legendKinds = (['shoot', 'edit', 'design'] as const).filter(k => items.some(it => it.stage === k))
+  const KIND_LABEL = { shoot: 'съёмка', edit: 'монтаж', design: 'дизайн' } as const
   const selDoneN = selItems.filter(isDone).length + ownSel.filter(t => t.done).length
   const selTotalN = selItems.length + ownSel.length
   const openItem = openIdx >= 0 ? navList[openIdx] : null
@@ -365,7 +391,7 @@ export default function ProductionDashboard() {
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        <div ref={gridRef} className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {
@@ -378,12 +404,21 @@ export default function ProductionDashboard() {
             const MAX_DOTS = 8
             // Свои задачи — кружком, чтобы не путать с квадратами производства.
             const ownDots = own.of(key)
+            const openDay = () => { setSel(d); setOwnFocus(false); if (isPhone) setDayOpen(true) }
+            // Клетка — не <button>: внутри неё своя кнопка «+», а кнопку в
+            // кнопку вкладывать нельзя.
             return (
-              <button
+              <div
                 key={key}
-                onClick={() => { setSel(d); setOwnForm(false); if (isPhone) setDayOpen(true) }}
+                role="button"
+                tabIndex={0}
+                data-own-cell={key}
+                onClick={openDay}
+                onKeyDown={ev => {
+                  if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openDay() }
+                }}
                 className={clsx(
-                  'min-h-[58px] rounded-xl border p-1.5 flex flex-col text-left transition bg-surface-50 dark:bg-surface-800/40',
+                  'group min-h-[58px] sm:min-h-[104px] rounded-xl border p-1.5 flex flex-col sm:gap-1 text-left transition cursor-pointer bg-surface-50 dark:bg-surface-800/40',
                   // Сегодня — рамка с ореолом; выбранный день не подсвечиваем: его
                   // показывает открытое окно.
                   t ? 'border-primary-500 ring-[3px] ring-primary-500/20'
@@ -391,13 +426,26 @@ export default function ProductionDashboard() {
                     : 'border-surface-100 dark:border-surface-700/60 hover:border-surface-300 dark:hover:border-surface-600',
                 )}
               >
-                <span className={clsx('text-[11px] font-bold text-right leading-none', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
+                <span className="flex items-center justify-between leading-none">
+                  <span className="flex items-center gap-1">
+                    {key >= todayKey && (
+                      <CellPlus today={t} label={`Поставить себе задачу на ${format(d, 'd MMMM', { locale: ru })}`}
+                        onClick={ev => {
+                          const el = ev.currentTarget.closest<HTMLElement>('[data-own-cell]')
+                          if (el) setOwnPop({ day: key, el })
+                        }} />
+                    )}
+                  </span>
+                  <span className={clsx('text-[11px] font-bold', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
+                </span>
+                {/* Компьютер: задачи дня и свои задачи — названиями. */}
+                <CellLines lines={cellLines(key)} />
                 {/* Точки-прогресс: одна на задачу. Цвет роли — в работе, красный
                     контур — просрочена, серая — уже сделана. У съёмок цвет роли
                     лаймовый, поэтому «сделано» НЕ зелёное: иначе день в работе
                     выглядел бы закрытым. Больше восьми — «+N». */}
                 {(dots.length > 0 || ownDots.length > 0) && (
-                  <span className="mt-auto flex flex-wrap items-center gap-[3px]">
+                  <span className="sm:hidden mt-auto flex flex-wrap items-center gap-[3px]">
                     {dots.slice(0, MAX_DOTS).map(it => {
                       const done = isDone(it)
                       const lateOne = !done && it.date < todayKey
@@ -412,10 +460,21 @@ export default function ProductionDashboard() {
                     {ownDots.slice(0, 4).map(t => <OwnMark key={t.id} done={t.done} className="w-[7px] h-[7px]" />)}
                   </span>
                 )}
-              </button>
+              </div>
             )
           })}
         </div>
+        {/* Что значат метки в клетках. */}
+        <div className="hidden sm:flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 text-[11px] text-surface-400 dark:text-surface-500">
+          {legendKinds.map(k => (
+            <span key={k} className="inline-flex items-center gap-1.5"><CellBadge kind={k} /> {KIND_LABEL[k]}</span>
+          ))}
+          <span className="inline-flex items-center gap-1.5"><OwnBox /> своя задача</span>
+          <span><span className="font-medium text-red-500 dark:text-red-400">красным</span> — просрочено</span>
+        </div>
+        <p className="sm:hidden mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-surface-400 dark:text-surface-500">
+          <OwnMark /> своя задача · нажмите на день, чтобы поставить
+        </p>
       </div>
 
       {/* Задачи выбранного дня — сразу под календарём, не только в окне по
@@ -442,7 +501,7 @@ export default function ProductionDashboard() {
             ))}
           </div>
         )}
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} className="mt-5" />
       </div>
 
       {/* Окно дня — только на телефоне: снизу, как в кабинете СММ. */}
@@ -463,6 +522,7 @@ export default function ProductionDashboard() {
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
+              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
               <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
               {selItems.length === 0 ? (
                 <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
@@ -477,7 +537,6 @@ export default function ProductionDashboard() {
                   ))}
                 </div>
               )}
-              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} formOpen={ownForm} onFormOpen={setOwnForm} />
             </div>
           </div>
         </div>,
@@ -521,6 +580,11 @@ export default function ProductionDashboard() {
           ? 'Показаны задачи, назначенные лично вам — съёмку можно передать напарнику в карточке задачи'
           : 'Показаны задачи, назначенные лично вам'}
       </p>
+
+      {/* Окошко своих задач у клетки дня — только на компьютере. */}
+      {ownPop && (
+        <OwnPopover anchor={ownPop.el} dayKey={ownPop.day} todayKey={todayKey} own={own} onClose={() => setOwnPop(null)} />
+      )}
 
       {/* Панель задачи — та же, что у СММ-специалиста. Отменять задачу
           исполнитель не может (canCancel=false), переносить свою — может. */}
