@@ -105,16 +105,12 @@ export default function SmmSpecialistDashboard() {
   // когда день открыт кнопкой «+ Своя задача» (телефон).
   const [ownPop, setOwnPop] = useState<{ day: string; el: HTMLElement } | null>(null)
   const [ownFocus, setOwnFocus] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
-  const addOwnToday = () => {
+  const addOwnToday = (ev: { currentTarget: HTMLElement }) => {
     const now = new Date()
     setCursor(now); setSel(now); setPendingStory({})
     if (window.matchMedia('(max-width: 639px)').matches) { setOwnFocus(true); setDayOpen(true); return }
-    // Сегодняшняя клетка появится после перерисовки месяца — ищем её следом.
-    setTimeout(() => {
-      const el = gridRef.current?.querySelector<HTMLElement>(`[data-own-cell="${dk(now)}"]`)
-      if (el) setOwnPop({ day: dk(now), el })
-    }, 0)
+    // Окошко — прямо под нажатой кнопкой, а не у клетки на другом конце экрана.
+    setOwnPop({ day: dk(now), el: ev.currentTarget })
   }
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
@@ -445,7 +441,7 @@ export default function SmmSpecialistDashboard() {
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div ref={gridRef} className="grid grid-cols-7 gap-1.5">
+        <div className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {
@@ -494,10 +490,7 @@ export default function SmmSpecialistDashboard() {
                   <span className="flex items-center gap-1">
                     {key >= todayKey && (
                       <CellPlus today={t} label={`Поставить себе задачу на ${format(d, 'd MMMM', { locale: ru })}`}
-                        onClick={ev => {
-                          const el = ev.currentTarget.closest<HTMLElement>('[data-own-cell]')
-                          if (el) setOwnPop({ day: key, el })
-                        }} />
+                        onClick={ev => setOwnPop({ day: key, el: ev.currentTarget })} />
                     )}
                     {allDone && <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" />}
                   </span>
@@ -578,11 +571,14 @@ export default function SmmSpecialistDashboard() {
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
-
         <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
+        {/* Свои задачи — такие же задачи дня: строка ввода и они сами стоят
+            здесь же, в «Задачах», а не отдельным блоком. */}
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
         {selEvents.length === 0 ? (
-          <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
+          ownSel.length === 0
+            ? <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
+            : null
         ) : (
           <div className="space-y-2">
             {selEvents.map(e => (

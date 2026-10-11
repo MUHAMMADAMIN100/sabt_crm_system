@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { addDays, format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ArrowRight, Check, Clock, CornerDownLeft, Plus, Trash2, X } from 'lucide-react'
+import { ArrowRight, Check, Clock, CornerDownLeft, Plus, Trash2, User, X } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tasksApi } from '@/services/api.service'
@@ -286,6 +286,51 @@ export function CellPlus({ today, label, onClick }: {
 // ── Строка задачи и строка ввода ──
 
 function OwnRow({ t, own, todayKey, compact }: { t: OwnTask; own: OwnTasksApi; todayKey: string; compact?: boolean }) {
+  const moveLabel = t.day === todayKey ? 'Завтра' : '+1 день'
+  const moveTitle = t.day === todayKey ? 'Перенести на завтра' : 'Перенести на день позже'
+  const carried = t.from && !t.done
+    ? <span className="font-semibold text-red-500 dark:text-red-400">с {format(dayDate(t.from), 'd MMM', { locale: ru })}</span>
+    : null
+  // В окне дня своя задача стоит в общем списке «Задачи» и выглядит как
+  // соседние строки (TaskRow): та же галочка, плитка-значок, название, мета.
+  if (!compact) return (
+    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition', t.pending && 'opacity-60',
+      t.done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
+        : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
+      <button type="button" disabled={t.pending} onClick={() => own.toggle(t)}
+        title={t.done ? 'Снять отметку' : 'Отметить готовой'}
+        className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
+          t.done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
+        <Check size={13} className={clsx('text-white transition-opacity', t.done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
+      </button>
+
+      <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center bg-surface-200/70 dark:bg-surface-700/60 text-surface-500 dark:text-surface-300">
+        <User size={16} />
+      </div>
+
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <p className={clsx('text-[13.5px] font-semibold truncate',
+          t.done ? 'line-through text-surface-400 dark:text-surface-500' : 'text-surface-900 dark:text-surface-100')}>{t.title}</p>
+        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-surface-400 dark:text-surface-500">
+          <span className="text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 bg-surface-200/70 dark:bg-surface-700/60 text-surface-500 dark:text-surface-400">Своя</span>
+          {t.time && <span className="shrink-0">до {t.time}</span>}
+          {carried}
+        </div>
+      </div>
+
+      {!t.done && (
+        <button type="button" disabled={t.pending} onClick={() => own.move(t, shiftDay(t.day, 1))} title={moveTitle}
+          className="h-8 px-2.5 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-[11.5px] font-medium text-surface-500 dark:text-surface-300 hover:text-primary-600 hover:border-primary-400 flex items-center gap-1 whitespace-nowrap transition">
+          <ArrowRight size={12} /> {moveLabel}
+        </button>
+      )}
+      <button type="button" disabled={t.pending} onClick={() => own.remove(t)} title="Удалить"
+        className="w-8 h-8 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-red-500 hover:border-red-300 flex items-center justify-center transition">
+        <Trash2 size={15} />
+      </button>
+    </div>
+  )
+  // Окошко у клетки — плотнее.
   return (
     <div className={clsx('flex items-center gap-1 rounded-xl border pr-1.5 transition', t.pending && 'opacity-60',
       t.done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
@@ -400,9 +445,11 @@ function OwnInput({ target, todayKey, own, autoFocus, onEscape, compact }: {
   )
 }
 
-/** Блок «Свои задачи» в окне дня: строка ввода открыта сразу, под ней список.
- *  Из прошедшего дня новая задача ставится на сегодня — незакрытая всё равно
- *  переехала бы туда, а без строки человек не находил, где её ставить. */
+/** Свои задачи в окне дня. Отдельного заголовка нет: своя задача — такая же
+ *  задача дня, поэтому блок стоит ВНУТРИ раздела «Задачи» (решение владельца
+ *  11.10.2026): строка ввода и под ней свои задачи, дальше — задачи из
+ *  контент-плана. Из прошедшего дня новая задача ставится на сегодня —
+ *  незакрытая всё равно переехала бы туда. */
 export function OwnDayTasks({ dayKey, todayKey, own, autoFocus, className }: {
   dayKey: string; todayKey: string; own: OwnTasksApi
   /** День открыт кнопкой «+ Своя задача» — курсор сразу в строке. */
@@ -412,24 +459,18 @@ export function OwnDayTasks({ dayKey, todayKey, own, autoFocus, className }: {
   const tasks = own.of(dayKey)
   const past = dayKey < todayKey
   return (
-    <div className={className ?? 'mb-5'}>
-      <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-surface-600 dark:text-surface-300">Свои задачи</span>
-        {past && <span className="ml-auto text-[11px] text-surface-400 dark:text-surface-500">новая встанет на сегодня</span>}
-      </div>
+    <div className={clsx('space-y-2', className ?? 'mb-2')}>
       <OwnInput target={past ? todayKey : dayKey} todayKey={todayKey} own={own} autoFocus={autoFocus} />
-      {tasks.length > 0 && (
-        <div className="space-y-2 mt-2">
-          {tasks.map(t => <OwnRow key={t.id} t={t} own={own} todayKey={todayKey} />)}
-        </div>
-      )}
+      {past && <p className="text-[11px] text-surface-400 dark:text-surface-500">Этот день прошёл — новая задача встанет на сегодня.</p>}
+      {tasks.map(t => <OwnRow key={t.id} t={t} own={own} todayKey={todayKey} />)}
     </div>
   )
 }
 
-/** Окошко у клетки дня (компьютер): свои задачи этого дня и строка ввода.
- *  Рисуется поверх страницы от координат клетки — иначе его обрезал бы край
- *  карточки календаря; при нехватке места снизу открывается вверх. */
+/** Окошко своих задач (компьютер): задачи дня и строка ввода. Открывается
+ *  вплотную под нажатой кнопкой «+» — сначала оно вставало под всей клеткой,
+ *  и владелец заметил, что это далеко от места нажатия. Рисуется поверх
+ *  страницы от координат кнопки; при нехватке места снизу открывается вверх. */
 export function OwnPopover({ anchor, dayKey, todayKey, own, onClose }: {
   anchor: HTMLElement; dayKey: string; todayKey: string; own: OwnTasksApi; onClose: () => void
 }) {
@@ -442,8 +483,8 @@ export function OwnPopover({ anchor, dayKey, todayKey, own, onClose }: {
     const place = () => {
       const r = anchor.getBoundingClientRect()
       const h = boxRef.current?.offsetHeight || 200
-      let top = r.bottom + 8
-      if (top + h + 8 > window.innerHeight) top = Math.max(8, r.top - h - 8)
+      let top = r.bottom + 6
+      if (top + h + 8 > window.innerHeight) top = Math.max(8, r.top - h - 6)
       const left = Math.max(8, Math.min(r.left, window.innerWidth - WIDTH - 8))
       setPos({ top, left })
     }

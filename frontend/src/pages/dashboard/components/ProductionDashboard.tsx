@@ -10,7 +10,7 @@
 // задача всегда одного вида, и точки по ТИПАМ ничего не говорят. Вместо них
 // точки-прогресс — одна на задачу: зелёная сделана, цвет роли в работе,
 // красный контур просрочена. Видно и объём дня, и сколько уже закрыто.
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -158,16 +158,12 @@ export default function ProductionDashboard() {
   // когда день открыт кнопкой «+ Своя задача» (телефон).
   const [ownPop, setOwnPop] = useState<{ day: string; el: HTMLElement } | null>(null)
   const [ownFocus, setOwnFocus] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
-  const addOwnToday = () => {
+  const addOwnToday = (ev: { currentTarget: HTMLElement }) => {
     const now = new Date()
     setCursor(now); setSel(now)
     if (window.matchMedia('(max-width: 639px)').matches) { setOwnFocus(true); setDayOpen(true); return }
-    // Сегодняшняя клетка появится после перерисовки месяца — ищем её следом.
-    setTimeout(() => {
-      const el = gridRef.current?.querySelector<HTMLElement>(`[data-own-cell="${dk(now)}"]`)
-      if (el) setOwnPop({ day: dk(now), el })
-    }, 0)
+    // Окошко — прямо под нажатой кнопкой, а не у клетки на другом конце экрана.
+    setOwnPop({ day: dk(now), el: ev.currentTarget })
   }
 
   // Основного видеографа назначает руководитель видеографии (основатель и
@@ -391,7 +387,7 @@ export default function ProductionDashboard() {
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div ref={gridRef} className="grid grid-cols-7 gap-1.5">
+        <div className="grid grid-cols-7 gap-1.5">
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {
@@ -430,10 +426,7 @@ export default function ProductionDashboard() {
                   <span className="flex items-center gap-1">
                     {key >= todayKey && (
                       <CellPlus today={t} label={`Поставить себе задачу на ${format(d, 'd MMMM', { locale: ru })}`}
-                        onClick={ev => {
-                          const el = ev.currentTarget.closest<HTMLElement>('[data-own-cell]')
-                          if (el) setOwnPop({ day: key, el })
-                        }} />
+                        onClick={ev => setOwnPop({ day: key, el: ev.currentTarget })} />
                     )}
                   </span>
                   <span className={clsx('text-[11px] font-bold', t ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400 dark:text-surface-500')}>{format(d, 'd')}</span>
@@ -488,8 +481,13 @@ export default function ProductionDashboard() {
             {selDoneN}/{selTotalN} {plural(selTotalN, 'задача', 'задачи', 'задач')}
           </span>
         </div>
+        {/* Свои задачи — такие же задачи дня: строка ввода и они сами стоят
+            в общем списке. */}
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
         {selItems.length === 0 ? (
-          <p className="text-[13px] text-surface-400 dark:text-surface-500 py-2">На этот день задач нет</p>
+          ownSel.length === 0
+            ? <p className="text-[13px] text-surface-400 dark:text-surface-500 py-2">На этот день задач нет</p>
+            : null
         ) : (
           <div className="space-y-2">
             {selItems.map(it => (
@@ -501,7 +499,6 @@ export default function ProductionDashboard() {
             ))}
           </div>
         )}
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} className="mt-5" />
       </div>
 
       {/* Окно дня — только на телефоне: снизу, как в кабинете СММ. */}
@@ -522,10 +519,12 @@ export default function ProductionDashboard() {
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
-              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
               <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
+              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
               {selItems.length === 0 ? (
-                <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
+                ownSel.length === 0
+                  ? <p className="text-sm text-surface-400 dark:text-surface-500 text-center py-6">На этот день задач нет</p>
+                  : null
               ) : (
                 <div className="space-y-2">
                   {selItems.map(it => (
