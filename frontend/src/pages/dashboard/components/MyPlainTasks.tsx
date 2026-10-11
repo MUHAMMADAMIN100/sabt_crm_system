@@ -13,8 +13,12 @@ import clsx from 'clsx'
  * карточек доски (те живут в MyDevCards). Разделение намеренное: карточка
  * этапа и поручение руководителя — разные по смыслу вещи, в одном списке
  * производственная работа терялась бы среди прочего.
+ *
+ * hidePersonal — кабинеты с календарём (СММ-специалист, видеограф, монтажёр,
+ * дизайнер): свои задачи человек ставит и видит в дне календаря, здесь они
+ * дублировались бы. В блоке остаются только поручения.
  */
-export default function MyPlainTasks() {
+export default function MyPlainTasks({ hidePersonal = false }: { hidePersonal?: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const qc = useQueryClient()
   const { data: tasks } = useQuery({ queryKey: ['my-tasks'], queryFn: tasksApi.my })
@@ -39,11 +43,12 @@ export default function MyPlainTasks() {
   const rows = useMemo(() => {
     return ((tasks as any[]) || [])
       .filter(t => !(Number(t.devStage) >= 1) && (t.status !== 'done' || keep.has(t.id)) && t.status !== 'cancelled')
+      .filter(t => !(hidePersonal && t.scope === 'personal'))
       .sort((a, b) => {
         const da = a.deadline || '9999', db = b.deadline || '9999'
         return da < db ? -1 : da > db ? 1 : 0
       })
-  }, [tasks, keep])
+  }, [tasks, keep, hidePersonal])
 
   if (rows.length === 0) return null
 

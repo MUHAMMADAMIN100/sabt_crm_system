@@ -26,6 +26,7 @@ import clsx from 'clsx'
 import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { TaskPanel, TaskRow } from './SmmSpecialistDashboard'
+import { useOwnTasks, OwnDayTasks, OwnMark } from './OwnTasks'
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const WEEK = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
@@ -151,6 +152,8 @@ export default function ProductionDashboard() {
   const to = dk(endOfMonth(cursor))
   const selKey = dk(sel)
   const todayKey = dk(new Date())
+  // Свои задачи сотрудника — ставит себе сам, прямо в дне календаря.
+  const own = useOwnTasks(todayKey)
 
   // Основного видеографа назначает руководитель видеографии (основатель и
   // админ — запасной ключ). Передать же СВОЮ съёмку может сам исполнитель:
@@ -203,7 +206,11 @@ export default function ProductionDashboard() {
   }, [overdueOpen])
 
   const todayItems = byDay[todayKey] || []
-  const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length
+  // Свои задачи считаем вместе с производственными: день у человека один.
+  const ownToday = own.of(todayKey)
+  const ownTodayLeft = ownToday.filter(t => !t.done).length
+  const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length + ownTodayLeft
+  const todayTotal = todayItems.length + ownToday.length
   const monthDone = items.filter(isDone).length
 
   // Оптимистичные мутации: галочка и перенос меняют кэш СРАЗУ, сервер
@@ -287,6 +294,9 @@ export default function ProductionDashboard() {
   // Панель листает стрелками тот список, из которого её открыли: день или просрочку.
   const navList: Item[] = (dayOpen || (openId && selItems.some(it => it.id === openId))) ? selItems : overdue
   const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
+  const ownSel = own.of(selKey)
+  const selDoneN = selItems.filter(isDone).length + ownSel.filter(t => t.done).length
+  const selTotalN = selItems.length + ownSel.length
   const openItem = openIdx >= 0 ? navList[openIdx] : null
 
   return (
@@ -298,8 +308,8 @@ export default function ProductionDashboard() {
             <h1 className="text-lg font-bold">Сегодня</h1>
             <p className="text-[12.5px] text-surface-500 dark:text-surface-400">
               {todayLeft > 0
-                ? `Осталось: ${todayLeft} ${plural(todayLeft, 'задача', 'задачи', 'задач')}`
-                : todayItems.length > 0 ? 'Всё на сегодня сделано' : 'На сегодня задач нет'}
+                ? `Осталось: ${todayLeft} ${plural(todayLeft, 'задача', 'задачи', 'задач')}${ownTodayLeft > 0 ? `, из них своих — ${ownTodayLeft}` : ''}`
+                : todayTotal > 0 ? 'Всё на сегодня сделано' : 'На сегодня задач нет'}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -307,7 +317,7 @@ export default function ProductionDashboard() {
               label={overdueOpen.length > 0 ? 'просрочено' : 'просрочено · всё в срок'}
               tone={overdueOpen.length > 0 ? 'bad' : 'ok'} />
             <Tile value={String(monthDone)} label={`сдано за ${format(cursor, 'LLLL', { locale: ru })}`} tone={monthDone > 0 ? 'ok' : undefined} />
-            <Tile value={String(todayItems.length)} label="задач сегодня" />
+            <Tile value={String(todayTotal)} label="задач сегодня" />
           </div>
         </div>
       </div>
@@ -353,6 +363,8 @@ export default function ProductionDashboard() {
             // Отменённые в точках не показываем — это не работа на день.
             const dots = list.filter(it => !isCancelled(it))
             const MAX_DOTS = 8
+            // Свои задачи — кружком, чтобы не путать с квадратами производства.
+            const ownDots = own.of(key)
             return (
               <button
                 key={key}
@@ -371,7 +383,7 @@ export default function ProductionDashboard() {
                     контур — просрочена, серая — уже сделана. У съёмок цвет роли
                     лаймовый, поэтому «сделано» НЕ зелёное: иначе день в работе
                     выглядел бы закрытым. Больше восьми — «+N». */}
-                {dots.length > 0 && (
+                {(dots.length > 0 || ownDots.length > 0) && (
                   <span className="mt-auto flex flex-wrap items-center gap-[3px]">
                     {dots.slice(0, MAX_DOTS).map(it => {
                       const done = isDone(it)
@@ -384,6 +396,7 @@ export default function ProductionDashboard() {
                       )
                     })}
                     {dots.length > MAX_DOTS && <span className="text-[9px] font-bold leading-none text-surface-400">+{dots.length - MAX_DOTS}</span>}
+                    {ownDots.slice(0, 4).map(t => <OwnMark key={t.id} done={t.done} className="w-[7px] h-[7px]" />)}
                   </span>
                 )}
               </button>
@@ -400,7 +413,7 @@ export default function ProductionDashboard() {
             {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
           </h2>
           <span className="text-xs text-surface-400 dark:text-surface-500">
-            {selItems.filter(isDone).length}/{selItems.length} {plural(selItems.length, 'задача', 'задачи', 'задач')}
+            {selDoneN}/{selTotalN} {plural(selTotalN, 'задача', 'задачи', 'задач')}
           </span>
         </div>
         {selItems.length === 0 ? (
@@ -416,6 +429,7 @@ export default function ProductionDashboard() {
             ))}
           </div>
         )}
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
       </div>
 
       {/* Окно дня — только на телефоне: снизу, как в кабинете СММ. */}
@@ -430,7 +444,7 @@ export default function ProductionDashboard() {
                 {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
               </h2>
               <span className="text-xs text-surface-400 dark:text-surface-500">
-                {selItems.filter(isDone).length}/{selItems.length} {plural(selItems.length, 'задача', 'задачи', 'задач')}
+                {selDoneN}/{selTotalN} {plural(selTotalN, 'задача', 'задачи', 'задач')}
               </span>
               <button onClick={() => { setDayOpen(false); setOpenId(null) }} title="Закрыть"
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center self-center"><X size={15} /></button>
@@ -450,6 +464,7 @@ export default function ProductionDashboard() {
                   ))}
                 </div>
               )}
+              <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
             </div>
           </div>
         </div>,

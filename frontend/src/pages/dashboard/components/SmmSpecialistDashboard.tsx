@@ -4,13 +4,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
+import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown, User } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
 import { DayPicker } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import toast from 'react-hot-toast'
+import { useOwnTasks, OwnDayTasks, OwnMark } from './OwnTasks'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -98,6 +99,8 @@ export default function SmmSpecialistDashboard() {
   const to = dk(endOfMonth(cursor))
   const selKey = dk(sel)
   const todayKey = dk(new Date())
+  // Свои задачи специалиста — ставит себе сам, прямо в дне календаря.
+  const own = useOwnTasks(todayKey)
 
   const { data: projectsList } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: cal } = useQuery({ queryKey: ['smm-calendar', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
@@ -333,6 +336,10 @@ export default function SmmSpecialistDashboard() {
   // Отменённые остаются в списке, но из счёта убраны: это не работа на день.
   const selActive = selEvents.filter((e: any) => !isCancelled(e))
   const selDone = selActive.filter(isDone).length
+  // Свои задачи дня — в том же счёте, что и задачи контент-плана.
+  const ownSel = own.of(selKey)
+  const dayTotal = selActive.length + ownSel.length
+  const dayDone = selDone + ownSel.filter(t => t.done).length
   const navList: any[] = (() => {
     const seen = new Set<string>()
     return [...overdue, ...selEvents].filter((x: any) => (seen.has(x.id) ? false : (seen.add(x.id), true)))
@@ -341,7 +348,7 @@ export default function SmmSpecialistDashboard() {
   const openEvent = openIdx >= 0 ? navList[openIdx] : null
 
   // Сводка выбранного дня: что ещё не закрыто.
-  const tasksLeft = selActive.length - selDone
+  const tasksLeft = dayTotal - dayDone
   const storiesLeft = trackedProjects.filter((p: any) => storyCountOf(p.id) < dailyTarget(p, sel)).length
   // Остаток по сторис за выбранный день: сколько всего нужно и сколько уже есть
   // (перевыполнение по одному проекту не закрывает норму другого — поэтому min).
@@ -370,7 +377,7 @@ export default function SmmSpecialistDashboard() {
       <div className="card">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-4 min-w-0 flex-1">
-            <Ring done={selDone} total={selActive.length} />
+            <Ring done={dayDone} total={dayTotal} />
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] font-extrabold text-surface-900 dark:text-surface-100 first-letter:uppercase leading-tight">
                 {isToday(sel) ? 'Сегодня' : format(sel, 'EEEE, d MMMM', { locale: ru })}
@@ -411,7 +418,10 @@ export default function SmmSpecialistDashboard() {
             // День, где все задачи закрыты, — зелёная галочка у числа: сделанное
             // видно прямо в календаре, не открывая день.
             const dayEv = contentByDay[key] || []
-            const allDone = dayEv.length > 0 && dayEv.every((e: any) => isDone(e) || isCancelled(e))
+            const ownDay = own.of(key)
+            const ownLeft = ownDay.filter(t => !t.done).length
+            const allDone = (dayEv.length > 0 || ownDay.length > 0) && ownLeft === 0
+              && dayEv.every((e: any) => isDone(e) || isCancelled(e))
             // Норма сторис именно на этот день: она зависит от числа дней в месяце.
             const storyTarget = trackedProjects.reduce((sum: number, p: any) => sum + dailyTarget(p, d), 0)
             const isSel = isSameDay(d, sel)
@@ -446,6 +456,7 @@ export default function SmmSpecialistDashboard() {
                     {c.reel > 0 && <i className={clsx('rounded-full bg-primary-500 shrink-0', dotSize(c.reel))} />}
                     {c.maket > 0 && <i className={clsx('rounded-full bg-amber-500 shrink-0', dotSize(c.maket))} />}
                     {c.shoot > 0 && <i className={clsx('rounded-full bg-lime-500 shrink-0', dotSize(c.shoot))} />}
+                    {ownDay.length > 0 && <OwnMark done={ownLeft === 0} className={dotSize(ownDay.length)} />}
                   </span>
                   {storyTarget > 0 && (
                     <span className="block h-[3px] rounded-full bg-surface-200 dark:bg-surface-700 mt-[3px] overflow-hidden">
@@ -461,6 +472,11 @@ export default function SmmSpecialistDashboard() {
                   <Chip letter="Р" n={c.reel} g="reel" />
                   <Chip letter="М" n={c.maket} g="maket" />
                   {c.story > 0 && <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-emerald-500/12 text-emerald-500 dark:text-emerald-400">С {c.story}</span>}
+                  {ownDay.length > 0 && (
+                    <span title="Свои задачи" className="inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded leading-none bg-surface-200 text-surface-600 dark:bg-surface-700 dark:text-surface-300">
+                      <User size={9} strokeWidth={3} />{ownDay.length}
+                    </span>
+                  )}
                 </span>
               </button>
             )
@@ -497,7 +513,7 @@ export default function SmmSpecialistDashboard() {
               <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 first-letter:uppercase">
                 {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
               </h2>
-              <span className="text-xs text-surface-400 dark:text-surface-500">{selDone}/{selActive.length} задач</span>
+              <span className="text-xs text-surface-400 dark:text-surface-500">{dayDone}/{dayTotal} задач</span>
               <button onClick={closeDay} title="Закрыть"
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
@@ -513,6 +529,8 @@ export default function SmmSpecialistDashboard() {
             ))}
           </div>
         )}
+
+        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
 
         {/* Сторис за выбранный день */}
         {trackedProjects.length > 0 && (

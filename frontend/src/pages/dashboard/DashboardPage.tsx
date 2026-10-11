@@ -251,8 +251,9 @@ function DashboardContent() {
             <MyDevCards />
           </Suspense>
         )}
+        {/* Свои задачи у кабинетов с календарём живут в дне календаря. */}
         <Suspense fallback={null}>
-          <MyPlainTasks />
+          <MyPlainTasks hidePersonal={isSmmSpecialist || isProduction} />
         </Suspense>
       </div>
     )
