@@ -71,6 +71,11 @@ const PREP_META = {
   edit:   { label: 'Монтаж', Icon: Scissors, parentIcon: Film,      forWhat: 'рилса', verb: 'Смонтировать', doneLabel: 'Смонтировано' },
   design: { label: 'Дизайн', Icon: Palette,  parentIcon: ImageIcon, forWhat: 'поста', verb: 'Сделать',      doneLabel: 'Готово' },
 } as const
+/** Монтаж в умном календаре не показываем (решение владельца 11.10.2026):
+ *  это дело видеографа и монтажёра, карточка живёт в кабинете монтажёра.
+ *  Сами задачи монтажа создаются и назначаются как раньше — здесь их только
+ *  не рисуем, чтобы разгрузить календарь. */
+const isEditPrep = (e: Ev) => e.kind === 'shoot' && prepStageOf(e) === 'edit'
 function prepMeta(e: { prepStage?: string | null; parentKind?: string | null }) {
   return PREP_META[prepStageOf(e)]
 }
@@ -109,7 +114,8 @@ const TYPE_LABEL: Record<string, string> = {
 // ─── фильтр по типу в шапке: Reels · Макет · Съёмка · Одноразовые задачи ──
 // «Одноразовые задачи» = всё, что относится к проекту «Одноразовые съёмки».
 type FKind = 'reel' | 'design' | 'shoot' | 'edit' | 'designprep' | 'oneoff'
-const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'edit', 'designprep', 'oneoff']
+// «Монтаж» в фильтре нет: карточки монтажа в этом календаре не показываются (см. isEditPrep).
+const FKINDS: FKind[] = ['reel', 'design', 'shoot', 'designprep', 'oneoff']
 const FKIND_LABEL: Record<FKind, string> = { reel: 'Reels', design: 'Макет', shoot: 'Съёмка', edit: 'Монтаж', designprep: 'Дизайн', oneoff: 'Одноразовые задачи' }
 const FKIND_ICON: Record<FKind, any> = { reel: Film, design: ImageIcon, shoot: Camera, edit: Scissors, designprep: Palette, oneoff: CheckSquare }
 const ONEOFF_RE = /одноразов/i
@@ -278,9 +284,9 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const mineOnly = showScope && scope === 'mine'
   const inScope = (pid: string) => !mineOnly || mineIds.has(pid)
   // Встроенный режим: показываем только выбранный проект (ограничиваем данные у истока).
-  const allEvents = (data?.events ?? []).filter(e => (!embeddedProjectId || e.projectId === embeddedProjectId) && inScope(e.projectId))
+  const allEvents = (data?.events ?? []).filter(e => (!embeddedProjectId || e.projectId === embeddedProjectId) && inScope(e.projectId) && !isEditPrep(e))
   const projects = rawProjects.filter(p => (!embeddedProjectId || p.id === embeddedProjectId) && inScope(p.id))
-  const backlog = (data?.backlog ?? []).filter(b => (!embeddedProjectId || b.projectId === embeddedProjectId) && inScope(b.projectId))
+  const backlog = (data?.backlog ?? []).filter(b => (!embeddedProjectId || b.projectId === embeddedProjectId) && inScope(b.projectId) && !isEditPrep(b))
   const today = todayIso()
   // Родитель карточки подготовки: по нему берём дату выхода и понимаем, вышел ли он.
   const pubByItem = useMemo(() => {

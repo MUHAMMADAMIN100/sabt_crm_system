@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Camera, Film, Image as ImageIcon, Loader2, Minus, Palette, Plus, Scissors, Sparkles, X } from 'lucide-react'
+import { Camera, Film, Image as ImageIcon, Loader2, Minus, Palette, Plus, Sparkles, X } from 'lucide-react'
 import { contentPlanApi } from '@/services/api.service'
 
 /** Правила проекта (smmData.autoPlan). Дни недели: 0 — понедельник … 6 — воскресенье. */
@@ -317,7 +317,7 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
           <Stepper value={r.shootTime} onMinus={() => upd({ shootTime: shiftTime(r.shootTime, -30) })} onPlus={() => upd({ shootTime: shiftTime(r.shootTime, 30) })}
             minusLabel="Снимать на 30 минут раньше" plusLabel="Снимать на 30 минут позже" />
         </div>
-        <span className="text-[12.5px] text-gray-500 dark:text-gray-400">Монтаж — за день до выхода рилса, дизайн поста — за день до поста.</span>
+        <span className="text-[12.5px] text-gray-500 dark:text-gray-400">Монтаж — за день до выхода рилса, он уходит в кабинет монтажёра. Дизайн поста — за день до поста.</span>
       </Section>
 
       <div className="flex flex-col gap-2">
@@ -361,7 +361,6 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
   for (let d = gridStart, guard = 0; d <= gridEnd && guard < 120; d = addDays(d, 1), guard++) cells.push(d)
   const clampW = (d: string) => (d < w.start ? w.start : d)
   const shootDays = new Set(cur.reels.map(x => clampW(addDays(x, -r.shootLead))))
-  const editDays = new Set(cur.reels.map(x => clampW(addDays(x, -1))))
   const designDays = new Set(cur.posts.map(x => clampW(addDays(x, -1))))
 
   const calendar = (
@@ -377,7 +376,7 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
           const label = n === 1 || d === w.start ? dayShort(d) : String(n)
           const isR = cur.reels.includes(d), isP = cur.posts.includes(d)
           const existing = scheduled.filter(e => e.date === d)
-          const prep = open && (shootDays.has(d) || editDays.has(d) || designDays.has(d))
+          const prep = open && (shootDays.has(d) || designDays.has(d))
           const body = (
             <>
               <span className="flex items-center justify-between gap-1">
@@ -406,7 +405,6 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
               {prep && (
                 <span className="flex items-center gap-1 text-gray-400">
                   {shootDays.has(d) && <Camera size={12} aria-label="съёмка" />}
-                  {!isPhone && editDays.has(d) && <Scissors size={12} aria-label="монтаж" />}
                   {!isPhone && designDays.has(d) && <Palette size={12} aria-label="дизайн" />}
                   {!isPhone && shootDays.has(d) && <span className="text-[10.5px] tabular-nums">{r.shootTime}</span>}
                 </span>
@@ -430,7 +428,7 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
         })}
       </div>
       <span className="text-[12px] leading-relaxed text-gray-500 dark:text-gray-400">
-        Пунктир — ещё не сохранено. Значки внизу дня — съёмка{isPhone ? '' : ', монтаж, дизайн'}. Серая точка — {busyWho} в этот день публикация другого проекта. Нажмите на день, чтобы добавить или убрать публикацию.
+        Пунктир — ещё не сохранено. Значки внизу дня — съёмка{isPhone ? '' : ' и дизайн'}. Серая точка — {busyWho} в этот день публикация другого проекта. Нажмите на день, чтобы добавить или убрать публикацию.
       </span>
       {(leftR > 0 || leftP > 0) && !nothing && (
         <span className="px-2.5 py-2 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[12.5px] leading-snug">
