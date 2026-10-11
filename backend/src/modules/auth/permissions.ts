@@ -76,8 +76,10 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'tasks.overdue.view': { label: 'Задачи — просроченные по компании', category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director'] },
 
   // ─── Календарь ─────────────────────────────────────────────────────
-  'calendar.view':   { label: 'Календарь — просмотр', category: 'Календарь', roles: [...ALL_ROLES] },
-  'calendar.create': { label: 'Календарь — создание задач кликом по дню', category: 'Календарь', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev', 'pm_dev'] },
+  // Календарь — только у менеджеров по продажам (решение владельца 11.10.2026).
+  // Остальным, включая руководство, его можно выдать лично в «Доступах сотрудников».
+  'calendar.view':   { label: 'Календарь — просмотр', category: 'Календарь', roles: ['sales_manager_smm', 'sales_manager_dev'] },
+  'calendar.create': { label: 'Календарь — создание задач кликом по дню', category: 'Календарь', roles: ['sales_manager_smm', 'sales_manager_dev'] },
 
   // ─── Клиенты ───────────────────────────────────────────────────────
   'clients.view':    { label: 'Клиенты — просмотр',       category: 'Клиенты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },

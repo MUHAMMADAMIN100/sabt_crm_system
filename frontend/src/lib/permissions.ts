@@ -100,7 +100,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'employees.role.change', 'users.manage',
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
-    'calendar.view', 'calendar.create', 'archive.view',
+    'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'clients.view', 'security-log.view', 'organizer.directory',
@@ -115,7 +115,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'employees.view', 'employees.create', 'employees.edit', 'employees.delete',
     'employees.role.change', 'users.manage',
     'analytics.view', 'reports.view', 'reports.create', 'reports.edit.all',
-    'calendar.view', 'calendar.create', 'archive.view',
+    'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'ai.chat', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'tariffs.manage', 'risks.view', 'finance.manage', 'teams.manage', 'clients.view', 'security-log.view', 'organizer.directory',
@@ -131,7 +131,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
     'employees.view', 'analytics.view',
     'reports.view', 'reports.create',
-    'calendar.view', 'calendar.create', 'archive.view',
+    'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
     'ai.chat', 'tariffs.manage', 'risks.view', 'teams.manage', 'organizer.directory',
@@ -139,7 +139,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   smm_specialist: [
     'dashboard', 'projects.view', 'projects.create',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'stories.manage', 'stories.view', 'time-tracker.use', 'notes.use',
@@ -148,7 +147,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   designer: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
@@ -193,7 +191,7 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'tasks.approve', 'tasks.return', 'tasks.bulk', 'tasks.export',
     'employees.view', 'analytics.view', 'risks.view',
     'reports.view', 'reports.create',
-    'calendar.view', 'calendar.create', 'archive.view',
+    'archive.view',
     'files.view', 'files.upload', 'files.delete.any',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
@@ -206,7 +204,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'dashboard', 'projects.view',
     // tasks.assign — ставит задачи команде разработки, а не только себе.
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete', 'tasks.assign',
-    'calendar.view', 'calendar.create',
     'analytics.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -217,7 +214,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   developer: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
@@ -228,7 +224,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   videographer: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
@@ -238,7 +233,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   video_editor: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
@@ -248,7 +242,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   targetologist: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
@@ -263,7 +256,6 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
   employee: [
     'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'calendar.view',
     'reports.view', 'reports.create',
     'files.view',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',

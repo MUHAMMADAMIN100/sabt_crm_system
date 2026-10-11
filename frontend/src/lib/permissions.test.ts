@@ -34,11 +34,11 @@ describe('userCan — персональные запреты', () => {
   const designer = { role: 'designer' as UserRole, secondaryRole: null }
 
   it('право роли действует, пока его не отняли', () => {
-    expect(userCan({ ...designer }, 'calendar.view')).toBe(true)
+    expect(userCan({ ...designer }, 'reports.view')).toBe(true)
   })
 
   it('запрет снимает право, которое даёт роль', () => {
-    expect(userCan({ ...designer, deniedPermissions: ['calendar.view'] }, 'calendar.view')).toBe(false)
+    expect(userCan({ ...designer, deniedPermissions: ['reports.view'] }, 'reports.view')).toBe(false)
   })
 
   it('запрет снимает и персонально выданный грант', () => {
@@ -51,8 +51,8 @@ describe('userCan — персональные запреты', () => {
   })
 
   it('запрет одного ключа не задевает соседние', () => {
-    const u = { ...designer, deniedPermissions: ['calendar.view'] }
-    expect(userCan(u, 'calendar.view')).toBe(false)
+    const u = { ...designer, deniedPermissions: ['reports.view'] }
+    expect(userCan(u, 'reports.view')).toBe(false)
     expect(userCan(u, 'tasks.view')).toBe(true)
   })
 
@@ -63,8 +63,8 @@ describe('userCan — персональные запреты', () => {
   })
 
   it('запрет закрывает и маршрут, а не только пункт меню', () => {
-    expect(canAccessRoute('designer', '/calendar', null, [], [])).toBe(true)
-    expect(canAccessRoute('designer', '/calendar', null, [], ['calendar.view'])).toBe(false)
+    expect(canAccessRoute('designer', '/reports', null, [], [])).toBe(true)
+    expect(canAccessRoute('designer', '/reports', null, [], ['reports.view'])).toBe(false)
   })
 
   it('запрет закрывает страницу, открытую персональным грантом', () => {
