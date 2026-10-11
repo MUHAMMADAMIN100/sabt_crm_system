@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between, Not } from 'typeorm';
-import { Task, TaskStatus, TaskPriority, TaskKind, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
+import { Task, TaskStatus, TaskPriority, TaskKind, TaskScope, TASK_CLOSED_FOR_OVERDUE } from './task.entity';
 
 /** Вся компания живёт по Душанбе — даты в напоминаниях считаем в этой зоне. */
 const DUSHANBE_TZ = 'Asia/Dushanbe';
@@ -779,7 +779,10 @@ export class TasksService implements OnModuleInit {
     if (dto.projectId) {
       await this.projectsService.updateProgress(dto.projectId);
     }
-    this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
+    // Личная задача касается только автора. Рассылка «задачи изменились»
+    // заставляла КАЖДОГО сотрудника в сети перезапрашивать задачи, проекты и
+    // аналитику ради чужой заметки — и тормозила самого автора.
+    if (!isPersonal) this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
     return this.findOne(saved.id);
   }
 
@@ -1125,7 +1128,10 @@ export class TasksService implements OnModuleInit {
     }
 
     await this.projectsService.updateProgress(task.projectId);
-    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    // Личная задача (и до, и после правки) — без общей рассылки, см. create().
+    const stayedPersonal = task.scope === TaskScope.PERSONAL
+      && (!(dto as any).scope || (dto as any).scope === TaskScope.PERSONAL);
+    if (!stayedPersonal) this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
     return this.findOne(id);
   }
 
@@ -1155,7 +1161,7 @@ export class TasksService implements OnModuleInit {
     await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
-    this.gateway.broadcast('tasks:changed', { projectId });
+    if (task.scope !== TaskScope.PERSONAL) this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
   }
 
@@ -1192,7 +1198,7 @@ export class TasksService implements OnModuleInit {
     await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
-    this.gateway.broadcast('tasks:changed', { projectId });
+    if (task.scope !== TaskScope.PERSONAL) this.gateway.broadcast('tasks:changed', { projectId });
     return { message: 'Task deleted' };
   }
 
@@ -1305,11 +1311,33 @@ export class TasksService implements OnModuleInit {
     return { week: thisMonday, created, source: source.length };
   }
 
+  /** Свои (личные) задачи сотрудника для календаря кабинета — лёгкий список.
+   *  Календарю нужны только id, название, срок и статус; общий /tasks/my
+   *  тянет все задачи человека с проектами и исполнителями, и перезапрос его
+   *  после каждой заметки делал добавление задачи заметно медленным.
+   *  Открытые отдаём все (незакрытая переезжает на сегодня), закрытые —
+   *  за последние четыре месяца: дальше календарь не листают. */
+  async getOwnTasks(userId: string) {
+    const since = new Date(Date.now() - 120 * 86400_000);
+    return this.repo.createQueryBuilder('t')
+      .select(['t.id', 't.title', 't.deadline', 't.status', 't.completedAt'])
+      .where('t.scope = :scope', { scope: TaskScope.PERSONAL })
+      .andWhere('t."createdById" = :uid', { uid: userId })
+      .andWhere('t.status <> :cancelled', { cancelled: TaskStatus.CANCELLED })
+      .andWhere('(t.status <> :done OR t.deadline >= :since)', { done: TaskStatus.DONE, since })
+      .orderBy('t.deadline', 'ASC', 'NULLS LAST')
+      .getMany();
+  }
+
   async getMyTasks(userId: string) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
-      .leftJoinAndSelect('t.project', 'project')
+      // Проект — только имя и тип: целая строка проекта несёт jsonb-поля
+      // (бриф, профиль клиента, правила авторасстановки), и у человека с
+      // сотней задач ответ раздувался в разы. Экраны берут отсюда лишь имя.
+      .leftJoin('t.project', 'project')
+      .addSelect(['project.id', 'project.name', 'project.projectType'])
       .where(
         `(t."assigneeId" = :uid
           OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = :uid)

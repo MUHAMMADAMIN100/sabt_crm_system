@@ -80,6 +80,13 @@ export class TasksController {
     return this.service.getMyTasks(req.user.id);
   }
 
+  /** Свои (личные) задачи для календаря кабинета — лёгкий список.
+   *  Объявлено ДО ':id', иначе перехватит вайлдкард. */
+  @Get('own')
+  getOwnTasks(@Request() req) {
+    return this.service.getOwnTasks(req.user.id);
+  }
+
   /** Раздел «Задачи от руководителя»: поручения, выданные сотруднику
    *  основателем/сооснователем/админом/руководителями направлений. */
   @Get('from-management')

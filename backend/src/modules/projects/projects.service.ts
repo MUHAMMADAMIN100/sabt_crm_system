@@ -2342,7 +2342,13 @@ export class ProjectsService implements OnModuleInit {
     return { message: 'Project deleted' };
   }
 
-  async updateProgress(id: string) {
+  async updateProgress(id: string | null | undefined) {
+    // Без проекта считать нечего. Раньше сюда приходил null от задач без
+    // проекта (личные, прямые от основателя): TypeORM отбрасывает пустое
+    // условие, и findOne грузил ПЕРВЫЙ попавшийся проект со всеми его
+    // задачами и пересчитывал ему прогресс — секунды на каждую отметку или
+    // удаление такой задачи.
+    if (!id) return;
     const project = await this.repo.findOne({ where: { id }, relations: ['tasks'] });
     if (!project) return;
 

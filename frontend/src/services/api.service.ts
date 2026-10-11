@@ -122,6 +122,8 @@ export const tasksApi = {
   remove: (id: string, reason?: string) =>
     api.delete(`/tasks/${id}`, { params: reason ? { reason } : undefined }).then(r => r.data),
   my: () => api.get('/tasks/my').then(r => r.data),
+  /** Свои (личные) задачи для календаря кабинета — лёгкий список. */
+  own: () => api.get('/tasks/own').then(r => r.data),
   /** Раздел «Задачи от руководителя»: поручения, выданные мне руководством. */
   fromManagement: () => api.get('/tasks/from-management').then(r => r.data),
   /** Вкладка «Я выдал»: задачи, которые поставил текущий пользователь. */

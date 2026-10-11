@@ -15,7 +15,7 @@
 // числом. На телефоне клетка мала, там по-прежнему точки.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as RMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ArrowRight, Check, Clock, CornerDownLeft, Plus, Trash2, User, X } from 'lucide-react'
@@ -24,7 +24,12 @@ import toast from 'react-hot-toast'
 import { tasksApi } from '@/services/api.service'
 import { normalizeTaskStatus } from '@/lib/taskStatus'
 
-const KEY = ['my-tasks'] as const
+// Свой лёгкий список (GET /tasks/own), а не общий ['my-tasks']: тот несёт все
+// задачи человека с проектами, и перезапрос его после каждой заметки делал
+// добавление задачи заметно медленным (замечание владельца 11.10.2026).
+const KEY = ['own-tasks'] as const
+/** Причина удаления: сервер её требует, у своей задачи она всегда одна. */
+const REMOVE_REASON = 'Своя задача — удалена автором'
 /** Время по умолчанию, когда его не указали, — как в форме календаря.
  *  Отдельного признака «без времени» у задачи нет, поэтому 12:00 не показываем. */
 const NO_TIME = '12:00'
@@ -37,7 +42,8 @@ export type OwnTask = {
   from: string | null
   time: string | null
   done: boolean
-  /** Ещё сохраняется: отмечать и удалять рано. */
+  /** Ещё сохраняется на сервере. На вид и поведение не влияет: действия с
+   *  такой строкой дожидаются настоящего id сами. */
   pending: boolean
 }
 
@@ -78,15 +84,18 @@ function undoToast(text: string, undo: () => void) {
 
 export function useOwnTasks(todayKey: string) {
   const qc = useQueryClient()
-  const { data } = useQuery({ queryKey: KEY, queryFn: tasksApi.my })
+  const { data } = useQuery({ queryKey: KEY, queryFn: tasksApi.own, staleTime: 30_000 })
   // Переехавшая задача, закрытая в этой сессии, остаётся в сегодняшнем дне
   // зачёркнутой — как закрытая просрочка в кабинете.
   const [keep, setKeep] = useState<Set<string>>(() => new Set())
+  // Задача, которая ещё сохраняется: по временному id ждём настоящий. Так её
+  // можно отметить, перенести или удалить сразу, не дожидаясь ответа сервера.
+  const pending = useRef(new Map<string, Promise<string | null>>())
 
   const byDay = useMemo(() => {
     const m: Record<string, OwnTask[]> = {}
     for (const t of (Array.isArray(data) ? data : []) as any[]) {
-      if (t.scope !== 'personal' || !t.deadline || t.status === 'cancelled') continue
+      if (!t.deadline || t.status === 'cancelled') continue
       const dt = new Date(t.deadline)
       if (isNaN(dt.getTime())) continue
       const own = format(dt, 'yyyy-MM-dd')
@@ -107,76 +116,109 @@ export function useOwnTasks(todayKey: string) {
     return m
   }, [data, todayKey, keep])
 
-  const patch = async (fn: (list: any[]) => any[]) => {
-    await qc.cancelQueries({ queryKey: KEY })
-    const prev = qc.getQueryData<any>(KEY)
+  // Всё ниже меняет кэш СРАЗУ и не перезапрашивает список после успеха:
+  // ответ сервера для экрана ничего не добавляет. Список перечитываем только
+  // после ошибки — чтобы вернуть правду.
+  const setList = (fn: (list: any[]) => any[]) =>
     qc.setQueryData<any>(KEY, (old: any) => fn(Array.isArray(old) ? old : []))
-    return { prev }
-  }
-  const refresh = () => qc.invalidateQueries({ queryKey: KEY })
-  // Параметры — any: с unknown TypeScript выводил тип переменных запроса из
-  // этого обработчика, и v.title в mutationFn переставал существовать.
-  const failed = (text: string) => (e: any, _v: any, ctx: any) => {
-    if (ctx?.prev) qc.setQueryData(KEY, ctx.prev)
+  const patchRow = (id: string, fields: Record<string, unknown>) =>
+    setList(list => list.map(x => x.id === id ? { ...x, ...fields } : x))
+  const failed = (e: any, text: string) => {
     toast.error(e?.response?.data?.message || text)
+    void qc.invalidateQueries({ queryKey: KEY })
+  }
+  // Общий список задач (бейдж просрочки, «Мои задачи» у других ролей) только
+  // помечаем устаревшим: он тяжёлый, перечитается сам при следующем заходе.
+  const touchShared = () => { void qc.invalidateQueries({ queryKey: ['my-tasks'], refetchType: 'none' }) }
+  /** Настоящий id строки: у только что добавленной ждём ответа сервера. */
+  const realId = async (id: string): Promise<string | null> =>
+    id.startsWith('tmp-') ? (await pending.current.get(id)) ?? null : id
+
+  const removeById = async (id: string) => {
+    setList(list => list.filter(x => x.id !== id))
+    try { await tasksApi.remove(id, REMOVE_REASON); touchShared() }
+    catch (e) { failed(e, 'Не удалось удалить задачу') }
   }
 
-  const createMut = useMutation({
-    mutationFn: (v: { title: string; day: string; time: string | null; done?: boolean }) =>
-      tasksApi.create({
-        title: v.title, scope: 'personal', deadline: deadlineOf(v.day, v.time),
-        ...(v.done ? { status: 'done' } : {}),
-      }),
-    onMutate: (v) => patch(list => [...list, {
-      id: `tmp-${Date.now()}`, title: v.title, scope: 'personal',
-      status: v.done ? 'done' : 'new', deadline: deadlineOf(v.day, v.time),
-    }]),
-    onError: failed('Не удалось добавить задачу'),
-    onSettled: refresh,
-  })
-  const toggleMut = useMutation({
-    mutationFn: (v: { id: string; done: boolean }) => tasksApi.update(v.id, { status: v.done ? 'done' : 'in_progress' }),
-    onMutate: (v) => {
-      if (v.done) setKeep(prev => new Set(prev).add(v.id))
-      return patch(list => list.map(t => t.id === v.id ? { ...t, status: v.done ? 'done' : 'in_progress' } : t))
-    },
-    onError: failed('Не удалось отметить задачу'),
-    onSettled: refresh,
-  })
-  const moveMut = useMutation({
-    mutationFn: (v: { id: string; day: string; time: string | null }) =>
-      tasksApi.update(v.id, { deadline: deadlineOf(v.day, v.time) }),
-    onMutate: (v) => patch(list => list.map(t => t.id === v.id ? { ...t, deadline: deadlineOf(v.day, v.time) } : t)),
-    onError: failed('Не удалось перенести задачу'),
-    onSettled: refresh,
-  })
-  const removeMut = useMutation({
-    // Сервер требует причину удаления — у своей задачи она всегда одна.
-    mutationFn: (id: string) => tasksApi.remove(id, 'Своя задача — удалена автором'),
-    onMutate: (id) => patch(list => list.filter(t => t.id !== id)),
-    onError: failed('Не удалось удалить задачу'),
-    onSettled: refresh,
-  })
+  /** Создание: строка появляется сразу с временным id, после ответа сервера
+   *  подменяется настоящей — без повторной загрузки списка. */
+  const create = (v: { title: string; day: string; time: string | null; done?: boolean }, undoText?: string) => {
+    const tmpId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const deadline = deadlineOf(v.day, v.time)
+    // Идёт первая загрузка списка — её ответ затёр бы новую строку: отменяем
+    // и перечитываем уже после сохранения.
+    const wasLoading = qc.isFetching({ queryKey: KEY }) > 0
+    if (wasLoading) void qc.cancelQueries({ queryKey: KEY })
+    setList(list => [...list, { id: tmpId, title: v.title, status: v.done ? 'done' : 'new', deadline }])
+    const saved: Promise<string | null> = tasksApi
+      .create({ title: v.title, scope: 'personal', deadline, ...(v.done ? { status: 'done' } : {}) })
+      .then((task: any) => {
+        patchRow(tmpId, { id: task.id, status: task.status, deadline: task.deadline })
+        touchShared()
+        if (undoText) undoToast(undoText, () => { void removeById(task.id) })
+        return task.id as string
+      })
+      .catch((e: any) => {
+        setList(list => list.filter(x => x.id !== tmpId))
+        failed(e, 'Не удалось добавить задачу')
+        return null
+      })
+      .finally(() => {
+        pending.current.delete(tmpId)
+        if (wasLoading) void qc.invalidateQueries({ queryKey: KEY })
+      })
+    pending.current.set(tmpId, saved)
+  }
+
+  const setDone = async (t: OwnTask, done: boolean) => {
+    const status = done ? 'done' : 'in_progress'
+    if (done) setKeep(prev => new Set(prev).add(t.id))
+    patchRow(t.id, { status })
+    const id = await realId(t.id)
+    if (!id) return
+    if (id !== t.id) {                 // строку успели подменить настоящей
+      if (done) setKeep(prev => new Set(prev).add(id))
+      patchRow(id, { status })
+    }
+    try { await tasksApi.update(id, { status }); touchShared() }
+    catch (e) { failed(e, 'Не удалось отметить задачу') }
+  }
+
+  /** Перенос на другой день; время дня у задачи сохраняется. */
+  const moveTo = async (t: OwnTask, day: string, undoText?: string) => {
+    const deadline = deadlineOf(day, t.time)
+    patchRow(t.id, { deadline })
+    const id = await realId(t.id)
+    if (!id) return
+    if (id !== t.id) patchRow(id, { deadline })
+    try {
+      await tasksApi.update(id, { deadline })
+      touchShared()
+      if (undoText) undoToast(undoText, () => { void moveTo({ ...t, id }, t.from || t.day) })
+    } catch (e) { failed(e, 'Не удалось перенести задачу') }
+  }
+
+  /** Удаление сразу, без вопроса: вернуть можно из сообщения «Отменить». */
+  const remove = async (t: OwnTask) => {
+    setList(list => list.filter(x => x.id !== t.id))
+    const id = await realId(t.id)
+    if (!id) return
+    setList(list => list.filter(x => x.id !== id))
+    try {
+      await tasksApi.remove(id, REMOVE_REASON)
+      touchShared()
+      undoToast('Задача удалена', () => create({ title: t.title, day: t.from || t.day, time: t.time, done: t.done }))
+    } catch (e) { failed(e, 'Не удалось удалить задачу') }
+  }
 
   return {
     byDay,
     of: (day: string) => byDay[day] || [],
-    add: (title: string, day: string, time: string | null) => createMut.mutate({ title, day, time }, {
-      onSuccess: (task: any) => {
-        if (task?.id) undoToast(`Добавлено на ${dayWord(day, todayKey)}`, () => removeMut.mutate(task.id))
-      },
-    }),
-    toggle: (t: OwnTask) => toggleMut.mutate({ id: t.id, done: !t.done }),
-    /** Перенос на другой день; время дня у задачи сохраняется. */
-    move: (t: OwnTask, day: string) => moveMut.mutate({ id: t.id, day, time: t.time }, {
-      onSuccess: () => undoToast(`Перенесено на ${dayWord(day, todayKey)}`,
-        () => moveMut.mutate({ id: t.id, day: t.from || t.day, time: t.time })),
-    }),
-    /** Удаление сразу, без вопроса: вернуть можно из сообщения «Отменить». */
-    remove: (t: OwnTask) => removeMut.mutate(t.id, {
-      onSuccess: () => undoToast('Задача удалена',
-        () => createMut.mutate({ title: t.title, day: t.from || t.day, time: t.time, done: t.done })),
-    }),
+    add: (title: string, day: string, time: string | null) =>
+      create({ title, day, time }, `Добавлено на ${dayWord(day, todayKey)}`),
+    toggle: (t: OwnTask) => { void setDone(t, !t.done) },
+    move: (t: OwnTask, day: string) => { void moveTo(t, day, `Перенесено на ${dayWord(day, todayKey)}`) },
+    remove: (t: OwnTask) => { void remove(t) },
   }
 }
 
@@ -294,10 +336,10 @@ function OwnRow({ t, own, todayKey, compact }: { t: OwnTask; own: OwnTasksApi; t
   // В окне дня своя задача стоит в общем списке «Задачи» и выглядит как
   // соседние строки (TaskRow): та же галочка, плитка-значок, название, мета.
   if (!compact) return (
-    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition', t.pending && 'opacity-60',
+    <div className={clsx('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition', 
       t.done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
         : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
-      <button type="button" disabled={t.pending} onClick={() => own.toggle(t)}
+      <button type="button" onClick={() => own.toggle(t)}
         title={t.done ? 'Снять отметку' : 'Отметить готовой'}
         className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
           t.done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
@@ -319,12 +361,12 @@ function OwnRow({ t, own, todayKey, compact }: { t: OwnTask; own: OwnTasksApi; t
       </div>
 
       {!t.done && (
-        <button type="button" disabled={t.pending} onClick={() => own.move(t, shiftDay(t.day, 1))} title={moveTitle}
+        <button type="button" onClick={() => own.move(t, shiftDay(t.day, 1))} title={moveTitle}
           className="h-8 px-2.5 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-[11.5px] font-medium text-surface-500 dark:text-surface-300 hover:text-primary-600 hover:border-primary-400 flex items-center gap-1 whitespace-nowrap transition">
           <ArrowRight size={12} /> {moveLabel}
         </button>
       )}
-      <button type="button" disabled={t.pending} onClick={() => own.remove(t)} title="Удалить"
+      <button type="button" onClick={() => own.remove(t)} title="Удалить"
         className="w-8 h-8 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-surface-100 dark:bg-surface-700/60 text-surface-400 hover:text-red-500 hover:border-red-300 flex items-center justify-center transition">
         <Trash2 size={15} />
       </button>
@@ -332,10 +374,10 @@ function OwnRow({ t, own, todayKey, compact }: { t: OwnTask; own: OwnTasksApi; t
   )
   // Окошко у клетки — плотнее.
   return (
-    <div className={clsx('flex items-center gap-1 rounded-xl border pr-1.5 transition', t.pending && 'opacity-60',
+    <div className={clsx('flex items-center gap-1 rounded-xl border pr-1.5 transition', 
       t.done ? 'bg-green-50/60 dark:bg-green-900/10 border-green-200/60 dark:border-green-800/40'
         : 'bg-surface-50 dark:bg-surface-800/50 border-surface-100 dark:border-surface-700/60')}>
-      <button type="button" disabled={t.pending} onClick={() => own.toggle(t)}
+      <button type="button" onClick={() => own.toggle(t)}
         title={t.done ? 'Снять отметку' : 'Отметить готовой'}
         className={clsx('w-10 shrink-0 flex items-center justify-center', compact ? 'h-9' : 'h-11')}>
         <span className={clsx('rounded-md border-2 flex items-center justify-center transition',
@@ -360,13 +402,13 @@ function OwnRow({ t, own, todayKey, compact }: { t: OwnTask; own: OwnTasksApi; t
       </div>
 
       {!t.done && (
-        <button type="button" disabled={t.pending} onClick={() => own.move(t, shiftDay(t.day, 1))}
+        <button type="button" onClick={() => own.move(t, shiftDay(t.day, 1))}
           title={t.day === todayKey ? 'Перенести на завтра' : 'Перенести на день позже'}
           className="h-7 px-2 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-900 text-[11.5px] font-medium text-surface-500 dark:text-surface-300 hover:text-primary-600 hover:border-primary-400 flex items-center gap-1 whitespace-nowrap transition">
           <ArrowRight size={12} /> {t.day === todayKey ? 'Завтра' : '+1 день'}
         </button>
       )}
-      <button type="button" disabled={t.pending} onClick={() => own.remove(t)} title="Удалить"
+      <button type="button" onClick={() => own.remove(t)} title="Удалить"
         className="w-8 h-7 shrink-0 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-900 text-surface-400 hover:text-red-500 hover:border-red-300 flex items-center justify-center transition">
         <Trash2 size={13} />
       </button>
