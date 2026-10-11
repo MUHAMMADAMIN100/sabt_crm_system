@@ -653,7 +653,7 @@ function AnchoredMenu({ anchorRef, open, onClose, width = 236, children }: {
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
  *  переноса, потому что исполнитель двигает карточку только от сегодня до
  *  дня выхода и не отменяет задачи. */
-export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee }: {
+export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee, note }: {
   e: any; onToggle: () => void; onInfo: () => void
   onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
   canCancel?: boolean
@@ -662,6 +662,8 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
    *  кто снимает, а нераспределённые бросаются в глаза. */
   assigneeName?: string | null
   showAssignee?: boolean
+  /** Пометка под строкой — кабинет монтажёра: «снято» / «ещё не снято». */
+  note?: ReactNode
 }) {
   const { Icon, tag, group } = taskInfo(e)
   const [menu, setMenu] = useState(false)
@@ -729,6 +731,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
             </span>
           )}
         </div>
+        {note ? <div className="mt-1.5">{note}</div> : null}
       </div>
 
       {/* Быстрое действие: перенести просрочку на сегодня. */}

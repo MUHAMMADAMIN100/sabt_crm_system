@@ -40,6 +40,8 @@ type Item = {
   parentDate: string | null; scriptText: string | null
   caption?: string | null; fileLink?: string | null
   assigneeId?: string | null; assigneeName?: string | null
+  /** Только у монтажа: съёмка этого рилса — снята ли, на какой день стоит. */
+  shoot?: { done: boolean; date: string | null; doneAt: string | null } | null
 }
 
 /** Карточка → событие календаря, каким его ждёт панель задачи из кабинета
@@ -80,6 +82,31 @@ function meta(it: Item): Meta {
 const titleOf = (it: Item) =>
   (it.parentTopic && it.parentTopic.trim()) || (it.topic && it.topic.trim()) || 'Без названия'
 const isDone = (it: Item) => it.status === 'published'
+
+/** «сегодня», «вчера», «завтра» или «12 окт». */
+const dayWord = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00`)
+  const diff = differenceInCalendarDays(d, new Date())
+  return diff === 0 ? 'сегодня' : diff === 1 ? 'завтра' : diff === -1 ? 'вчера' : format(d, 'd MMM', { locale: ru })
+}
+/** Монтаж ждёт съёмку: 1 — рилс ещё не снят (такие задачи идут ниже снятых). */
+const waitsShoot = (it: Item) => (it.stage === 'edit' && it.shoot && !it.shoot.done ? 1 : 0)
+/** Пометка на задаче монтажа (вариант 2, решение владельца 11.10.2026):
+ *  монтажёр видит, снят ли рилс, — монтаж из умного календаря убран, и
+ *  передача «видеограф → монтажёр» живёт здесь. */
+function shootNote(it: Item) {
+  if (it.stage !== 'edit' || !it.shoot || isDone(it)) return null
+  const s = it.shoot
+  return s.done ? (
+    <span className="inline-block px-2 py-0.5 rounded-md text-[11.5px] font-semibold bg-green-500/15 text-green-700 dark:text-green-400">
+      Снято{s.doneAt ? ` ${dayWord(s.doneAt)}` : ''} — можно монтировать
+    </span>
+  ) : (
+    <span className="inline-block px-2 py-0.5 rounded-md text-[11.5px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400">
+      Ещё не снято{s.date ? ` · съёмка ${dayWord(s.date)}` : ''}
+    </span>
+  )
+}
 const isCancelled = (it: Item) => it.status === 'cancelled'
 
 function plural(n: number, one: string, few: string, many: string) {
@@ -252,7 +279,8 @@ export default function ProductionDashboard() {
   // Окно переноса исполнителя: от сегодня до дня выхода публикации.
   const windowOf = (it: Item) => ({ min: todayKey, max: it.parentDate })
   const selItems = (byDay[selKey] || []).slice().sort((a, b) =>
-    (a.time || '99').localeCompare(b.time || '99')
+    waitsShoot(a) - waitsShoot(b)                       // снятые рилсы — первыми
+    || (a.time || '99').localeCompare(b.time || '99')
     || a.projectName.localeCompare(b.projectName, 'ru')
     || titleOf(a).localeCompare(titleOf(b), 'ru')
     || a.id.localeCompare(b.id))
@@ -380,7 +408,7 @@ export default function ProductionDashboard() {
         ) : (
           <div className="space-y-2">
             {selItems.map(it => (
-              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
                 showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
                 onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
                 onInfo={() => setOpenId(it.id)}
@@ -414,7 +442,7 @@ export default function ProductionDashboard() {
               ) : (
                 <div className="space-y-2">
                   {selItems.map(it => (
-                    <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+                    <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
                       showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
                       onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
                       onInfo={() => setOpenId(it.id)}
@@ -445,7 +473,7 @@ export default function ProductionDashboard() {
           </h2>
           <div className="space-y-2">
             {overdue.map(it => (
-              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)}
+              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
                 showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
                 late={isDone(it) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(it.date + 'T00:00:00')))}
                 onToggle={() => {

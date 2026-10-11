@@ -343,11 +343,22 @@ export class ContentPlanService {
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date,
               parent.topic AS "parentTopic", parent."contentType" AS "parentType",
               parent."scriptText" AS "scriptText", parent.caption AS caption,
-              to_char(parent."publishDate"::date, 'YYYY-MM-DD') AS "parentDate"
+              to_char(parent."publishDate"::date, 'YYYY-MM-DD') AS "parentDate",
+              sh.status AS "shootStatus", sh.d AS "shootDate", sh.done_at AS "shootDoneAt"
        FROM content_plan_items ci
        JOIN projects p ON p.id = ci."projectId"
        LEFT JOIN content_plan_items parent ON parent.id = ci."shootForItemId"
        LEFT JOIN users au ON au.id = ci."assigneeId"
+       -- Монтажёру важно, снят ли уже рилс: берём съёмку того же рилса.
+       LEFT JOIN LATERAL (
+         SELECT s.status::text AS status,
+                to_char(s."publishDate"::date, 'YYYY-MM-DD') AS d,
+                to_char(s."updatedAt" AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD') AS done_at
+           FROM content_plan_items s
+          WHERE ci."prepStage" = 'edit' AND s."shootForItemId" = ci."shootForItemId" AND s.id <> ci.id
+            AND COALESCE(s."prepStage", 'shoot') = 'shoot'
+          ORDER BY s."createdAt" ASC LIMIT 1
+       ) sh ON true
        WHERE ci."assigneeId" = $1
          AND ci."publishDate" IS NOT NULL
          AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date
@@ -362,6 +373,12 @@ export class ContentPlanService {
         // Легаси-карточки без этапа: пост → дизайн, остальное → съёмка.
         stage: r.stage || (r.parentId ? (r.parentType === 'post' ? 'design' : 'shoot') : null),
         durationMin: Number(r.durationMin) > 0 ? Number(r.durationMin) : null,
+        // Съёмка рилса для задачи монтажа: снято ли, на какой день стоит, когда отметили.
+        shoot: r.shootStatus ? {
+          done: r.shootStatus === 'published',
+          date: r.shootDate || null,
+          doneAt: r.shootStatus === 'published' ? (r.shootDoneAt || null) : null,
+        } : null,
       })),
     };
   }
