@@ -123,25 +123,23 @@ export default function ProductionDashboard() {
   const [cursor, setCursor] = useState(() => new Date())
   const [sel, setSel] = useState(() => new Date())
   const [openId, setOpenId] = useState<string | null>(null)
-  // На телефоне список под календарём не помещается, поэтому день открывается
-  // модальным окном — как в кабинете СММ-специалиста. На компьютере окна нет:
-  // там задачи дня и так видны под календарём.
+  // День открывается модальным окном — на телефоне снизу, на компьютере по
+  // центру, как в кабинете СММ-специалиста. Раньше на компьютере вместо окна
+  // был список под календарём; владелец попросил сделать у всех одинаково
+  // (12.10.2026).
   const [dayOpen, setDayOpen] = useState(false)
-  const [isPhone, setIsPhone] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 599px)')
-    const onChange = (e: MediaQueryListEvent) => { setIsPhone(e.matches); if (!e.matches) setDayOpen(false) }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
   // Escape закрывает окно дня; если поверх открыта панель задачи — сначала её
-  // (панель слушает клавишу сама).
+  // (панель слушает клавишу сама). Страница под окном не листается.
   useEffect(() => {
     if (!dayOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !openId) setDayOpen(false) }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
   }, [dayOpen, openId])
   // Просрочка, закрытая в этой сессии: строка не исчезает, а остаётся
   // зачёркнутой — так видно, что именно сделал, и можно снять отметку,
@@ -158,6 +156,9 @@ export default function ProductionDashboard() {
   // когда день открыт кнопкой «+ Своя задача» (телефон).
   const [ownPop, setOwnPop] = useState<{ day: string; el: HTMLElement } | null>(null)
   const [ownFocus, setOwnFocus] = useState(false)
+  // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
+  // него остаётся висеть без списка, из которого её открыли.
+  const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnFocus(false) }
   const addOwnToday = (ev: { currentTarget: HTMLElement }) => {
     const now = new Date()
     setCursor(now); setSel(now)
@@ -303,7 +304,7 @@ export default function ProductionDashboard() {
     || titleOf(a).localeCompare(titleOf(b), 'ru')
     || a.id.localeCompare(b.id))
   // Панель листает стрелками тот список, из которого её открыли: день или просрочку.
-  const navList: Item[] = (dayOpen || (openId && selItems.some(it => it.id === openId))) ? selItems : overdue
+  const navList: Item[] = dayOpen ? selItems : overdue
   const openIdx = openId ? navList.findIndex(it => it.id === openId) : -1
   const ownSel = own.of(selKey)
   // Строки клетки на компьютере (решение владельца 11.10.2026): задачи дня
@@ -400,7 +401,7 @@ export default function ProductionDashboard() {
             const MAX_DOTS = 8
             // Свои задачи — кружком, чтобы не путать с квадратами производства.
             const ownDots = own.of(key)
-            const openDay = () => { setSel(d); setOwnFocus(false); if (isPhone) setDayOpen(true) }
+            const openDay = () => { setSel(d); setOwnFocus(false); setDayOpen(true) }
             // Клетка — не <button>: внутри неё своя кнопка «+», а кнопку в
             // кнопку вкладывать нельзя.
             return (
@@ -470,55 +471,25 @@ export default function ProductionDashboard() {
         </p>
       </div>
 
-      {/* Задачи выбранного дня — сразу под календарём, не только в окне по
-          клику: кабинет не выглядит пустым, и видно, чем занят день. */}
-      <div className="card hidden sm:block">
-        <div className="flex items-baseline gap-2.5 mb-2">
-          <h2 className="text-sm font-bold capitalize">
-            {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
-          </h2>
-          <span className="text-xs text-surface-400 dark:text-surface-500">
-            {selDoneN}/{selTotalN} {plural(selTotalN, 'задача', 'задачи', 'задач')}
-          </span>
-        </div>
-        {/* Свои задачи — такие же задачи дня: строка ввода и они сами стоят
-            в общем списке. */}
-        <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} />
-        {selItems.length === 0 ? (
-          ownSel.length === 0
-            ? <p className="text-[13px] text-surface-400 dark:text-surface-500 py-2">На этот день задач нет</p>
-            : null
-        ) : (
-          <div className="space-y-2">
-            {selItems.map(it => (
-              <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
-                showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
-                onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
-                onInfo={() => setOpenId(it.id)}
-                onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Окно дня — только на телефоне: снизу, как в кабинете СММ. */}
+      {/* Детали дня — модальное окно по клику на день: на телефоне снизу, на
+          компьютере по центру, как в кабинете СММ. */}
       {dayOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-end justify-center sm:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => { setDayOpen(false); setOpenId(null) }} />
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={closeDay} />
           <div role="dialog" aria-label="Задачи дня"
-            className="relative w-full max-h-[88vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] shadow-2xl">
-            <div className="pt-2 pb-1"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
-            <div className="flex items-baseline gap-2.5 px-4 pt-3 pb-3">
+            className="relative w-full sm:max-w-2xl max-h-[88vh] sm:max-h-[85vh] flex flex-col bg-white dark:bg-surface-900 rounded-t-[22px] sm:rounded-2xl sm:border border-surface-200 dark:border-surface-700 shadow-2xl">
+            <div className="sm:hidden pt-2 pb-1"><div className="w-10 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto" /></div>
+            <div className="flex items-baseline gap-2.5 px-4 sm:px-5 pt-3 sm:pt-4 pb-3">
               <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 first-letter:uppercase">
                 {isToday(sel) ? 'Сегодня' : format(sel, 'd MMMM, EEEE', { locale: ru })}
               </h2>
               <span className="text-xs text-surface-400 dark:text-surface-500">
                 {selDoneN}/{selTotalN} {plural(selTotalN, 'задача', 'задачи', 'задач')}
               </span>
-              <button onClick={() => { setDayOpen(false); setOpenId(null) }} title="Закрыть"
-                className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center self-center"><X size={15} /></button>
+              <button onClick={closeDay} title="Закрыть"
+                className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
               <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
               <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
               {selItems.length === 0 ? (
