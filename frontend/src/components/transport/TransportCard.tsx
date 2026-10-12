@@ -2,12 +2,14 @@
 // (решение владельца 05.10.2026). Съездил на съёмку или к клиенту за свой
 // счёт — подаёшь заявку: проект, сумма, когда, куда и зачем, по желанию фото
 // чека. Владелец оплачивает в Финансах → «Транспорт сотрудникам».
-// Сама панель специалиста не меняется — карточка стоит над ней.
+// Сама панель специалиста не меняется — строка стоит над ней. С 12.10.2026
+// это именно одна строка: название, сколько заявок ждёт оплаты, «Мои заявки»
+// и «Подать заявку» — большая карточка отнимала у календаря слишком много.
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { Car, ChevronRight, ImagePlus, Loader2, X } from 'lucide-react'
+import { Car, ImagePlus, Loader2, X } from 'lucide-react'
 import { transportApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import { prepareReceipt } from '@/lib/imageCompress'
@@ -43,32 +45,62 @@ export default function TransportCard() {
   const { data } = useQuery<Mine>({ queryKey: ['transport-my'], queryFn: transportApi.my })
   if (data && !data.canRequest) return null
 
+  const hasItems = !!data?.items?.length
+  const pending = data?.pendingCount || 0
+  const pendingText = pending > 0
+    ? `${pending} ${plural(pending, 'заявка ждёт', 'заявки ждут', 'заявок ждут')} оплаты`
+    : ''
+  const icon = (
+    <span className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+      <Car size={17} />
+    </span>
+  )
+  // Телефон: значок, название и статус — одна область; если заявки есть,
+  // она же открывает «Мои заявки» (отдельная кнопка туда не помещается).
+  const phoneCls = 'sm:hidden flex-1 min-w-0 min-h-[40px] flex items-center gap-2.5 text-left'
+  const phoneBody = (
+    <>
+      {icon}
+      <span className="min-w-0">
+        <b className="block text-[14px] font-semibold leading-tight">Транспорт</b>
+        <span className={clsx('block text-[11.5px] truncate',
+          pending > 0 ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-surface-500')}>
+          {pendingText || (hasItems ? 'Мои заявки' : 'возврат денег за проезд')}
+        </span>
+      </span>
+    </>
+  )
+
   return (
-    <div className="card p-4 space-y-3 border-primary-500/40">
-      <div className="flex items-center gap-3">
-        <span className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-          <Car size={22} />
-        </span>
-        <span className="min-w-0">
-          <b className="block text-[15px] font-semibold">Транспорт по работе</b>
-          <span className="block text-[12.5px] text-surface-500">Ездили на съёмку или к клиенту — верните деньги за проезд</span>
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => setForm(true)} className="btn-primary flex-1 min-h-[48px] text-[15px]">
-          Подать заявку на транспорт
-        </button>
-        {!!data?.items?.length && (
-          <button type="button" onClick={() => setList(true)} className="btn-secondary min-h-[48px] px-4">Мои заявки</button>
+    // Одна строка вместо карточки (решение владельца 12.10.2026: блок занимал
+    // слишком много места). Колонка страницы идёт с шагом 24px — подтягиваем
+    // панель до 16px, как между её собственными блоками.
+    <div className="card py-2 pr-2 pl-3 -mb-2 flex items-center gap-2.5 sm:gap-3">
+      {hasItems
+        ? <button type="button" onClick={() => setList(true)} className={phoneCls}>{phoneBody}</button>
+        : <div className={phoneCls}>{phoneBody}</div>}
+
+      <div className="hidden sm:flex items-center gap-3 min-w-0 flex-1">
+        {icon}
+        <b className="text-[14px] font-semibold whitespace-nowrap">Транспорт по работе</b>
+        {pending > 0 ? (
+          <button type="button" onClick={() => setList(true)}
+            className="h-7 px-2.5 min-w-0 truncate rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[12.5px] font-semibold transition-colors">
+            {pendingText} · {money(data?.pendingSum || 0)} сомони
+          </button>
+        ) : (
+          <span className="hidden lg:block min-w-0 truncate text-[12.5px] text-surface-500">
+            Ездили на съёмку или к клиенту — верните деньги за проезд
+          </span>
         )}
       </div>
-      {!!data?.pendingCount && (
-        <button type="button" onClick={() => setList(true)}
-          className="w-full min-h-[40px] px-3 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[13px] font-semibold flex items-center justify-between">
-          <span>{data.pendingCount} {plural(data.pendingCount, 'заявка ждёт', 'заявки ждут', 'заявок ждут')} оплаты · {money(data.pendingSum)} сомони</span>
-          <ChevronRight size={16} />
-        </button>
+
+      {hasItems && (
+        <button type="button" onClick={() => setList(true)} className="hidden sm:inline-flex btn-secondary shrink-0">Мои заявки</button>
       )}
+      <button type="button" onClick={() => setForm(true)} className="btn-primary shrink-0 min-h-[40px] sm:min-h-[34px] text-[13px]">
+        Подать заявку
+      </button>
       {form && <RequestModal onClose={() => setForm(false)} />}
       {list && data && <MineModal data={data} onClose={() => setList(false)} />}
     </div>
