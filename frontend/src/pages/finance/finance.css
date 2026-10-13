@@ -2682,3 +2682,155 @@
 .fin-root .fin-rest-row:disabled { cursor: default; }
 .fin-root .fin-rest-row .num { margin-left: auto; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .fin-root .fin-rest-row .num.neg { color: var(--red); }
+
+/* ── Доход → SMM: таблица «менеджер · срок · оплата» (макет владельца 13.10.2026) ──
+   Вместо колонок «Часть 1 / Часть 2 / Полная оплата / Комментарий» — одна
+   «Оплата» и один «Срок»; строки идут по срочности двумя группами. Таблица
+   листается вместе со страницей, без своего окна прокрутки. */
+.fin-root .cards.fin-smm-stats { margin-bottom: 16px; }
+.fin-root .fin-smm-stats .stat .sub { text-transform: none; }
+.fin-root .fin-smm-stats .stat .sub.late { color: var(--red); font-weight: 600; }
+
+.fin-root .fin-smm-alert {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 12px;
+  padding: 11px 16px; border: 1px solid var(--red); border-radius: var(--radius);
+  background: var(--red-soft); font-size: 13px; color: var(--text);
+}
+.fin-root .fin-smm-alert > .fin-icon { color: var(--red); }
+.fin-root .fin-smm-alert b { font-size: 13.5px; color: var(--red); }
+
+.fin-root .fin-smm-table th:first-child, .fin-root .fin-smm-table td:first-child { padding-left: 16px; }
+.fin-root .fin-smm-table th:last-child, .fin-root .fin-smm-table td:last-child { padding-right: 16px; }
+.fin-root .fin-smm-table tbody td { padding-top: 9px; padding-bottom: 9px; height: 42px; border-bottom-color: color-mix(in srgb, var(--border) 62%, transparent); }
+.fin-root .fin-smm-table tbody tr.fin-smm-group > td {
+  height: auto; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border);
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+}
+.fin-root .fin-smm-group.wait > td, .fin-root .fin-smm-group-label.wait { color: var(--amber); }
+.fin-root .fin-smm-group.ok > td, .fin-root .fin-smm-group-label.ok { color: var(--green); }
+.fin-root .fin-smm-note { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+
+/* Срок: дата и «через N дн.»; нажатие правит сумму и срок плана. */
+.fin-root .fin-smm-due {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0; border: 0; background: none;
+  padding: 0; text-align: left; color: var(--text); font-family: inherit; cursor: pointer;
+}
+.fin-root .fin-smm-due:disabled { cursor: default; }
+.fin-root .fin-smm-due .d { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.fin-root .fin-smm-due .s { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fin-root .fin-smm-due.next .s { font-size: 13px; }
+.fin-root .fin-smm-due.late .d { font-weight: 700; color: var(--red); }
+.fin-root .fin-smm-due.late .s { font-weight: 600; color: var(--red); }
+.fin-root .fin-smm-due.soon .s { font-weight: 600; color: var(--amber); }
+.fin-root .fin-smm-due:not(:disabled):hover .d,
+.fin-root .fin-smm-due.next:not(:disabled):hover .s { text-decoration: underline dotted; }
+
+.fin-root .fin-smm-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fin-root .fin-smm-chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; padding: 4px 9px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.fin-root .fin-smm-chip.wait { color: var(--amber); background: var(--amber-soft); }
+.fin-root .fin-smm-chip.ok { color: var(--green); background: var(--green-soft); }
+.fin-root button.fin-smm-chip { cursor: pointer; }
+.fin-root .fin-smm-total { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 700; }
+.fin-root .fin-smm-total .got { color: var(--green); white-space: nowrap; }
+.fin-root .fin-smm-total .left { color: var(--amber); white-space: nowrap; }
+
+/* Менеджер: кто берёт деньги у клиента. */
+.fin-root .fin-mgr {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 32px; max-width: 100%;
+  border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text);
+  font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 0 8px 0 4px; cursor: pointer;
+}
+.fin-root .fin-mgr.static { cursor: default; }
+.fin-root .fin-mgr.bordered { border-color: var(--border); font-size: 13px; min-width: 0; }
+.fin-root .fin-mgr:not(.static):hover, .fin-root .fin-mgr.open { border-color: var(--accent); background: var(--accent-soft); }
+.fin-root .fin-mgr .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-mgr .chev { color: var(--muted); }
+.fin-root .fin-mgr-avatar {
+  flex-shrink: 0; border-radius: 50%; color: #fff; font-weight: 700; object-fit: cover;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fin-root .fin-mgr-ghost {
+  min-height: 32px; border: 1px dashed color-mix(in srgb, var(--muted) 55%, transparent); border-radius: 10px;
+  background: transparent; color: var(--muted); font-family: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 0 10px; white-space: nowrap; cursor: pointer;
+}
+.fin-root .fin-mgr-ghost.warn { border-color: var(--amber); color: var(--amber); }
+.fin-root .fin-mgr-backdrop { position: fixed; inset: 0; z-index: 60; }
+.fin-root .fin-mgr-backdrop.sheet { background: rgba(0, 0, 0, .5); }
+.fin-root .fin-mgr-menu {
+  position: fixed; z-index: 61; width: 280px; max-height: 320px; overflow-y: auto; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+  box-shadow: var(--shadow-lg); padding: 6px 0;
+}
+.fin-root .fin-mgr-menu.sheet {
+  left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 70vh;
+  border-radius: 18px 18px 0 0; padding: 10px 0 max(10px, env(safe-area-inset-bottom));
+}
+.fin-root .fin-mgr-menu .mgr-head { padding: 6px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.fin-root .fin-mgr-menu .mgr-item {
+  width: 100%; min-height: 44px; display: flex; align-items: center; gap: 10px; border: 0; background: transparent;
+  color: var(--text); font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 0 12px; text-align: left; cursor: pointer;
+}
+.fin-root .fin-mgr-menu .mgr-item:hover { background: var(--surface-hover); }
+.fin-root .fin-mgr-menu .mgr-item .name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-mgr-menu .mgr-item.quiet { min-height: 40px; color: var(--muted); font-size: 12.5px; }
+.fin-root .fin-mgr-menu .mgr-sep { height: 1px; background: var(--border); margin: 6px 0; }
+.fin-root .fin-mgr-menu .mgr-empty { margin: 0; padding: 10px 12px; font-size: 13px; color: var(--muted); }
+
+/* Телефон: карточка на проект. */
+.fin-root .fin-smm-cards { display: flex; flex-direction: column; gap: 8px; }
+.fin-root .fin-smm-group-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin: 6px 0 2px; }
+.fin-root .fin-smm-card {
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.fin-root .fin-smm-card.late { border-color: var(--red); background: color-mix(in srgb, var(--red-soft) 60%, var(--surface)); }
+.fin-root .fin-smm-card.paid { padding: 10px 12px; gap: 6px; }
+.fin-root .fin-smm-card.totals { background: var(--surface-2); gap: 4px; margin-top: 4px; }
+.fin-root .fin-smm-card > .head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border: 0; background: none;
+  padding: 0; text-align: left; color: var(--text); font-family: inherit; cursor: pointer;
+}
+.fin-root .fin-smm-card > .head.static { cursor: default; }
+.fin-root .fin-smm-card > .head b { font-size: 15px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.fin-root .fin-smm-card > .head .num { font-size: 15px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-root .fin-smm-card.paid > .head b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-smm-card.paid > .head .num { font-size: 14px; font-weight: 600; }
+.fin-root .fin-smm-card.totals > .head b { font-size: 13.5px; }
+.fin-root .fin-smm-card.totals > .head .num { font-size: 14px; }
+.fin-root .fin-smm-card > .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fin-root .fin-smm-card > .line > .fin-smm-due.right { margin-left: auto; align-items: flex-end; text-align: right; }
+.fin-root .fin-smm-card > .line > .fin-smm-due .d { font-size: 12.5px; }
+.fin-root .fin-smm-card > .line > .fin-smm-due .s { font-size: 12.5px; }
+.fin-root .fin-smm-card > .line > .push { margin-left: auto; }
+.fin-root .fin-smm-card.paid .fin-mgr { min-height: 30px; font-size: 12.5px; }
+.fin-root .fin-smm-card.paid .fin-smm-chip { font-size: 12px; padding: 4px 8px; }
+.fin-root .fin-smm-card .btn.pay { min-height: 44px; justify-content: center; font-size: 14px; border-radius: 12px; }
+
+@media (max-width: 720px) {
+  /* Шапка: «+ Проект» в строке заголовка, месяц и CSV — строкой ниже. */
+  .fin-root .page-head.fin-smm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+  .fin-root .page-head.fin-smm-head p { display: none; }
+  .fin-root .fin-smm-head .fin-smm-new { min-height: 40px; }
+  .fin-root .fin-smm-head .fin-smm-nav { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+  .fin-root .fin-smm-head .fin-smm-nav .month-nav { flex: 1 1 0; min-width: 0; }
+  .fin-root .fin-smm-head .fin-smm-nav .month-nav .label { flex: 1 1 0; min-width: 0; }
+  .fin-root .fin-smm-head .fin-smm-nav > .btn { min-height: 40px; flex-shrink: 0; }
+
+  /* Две цифры рядом, «Всего за месяц» — одной строкой под ними. */
+  .fin-root .cards.fin-smm-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .fin-root .cards.fin-smm-stats > .card.stat { padding: 12px 14px; border-radius: 14px; }
+  .fin-root .fin-smm-stats .stat .label { font-size: 12px; }
+  .fin-root .fin-smm-stats .stat .value { font-size: 21px; margin-top: 4px; }
+  .fin-root .fin-smm-stats .stat .sub { font-size: 11.5px; margin-top: 2px; }
+  .fin-root .cards.fin-smm-stats > .card.stat.total { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 14px; }
+  .fin-root .fin-smm-stats .stat.total .label { font-size: 12.5px; }
+  .fin-root .fin-smm-stats .stat.total .value { font-size: 16px; margin-top: 0; }
+  .fin-root .fin-smm-stats .stat.total .sub { display: none; }
+
+  .fin-root .fin-smm-alert { border-radius: 14px; padding: 10px 12px; gap: 2px 6px; }
+  .fin-root .fin-smm-alert b { font-size: 13px; }
+}

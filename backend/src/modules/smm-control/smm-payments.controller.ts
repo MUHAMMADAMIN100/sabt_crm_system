@@ -29,6 +29,21 @@ export class SmmPaymentsController {
     return this.service.financeClients();
   }
 
+  /** Колонка «Менеджер» в «Финансы → Доход → SMM»: кто берёт деньги у клиента. */
+  @Get('finance-managers')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  financeManagers(@Request() req) {
+    return this.service.financeManagers(req.user);
+  }
+
+  /** Связать клиента «Финансов» с SMM-проектом CRM: { projectId | null }. */
+  @Patch('finance-client/:financeProjectId/project')
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER)
+  linkClient(@Param('financeProjectId') financeProjectId: string, @Body() body: any, @Request() req) {
+    const id = typeof body?.projectId === 'string' && body.projectId ? body.projectId : null;
+    return this.service.linkClient(financeProjectId, id, req.user);
+  }
+
   /** Строка «Оплата клиента» в карточке SMM-проекта. */
   @Get('project/:projectId')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)

@@ -11,6 +11,8 @@ import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAl
 import { ProjectFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
 import useNarrow from '@/hooks/useNarrow';
+import SmmManagerCell, { useSmmManagers } from './SmmManagerCell';
+import { splitSmmRows, overdueRows, dueTone, dayMonth, dayMon } from './smmIncome';
 
 function useAccounts(): any[] {
   const { data } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
@@ -29,6 +31,9 @@ export default function FinanceIncomeGroupPage() {
   const [ym, setYm] = useYmParam();
   const [start, setStart] = useState<string | undefined>(undefined);
   const [showNew, setShowNew] = useState(false);
+  const smm = direction === 'smm';
+  const narrow = useNarrow(720);
+  const smmManagers = useSmmManagers(smm);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'income-direction', direction, ym, start ?? ''],
@@ -46,24 +51,44 @@ export default function FinanceIncomeGroupPage() {
   if (!g || !direction) return <div className="fin-root"><div className="empty">Направление не найдено</div></div>;
 
   const archivedOther = ((allProjects as any[]) || []).filter((p: any) => p.direction === direction && p.archived);
+  // «Экспорт CSV» — в шапке, рядом с «+ Проект» (раньше под него была отдана
+  // целая пустая полоса над таблицей).
+  const exportBtn = smm && data?.kind === 'smm' ? (
+    <button className="btn" aria-label="Экспорт CSV"
+      onClick={() => exportSmmCsv(data.rows || [], ym, (id) => smmManagers?.clients.find((c) => c.financeProjectId === id)?.manager?.name ?? '')}>
+      {narrow ? 'CSV' : 'Экспорт CSV'}
+    </button>
+  ) : null;
   const shiftStart = (months: string[], delta: number) => setStart(shiftYm(months[0], delta));
 
   return (
     <div className="fin-root">
       <Link to={withYm('/finance/income', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Доход</Link>
-      <div className="page-head">
+      <div className={'page-head' + (smm ? ' fin-smm-head' : '')}>
         <div>
           <h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1>
-          <p>{direction === 'smm'
-            ? 'Помесячный учёт оплат по частям'
+          <p>{smm
+            ? 'Помесячный учёт оплат'
             : direction === 'maintenance'
               ? 'Ежемесячные оплаты за обслуживание сайтов'
               : 'Проекты направления'}</p>
         </div>
-        <div className="flex">
-          {direction === 'smm' && <MonthNav ym={ym} onChange={setYm} />}
-          <button className="btn primary" onClick={() => setShowNew(true)}><FinIcon name="plus" size={16} /> Проект</button>
-        </div>
+        {smm && narrow ? (
+          // Телефон: «+ Проект» в строке заголовка, месяц и CSV — строкой ниже.
+          <>
+            <button className="btn primary fin-smm-new" onClick={() => setShowNew(true)}><FinIcon name="plus" size={16} /> Проект</button>
+            <div className="fin-smm-nav">
+              <MonthNav ym={ym} onChange={setYm} />
+              {exportBtn}
+            </div>
+          </>
+        ) : (
+          <div className="flex">
+            {smm && <MonthNav ym={ym} onChange={setYm} />}
+            {exportBtn}
+            <button className="btn primary" onClick={() => setShowNew(true)}><FinIcon name="plus" size={16} /> Проект</button>
+          </div>
+        )}
       </div>
 
       {isLoading ? <FinLoading />
@@ -384,12 +409,27 @@ function ProjectStateSections({ direction, archived }: { direction: string; arch
 
 // ---------- SMM ----------
 
+/** CSV для бухгалтерии/архива. Кнопка стоит в шапке страницы, поэтому функция
+ *  живёт отдельно от раздела. Прежние колонки сохранены — файл могли
+ *  разбирать по ним; срок, остаток и менеджер добавлены в конец. */
+function exportSmmCsv(rows: any[], ym: string, managerOf: (financeProjectId: string) => string) {
+  const header = ['Проект', 'Дата цикла', 'Тариф', 'Часть 1', 'Часть 2', 'Оплачено за цикл', 'Оплачено всего', 'Срок оплаты', 'Осталось получить', 'Менеджер'];
+  const body = rows.map((r) => [
+    r.project.name, r.cycleDate, r.project.tariff, r.part1?.amount, r.part2?.amount, r.monthPaid, r.paidLife,
+    r.fullyPaid ? '' : (r.due?.date ?? ''), r.remaining ?? '', managerOf(r.project.id),
+  ]);
+  downloadCsv(`smm-${ym}.csv`, [header, ...body]);
+}
+
+/** Таблица «менеджер · срок · оплата» (макет владельца 13.10.2026). Вместо
+ *  колонок «Часть 1 / Часть 2 / Полная оплата / Комментарий» — одна «Оплата»
+ *  и один «Срок»; строки идут по срочности двумя группами. */
 function SmmSection({ data, ym }: { data: any; ym: string }) {
-  // Восемь колонок (проект, дата, тариф, две части, остаток, комментарий,
-  // действия) в 390 px не помещаются — на телефоне карточка на проект.
+  // Шесть колонок в 390 px не помещаются — на телефоне карточка на проект.
   const narrow = useNarrow(720);
   const qc = useQueryClient();
   const inv = useInvalidate();
+  const managers = useSmmManagers();
   const [planFor, setPlanFor] = useState<{ row: any; partNo: 1 | 2 } | null>(null);
   const [receive, setReceive] = useState<any>(null); // part {plannedId, amount, ...}
   const [restFor, setRestFor] = useState<any>(null); // row с nextDue (остаток/след. платёж)
@@ -397,7 +437,18 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
   const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
 
   const rows: any[] = data.rows || [];
-  const { stats, totals, needPay, needRest } = data;
+  const { totals, stats } = data;
+  const { unpaid, paid } = splitSmmRows(rows);
+  const late = overdueRows(rows);
+  // Сводка приходит с сервера; пока он не обновился после выкладки —
+  // показываем прежние цифры, чтобы страница не падала.
+  const summary = data.summary || {
+    expected: stats?.expected ?? 0, overdue: 0, receivedCash: stats?.receivedCash ?? 0,
+    receivedInactive: 0, receivedTable: 0, total: stats?.total ?? 0,
+  };
+  const receivedSum = rows.reduce((s, r) => s + (Number(r.monthPaid) || 0), 0);
+  const remainingSum = rows.reduce((s, r) => s + (Number(r.remaining) || 0), 0);
+  const managerName = (id: string) => managers?.clients.find((c) => c.financeProjectId === id)?.manager?.name ?? null;
 
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
@@ -409,7 +460,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       invalidateFinanceAll(qc);
     } catch (e) { toast.error(apiErr(e)); }
   }
-  // «↩» на полученной части: удаляем и операцию, и сам платёж — ячейка снова «+» (как в эталоне).
+  // «↩» на полученной части: удаляем и операцию, и сам платёж — оплата снова ожидается.
   async function undoPart(part: any) {
     try {
       if (part.txId) await financeApi.unreceivePlanned(part.plannedId);
@@ -417,194 +468,254 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       inv();
     } catch (e) { toast.error(apiErr(e)); }
   }
-  // CSV для бухгалтерии/архива — те же поля, что в таблице ниже.
-  function exportCsv() {
-    const header = ['Проект', 'Дата цикла', 'Тариф', 'Часть 1', 'Часть 2', 'Оплачено за цикл', 'Оплачено всего'];
-    const body = rows.map((r) => [r.project.name, r.cycleDate, r.project.tariff, r.part1?.amount, r.part2?.amount, r.monthPaid, r.paidLife]);
-    downloadCsv(`smm-${ym}.csv`, [header, ...body]);
+  // На телефоне отмена — по нажатию на «✓ дата», поэтому сначала спрашиваем.
+  async function undoAsk(r: any) {
+    const parts = receivedParts(r);
+    if (!parts.length) return;
+    if (!(await finConfirm(`Отменить оплату «${r.project.name}»?`, { danger: true, confirmLabel: 'Отменить оплату' }))) return;
+    for (const p of parts) await undoPart(p);
   }
+  /** «Отметить оплату»: есть ожидаемый план — подтверждаем его; плана нет —
+   *  записываем оплату частью, как раньше делал «+». */
+  function markPaid(r: any) {
+    const plan = [r.part1, r.part2].find((p: any) => p && p.status === 'expected')
+      ?? (r.nextDue && r.nextDue.ym <= ym ? { plannedId: r.nextDue.plannedId, amount: r.nextDue.amount } : null);
+    if (plan) setReceive(plan);
+    else setPlanFor({ row: r, partNo: r.part1 ? 2 : 1 });
+  }
+
+  // Срок одной строкой: «23 сентября» и «просрочено 20 дн.» — нажатие правит
+  // сумму и срок ближайшего плана (раньше это делал блок «Полная оплата»).
+  const dueCell = (r: any) => {
+    const tone = dueTone(r.due);
+    return (
+      <button type="button" className={'fin-smm-due ' + (tone || '')} disabled={!r.nextDue}
+        title={r.nextDue ? 'Изменить сумму или срок' : undefined} onClick={() => r.nextDue && setRestFor(r)}>
+        {r.due
+          ? <><span className="d">{dayMonth(r.due.date)}</span><span className="s">{daysLabel(r.due.date)}</span></>
+          : <span className="s">срок не задан</span>}
+      </button>
+    );
+  };
+  const nextCell = (r: any) => (
+    <button type="button" className="fin-smm-due next" disabled={!r.nextDue}
+      title={r.nextDue ? 'Изменить сумму или срок следующей оплаты' : undefined} onClick={() => r.nextDue && setRestFor(r)}>
+      <span className="s">{r.due ? `след. ${dayMonth(r.due.date)}` : '—'}</span>
+    </button>
+  );
 
   return (
     <>
-      <div className="cards grid-3" style={{ marginBottom: 16 }}>
-        <Stat label="Ожидается" value={money(stats.expected)} />
-        <Stat label="Получено на счёт" value={money(stats.receivedCash)} cls="pos" sub={stats.spentOffAccount > 0 ? `освоено вне счёта: ${money(stats.spentOffAccount)}` : undefined} />
-        <Stat label="Всего за месяц" value={money(stats.total)} />
+      <div className="cards grid-3 fin-smm-stats">
+        <div className="card stat">
+          <div className="label">Ожидается</div>
+          <div className="value">{money(summary.expected)}</div>
+          {summary.overdue > 0 && <div className="sub late">{narrow ? '' : 'из них '}просрочено {money(summary.overdue)}</div>}
+        </div>
+        <div className="card stat">
+          <div className="label">Получено на счёт</div>
+          <div className="value pos">{money(summary.receivedCash)}</div>
+          {summary.receivedInactive > 0 && (
+            <div className="sub">
+              в таблице {money(summary.receivedCash - summary.receivedInactive)}
+              {!narrow && <> · ещё {money(summary.receivedInactive)} от проекта на паузе или в архиве</>}
+            </div>
+          )}
+          {stats?.spentOffAccount > 0 && <div className="sub">освоено вне счёта: {money(stats.spentOffAccount)}</div>}
+        </div>
+        <div className="card stat total">
+          <div className="label">Всего за месяц</div>
+          <div className="value">{money(summary.total)}</div>
+          <div className="sub">ожидается + получено</div>
+        </div>
       </div>
 
-      {(needPay > 0 || needRest > 0) && (
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', marginBottom: 12, borderColor: 'var(--amber)', background: 'var(--amber-soft)' }}>
-          <FinIcon name="receipt" size={16} style={{ color: 'var(--amber)' }} />
-          {needPay > 0 && <b style={{ color: 'var(--amber)' }}>Получить оплату: {needPay}</b>}
-          {needRest > 0 && <b style={{ color: 'var(--accent)' }}>Получить остаток: {needRest}</b>}
-          <span className="mini muted">— по сроку оплаты проектов</span>
+      {late.length > 0 && (
+        <div className="fin-smm-alert">
+          <FinIcon name="info" size={16} />
+          <b>Просрочена оплата: {late.slice(0, 2).map((r) => r.project.name).join(', ')}{late.length > 2 ? ` и ещё ${late.length - 2}` : ''}</b>
+          <span>
+            {late.length === 1 && <>{narrow ? '· ' : ''}{pluralRu(-(daysUntil(late[0].due.date) ?? 0), 'день', 'дня', 'дней')}</>}
+            {!narrow && (
+              <>
+                {late.length === 1 ? ' · ' : ''}{money(late.reduce((s, r) => s + (Number(r.overdue) || 0), 0))}
+                {late.length === 1 && managerName(late[0].project.id) ? ` · менеджер ${managerName(late[0].project.id)}` : ''}
+              </>
+            )}
+          </span>
         </div>
       )}
 
-      <div className="toolbar">
-        <div className="grow" />
-        <button className="btn sm" onClick={exportCsv}>Экспорт CSV</button>
-      </div>
-
       {narrow && (
-        <div className="fin-debt-cards">
-          {rows.map((r: any) => {
-            const parts = [1, 2].map((n) => ({ n, p: n === 1 ? r.part1 : r.part2 }));
+        <div className="fin-smm-cards">
+          {unpaid.length > 0 && <div className="fin-smm-group-label wait">Ждём оплату · {unpaid.length}</div>}
+          {unpaid.map((r) => {
+            const tone = dueTone(r.due);
+            const got = receivedParts(r);
             return (
-              <div key={r.project.id} className="fin-debt-card">
-                <button type="button" className="fin-debt-head" onClick={() => setEditProject(r.project)}>
+              <div key={r.project.id} className={'fin-smm-card' + (tone === 'late' ? ' late' : '')}>
+                <button type="button" className="head" onClick={() => setEditProject(r.project)}>
                   <b>{r.project.name}</b>
                   <span className="num">{money(r.project.tariff)}</span>
                 </button>
-                <span className="mini muted">
-                  тариф в месяц · договор {r.cycleDate ? formatDate(r.cycleDate) : (r.project.contractDate ? formatDate(r.project.contractDate) : '—')}
-                </span>
-                {r.alert === 'pay' && <span className="badge wait" style={{ alignSelf: 'flex-start' }}>получить оплату</span>}
-
-                <div className="fin-debt-plan">
-                  {parts.map(({ n, p }) => (
-                    <div key={n} className="fin-part-card">
-                      <span className="m">Часть {n}</span>
-                      {!p ? (
-                        <button className="btn ghost sm" onClick={() => setPlanFor({ row: r, partNo: n as 1 | 2 })}>
-                          <FinIcon name="plus" size={14} /> записать оплату
-                        </button>
-                      ) : p.status === 'received' ? (
-                        <>
-                          <span className="badge ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
-                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="badge wait">{money(p.amount)}</span>
-                          {p.dueDate && (
-                            <span className={'mini nowrap ' + (p.dueDate < todayISO() ? 'neg' : 'muted')}>
-                              до {formatDate(p.dueDate)}
-                            </span>
-                          )}
-                          <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
-                        </>
-                      )}
-                    </div>
-                  ))}
+                {r.project.note && <span className="fin-smm-note">{r.project.note}</span>}
+                <div className="line">
+                  <SmmManagerCell financeProjectId={r.project.id} data={managers} narrow bordered />
+                  <button type="button" className={'fin-smm-due right ' + (tone || '')} disabled={!r.nextDue} onClick={() => r.nextDue && setRestFor(r)}>
+                    {r.due
+                      ? <><span className="d">{dayMonth(r.due.date)}</span><span className="s">{daysLabel(r.due.date)}</span></>
+                      : <span className="s">срок не задан</span>}
+                  </button>
                 </div>
-
-                <button type="button" className="fin-debt-next fin-rest-row" disabled={!r.nextDue}
-                  onClick={() => r.nextDue && setRestFor(r)}>
-                  {r.fullyPaid
-                    ? <span className="badge ok">оплачено полностью</span>
-                    : <span className="mini muted">получено {money(r.monthPaid ?? r.paidLife)} из {money(r.project.tariff)}</span>}
-                  {r.nextDue && (
-                    <span className={'num ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : '')}>
-                      {r.fullyPaid ? 'след.' : 'остаток'} {money(r.nextDue.amount)}
-                    </span>
-                  )}
-                </button>
-
-                <NoteCell project={r.project} />
+                {got.length > 0 && (
+                  <span className="mini muted">
+                    получено {money(got.reduce((s: number, p: any) => s + p.amount, 0))}
+                    {r.remaining > 0 ? ` · остаток ${money(r.remaining)}` : ''}
+                  </span>
+                )}
+                <button type="button" className="btn primary pay" onClick={() => markPaid(r)}>Отметить оплату</button>
               </div>
             );
           })}
+
+          {paid.length > 0 && <div className="fin-smm-group-label ok">Оплачено · {paid.length}</div>}
+          {paid.map((r) => (
+            <div key={r.project.id} className="fin-smm-card paid">
+              <button type="button" className="head" onClick={() => setEditProject(r.project)}>
+                <b>{r.project.name}</b>
+                <span className="num">{money(r.project.tariff)}</span>
+              </button>
+              <div className="line">
+                <SmmManagerCell financeProjectId={r.project.id} data={managers} narrow bordered />
+                <button type="button" className="fin-smm-chip ok push" title="Отменить оплату" onClick={() => undoAsk(r)}>
+                  <FinIcon name="check" size={12} /> {r.paidAt ? dayMon(r.paidAt) : money(r.monthPaid ?? r.project.tariff)}
+                </button>
+                {r.due && <span className="mini muted nowrap">след. {dayMon(r.due.date)}</span>}
+              </div>
+            </div>
+          ))}
+
+          {rows.length > 0 && (
+            <div className="fin-smm-card totals">
+              <div className="head static">
+                <b>Итого · {pluralRu(rows.length, 'проект', 'проекта', 'проектов')}</b>
+                <span className="num">{money(totals.tariff)}</span>
+              </div>
+              <div className="fin-smm-total">
+                <span className="got">получено {money(receivedSum)}</span>
+                <span className="left">осталось {money(remainingSum)}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="table-wrap fin-wide-table" style={narrow ? { display: 'none' } : undefined}>
+      {!narrow && (
+      <div className="table-wrap fin-smm-table">
         <table>
           <thead>
             <tr>
-              <th style={{ minWidth: 150 }}>Проект</th>
-              <th>Дата контракта</th>
-              <th className="num" style={{ width: 90 }}>Тариф</th>
-              <th style={{ minWidth: 170 }}>Часть 1</th>
-              <th style={{ minWidth: 170 }}>Часть 2</th>
-              <th style={{ minWidth: 118 }}>Полная оплата</th>
-              <th style={{ minWidth: 140 }}>Комментарий</th>
-              {/* 3 кнопки действий — 76px не хватало, колонка обрезалась. */}
-              <th style={{ width: 116 }} />
+              <th style={{ minWidth: 200 }}>Проект</th>
+              <th style={{ minWidth: 170 }}>Менеджер</th>
+              <th className="num" style={{ width: 110 }}>Тариф</th>
+              <th style={{ minWidth: 170 }}>Срок</th>
+              <th style={{ minWidth: 290 }}>Оплата</th>
+              {/* Четыре кнопки: операции, правка, пауза, архив — раньше колонка
+                  была под три, и «в архив» обрезалась. */}
+              <th style={{ width: 168 }} />
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.project.id}>
-                <td>
-                  <b>{r.project.name}</b>
-                  {r.alert === 'pay' && <div style={{ marginTop: 4 }}><span className="badge wait">получить оплату</span></div>}
-                  {r.alert === 'rest' && <div style={{ marginTop: 4 }}><span className="badge transfer">получить остаток</span></div>}
-                </td>
-                {/* Дата цикла катится по месяцам: контракт 20.01 → в феврале 20.02.
-                    После каждой полной оплаты якорь = дата фактической оплаты. */}
-                <td className="muted nowrap">{r.cycleDate ? formatDate(r.cycleDate) : (r.project.contractDate ? formatDate(r.project.contractDate) : '—')}</td>
-                <td className="num">{money(r.project.tariff)}</td>
-                {([1, 2] as const).map((n) => {
-                  const p = n === 1 ? r.part1 : r.part2;
-                  return (
-                    <td key={n}>
-                      {!p ? (
-                        <button className="btn ghost sm" title="Записать оплату" onClick={() => setPlanFor({ row: r, partNo: n })}><FinIcon name="plus" size={15} /></button>
-                      ) : p.status === 'received' ? (
-                        <span className="flex">
-                          <span className="badge ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
+            {unpaid.length > 0 && <tr className="fin-smm-group wait"><td colSpan={6}>Ждём оплату · {unpaid.length}</td></tr>}
+            {unpaid.map((r) => {
+              const got = receivedParts(r);
+              return (
+                <tr key={r.project.id}>
+                  <td>
+                    <b>{r.project.name}</b>
+                    {r.project.note && <div className="fin-smm-note">{r.project.note}</div>}
+                  </td>
+                  <td><SmmManagerCell financeProjectId={r.project.id} data={managers} /></td>
+                  <td className="num">{money(r.project.tariff)}</td>
+                  <td>{dueCell(r)}</td>
+                  <td>
+                    <div className="fin-smm-pay">
+                      {got.map((p: any) => (
+                        <span key={p.plannedId} className="flex">
+                          <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
                           <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
                         </span>
+                      ))}
+                      {r.remaining > 0 && <span className="fin-smm-chip wait">{got.length > 0 ? 'остаток ' : ''}{money(r.remaining)}</span>}
+                      <button className="btn primary sm" onClick={() => markPaid(r)}>Отметить оплату</button>
+                    </div>
+                  </td>
+                  <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onOps={() => setOpsFor(r.project)} />
+                </tr>
+              );
+            })}
+
+            {paid.length > 0 && <tr className="fin-smm-group ok"><td colSpan={6}>Оплачено · {paid.length}</td></tr>}
+            {paid.map((r) => {
+              const got = receivedParts(r);
+              return (
+                <tr key={r.project.id}>
+                  <td>
+                    <b>{r.project.name}</b>
+                    {r.project.note && <div className="fin-smm-note">{r.project.note}</div>}
+                  </td>
+                  <td><SmmManagerCell financeProjectId={r.project.id} data={managers} /></td>
+                  <td className="num">{money(r.project.tariff)}</td>
+                  <td>{nextCell(r)}</td>
+                  <td>
+                    <div className="fin-smm-pay">
+                      {got.length === 1 ? (
+                        <>
+                          <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(got[0].amount)}</span>
+                          {r.paidAt && <span className="mini muted nowrap">{dayMonth(r.paidAt)}</span>}
+                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(got[0])}><FinIcon name="undo" size={15} /></button>
+                        </>
                       ) : (
-                        // Срок — второй строкой: ячейка вдвое уже, таблица влезает в окно.
-                        <div className="part-cell">
-                          <span className="flex">
-                            <span className="badge wait">{money(p.amount)}</span>
-                            <button className="btn primary sm" onClick={() => setReceive(p)}>Получено</button>
-                          </span>
-                          {p.dueDate && (
-                            <span className={'mini nowrap ' + (p.dueDate < todayISO() ? 'neg' : 'muted')} title="Срок оплаты">
-                              до {formatDate(p.dueDate)} · {daysLabel(p.dueDate)}
+                        <>
+                          {got.map((p: any) => (
+                            <span key={p.plannedId} className="flex">
+                              <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
+                              <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
                             </span>
-                          )}
-                        </div>
+                          ))}
+                          {r.paidAt && <span className="mini muted nowrap">{dayMonth(r.paidAt)}</span>}
+                        </>
                       )}
-                    </td>
-                  );
-                })}
-                <td>
-                  {/* Клик по блоку — правка суммы/срока ближайшего плана и
-                      (частичная) оплата. Доступен и у полностью оплаченных:
-                      там ближайший план — следующий цикл. */}
-                  <button type="button" className="rest-link" disabled={!r.nextDue}
-                    title={r.nextDue ? 'Изменить сумму/срок или отметить полученным' : undefined}
-                    onClick={() => r.nextDue && setRestFor(r)}>
-                    {r.fullyPaid
-                      ? <span className="badge ok">оплачено</span>
-                      : <span className="mini muted nowrap">{money(r.monthPaid ?? r.paidLife)} / {money(r.project.tariff)}</span>}
-                    {r.nextDue && (
-                      <span className={'mini nowrap ' + ((daysUntil(r.nextDue.dueDate) ?? 1) < 0 ? 'neg' : 'muted')}>
-                        {r.fullyPaid ? 'след.' : 'остаток'} {money(r.nextDue.amount)}
-                        {r.nextDue.dueDate ? <><br />до {formatDate(r.nextDue.dueDate)} · {daysLabel(r.nextDue.dueDate)}</> : null}
-                      </span>
-                    )}
-                  </button>
-                </td>
-                <td><NoteCell project={r.project} /></td>
-                <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onOps={() => setOpsFor(r.project)} />
-              </tr>
-            ))}
+                    </div>
+                  </td>
+                  <RowActions onEdit={() => setEditProject(r.project)} onPause={() => pauseProject(r.project)} onArchive={() => archiveProject(r.project)} onOps={() => setOpsFor(r.project)} />
+                </tr>
+              );
+            })}
           </tbody>
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={2}><b>Итого</b></td>
-                <td className="num"><b>{money(totals.tariff)}</b></td>
-                <td><b>{money(totals.part1)}</b></td>
-                <td><b>{money(totals.part2)}</b></td>
-                <td><b>{money(totals.full)}</b></td>
+                <td><b>Итого · {pluralRu(rows.length, 'проект', 'проекта', 'проектов')}</b></td>
                 <td />
+                <td className="num"><b>{money(totals.tariff)}</b></td>
+                <td />
+                <td>
+                  <div className="fin-smm-total">
+                    <span className="got">получено {money(receivedSum)}</span>
+                    <span className="left">осталось {money(remainingSum)}</span>
+                  </div>
+                </td>
                 <td />
               </tr>
             </tfoot>
           )}
         </table>
       </div>
+      )}
 
       <p className="mini muted fin-table-note">
-        Частичная оплата: остаток планируется сам со сроком +15 дней. Полная оплата: дата контракта
-        сдвигается на день оплаты, план следующего месяца создаётся автоматически.
+        Частичная оплата: остаток встаёт сам со сроком +15 дней. После полной оплаты следующий срок создаётся автоматически.
       </p>
 
       <ProjectStateSections direction="smm" archived={data.archived || []} />
@@ -613,7 +724,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       {receive && <ReceiveModal part={receive} onClose={() => setReceive(null)} />}
       {restFor?.nextDue && (
         <PlanManageModal
-          title={`Остаток · ${restFor.project.name}`}
+          title={`${restFor.fullyPaid ? 'Следующая оплата' : 'Остаток'} · ${restFor.project.name}`}
           plan={{ id: restFor.nextDue.plannedId, amount: restFor.nextDue.amount, dueDate: restFor.nextDue.dueDate }}
           onClose={() => setRestFor(null)}
           onDelete={async () => {
@@ -626,6 +737,13 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       {opsFor && <ProjectOperationsModal project={opsFor} onClose={() => setOpsFor(null)} />}
     </>
   );
+}
+
+/** Полученные части отображаемого цикла. Сервер отдаёт их списком; у
+ *  прежнего ответа (до выкладки) берём из ячеек частей. */
+function receivedParts(r: any): Array<{ plannedId: string; amount: number; txId?: string | null }> {
+  if (Array.isArray(r.receivedParts)) return r.receivedParts;
+  return [r.part1, r.part2].filter((p: any) => p && p.status === 'received');
 }
 
 function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; ym: string; onClose: () => void }) {

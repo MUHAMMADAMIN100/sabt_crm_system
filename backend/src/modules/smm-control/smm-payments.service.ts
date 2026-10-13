@@ -148,6 +148,87 @@ export class SmmPaymentsService {
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }
 
+  /**
+   * Колонка «Менеджер» в «Финансы → Доход → SMM» (13.10.2026): кто берёт
+   * деньги у клиента. Это тот же ответственный менеджер, что в карточке
+   * SMM-проекта (smmData.salesManagerId) — отдельного поля в «Финансах» нет,
+   * чтобы назначение не расходилось. Клиент «Финансов» находит свой проект
+   * CRM той же связью, что и сроки оплат; где её нет — project = null, и
+   * владелец связывает их вручную.
+   */
+  async financeManagers(actor: Actor) {
+    const projects = await this.smmProjects();
+    const all = await this.clients();
+    const links = resolveFinanceLinks(
+      projects.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), all,
+    );
+    // Обратная сторона связи: клиент → проект. Ручной выбор важнее названия.
+    const byClient = new Map<string, { project: Project; by: 'manual' | 'name' }>();
+    for (const p of [...projects].sort((a, b) => a.name.localeCompare(b.name, 'ru'))) {
+      const l = links.get(p.id);
+      if (!l) continue;
+      const cur = byClient.get(l.client.id);
+      if (!cur || (cur.by === 'name' && l.by === 'manual')) byClient.set(l.client.id, { project: p, by: l.by });
+    }
+    const users: Array<{ id: string; name: string; avatar: string | null; role: string; secondaryRole: string | null; isActive: boolean }> =
+      await this.ds.query(`SELECT id, name, avatar, role, "secondaryRole", "isActive" FROM users`)
+        .catch((e: any) => { this.logger.warn(`users query failed: ${e?.message || e}`); return []; });
+    const userOf = new Map(users.map(u => [u.id, u]));
+    const person = (id: string | null) => {
+      const u = id ? userOf.get(id) : undefined;
+      return u ? { id: u.id, name: u.name, avatar: u.avatar || null } : null;
+    };
+    const linkedProject = new Map<string, string>();
+    for (const [clientId, v] of byClient) linkedProject.set(v.project.id, clientId);
+
+    return {
+      // Менеджера назначает только владелец — как в карточке проекта.
+      canAssign: this.rolesOf(actor).includes('founder'),
+      canLink: this.isTop(actor),
+      clients: all
+        .filter(c => c.direction === 'smm' && !c.archived)
+        .map(c => {
+          const hit = byClient.get(c.id) || null;
+          return {
+            financeProjectId: c.id,
+            project: hit ? { id: hit.project.id, name: hit.project.name } : null,
+            by: hit ? hit.by : null,
+            manager: hit ? person(managerOf(hit.project)) : null,
+          };
+        }),
+      managers: users
+        .filter(u => u.isActive && (SALES_ROLES.includes(u.role) || SALES_ROLES.includes(u.secondaryRole || '')))
+        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+      // Проекты CRM для «связать»: свободные первыми.
+      projects: projects
+        .map(p => ({ id: p.id, name: p.name, taken: linkedProject.has(p.id) }))
+        .sort((a, b) => Number(a.taken) - Number(b.taken) || a.name.localeCompare(b.name, 'ru')),
+    };
+  }
+
+  /** Связать клиента «Финансов» с SMM-проектом CRM со стороны «Финансов»
+   *  (null — снять ручную связь). У клиента один проект: прежняя ручная
+   *  связь с этим клиентом у других проектов снимается. */
+  async linkClient(financeProjectId: string, projectId: string | null, actor: Actor) {
+    const found = (await this.clients()).some(c => c.id === financeProjectId);
+    if (!found) throw new NotFoundException('Клиент в «Финансах» не найден');
+    const projects = await this.smmProjects();
+    const target = projectId ? projects.find(p => p.id === projectId) : null;
+    if (projectId && !target) throw new NotFoundException('Проект не найден');
+    for (const p of projects) {
+      if (linkOf(p) !== financeProjectId || p.id === projectId) continue;
+      const sd: any = { ...(p.smmData || {}) };
+      delete sd.financeProjectId;
+      await this.projectRepo.update(p.id, { smmData: sd });
+    }
+    if (target) {
+      const sd: any = { ...(target.smmData || {}), financeProjectId };
+      await this.projectRepo.update(target.id, { smmData: sd });
+    }
+    return this.financeManagers(actor);
+  }
+
   /** Связать SMM-проект с клиентом «Финансов» вручную (null — вернуть поиск
    *  по названию). Нужно там, где названия в CRM и в «Финансах» разные. */
   async link(projectId: string, financeProjectId: string | null, actor: Actor) {

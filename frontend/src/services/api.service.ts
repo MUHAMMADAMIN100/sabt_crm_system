@@ -455,6 +455,21 @@ export const smmPaymentsApi = {
   /** Связать проект с клиентом «Финансов»; null — вернуть поиск по названию. */
   link: (projectId: string, financeProjectId: string | null): Promise<ClientPayProject> =>
     api.patch(`/smm-payments/project/${projectId}/link`, { financeProjectId }).then(r => r.data),
+  /** Колонка «Менеджер» в «Финансы → Доход → SMM»: кто берёт деньги у клиента. */
+  financeManagers: (): Promise<FinanceManagers> =>
+    api.get('/smm-payments/finance-managers').then(r => r.data),
+  /** Связать клиента «Финансов» с SMM-проектом CRM; null — снять ручную связь. */
+  linkClient: (financeProjectId: string, projectId: string | null): Promise<FinanceManagers> =>
+    api.patch(`/smm-payments/finance-client/${financeProjectId}/project`, { projectId }).then(r => r.data),
+}
+
+export type FinancePerson = { id: string; name: string; avatar: string | null }
+/** Менеджеры клиентов «Финансов»: у клиента — проект CRM и его ответственный. */
+export type FinanceManagers = {
+  canAssign: boolean; canLink: boolean
+  clients: { financeProjectId: string; project: { id: string; name: string } | null; by: 'manual' | 'name' | null; manager: FinancePerson | null }[]
+  managers: FinancePerson[]
+  projects: { id: string; name: string; taken: boolean }[]
 }
 
 export const contentPlanApi = {

@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, DataSource, EntityManager } from 'typeorm';
+import { Repository, Between, DataSource, EntityManager, In } from 'typeorm';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -24,6 +24,7 @@ import { LateFineDecision } from './entities/late-fine-decision.entity';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import { TelegramService } from '../telegram/telegram.service';
+import { paymentItems as smmPaymentItems } from '../smm-control/smm-payments.logic';
 import {
   isEarningFinanceProject as isEarning,
   isPostedFinanceTransaction,
@@ -1975,8 +1976,44 @@ export class FinanceService implements OnModuleInit {
         const nextPlan = pPlans
           .filter(x => x.status === 'expected')
           .sort((a, b) => ((a.dueDate ?? `${a.ym}-01`) < (b.dueDate ?? `${b.ym}-01`) ? -1 : 1))[0] ?? null;
+        // Срок и остаток строки (таблица «срок · оплата», 13.10.2026). Правила
+        // те же, что у блока «Оплаты клиентов» для менеджеров
+        // (smm-payments.logic): владелец и менеджер видят одно и то же
+        // «просрочено». Клиент без ожидаемого плана получает срок по дню
+        // договора — раньше такая строка показывала только значок.
+        const dueItem = smmPaymentItems(
+          {
+            id: p.id, name: p.name, direction: p.direction, tariff,
+            contractDate: p.contractDate, cycleAnchor: p.cycleAnchor,
+            archived: !!p.archived, status: p.status,
+          },
+          pPlans.map(x => ({
+            id: x.id, projectId: p.id, ym: x.ym, partNo: x.partNo, status: x.status,
+            dueDate: x.dueDate ?? null, amount: Number(x.amount), paidAt: null,
+          })),
+          today,
+        ).find(it => it.state !== 'paid') ?? null;
+        const duePlanned = !!dueItem && dueItem.key.startsWith('plan:');
+        // «Осталось получить» по строке: ожидаемые планы этого и прошлых
+        // месяцев; если плана нет вовсе — тариф, когда срок по дню договора
+        // уже наступил или наступит в просматриваемом месяце.
+        const openPlans = pPlans.filter(x => x.status === 'expected' && x.ym <= ym);
+        const dueCounts = !!dueItem && !duePlanned && ymOf(dueItem.date) <= ym;
+        const remaining = openPlans.length
+          ? r2(openPlans.reduce((s, x) => s + Number(x.amount), 0))
+          : (dueCounts ? tariff : 0);
+        const overdue = openPlans.length
+          ? r2(openPlans.filter(x => x.dueDate && x.dueDate < today).reduce((s, x) => s + Number(x.amount), 0))
+          : (dueCounts && dueItem!.state === 'late' ? tariff : 0);
         return {
           project: { id: p.id, name: p.name, tariff, contractDate: p.contractDate, archived: p.archived, note: p.note },
+          due: dueItem ? { date: dueItem.date, state: dueItem.state, planned: duePlanned } : null,
+          remaining, overdue,
+          // Полученные части отображаемого цикла — для «✓ сумма» с отменой.
+          receivedParts: cyclePlans
+            .filter(x => x.status === 'received')
+            .sort((a, b) => a.partNo - b.partNo || ((a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0)))
+            .map(x => ({ plannedId: x.id, amount: Number(x.amount), partNo: x.partNo, txId: x.receivedTxId })),
           // Дата цикла «катится»: контракт 20.01 → в просмотре февраля 20.02.
           cycleDate: this.smmCycleDate(p, ym),
           part1: partOf(1), part2: partOf(2), paidLife, monthPaid: cyclePaid,
@@ -2005,8 +2042,34 @@ export class FinanceService implements OnModuleInit {
       // перетёкшие циклы прошлого месяца), чтобы tfoot совпадал с таблицей.
       const part1 = r2(displayedPlans.filter(x => x.partNo === 1).reduce((s, x) => s + Number(x.amount), 0));
       const part2 = r2(displayedPlans.filter(x => x.partNo === 2).reduce((s, x) => s + Number(x.amount), 0));
+      // Когда получено: дата операции последней полученной части цикла.
+      const paidTxIds = [...new Set(rows.flatMap(r => r.receivedParts.map(x => x.txId).filter(Boolean) as string[]))];
+      const paidTx = paidTxIds.length ? await this.txRepo.find({ where: { id: In(paidTxIds) } }) : [];
+      const paidDate = new Map(paidTx.map(t => [t.id, t.date]));
+      const rowsOut = rows.map(r => ({
+        ...r,
+        paidAt: r.receivedParts
+          .map(x => (x.txId ? paidDate.get(x.txId) ?? null : null))
+          .filter(Boolean)
+          .sort()
+          .pop() ?? null,
+      }));
+      // Сводка, которая сходится с таблицей: «ожидается» включает и
+      // просроченное без плана; «получено» отдельно называет деньги от
+      // проектов, которых в таблице нет (пауза, архив).
+      const remainingSum = r2(rows.reduce((s, r) => s + r.remaining, 0));
+      const overdueSum = r2(rows.reduce((s, r) => s + r.overdue, 0));
+      const receivedInactive = r2(monthReceived
+        .filter(x => x.receivedTxId && !activeIds.has(x.projectId as string))
+        .reduce((s, x) => s + Number(x.amount), 0));
       return {
-        kind: 'smm', rows,
+        kind: 'smm', rows: rowsOut,
+        summary: {
+          expected: remainingSum, overdue: overdueSum,
+          receivedCash, receivedInactive,
+          receivedTable: r2(rows.reduce((s, r) => s + (r.monthPaid || 0), 0)),
+          total: r2(remainingSum + receivedCash),
+        },
         stats: { expected, receivedCash, spentOffAccount, total: r2(expected + receivedCash) },
         totals: { tariff: r2(active.reduce((s, p) => s + Number(p.tariff), 0)), part1, part2, full: r2(part1 + part2) },
         needPay: rows.filter(r => r.alert === 'pay').length,
