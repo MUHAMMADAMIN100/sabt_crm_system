@@ -121,6 +121,14 @@ describe('resolveFinanceLinks — какой клиент «Финансов» �
     expect(links.get('p2')).toEqual({ client: clients[1], by: 'name' });
   });
 
+  it('порядок слов в названии не важен: «Доктор Манижа» и «Манижа Доктор» — один клиент', () => {
+    const list = [{ id: 'f9', name: 'Доктор Манижа', archived: false }, { id: 'f8', name: 'Остиум Умрона', archived: false }];
+    const links = resolveFinanceLinks([{ id: 'p9', name: 'Манижа Доктор' }, { id: 'p8', name: 'Остиум' }], list);
+    expect(links.get('p9')).toEqual({ client: list[0], by: 'name' });
+    // другое название — не связываем, даже если одно слово общее
+    expect(links.has('p8')).toBe(false);
+  });
+
   it('два клиента с одним названием не связывает — нужен выбор владельца', () => {
     const links = resolveFinanceLinks([{ id: 'p3', name: 'Asan' }], clients);
     expect(links.has('p3')).toBe(false);

@@ -50,9 +50,10 @@ export interface PayItem {
 /** Сколько дней полученная оплата ещё видна менеджеру как «оплачено». */
 export const PAID_VISIBLE_DAYS = 7;
 
-/** Название без регистра, «ё» и знаков — чтобы связать SMM-проект с клиентом в Финансах. */
+/** Название без регистра, «ё», знаков и порядка слов — чтобы связать SMM-проект
+ *  с клиентом в Финансах: «Доктор Манижа» и «Манижа Доктор» — один клиент. */
 export const nameKey = (s?: string | null) => String(s || '').toLowerCase().replace(/ё/g, 'е')
-  .replace(/[^a-zа-я0-9]+/gi, ' ').trim();
+  .replace(/[^a-zа-я0-9]+/gi, ' ').trim().split(' ').filter(Boolean).sort().join(' ');
 
 const ymOf = (iso: string) => iso.slice(0, 7);
 const shiftYm = (ym: string, delta: number) => {

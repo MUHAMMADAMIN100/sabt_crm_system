@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FinanceIncomeGroupPage from './FinanceIncomeGroupPage';
 import { dayMon, dayMonth, dueTone, splitSmmRows } from './smmIncome';
+import { avatarUrl, rankProjects } from './SmmManagerCell';
 
 // «Доход → SMM» — таблица «менеджер · срок · оплата» (макет владельца
 // 13.10.2026): строки по срочности двумя группами, одна колонка «Оплата»
@@ -151,7 +152,7 @@ describe('«Доход → SMM»: менеджер, срок и оплата', (
     expect(screen.getByText('Фаррух')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Назначить' }));
-    const menu = screen.getByRole('menu');
+    const menu = await screen.findByRole('menu');
     expect(within(menu).getByText('Менеджеры по продажам')).toBeInTheDocument();
     await user.click(within(menu).getByRole('menuitem', { name: /Фаррух/ }));
     await waitFor(() => expect(mocks.setSmmManager).toHaveBeenCalledWith('pB', 'm2'));
@@ -161,10 +162,29 @@ describe('«Доход → SMM»: менеджер, срок и оплата', (
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'нет в CRM — связать' }));
-    const menu = screen.getByRole('menu');
+    const menu = await screen.findByRole('menu');
     expect(within(menu).getByText('SMM-проекты в CRM')).toBeInTheDocument();
     await user.click(within(menu).getByRole('menuitem', { name: 'US2TJK' }));
     await waitFor(() => expect(mocks.linkClient).toHaveBeenCalledWith('C', 'pX'));
+  });
+
+  it('длинный список проектов листается: прокрутка внутри списка его не закрывает', async () => {
+    const user = userEvent.setup();
+    mocks.financeManagers.mockResolvedValue({
+      ...MANAGERS,
+      projects: Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, name: `Проект ${i}`, taken: false })),
+    });
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'нет в CRM — связать' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(12);
+
+    fireEvent.scroll(menu); // листаем сам список — он остаётся открытым
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    // с восьми проектов появляется поиск
+    await user.type(within(menu).getByLabelText('Найти проект'), '11');
+    expect(within(menu).getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['Проект 11']);
   });
 
   it('на телефоне — карточки вместо таблицы', async () => {
@@ -205,6 +225,20 @@ describe('smmIncome — порядок, тон срока и даты', () => {
     expect(dueTone({ date: '2026-10-16', state: 'wait', planned: true })).toBe('soon');
     expect(dueTone({ date: '2026-10-17', state: 'wait', planned: true })).toBe('wait');
     expect(dueTone(null)).toBeNull();
+  });
+
+  it('в списке «связать» похожие по названию проекты стоят первыми, занятые — в конце', () => {
+    const list = [
+      { name: 'Asan', taken: false }, { name: 'Остиум', taken: false },
+      { name: 'Умрона Плюс', taken: true }, { name: 'Sabt', taken: false },
+    ];
+    expect(rankProjects('Остиум Умрона', list).map((p) => p.name)).toEqual(['Остиум', 'Asan', 'Sabt', 'Умрона Плюс']);
+  });
+
+  it('фото менеджера: имя файла и «db:» превращаются в адрес на сервере', () => {
+    expect(avatarUrl('https://cdn.example/a.png')).toBe('https://cdn.example/a.png');
+    expect(avatarUrl('db:123')).toMatch(/\/api\/avatars\/123$/);
+    expect(avatarUrl('a.jpg')).toMatch(/\/uploads\/avatars\/a\.jpg$/);
   });
 
   it('даты без года', () => {

@@ -560,7 +560,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                 </button>
                 {r.project.note && <span className="fin-smm-note">{r.project.note}</span>}
                 <div className="line">
-                  <SmmManagerCell financeProjectId={r.project.id} data={managers} narrow bordered />
+                  <SmmManagerCell financeProjectId={r.project.id} clientName={r.project.name} data={managers} narrow bordered />
                   <button type="button" className={'fin-smm-due right ' + (tone || '')} disabled={!r.nextDue} onClick={() => r.nextDue && setRestFor(r)}>
                     {r.due
                       ? <><span className="d">{dayMonth(r.due.date)}</span><span className="s">{daysLabel(r.due.date)}</span></>
@@ -586,7 +586,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                 <span className="num">{money(r.project.tariff)}</span>
               </button>
               <div className="line">
-                <SmmManagerCell financeProjectId={r.project.id} data={managers} narrow bordered />
+                <SmmManagerCell financeProjectId={r.project.id} clientName={r.project.name} data={managers} narrow bordered />
                 <button type="button" className="fin-smm-chip ok push" title="Отменить оплату" onClick={() => undoAsk(r)}>
                   <FinIcon name="check" size={12} /> {r.paidAt ? dayMon(r.paidAt) : money(r.monthPaid ?? r.project.tariff)}
                 </button>
@@ -635,7 +635,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                     <b>{r.project.name}</b>
                     {r.project.note && <div className="fin-smm-note">{r.project.note}</div>}
                   </td>
-                  <td><SmmManagerCell financeProjectId={r.project.id} data={managers} /></td>
+                  <td><SmmManagerCell financeProjectId={r.project.id} clientName={r.project.name} data={managers} /></td>
                   <td className="num">{money(r.project.tariff)}</td>
                   <td>{dueCell(r)}</td>
                   <td>
@@ -664,7 +664,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                     <b>{r.project.name}</b>
                     {r.project.note && <div className="fin-smm-note">{r.project.note}</div>}
                   </td>
-                  <td><SmmManagerCell financeProjectId={r.project.id} data={managers} /></td>
+                  <td><SmmManagerCell financeProjectId={r.project.id} clientName={r.project.name} data={managers} /></td>
                   <td className="num">{money(r.project.tariff)}</td>
                   <td>{nextCell(r)}</td>
                   <td>
