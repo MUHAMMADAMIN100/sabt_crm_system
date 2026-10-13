@@ -10,6 +10,7 @@ import { Avatar, Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
+import ClientPaymentRow from './ClientPaymentRow'
 import { DevTasksTab } from '@/pages/dev/components/DevTasksTab'
 import { DevTeamBlock } from '@/pages/dev/components/DevTeamBlock'
 
@@ -692,6 +693,10 @@ export default function SmmProjectPage() {
                 </div>
               </div>
             )}
+            {/* Когда клиент должен заплатить — срок из «Финансов» (12.10.2026).
+                Строку видят владелец, админ и ответственный менеджер проекта;
+                остальным она не приходит. */}
+            {section === 'smm' && <ClientPaymentRow projectId={id!} />}
             {/* Видеографа, монтажёра и дизайнера здесь НЕ показываем (решение
                 владельца, 23.09.2026): специалист каждой роли в агентстве один,
                 съёмка, монтаж и дизайн уходят ему сами, и три одинаковые строки

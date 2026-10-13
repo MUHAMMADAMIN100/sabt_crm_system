@@ -429,6 +429,34 @@ export const smmControlApi = {
   }) => api.patch(`/smm-control/${projectId}`, data).then(r => r.data),
 }
 
+/** Оплата клиента для менеджера: проект, день и состояние — без сумм. */
+export type ClientPayItem = {
+  key: string; projectId: string; projectName: string
+  /** День, в котором оплата стоит в календаре (срок; у полученной без срока — день получения). */
+  date: string; dueDate: string | null; partNo: number
+  state: 'late' | 'today' | 'wait' | 'paid'; paidAt: string | null
+}
+export type ClientPayProject = {
+  visible: boolean; canLink?: boolean; today?: string
+  client?: { id: string; name: string; by: 'manual' | 'name'; active: boolean } | null
+  next?: ClientPayItem | null; lastPaid?: ClientPayItem | null
+}
+
+/** «Когда клиент должен заплатить» по SMM-проектам: сроки из «Финансов».
+ *  Менеджер по продажам получает только свои проекты. */
+export const smmPaymentsApi = {
+  mine: (): Promise<{ today: string; projects: number; items: ClientPayItem[]; unlinked: { projectId: string; projectName: string }[] }> =>
+    api.get('/smm-payments/mine').then(r => r.data),
+  project: (projectId: string): Promise<ClientPayProject> =>
+    api.get(`/smm-payments/project/${projectId}`).then(r => r.data),
+  /** Клиенты SMM из «Финансов» — для выбора в карточке проекта (владелец, админ). */
+  financeClients: (): Promise<{ id: string; name: string; active: boolean }[]> =>
+    api.get('/smm-payments/finance-clients').then(r => r.data),
+  /** Связать проект с клиентом «Финансов»; null — вернуть поиск по названию. */
+  link: (projectId: string, financeProjectId: string | null): Promise<ClientPayProject> =>
+    api.patch(`/smm-payments/project/${projectId}/link`, { financeProjectId }).then(r => r.data),
+}
+
 export const contentPlanApi = {
   list: (params?: any) => api.get('/content-plan', { params }).then(r => r.data),
   get: (id: string) => api.get(`/content-plan/${id}`).then(r => r.data),

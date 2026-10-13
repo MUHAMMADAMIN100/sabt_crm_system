@@ -6,6 +6,7 @@ import { Project } from '../projects/project.entity';
 import { ClientLead } from '../clients/client-lead.entity';
 import { getSalesSegment } from '../../common/sales-segment';
 import { directionScopeOf } from '../../common/direction-scope';
+import { SmmPaymentsService } from '../smm-control/smm-payments.service';
 
 /** Прогресс задачи в % для отображения на карточке календаря.
  *  Приоритет: 1) доля выполненных подзадач (acceptanceCriteria),
@@ -35,6 +36,7 @@ export class CalendarService {
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(ClientLead) private leadRepo: Repository<ClientLead>,
+    private payments: SmmPaymentsService,
   ) {}
 
   async getEvents(
@@ -245,6 +247,44 @@ export class CalendarService {
       link: null,
     }));
 
+    // Оплаты клиентов (решение владельца 12.10.2026): менеджер по продажам
+    // видит в своём календаре, когда клиент должен заплатить, — только по
+    // SMM-проектам, где он ответственный. Сроки из «Финансов», сумм нет.
+    // При фильтре «Личные»/«Общие» и в чужом календаре не показываем.
+    const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
+    const isSalesViewer = SALES_ROLES.includes(role)
+      || (!!viewerSecondaryRole && SALES_ROLES.includes(viewerSecondaryRole));
+    let paymentEvents: any[] = [];
+    if (isSalesViewer && viewerId && (!scope || scope === 'business') && (!employeeId || employeeId === viewerId)) {
+      const fromDay = String(from || '').slice(0, 10);
+      const toDay = String(to || '').slice(0, 10);
+      const pays = await this.payments.forManager(viewerId).catch((e: any) => {
+        this.logger.warn(`client payment events failed: ${e?.message || e}`);
+        return [];
+      });
+      paymentEvents = pays
+        .filter(it => (!fromDay || it.date >= fromDay) && (!toDay || it.date <= toDay)
+          && (!projectId || it.projectId === projectId))
+        .map(it => ({
+          id: `client-payment-${it.key}`,
+          title: `Оплата: ${it.projectName}${it.partNo === 2 ? ' · 2-я часть' : ''}`,
+          description: null,
+          // Без часового пояса — день не съезжает; полночь — событие «на
+          // весь день»: в недельном виде оно стоит в шапке дня, а не в 12:00.
+          date: `${it.date}T00:00:00`,
+          startDate: `${it.date}T00:00:00`,
+          type: 'client_payment',
+          // late — просрочена, today — сегодня, wait — ждём, paid — оплачено.
+          payState: it.state,
+          dueDate: it.dueDate,
+          paidAt: it.paidAt,
+          projectName: it.projectName,
+          assigneeId: viewerId,
+          scope: 'business',
+          link: `/smm/projects/${it.projectId}`,
+        }));
+    }
+
     const [tasks, projects] = await Promise.all([taskQb.getMany(), projectQb.getMany()]);
 
     const clientMeetingEvents = leads.map(c => {
@@ -348,6 +388,7 @@ export class CalendarService {
       ...projectStartEvents,
       ...projectEndEvents,
       ...shootEvents,
+      ...paymentEvents,
     ].sort(
       (a, b) => new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime(),
     );

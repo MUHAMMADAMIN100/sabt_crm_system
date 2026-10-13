@@ -5,9 +5,12 @@ import { Project } from '../projects/project.entity';
 import { ClientLead } from '../clients/client-lead.entity';
 import { CalendarController } from './calendar.controller';
 import { CalendarService } from './calendar.service';
+import { SmmControlModule } from '../smm-control/smm-control.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Task, Project, ClientLead])],
+  // SmmControlModule — сроки оплат клиентов для менеджеров (сам он никого не
+  // импортирует, кольца зависимостей нет).
+  imports: [TypeOrmModule.forFeature([Task, Project, ClientLead]), SmmControlModule],
   controllers: [CalendarController],
   providers: [CalendarService],
 })

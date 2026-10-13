@@ -10,7 +10,7 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -31,8 +31,28 @@ const TYPE_COLORS: Record<string, string> = {
  *  она выделена цветом и значком, а не теряется среди задач. */
 const MEETING_COLOR = 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 border-primary-200 dark:border-primary-800'
 
+/** Оплата клиента (решение владельца 12.10.2026): менеджер видит в календаре,
+ *  когда клиент SMM-проекта должен заплатить. Цвет — по состоянию: ждём —
+ *  акцентный, сегодня — янтарный, просрочена — красный, оплачена — серая и
+ *  зачёркнута. Суммы в событии нет. */
+const PAYMENT_COLORS: Record<string, string> = {
+  wait:  'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300 border-primary-300 dark:border-primary-500 font-semibold',
+  today: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 border-amber-300 dark:border-amber-600 font-semibold',
+  late:  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 border-red-300 dark:border-red-700 font-semibold',
+  paid:  'bg-transparent text-surface-500 dark:text-surface-400 border-surface-200 dark:border-surface-700 line-through',
+}
+
+/** Значок оплаты клиента: кошелёк, у оплаченной — зелёная галочка. */
+function PayMark({ e, size }: { e: any; size: number }) {
+  if (e.type !== 'client_payment') return null
+  return e.payState === 'paid'
+    ? <Check className="shrink-0 text-emerald-500" size={size} strokeWidth={3} />
+    : <Wallet className="shrink-0" size={size} />
+}
+
 /** Цвет карточки события: встреча → свой, задача → по типу задачи. */
 const eventColor = (e: any): string => {
+  if (e.type === 'client_payment') return PAYMENT_COLORS[e.payState] || PAYMENT_COLORS.wait
   if (e.type === 'task' && e.kind === 'meeting') return MEETING_COLOR
   if (e.type === 'task' && e.scope) return SCOPE_COLORS[e.scope] || TYPE_COLORS.task
   return TYPE_COLORS[e.type] || 'bg-gray-100 text-gray-700'
@@ -334,11 +354,14 @@ export default function CalendarPage() {
       if (e.type === 'client_meeting' || e.type === 'client_repeat_call') return true
       // Съёмки — общий график, показываем всем (видеографам в т.ч.).
       if (e.type === 'shoot') return true
+      // Оплаты клиентов: сервер отдаёт менеджеру только его проекты.
+      if (e.type === 'client_payment') return true
       if (e.type !== 'task') return false
       return e.assigneeId === user?.id || e.createdById === user?.id
     }
     return e.type === 'project_start' || e.type === 'project_end' || e.type === 'task'
       || e.type === 'client_meeting' || e.type === 'client_repeat_call' || e.type === 'shoot'
+      || e.type === 'client_payment'
   })
 
   const eventsForDay = (day: Date) =>
@@ -382,6 +405,10 @@ export default function CalendarPage() {
     if ((e.type === 'client_meeting' || e.type === 'client_repeat_call') && e.clientId) {
       // Карточка клиента прямо в календаре — без перехода на Базу клиентов.
       setClientCardId(e.clientId)
+      return
+    }
+    if (e.type === 'client_payment') {
+      if (e.link) navigate(e.link)
       return
     }
     if (e.type === 'task') {
@@ -645,6 +672,7 @@ export default function CalendarPage() {
                           />
                         )}
                         {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                        <PayMark e={e} size={9} />
                         {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
                         {/* Прогресс % — только для основателя/сооснователя. */}
@@ -727,6 +755,7 @@ export default function CalendarPage() {
                             />
                           )}
                           {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={10} />}
+                          <PayMark e={e} size={10} />
                           {e.scope === 'personal' && <Lock className="shrink-0" size={10} />}
                           <span className="truncate flex-1 min-w-0">{e.title}</span>
                         </button>
@@ -1015,6 +1044,7 @@ export default function CalendarPage() {
                     />
                   )}
                   {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={12} />}
+                  <PayMark e={e} size={12} />
                   {e.scope === 'personal' && <Lock size={12} className="shrink-0" />}
                   <span className="flex-1 min-w-0 truncate">{e.title}</span>
                   {e.type === 'task' && typeof e.progress === 'number' && (
@@ -1231,6 +1261,7 @@ function WeekView({
                         />
                       )}
                       {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                      <PayMark e={e} size={9} />
                       {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                       <span className="truncate flex-1 min-w-0">{e.title}</span>
                     </button>
@@ -1314,6 +1345,7 @@ function WeekView({
                           />
                         )}
                         {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                        <PayMark e={e} size={9} />
                         {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                         <span className="text-[10px] tabular-nums opacity-70 shrink-0">{eventTime}</span>
                         <span className="truncate flex-1 min-w-0">{e.title}</span>

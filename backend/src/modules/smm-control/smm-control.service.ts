@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
+import { resolveFinanceLinks } from './smm-payments.logic';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Кто видит и правит все проекты раздела. */
@@ -38,9 +39,6 @@ const cycleOf = (ref: string, day: number): { start: string; end: string } => {
   end.setUTCDate(end.getUTCDate() - 1);
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 };
-/** Название без регистра, «ё» и знаков — чтобы связать SMM-проект с проектом в Финансах. */
-const nameKey = (s?: string | null) => String(s || '').toLowerCase().replace(/ё/g, 'е')
-  .replace(/[^a-zа-я0-9]+/gi, ' ').trim();
 
 @Injectable()
 export class SmmControlService {
@@ -172,8 +170,9 @@ export class SmmControlService {
       : [];
     for (const u of byUsers) userName.set(u.id, u.name);
 
-    // Оплата за месяц — из Финансов, по совпадению названия проекта.
-    const payOf = seeMoney ? await this.paymentsByName(month, today) : new Map<string, string>();
+    // Оплата за месяц — из Финансов: по клиенту, выбранному в карточке
+    // проекта, иначе по совпадению названия.
+    const payOf = seeMoney ? await this.paymentsByProject(live, month, today) : new Map<string, string>();
 
     const rows = live.map(p => {
       const sd: any = p.smmData || {};
@@ -217,45 +216,46 @@ export class SmmControlService {
         reels: { done: n('reel'), norm: Number(sd.normReels) || 0 },
         posts: { done: n('post'), norm: Number(sd.normPosts) || 0 },
         plan,
-        payment: seeMoney ? (payOf.get(nameKey(p.name)) ?? null) : undefined,
+        payment: seeMoney ? (payOf.get(p.id) ?? null) : undefined,
       };
     }).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 
     return { ym: month, today, ref, seeMoney, projects: rows };
   }
 
-  /** Статус оплаты месяца по названию проекта: paid — всё получено, late —
-   *  есть ожидаемый платёж с прошедшим сроком, wait — ждём по сроку.
-   *  Проекты Финансов с одинаковым названием не связываем — лучше «—»,
-   *  чем чужая оплата. */
-  private async paymentsByName(month: string, today: string): Promise<Map<string, string>> {
-    const rows: Array<{ name: string; status: string; dueDate: string | null }> = await this.ds.query(
-      `SELECT fp.name AS name, pp.status AS status, to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate"
-         FROM finance_projects fp
-         JOIN finance_planned_payments pp ON pp."projectId" = fp.id
-        WHERE COALESCE(fp.archived, false) = false AND pp.ym = $1`,
+  /** Статус оплаты месяца по проекту: paid — всё получено, late — есть
+   *  ожидаемый платёж с прошедшим сроком, wait — ждём по сроку. Клиент
+   *  «Финансов» — тот, что владелец выбрал в карточке проекта, иначе с тем же
+   *  названием; два клиента с одним названием не связываем — лучше «—», чем
+   *  чужая оплата (resolveFinanceLinks, общая со сроками для менеджеров). */
+  private async paymentsByProject(live: Project[], month: string, today: string): Promise<Map<string, string>> {
+    const clients: Array<{ id: string; name: string; archived: boolean }> = await this.ds.query(
+      `SELECT id, name, COALESCE(archived, false) AS archived FROM finance_projects`,
+    ).catch(() => []);
+    const links = resolveFinanceLinks(
+      live.map(p => ({ id: p.id, name: p.name, financeProjectId: (p.smmData as any)?.financeProjectId })),
+      clients,
+    );
+    const rows: Array<{ projectId: string; status: string; dueDate: string | null }> = await this.ds.query(
+      `SELECT pp."projectId" AS "projectId", pp.status AS status, to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate"
+         FROM finance_planned_payments pp
+        WHERE pp.ym = $1 AND pp."projectId" IS NOT NULL`,
       [month],
     ).catch(() => []);
-    const names: Array<{ name: string }> = await this.ds.query(
-      `SELECT name FROM finance_projects WHERE COALESCE(archived, false) = false`,
-    ).catch(() => []);
-    const dupes = new Set<string>();
-    const seen = new Set<string>();
-    for (const r of names) { const k = nameKey(r.name); if (seen.has(k)) dupes.add(k); seen.add(k); }
-    const agg = new Map<string, { any: boolean; open: boolean; late: boolean }>();
+    const agg = new Map<string, { open: boolean; late: boolean }>();
     for (const r of rows) {
-      const k = nameKey(r.name);
-      if (dupes.has(k)) continue;
-      const a = agg.get(k) || { any: false, open: false, late: false };
-      a.any = true;
+      const a = agg.get(r.projectId) || { open: false, late: false };
       if (r.status !== 'received') {
         a.open = true;
         if (r.dueDate && r.dueDate < today) a.late = true;
       }
-      agg.set(k, a);
+      agg.set(r.projectId, a);
     }
     const out = new Map<string, string>();
-    for (const [k, a] of agg) out.set(k, a.late ? 'late' : a.open ? 'wait' : 'paid');
+    for (const [projectId, link] of links) {
+      const a = agg.get(link.client.id);
+      if (a) out.set(projectId, a.late ? 'late' : a.open ? 'wait' : 'paid');
+    }
     return out;
   }
 

@@ -11,6 +11,7 @@ import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import KpiDetailsModal from '@/components/kpi/KpiDetailsModal'
+import ClientPayments from './ClientPayments'
 
 const TYPE_FILTERS = [
   { value: '', label: 'Все' },
@@ -261,6 +262,10 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Когда клиент должен заплатить — по SMM-проектам, где менеджер
+          ответственный. Сам прячется, если таких проектов нет. */}
+      <ClientPayments />
+
       {/* KPI блок — план/факт за месяц, считается автоматически из CRM.
           Рендерим всегда (даже до получения данных), чтобы блок не пропадал,
           если /clients/kpi временно недоступен. Тогда показываем 0/цель. */}

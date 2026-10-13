@@ -1,0 +1,166 @@
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { Project } from '../projects/project.entity';
+import {
+  FinClient, FinPlan, PayItem, byUrgency, isEarning, paymentItems, resolveFinanceLinks,
+} from './smm-payments.logic';
+
+/** Кто видит оплаты всех проектов и связывает проект с клиентом «Финансов». */
+const MONEY_ROLES = ['admin', 'founder'];
+const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
+
+type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
+
+/** Оплата проекта для менеджера: проект, день, состояние — без сумм. */
+export type ProjectPayItem = PayItem & { projectId: string; projectName: string };
+
+const todayDushanbe = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+const shiftMonth = (iso: string, delta: number) => {
+  const d = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const managerOf = (p: Project): string | null =>
+  typeof (p.smmData as any)?.salesManagerId === 'string' ? (p.smmData as any).salesManagerId : null;
+const linkOf = (p: Project): string | null =>
+  typeof (p.smmData as any)?.financeProjectId === 'string' ? (p.smmData as any).financeProjectId : null;
+
+/**
+ * «Когда клиент должен заплатить» — для ответственного менеджера SMM-проекта
+ * (решение владельца 12.10.2026). Сроки берутся из плановых оплат «Финансов»;
+ * менеджер видит только свои проекты (smmData.salesManagerId) и только
+ * проект, день и состояние. Финансовые таблицы читаем SQL-запросом, а не
+ * через FinanceModule, — как раздел «Контроль»: модуль финансов тяжёлый и
+ * тянет за собой половину приложения.
+ */
+@Injectable()
+export class SmmPaymentsService {
+  private readonly logger = new Logger(SmmPaymentsService.name);
+
+  constructor(
+    @InjectRepository(Project) private projectRepo: Repository<Project>,
+    private ds: DataSource,
+  ) {}
+
+  private rolesOf(a: Actor) { return [a.role, a.secondaryRole].filter(Boolean) as string[]; }
+  private isTop(a: Actor) { return this.rolesOf(a).some(r => MONEY_ROLES.includes(r)); }
+
+  private async smmProjects(): Promise<Project[]> {
+    const rows = await this.projectRepo.find({ where: { projectType: 'SMM', isArchived: false } as any });
+    return rows.filter(p => String(p.status) !== 'archived');
+  }
+
+  private async clients(): Promise<FinClient[]> {
+    const rows: any[] = await this.ds.query(
+      `SELECT id, name, direction, tariff::float AS tariff,
+              to_char("contractDate", 'YYYY-MM-DD') AS "contractDate",
+              to_char("cycleAnchor", 'YYYY-MM-DD') AS "cycleAnchor",
+              COALESCE(archived, false) AS archived, status
+         FROM finance_projects`,
+    ).catch((e: any) => { this.logger.warn(`finance clients query failed: ${e?.message || e}`); return []; });
+    return rows.map(r => ({ ...r, tariff: Number(r.tariff) || 0, archived: !!r.archived }));
+  }
+
+  /** Плановые оплаты клиентов: все ожидаемые и полученные за последние месяцы
+   *  (они нужны для «оплачено» и для срока по дню договора). */
+  private async plans(clientIds: string[], today: string): Promise<FinPlan[]> {
+    if (!clientIds.length) return [];
+    const rows: any[] = await this.ds.query(
+      `SELECT pp.id, pp."projectId" AS "projectId", pp.ym, pp."partNo" AS "partNo", pp.status,
+              to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate", pp.amount::float AS amount,
+              to_char(tx.date, 'YYYY-MM-DD') AS "paidAt"
+         FROM finance_planned_payments pp
+         LEFT JOIN finance_transactions tx ON tx.id = pp."receivedTxId"
+        WHERE pp."projectId" = ANY($1::uuid[])
+          AND (pp.status = 'expected' OR pp.ym >= $2)`,
+      [clientIds, shiftMonth(today, -2)],
+    ).catch((e: any) => { this.logger.warn(`finance plans query failed: ${e?.message || e}`); return []; });
+    return rows.map(r => ({ ...r, partNo: Number(r.partNo) || 1, amount: Number(r.amount) || 0 }));
+  }
+
+  /** Оплаты по набору проектов + проекты, для которых клиент в «Финансах» не найден. */
+  private async collect(projects: Project[], today: string) {
+    const clients = await this.clients();
+    const links = resolveFinanceLinks(
+      projects.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), clients,
+    );
+    const plans = await this.plans([...new Set([...links.values()].map(l => l.client.id))], today);
+    const items: ProjectPayItem[] = [];
+    const unlinked: Array<{ projectId: string; projectName: string }> = [];
+    for (const p of projects) {
+      const link = links.get(p.id);
+      if (!link) { unlinked.push({ projectId: p.id, projectName: p.name }); continue; }
+      for (const it of paymentItems(link.client, plans, today)) {
+        items.push({ ...it, key: `${p.id}:${it.key}`, projectId: p.id, projectName: p.name });
+      }
+    }
+    items.sort((a, b) => byUrgency(a, b) || a.projectName.localeCompare(b.projectName, 'ru'));
+    unlinked.sort((a, b) => a.projectName.localeCompare(b.projectName, 'ru'));
+    return { items, unlinked, links };
+  }
+
+  /** Оплаты проектов, где сотрудник — ответственный менеджер. Для календаря. */
+  async forManager(userId: string): Promise<ProjectPayItem[]> {
+    const own = (await this.smmProjects()).filter(p => managerOf(p) === userId);
+    if (!own.length) return [];
+    return (await this.collect(own, todayDushanbe())).items;
+  }
+
+  /** Блок «Оплаты клиентов» на панели: менеджеру — свои проекты, владельцу
+   *  и админу — все. */
+  async mine(actor: Actor) {
+    const today = todayDushanbe();
+    const all = await this.smmProjects();
+    const scope = this.isTop(actor) ? all : all.filter(p => managerOf(p) === actor.id);
+    if (!scope.length) return { today, projects: 0, items: [], unlinked: [] };
+    const { items, unlinked } = await this.collect(scope, today);
+    return { today, projects: scope.length, items, unlinked };
+  }
+
+  /** Строка «Оплата клиента» в карточке SMM-проекта. Владелец и админ видят
+   *  её всегда, менеджер — только у своего проекта. */
+  async project(projectId: string, actor: Actor) {
+    const p = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!p || p.projectType !== 'SMM') throw new NotFoundException('Проект не найден');
+    const top = this.isTop(actor);
+    const sales = this.rolesOf(actor).some(r => SALES_ROLES.includes(r));
+    if (!top && !(sales && managerOf(p) === actor.id)) return { visible: false };
+
+    const today = todayDushanbe();
+    const { items, links } = await this.collect([p], today);
+    const link = links.get(p.id) || null;
+    return {
+      visible: true,
+      canLink: top,
+      today,
+      client: link ? { id: link.client.id, name: link.client.name, by: link.by, active: isEarning(link.client) } : null,
+      // Ближайшее неоплаченное — главное; последняя оплата — для «оплачено».
+      next: items.find(it => it.state !== 'paid') || null,
+      lastPaid: items.find(it => it.state === 'paid') || null,
+    };
+  }
+
+  /** Клиенты SMM из «Финансов» — для выбора в карточке проекта. */
+  async financeClients() {
+    const rows = (await this.clients()).filter(c => !c.archived && c.direction === 'smm');
+    return rows
+      .map(c => ({ id: c.id, name: c.name, active: isEarning(c) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }
+
+  /** Связать SMM-проект с клиентом «Финансов» вручную (null — вернуть поиск
+   *  по названию). Нужно там, где названия в CRM и в «Финансах» разные. */
+  async link(projectId: string, financeProjectId: string | null, actor: Actor) {
+    const p = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!p || p.projectType !== 'SMM') throw new NotFoundException('Проект не найден');
+    if (financeProjectId) {
+      const found = (await this.clients()).some(c => c.id === financeProjectId);
+      if (!found) throw new BadRequestException('Клиент в «Финансах» не найден');
+    }
+    const sd: any = { ...(p.smmData || {}) };
+    if (financeProjectId) sd.financeProjectId = financeProjectId;
+    else delete sd.financeProjectId;
+    await this.projectRepo.update(projectId, { smmData: sd });
+    return this.project(projectId, actor);
+  }
+}
