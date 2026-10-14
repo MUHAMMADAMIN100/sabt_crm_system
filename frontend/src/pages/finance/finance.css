@@ -554,17 +554,19 @@
    Раздел построен на CSS-переменных — переопределяем палитру целиком,
    ниже только точечные добивки захардкоженных светлых мест. */
 .dark .fin-root {
-  --bg: #0f1218;
-  --surface: #151821;
-  --surface-2: #1d2230;
-  --surface-hover: #252c3a;
-  --surface-selected: #292846;
-  --border: #3a4352;
+  /* «Графит светлее» — те же цвета, что у всей CRM (index.css, .dark;
+     решение владельца 14.10.2026, вариант А). */
+  --bg: #191c22;
+  --surface: #22262e;
+  --surface-2: #2a2f39;
+  --surface-hover: #323843;
+  --surface-selected: #36364f;
+  --border: #3e4553;
   --text: #f2f4f7;
   --muted: #b0b8c5;
   --accent: #9b9af4;
   --accent-hover: #b0b1ff;
-  --accent-soft: #262642;
+  --accent-soft: #33344f;
   --green: #55c98a;
   --green-plan: #286a47;
   --green-soft: rgba(34, 197, 94, .14);
@@ -575,7 +577,7 @@
   --amber-soft: rgba(245, 158, 11, .14);
   --violet: #9b9dff;
   --gradient-selected: linear-gradient(90deg, rgba(155,157,255,.15), rgba(95,125,255,.04));
-  --chart-grid: #2b2e38;
+  --chart-grid: #353a45;
   --chart-zero: #555b68;
   --chart-gradient-start: #aaa4ff;
   --chart-gradient-mid: #7e9dff;
@@ -586,12 +588,12 @@
   /* Нативные контролы (календарь у date-инпутов, стрелки select) — тёмные. */
   color-scheme: dark;
 }
-.dark .fin-root .table-wrap { scrollbar-color: #3a4250 transparent; }
-.dark .fin-root .table-wrap::-webkit-scrollbar-thumb { background: #3a4250; }
+.dark .fin-root .table-wrap { scrollbar-color: #4a5160 transparent; }
+.dark .fin-root .table-wrap::-webkit-scrollbar-thumb { background: #4a5160; }
 .dark .fin-root .badge.saving { background: rgba(139, 92, 246, .18); }
 .dark .fin-root .tx-cal-cell.today .tx-row:hover,
 .dark .fin-root .tx-cal-cell.today .tx-cal-more:hover { background: rgba(255, 255, 255, .08); }
-.dark .fin-root .fin-skel { background: linear-gradient(90deg, var(--surface-2) 25%, #2f3644 50%, var(--surface-2) 75%);
+.dark .fin-root .fin-skel { background: linear-gradient(90deg, var(--surface-2) 25%, #3a4150 50%, var(--surface-2) 75%);
   background-size: 200% 100%; }
 /* Recharts: дефолтный белый тултип не читается на тёмном фоне. */
 .dark .fin-root .recharts-default-tooltip { background: var(--surface) !important; border: 1px solid var(--border) !important; }
@@ -688,10 +690,10 @@
 .fin-brk-pop-row .l { color: #55606e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fin-brk-pop-row .a { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fin-brk-empty { color: #667085; padding: 4px 0; }
-.dark .fin-brk-pop { background: #1b2128; border-color: #2b3440; color: #e7ecf3; box-shadow: 0 10px 34px rgba(0, 0, 0, .5); }
-.dark .fin-brk-pop-head { border-bottom-color: #2b3440; }
+.dark .fin-brk-pop { background: #262a33; border-color: #3e4553; color: #e7ecf3; box-shadow: 0 10px 34px rgba(0, 0, 0, .5); }
+.dark .fin-brk-pop-head { border-bottom-color: #3e4553; }
 .dark .fin-brk-pop-row .l { color: #9aa6b4; }
-.dark .fin-brk-empty { color: #6b7684; }
+.dark .fin-brk-empty { color: #8792a2; }
 
 /* ─── Inline-история сотрудника в зарплатной таблице ─────────────── */
 .fin-salary-employee-row { cursor: pointer; }
@@ -883,7 +885,7 @@
   border: 0; border-radius: 7px; background: #f2f4f7; color: #667085; cursor: pointer;
 }
 .fin-payout-close:hover { background: #e8ecf2; color: #111827; }
-.dark .fin-payout-close { background: #2b3440; color: #9aa6b4; }
+.dark .fin-payout-close { background: #353b46; color: #9aa6b4; }
 .fin-payout-pin-hint {
   margin-top: 6px; text-align: center; color: #667085; font-size: 11px;
   transition: color .2s ease;
@@ -1446,12 +1448,12 @@
 .fin-root .modal-foot,
 .fin-overlay .modal-foot { padding: 14px 20px; }
 
-.dark .finance-workspace { background: #0f1218; }
+.dark .finance-workspace { background: #191c22; }
 .dark .fin-root { background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.2); }
 .dark .fin-overlay {
-  --surface: #15161b;
-  --surface-2: #1d1f25;
-  --border: #2c2e37;
+  --surface: #262a33;
+  --surface-2: #2e333d;
+  --border: #3e4553;
   --text: #f2f3f5;
   --muted: #9ea3ae;
   --accent: #9b9dff;
@@ -1466,9 +1468,9 @@
 .dark .fin-salary-popover,
 .dark .fin-brk-pop,
 .dark .fin-chart-tooltip {
-  --surface: #15161b;
-  --surface-2: #1d1f25;
-  --border: #2c2e37;
+  --surface: #262a33;
+  --surface-2: #2e333d;
+  --border: #3e4553;
   --text: #f2f3f5;
   --muted: #9ea3ae;
   --accent: #9b9dff;
@@ -1506,7 +1508,7 @@
   .fin-employee-history { min-width: 620px; padding: 14px; }
   .fin-root .fin-tx-compact-audit { font-size: 11px; }
 }
-.dark .finance-workspace { background-color: #0d0e12; }
+.dark .finance-workspace { background-color: #191c22; }
 
 @media (prefers-reduced-motion: reduce) {
   .fin-root *,
