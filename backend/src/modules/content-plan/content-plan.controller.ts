@@ -92,57 +92,53 @@ export class ContentPlanController {
     return this.service.getPlanFactByProject(projectId);
   }
 
-  /** Календарь производства за месяц: публикации + съёмки. Разделы «СММ» и
-   *  «Разработка» (segment=dev — те же механики, но dev-проекты), поэтому
-   *  помимо SMM-ролей допущена команда разработки. Объявлено ДО ':id',
-   *  иначе перехватит вайлдкард. */
+  /** Календарь производства СММ за месяц: публикации + съёмки, только
+   *  SMM-проекты. СММ и разработка разделены (решение владельца 14.10.2026):
+   *  команде разработки и менеджеру продаж разработки календарь СММ не
+   *  отдаём, у разработки свой календарь на доске задач. Менеджер продаж СММ
+   *  только смотрит — у изменяющих ручек ниже его роли нет. Объявлено ДО
+   *  ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
-  smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('segment') segment?: string) {
-    // Менеджеры по продажам (решение владельца 11.10.2026) смотрят раздел
-    // «СММ» целиком, но только его: календарь «Разработки» им не открываем,
-    // что бы ни пришло в segment. Править они ничего не могут — у всех
-    // изменяющих ручек ниже этих ролей в @Roles нет.
-    const sales = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV].includes(req.user?.role);
-    return this.service.smmCalendar(from, to, !sales && segment === 'dev' ? 'dev' : 'smm', req.user?.id);
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.SALES_MANAGER_SMM)
+  smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.service.smmCalendar(from, to, req.user?.id);
   }
 
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —
    *  drag в умном календаре. Литеральный сегмент объявлен ДО ':id'. */
   @Patch('shoot-session/:id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   updateShootSession(@Param('id') id: string, @Body() body: any) {
     return this.service.updateShootSession(id, body || {});
   }
 
   /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
-   *  в «Не запланировано». Руководящие роли SMM + команда разработки. */
+   *  в «Не запланировано». Только SMM-роли и только SMM-проекты. */
   @Post('smart-generate')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }) {
     return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
   }
 
   /** Умный календарь: полностью очистить контент проекта (сброс теста). */
   @Post('smart-clear')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartClear(@Body() body: { projectId: string }) {
     return this.service.smartClearProject(body?.projectId);
   }
 
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
-   *  побочных эффектов. Объявлено ДО ':id'. Руководящие роли SMM + разработка. */
+   *  побочных эффектов. Объявлено ДО ':id'. Только SMM-роли. */
   /** Авторасстановка: сохранить правила проекта (дни, время, съёмка) и
    *  поставить публикации на даты из планировщика. */
   @Post('auto-plan/:projectId')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   applyAutoPlan(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
     return this.service.applyAutoPlan(projectId, body || {}, { id: req.user?.id, name: req.user?.name });
   }
 
   @Patch('smart-item/:id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, @Request() req) {
     return this.service.smartUpdateItem(id, body || {}, { id: req.user?.id, name: req.user?.name });
   }

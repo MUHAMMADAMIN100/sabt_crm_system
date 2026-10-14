@@ -162,7 +162,11 @@ function BudgetCell({ value, onSave }: { value: number; onSave: (b: number) => v
 export default function SalesDashboard() {
   const [filter, setFilter] = useState('')
   const role = useAuthStore(s => s.user?.role)
+  const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
   const userId = useAuthStore(s => s.user?.id)
+  // «Оплаты клиентов» — только у менеджера продаж СММ: СММ и разработка
+  // разделены (14.10.2026), менеджеру разработки сервер их не отдаёт.
+  const seesSmmPayments = role === 'sales_manager_smm' || secondaryRole === 'sales_manager_smm'
   // Wave 16: модалка с подробностями для кликнутой метрики KPI.
   const [openedKpiItem, setOpenedKpiItem] = useState<{ key: string; label: string } | null>(null)
   // Сегмент МП фильтрует БЭКЕНД (/analytics/sales по роли): СММ-менеджер
@@ -264,7 +268,7 @@ export default function SalesDashboard() {
     <div className="space-y-6">
       {/* Когда клиент должен заплатить — по SMM-проектам, где менеджер
           ответственный. Сам прячется, если таких проектов нет. */}
-      <ClientPayments />
+      {seesSmmPayments && <ClientPayments />}
 
       {/* KPI блок — план/факт за месяц, считается автоматически из CRM.
           Рендерим всегда (даже до получения данных), чтобы блок не пропадал,

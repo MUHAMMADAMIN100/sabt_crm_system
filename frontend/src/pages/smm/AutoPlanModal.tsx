@@ -159,8 +159,8 @@ function Section({ children }: { children: ReactNode }) {
 
 // ─── окно ─────────────────────────────────────────────────────────────
 
-export default function AutoPlanModal({ projectId, segment, window: w, hasCycle, color, isPhone, busyWho, onClose }: {
-  projectId: string; segment: 'smm' | 'dev'
+export default function AutoPlanModal({ projectId, window: w, hasCycle, color, isPhone, busyWho, onClose }: {
+  projectId: string
   /** Окно цикла проекта (или ближайшие 30 дней, если цикл не задан). */
   window: { start: string; end: string }; hasCycle: boolean
   color: string; isPhone: boolean
@@ -175,8 +175,8 @@ export default function AutoPlanModal({ projectId, segment, window: w, hasCycle,
   // Своё окно данных — ровно цикл: в виде «День» общий запрос календаря
   // покрывает один день, а планировщику нужен весь цикл.
   const { data, isLoading } = useQuery<{ events: CEv[]; projects: CProj[]; backlog: CEv[] }>({
-    queryKey: ['smm-calendar', segment, w.start, w.end],
-    queryFn: () => contentPlanApi.smmCalendar({ from: w.start, to: w.end, segment }),
+    queryKey: ['smm-calendar', 'smm', w.start, w.end],
+    queryFn: () => contentPlanApi.smmCalendar({ from: w.start, to: w.end }),
   })
   const project = data?.projects.find(p => p.id === projectId)
 

@@ -491,9 +491,9 @@ export const contentPlanApi = {
     api.post('/content-plan/smart-clear', { projectId }).then(r => r.data),
   remove: (id: string) => api.delete(`/content-plan/${id}`).then(r => r.data),
   planFact: (projectId: string) => api.get(`/content-plan/plan-fact/${projectId}`).then(r => r.data),
-  // Календарь производства за диапазон дат: публикации + съёмки.
-  // segment: 'smm' (по умолчанию) — раздел СММ, 'dev' — раздел «Разработка».
-  smmCalendar: (params?: { from?: string; to?: string; segment?: 'smm' | 'dev' }) =>
+  // Календарь производства СММ за диапазон дат: публикации + съёмки,
+  // только SMM-проекты (у разработки свой календарь — на доске задач).
+  smmCalendar: (params?: { from?: string; to?: string }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
   // История задачи контент-плана: перенос, закрытие, отмена.
   /** «Мои задачи производства» — карточки, где я исполнитель (съёмка/монтаж/макет). */

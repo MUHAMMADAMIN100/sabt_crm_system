@@ -17,7 +17,7 @@ export class SmmPaymentsController {
 
   /** Блок «Оплаты клиентов» на панели менеджера. */
   @Get('mine')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM)
   mine(@Request() req) {
     return this.service.mine(req.user);
   }
@@ -46,7 +46,7 @@ export class SmmPaymentsController {
 
   /** Строка «Оплата клиента» в карточке SMM-проекта. */
   @Get('project/:projectId')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM)
   project(@Param('projectId') projectId: string, @Request() req) {
     return this.service.project(projectId, req.user);
   }

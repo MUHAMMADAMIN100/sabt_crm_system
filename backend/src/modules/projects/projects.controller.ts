@@ -41,17 +41,18 @@ export class ProjectsController {
    *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+    UserRole.SALES_MANAGER_SMM)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
   }
 
-  /** «Схема менеджеров»: менеджеры по продажам с их SMM-проектами +
+  /** «Схема менеджеров»: менеджеры продаж СММ с их SMM-проектами +
    *  проекты без менеджера. Видят те же, кто видит «Схему» специалистов.
+   *  Менеджеру продаж разработки раздел «СММ» закрыт (14.10.2026).
    *  Объявлено ДО ':id'. */
   @Get('smm-manager-load')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+    UserRole.SALES_MANAGER_SMM)
   smmManagerLoad() {
     return this.service.smmManagerLoad();
   }
@@ -89,12 +90,11 @@ export class ProjectsController {
     return this.service.setStoriesArchived(id, dto.archived, req.user);
   }
 
-  /** Настройки месячного цикла проекта (Умный календарь): день старта
+  /** Настройки месячного цикла SMM-проекта (Умный календарь): день старта
    *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его.
-   *  Разделы «СММ» и «Разработка» пользуются одним календарём, поэтому
-   *  помимо SMM-ролей допущена команда разработки. */
+   *  Только SMM-роли: у проектов разработки циклов и норм нет (14.10.2026). */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
@@ -117,9 +117,10 @@ export class ProjectsController {
     return this.service.setSmmManager(id, typeof body?.managerId === 'string' && body.managerId ? body.managerId : null);
   }
 
-  /** Редактируют SMM/разработка и владелец/руководство. */
+  /** Редактируют SMM-команда и владелец/руководство. Клиент проекта
+   *  разработки хранится отдельно (clientInfo, PATCH /projects/:id). */
   @Patch(':id/smm-profile')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.DEV_DIRECTOR, UserRole.PM_DEV, UserRole.DEVELOPER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   setSmmProfile(
     @Param('id') id: string,
     @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
@@ -224,7 +225,7 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER,
     UserRole.SMM_DIRECTOR,
     UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
+    UserRole.SALES_MANAGER_SMM,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {
     const { token } = await this.service.generateBriefShareToken(id, req.user);

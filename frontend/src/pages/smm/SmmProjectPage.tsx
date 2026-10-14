@@ -8,11 +8,9 @@ import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Avatar, Modal } from '@/components/ui'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
+import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
 import ClientPaymentRow from './ClientPaymentRow'
-import { DevTasksTab } from '@/pages/dev/components/DevTasksTab'
-import { DevTeamBlock } from '@/pages/dev/components/DevTeamBlock'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -200,9 +198,6 @@ function WeBrandLogo({ height = 30 }: { height?: number }) {
 export default function SmmProjectPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  // Раздел ('smm' | 'dev') — страница обслуживает и СММ, и «Разработку».
-  const section = useSmmSection()
-  const base = SECTION_BASE[section]
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
@@ -216,17 +211,8 @@ export default function SmmProjectPage() {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const monthPref = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const monthTitle = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
-  const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', section, from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }) })
+  const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', 'smm', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
-  // Состав dev-проекта (только раздел «Разработка»): кто ведёт (PM) и команда.
-  // Источник — GET /projects/:id (manager/members по контракту). SMM-ветка
-  // запрос не выполняет, её рендер не меняется.
-  const { data: devProject, isLoading: devTeamLoading } = useQuery<any>({
-    queryKey: ['dev-project', id],
-    queryFn: () => projectsApi.get(id!),
-    enabled: section === 'dev' && !!id,
-    retry: false,
-  })
 
   const saveMut = useMutation({
     mutationFn: (patch: Partial<SmmProfile>) => projectsApi.setSmmProfile(id!, patch as any),
@@ -247,7 +233,7 @@ export default function SmmProjectPage() {
   // активного списка и календаря SMM, история сохраняется, можно вернуть из «Архива»).
   const archiveMut = useMutation({
     mutationFn: () => projectsApi.archive(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate(`${base}/projects`) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate('/smm/projects') },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось завершить'),
   })
 
@@ -319,11 +305,7 @@ export default function SmmProjectPage() {
   // ── Отчёт ──
   const [reportOpen, setReportOpen] = useState(false)
   // ── Вкладки страницы: обзор / аналитика / клиент / контент-план ──
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan' | 'tasks'>('overview')
-  // dev: SMM-вкладки (Аналитика, Контент-план) скрыты — откат глубокой ссылки на Обзор.
-  useEffect(() => {
-    if (section === 'dev' && (tab === 'analytics' || tab === 'plan')) setTab('overview')
-  }, [section, tab])
+  const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan'>('overview')
   // ── Меню ⋯ в шапке + подтверждение завершения сотрудничества ──
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
@@ -362,7 +344,7 @@ export default function SmmProjectPage() {
   const { data: managerLoad } = useQuery<{ managers: { id: string; name: string; avatar: string | null }[] }>({
     queryKey: ['smm-manager-load'],
     queryFn: () => projectsApi.smmManagerLoad(),
-    enabled: canAssignManager && section === 'smm',
+    enabled: canAssignManager,
   })
   const [mgrOpen, setMgrOpen] = useState(false)
   const salesManager = profile?.salesManager ?? null
@@ -421,7 +403,7 @@ export default function SmmProjectPage() {
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
     <div className="space-y-4">
-      <Link to={`${base}/projects`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+      <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
       <p className="text-gray-400">Проект не найден.</p>
     </div>
   )
@@ -487,7 +469,7 @@ export default function SmmProjectPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link to={`${base}/projects`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+        <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
         <div className="flex items-center gap-2">
           <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
           {canRename && (
@@ -537,13 +519,9 @@ export default function SmmProjectPage() {
         <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {([
             ['overview', 'Обзор'],
-            // dev: SMM-вкладки скрыты — в dev остаются Обзор / Клиент / Задачи.
-            ...(section === 'dev' ? [] : [['analytics', 'Аналитика'] as const]),
+            ['analytics', 'Аналитика'],
             ['client', 'Клиент'],
-            ...(section === 'dev' ? [] : [['plan', 'Контент-план'] as const]),
-            // «Задачи» — только в разделе «Разработка»: вкладка показывает
-            // задачи с канбан-доски dev-tracker, привязанные к этому проекту.
-            ...(section === 'dev' ? [['tasks', 'Задачи'] as const] : []),
+            ['plan', 'Контент-план'],
           ] as const).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
               className={'px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap ' + (tab === k ? 'border-primary-600 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-200')}>
@@ -556,21 +534,6 @@ export default function SmmProjectPage() {
       {/* ОБЗОР — цикл/норма + выполнение плана */}
       {tab === 'overview' && (
       <div className="grid gap-4 lg:grid-cols-2 items-start">
-        {/* Команда dev-проекта: кто ведёт (PM) и разработчики. Только раздел
-            «Разработка» — в SMM-ветке условие ложно и DOM не меняется. */}
-        {section === 'dev' && (
-          <div className="lg:col-span-2 min-w-0">
-            <DevTeamBlock
-              projectId={id!}
-              manager={(devProject as any)?.manager ?? null}
-              members={Array.isArray((devProject as any)?.members) ? (devProject as any).members : []}
-              canEdit={canEdit}
-              loading={devTeamLoading}
-            />
-          </div>
-        )}
-        {/* Цикл и норма — в dev скрыт (SMM-нормы/специалист бессмысленны) */}
-        {section !== 'dev' && (
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className={secLabel}>Цикл и норма</h2>
@@ -643,60 +606,58 @@ export default function SmmProjectPage() {
                 )}
               </div>
             </div>
-            {/* Ответственный менеджер по продажам — виден всем, меняет владелец. */}
-            {section === 'smm' && (
-              <div className={fRow + ' relative'}>
-                <span className="text-sm text-gray-500">Менеджер</span>
-                <div className="flex items-center gap-2 min-w-0">
-                  {salesManager ? (
-                    <span className="inline-flex items-center gap-1.5 min-w-0">
-                      <Avatar name={salesManager.name} src={salesManager.avatar || undefined} size={20} />
-                      <span className="text-sm font-semibold truncate max-w-[160px]">{salesManager.name}</span>
-                    </span>
-                  ) : (
-                    <span className="text-sm text-gray-400">Не назначен</span>
-                  )}
-                  {canAssignManager && (
-                    <div className="relative shrink-0">
-                      <button onClick={() => setMgrOpen(o => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        <Pencil size={12} /> {salesManager ? 'Изменить' : 'Назначить'}
-                      </button>
-                      {mgrOpen && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setMgrOpen(false)} />
-                          <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
-                            <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Менеджеры по продажам</div>
-                            {!managerLoad?.managers?.length ? (
-                              <p className="px-3 py-3 text-sm text-gray-400">Нет менеджеров</p>
-                            ) : managerLoad.managers.map(u => {
-                              const on = salesManager?.id === u.id
-                              return (
-                                <button
-                                  key={u.id}
-                                  // У проекта один менеджер: повторный выбор снимает назначение.
-                                  onClick={() => { setMgrOpen(false); mgrMut.mutate(on ? null : u.id) }}
-                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
-                                >
-                                  <Avatar name={u.name} src={u.avatar || undefined} size={26} />
-                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
-                                  <span className={'w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
-                                    {on && <Check size={13} className="text-white" />}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+            {/* Ответственный менеджер продаж СММ — виден всем, меняет владелец. */}
+            <div className={fRow + ' relative'}>
+              <span className="text-sm text-gray-500">Менеджер</span>
+              <div className="flex items-center gap-2 min-w-0">
+                {salesManager ? (
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <Avatar name={salesManager.name} src={salesManager.avatar || undefined} size={20} />
+                    <span className="text-sm font-semibold truncate max-w-[160px]">{salesManager.name}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400">Не назначен</span>
+                )}
+                {canAssignManager && (
+                  <div className="relative shrink-0">
+                    <button onClick={() => setMgrOpen(o => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <Pencil size={12} /> {salesManager ? 'Изменить' : 'Назначить'}
+                    </button>
+                    {mgrOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setMgrOpen(false)} />
+                        <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Менеджеры продаж СММ</div>
+                          {!managerLoad?.managers?.length ? (
+                            <p className="px-3 py-3 text-sm text-gray-400">Нет менеджеров</p>
+                          ) : managerLoad.managers.map(u => {
+                            const on = salesManager?.id === u.id
+                            return (
+                              <button
+                                key={u.id}
+                                // У проекта один менеджер: повторный выбор снимает назначение.
+                                onClick={() => { setMgrOpen(false); mgrMut.mutate(on ? null : u.id) }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                              >
+                                <Avatar name={u.name} src={u.avatar || undefined} size={26} />
+                                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
+                                <span className={'w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
+                                  {on && <Check size={13} className="text-white" />}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
             {/* Когда клиент должен заплатить — срок из «Финансов» (12.10.2026).
                 Строку видят владелец, админ и ответственный менеджер проекта;
                 остальным она не приходит. */}
-            {section === 'smm' && <ClientPaymentRow projectId={id!} />}
+            <ClientPaymentRow projectId={id!} />
             {/* Видеографа, монтажёра и дизайнера здесь НЕ показываем (решение
                 владельца, 23.09.2026): специалист каждой роли в агентстве один,
                 съёмка, монтаж и дизайн уходят ему сами, и три одинаковые строки
@@ -719,7 +680,6 @@ export default function SmmProjectPage() {
             <div className={fRow}><span className="text-sm text-gray-500">Осталось в «Не запланировано»</span><span className="text-sm font-semibold text-right">{left}</span></div>
           </div>
         </div>
-        )}
 
         {/* Выполнение плана */}
         <div className={card}>
@@ -736,8 +696,8 @@ export default function SmmProjectPage() {
       </div>
       )}
 
-      {/* АНАЛИТИКА — метрики по месяцам + запись (в dev скрыта) */}
-      {tab === 'analytics' && section !== 'dev' && (
+      {/* АНАЛИТИКА — метрики по месяцам + запись */}
+      {tab === 'analytics' && (
       <div className={card + ' max-w-3xl'}>
         <h2 className={secLabel + ' mb-3'}>Метрики · история по месяцам</h2>
         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -825,9 +785,8 @@ export default function SmmProjectPage() {
       </div>
       )}
 
-      {/* Контент-план проекта — Умный календарь, ограниченный этим проектом (DnD «Не запланировано» → даты) (в dev скрыт) */}
-      {tab === 'plan' && section !== 'dev' && id && <SmmPage embeddedProjectId={id} />}
-      {tab === 'tasks' && id && <DevTasksTab projectId={id} />}
+      {/* Контент-план проекта — Умный календарь, ограниченный этим проектом (DnD «Не запланировано» → даты) */}
+      {tab === 'plan' && id && <SmmPage embeddedProjectId={id} />}
 
       {/* Подтверждение завершения сотрудничества (архив) */}
       {confirmArchive && createPortal(

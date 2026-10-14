@@ -3,8 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import Layout from '@/components/layout/Layout'
 import { PageLoader } from '@/components/ui'
-import { canAccessRoute } from '@/lib/permissions'
-import { SmmSectionContext } from '@/pages/smm/smmShared'
+import { canAccessRoute, userCan } from '@/lib/permissions'
 
 /** Граница ошибок для lazy-чанков. После деплоя браузер с устаревшим
  *  index.html пытается подгрузить chunk, которого уже нет, и React-роутер
@@ -77,11 +76,17 @@ const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
 const CalendarPage      = lazy(() => import('@/pages/calendar/CalendarPage'))
 const SmmPage           = lazy(() => import('@/pages/smm/SmmPage'))
-// Обёртка раздела «Разработка»: те же SMM-страницы, но работающие с
-// dev-проектами (страницы читают раздел из контекста).
-const DevSection = ({ children }: { children: React.ReactNode }) => (
-  <SmmSectionContext.Provider value="dev">{children}</SmmSectionContext.Provider>
-)
+// Раздел «Разработка» — свои страницы, отдельные от СММ (14.10.2026): раньше
+// здесь открывались SMM-страницы, и у dev-проектов были рилсы и циклы.
+const DevProjectsPage   = lazy(() => import('@/pages/dev/DevProjectsPage'))
+const DevProjectPage    = lazy(() => import('@/pages/dev/DevProjectPage'))
+// «Разработка» без подраздела: своего «умного календаря» у раздела нет
+// (вариант Б) — календарь живёт видом «Календарь» на доске. Ведём на доску,
+// а без права на неё — к проектам.
+function DevIndex() {
+  const user = useAuthStore(s => s.user)
+  return <Navigate to={userCan(user, 'dev-tracker.view') ? '/dev-board' : '/dev/projects'} replace />
+}
 // Алиасы раздела «Разработка» вида /dev/board → /dev-board: сохраняют
 // location.search, чтобы фильтр `?project=` не терялся при переходе.
 function DevAlias({ to }: { to: string }) {
@@ -206,11 +211,10 @@ export default function App() {
           <Route path="smm/projects" element={<RoleGuard><SmmProjectsPage /></RoleGuard>} />
           <Route path="smm/control" element={<RoleGuard><SmmControlPage /></RoleGuard>} />
           <Route path="smm/projects/:id" element={<RoleGuard><SmmProjectPage /></RoleGuard>} />
-          {/* Раздел «Разработка» — те же страницы, что у СММ, но провайдер
-              переключает их на dev-проекты (см. SmmSectionContext). */}
-          <Route path="dev" element={<RoleGuard><DevSection><SmmPage /></DevSection></RoleGuard>} />
-          <Route path="dev/projects" element={<RoleGuard><DevSection><SmmProjectsPage /></DevSection></RoleGuard>} />
-          <Route path="dev/projects/:id" element={<RoleGuard><DevSection><SmmProjectPage /></DevSection></RoleGuard>} />
+          {/* Раздел «Разработка» — свои страницы проектов; календарь — вид на доске. */}
+          <Route path="dev" element={<RoleGuard><DevIndex /></RoleGuard>} />
+          <Route path="dev/projects" element={<RoleGuard><DevProjectsPage /></RoleGuard>} />
+          <Route path="dev/projects/:id" element={<RoleGuard><DevProjectPage /></RoleGuard>} />
           {/* Алиасы «Разработки» на каноническую доску (сохраняют ?project=).
               Канонические остаются /dev-board*. Гард — тот же, что у /dev. */}
           <Route path="dev/board" element={<RoleGuard><DevAlias to="/dev-board" /></RoleGuard>} />

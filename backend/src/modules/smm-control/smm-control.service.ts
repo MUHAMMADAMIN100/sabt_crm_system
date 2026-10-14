@@ -10,11 +10,12 @@ const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MANAGE_ROLES = ['admin', 'founder', 'smm_director'];
 /** Кто видит оплату: владелец, админ и менеджеры по продажам (ниже). */
 const MONEY_ROLES = ['admin', 'founder'];
-/** Менеджеры по продажам (решение владельца 11.10.2026): видят все проекты,
+/** Менеджеры продаж СММ (решение владельца 11.10.2026): видят все проекты,
  *  ставят отметки по любому из них и видят оплату — её они и так видят в
  *  карточке проекта (projects.payments.view). Остальной раздел «СММ» для
- *  них только на просмотр. */
-const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
+ *  них только на просмотр. Менеджеру продаж разработки раздел закрыт —
+ *  СММ и разработка разделены (14.10.2026). */
+const SALES_ROLES = ['sales_manager_smm'];
 const MOODS = ['good', 'meh', 'bad'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };

@@ -200,8 +200,8 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
             style={narrow || !pos ? undefined : { left: pos.left, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }}>
             {menu === 'manager' ? (
               <>
-                <div className="mgr-head">Менеджеры по продажам</div>
-                {!data.managers.length && <p className="mgr-empty">Менеджеров по продажам нет</p>}
+                <div className="mgr-head">Менеджеры продаж СММ</div>
+                {!data.managers.length && <p className="mgr-empty">Менеджеров продаж СММ нет</p>}
                 {data.managers.map((m) => (
                   <button key={m.id} type="button" role="menuitem" className="mgr-item"
                     onClick={() => (row.manager?.id === m.id ? setMenu(null) : assign(m))}>

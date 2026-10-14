@@ -94,10 +94,10 @@ export default function BottomNav() {
   // иначе с телефона до доски/KPI/отчётов не добраться.
   const devLinks = useMemo(() => {
     if (!canSeeDevSection(user?.role)) return []
+    // «Умного календаря» у разработки нет (14.10.2026): календарь — вид на доске.
     const list = [
-      { to: '/dev', label: 'Умный календарь', icon: CalendarRange, perm: 'dev-tracker.view' as const },
-      { to: '/dev/projects', label: 'Проекты', icon: FolderKanban, perm: 'dev-tracker.view' as const },
       { to: '/dev-board', label: 'Доска', icon: KanbanSquare, perm: 'dev-tracker.view' as const },
+      { to: '/dev/projects', label: 'Проекты', icon: FolderKanban, perm: 'dev-tracker.view' as const },
       { to: '/dev-board/kpi', label: 'KPI', icon: BarChart3, perm: 'dev-tracker.view' as const },
     ] as { to: string; label: string; icon: any; perm: 'dev-tracker.view' | 'dev-tracker.manage' }[]
     if (userCan(user, 'dev-tracker.manage')) {
@@ -157,8 +157,8 @@ export default function BottomNav() {
   const right = pinned.slice(2)
 
   // Таб «Разработка» ведёт не только на /dev: запоминаем последний открытый
-  // подраздел (доска/KPI/проекты/календарь) и возвращаем туда; повторный тап
-  // внутри раздела открывает шторку «Ещё» со всеми пятью подразделами.
+  // подраздел (доска/KPI/проекты/отчёты) и возвращаем туда; повторный тап
+  // внутри раздела открывает шторку «Ещё» со всеми подразделами.
   const isDevRoute =
     location.pathname === '/dev' || location.pathname.startsWith('/dev/') ||
     location.pathname === '/dev-board' || location.pathname.startsWith('/dev-board/')

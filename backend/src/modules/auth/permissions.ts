@@ -47,7 +47,8 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'], danger: true },
   'projects.payments.view':    { label: 'Оплаты проекта — просмотр',  category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev', 'smm_director', 'dev_director'] },
   'projects.payments.request': { label: 'Оплаты проекта — запрос',    category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'] },
+  // Бриф есть только у SMM-проектов — менеджеру продаж разработки не нужен (14.10.2026).
+  'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'smm_specialist', 'sales_manager_smm'] },
   'projects.brief.clear':      { label: 'Бриф проекта — очистка',     category: 'Проекты', roles: [...TOP, 'smm_director'], danger: true },
   'projects.launch.manage':    { label: 'Чек-лист запуска — отметки', category: 'Проекты', roles: [...TOP, 'smm_director'] },
 

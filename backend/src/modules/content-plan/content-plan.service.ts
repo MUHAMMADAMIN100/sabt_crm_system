@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   ContentPlanItem,
   ContentPlanStatus,
@@ -12,7 +12,6 @@ import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { User, UserRole } from '../users/user.entity';
-import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { AppGateway } from '../gateway/app.gateway';
 
 export interface ContentPlanFilters {
@@ -640,6 +639,11 @@ export class ContentPlanService {
     if (!projectId) return { ok: true };
     const norm = (v: any) => Math.max(0, Math.min(999, Math.trunc(Number(v) || 0)));
     const project = await this.repo.manager.getRepository(Project).findOne({ where: { id: projectId } }).catch(() => null);
+    // Рилсы и посты — только у SMM-проектов: раньше окно «Новый проект
+    // разработки» заводило их и в dev-проекты (исправлено 14.10.2026).
+    if (project && project.projectType !== 'SMM') {
+      throw new BadRequestException('Рилсы и посты заводятся только в SMM-проектах');
+    }
     const anchor = Number(project?.smmData?.cycleStartDay);
     const win = (Number.isFinite(anchor) && anchor >= 1) ? this.currentCycleBounds(anchor) : null;
     await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels), win);
@@ -1085,11 +1089,11 @@ export class ContentPlanService {
    * плана, по publishDate) и что и когда СНИМАТЬ (из shoot_sessions, по date).
    * Фокус на проектах руководителя, без KPI. Готовность/цвет считает фронт.
    *
-   * segment — чьи проекты отдавать: 'smm' (по умолчанию) или 'dev' — раздел
-   * «Разработка» использует тот же умный календарь, но с dev-проектами
-   * (типы из DEV_PROJECT_TYPES; в БД legacy-значение 'Web сайт').
+   * Только SMM-проекты: у раздела «Разработка» свой календарь — вид
+   * «Календарь» на доске задач (решение владельца 14.10.2026, направления
+   * не смешиваем).
    */
-  async smmCalendar(from?: string, to?: string, segment: 'smm' | 'dev' = 'smm', actorId?: string) {
+  async smmCalendar(from?: string, to?: string, actorId?: string) {
     // Диапазон дат [from, to] (YYYY-MM-DD). По умолчанию — текущий месяц.
     const ym = this.currentYm();
     const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : `${ym}-01`;
@@ -1097,8 +1101,7 @@ export class ContentPlanService {
     const t = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : `${ym}-${String(lastDay).padStart(2, '0')}`;
 
     const projectRepo = this.repo.manager.getRepository(Project);
-    const types = segment === 'dev' ? DEV_PROJECT_TYPES : ['SMM'];
-    const all = await projectRepo.find({ where: { projectType: In(types) } });
+    const all = await projectRepo.find({ where: { projectType: 'SMM' } });
     const active = all.filter(p => String(p.status) !== 'archived');
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
     // «Мои проекты» — то же правило, что в кабинете специалиста: менеджер,

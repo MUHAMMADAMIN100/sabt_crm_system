@@ -6,27 +6,20 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { isDevProjectType } from '@/lib/projectType'
-import { assignProjectColors, projColor, useSmmSection, SECTION_BASE, type SmmProj } from './smmShared'
+import { assignProjectColors, projColor, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
 import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
-import { DevTeamStack } from '@/pages/dev/components/DevTeamStack'
-import type { DevTeamPerson } from '@/pages/dev/devTeam'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 import SmmManagerBoard from './SmmManagerBoard'
 
-// Кто может создавать проекты (как на основной странице «Проекты») — по разделам.
-// СММ-специалист тоже может добавлять проект (по просьбе владельца); в
-// «Разработке» — только роли с нативным правом projects.create.
-const CREATE_ROLES: Record<'smm' | 'dev', string[]> = {
-  smm: ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'smm_specialist'],
-  dev: ['admin', 'founder', 'dev_director', 'sales_manager_dev'],
-}
+// Кто может создавать SMM-проекты (как на основной странице «Проекты»).
+// СММ-специалист тоже может добавлять проект (по просьбе владельца).
+// У раздела «Разработка» своя страница проектов — pages/dev.
+const CREATE_ROLES = ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'smm_specialist']
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
 // но переставлять проекты не может (DnD-переназначение отключено в доске).
-// Схема — про СММ-специалистов, в разделе «Разработка» не показывается.
-// Схемы видят и менеджеры по продажам (смотрят; переставлять не могут).
-const LOAD_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev']
+// Схемы видят и менеджеры продаж СММ (смотрят; переставлять не могут).
+const LOAD_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm']
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -35,10 +28,8 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export default function SmmProjectsPage() {
   const navigate = useNavigate()
-  const section = useSmmSection()
-  const base = SECTION_BASE[section]
   const user = useAuthStore(s => s.user)
-  const canCreate = CREATE_ROLES[section].includes((user as any)?.role ?? '')
+  const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
   // Открытие формы прямо по адресу: так на неё ведёт кнопка создания
   // из нижней панели на телефоне.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -49,7 +40,7 @@ export default function SmmProjectsPage() {
     next.delete('new')
     setSearchParams(next, { replace: true })
   }, [searchParams, canCreate])
-  const canSeeLoad = section === 'smm' && LOAD_ROLES.includes((user as any)?.role ?? '')
+  const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   const [tab, setTab] = useState<'active' | 'archived'>('active')
@@ -68,23 +59,22 @@ export default function SmmProjectsPage() {
   const to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 
   const { data, isLoading } = useQuery<CalData>({
-    queryKey: ['smm-calendar', section, from, to],
-    queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }),
+    queryKey: ['smm-calendar', 'smm', from, to],
+    queryFn: () => contentPlanApi.smmCalendar({ from, to }),
   })
 
   const projects = data?.projects ?? []
   const backlog = data?.backlog ?? []
   const events = data?.events ?? []
 
-  // Архив — завершённые проекты раздела (isArchived=true). Для восстановления.
+  // Архив — завершённые SMM-проекты (isArchived=true). Для восстановления.
   const qc = useQueryClient()
   const { data: archivedData } = useQuery<any[]>({
     queryKey: ['smm-archived'],
     queryFn: () => projectsApi.list({ archived: 'true' }),
     enabled: canCreate,
   })
-  const archived = ((archivedData as any[]) || []).filter(p =>
-    section === 'dev' ? isDevProjectType(p.projectType) : p.projectType === 'SMM')
+  const archived = ((archivedData as any[]) || []).filter(p => p.projectType === 'SMM')
   const restoreMut = useMutation({
     mutationFn: (pid: string) => projectsApi.restore(pid),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-archived'] }); qc.invalidateQueries({ queryKey: ['smm-calendar'] }); toast.success('Проект возвращён') },
@@ -117,30 +107,6 @@ export default function SmmProjectsPage() {
   }, [projects, backlog, events])
   const cardById = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
 
-  // Состав dev-проектов для стека аватаров (только раздел «Разработка»).
-  // GET /projects отдаёт manager + members (до 5) + membersCount по контракту.
-  // SMM-ветка запрос не делает, её рендер не меняется.
-  const { data: devTeamList } = useQuery<any[]>({
-    queryKey: ['projects', 'dev-team'],
-    queryFn: () => projectsApi.list(),
-    enabled: section === 'dev',
-    retry: false,
-  })
-  const devTeamById = useMemo(() => {
-    const m = new Map<string, { manager: DevTeamPerson | null; members: DevTeamPerson[]; membersCount: number }>()
-    if (!Array.isArray(devTeamList)) return m
-    for (const p of devTeamList) {
-      if (!p?.id) continue
-      const ms = Array.isArray(p.members) ? p.members : []
-      m.set(p.id, {
-        manager: p.manager ?? null,
-        members: ms,
-        membersCount: typeof p.membersCount === 'number' ? p.membersCount : ms.length,
-      })
-    }
-    return m
-  }, [devTeamList])
-
   const layerCls = (active: boolean) =>
     clsx('transition-all duration-300 ease-out', active
       ? 'opacity-100 scale-100'
@@ -148,8 +114,6 @@ export default function SmmProjectsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Навигация по разделу «Разработка» — в сайдбаре (DEV_SUBNAV),
-          in-page полосы табов нет (убрана как дубль). */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="page-title">Проекты</h1>
         <div className="flex items-center gap-2">
@@ -208,22 +172,12 @@ export default function SmmProjectsPage() {
             <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
           ) : (
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-              {cards.map(c => {
-                const team = devTeamById.get(c.id)
-                return (
-                  <button key={c.id} type="button" onClick={() => navigate(`${base}/projects/${c.id}`)}
-                    className={CARD_CLS + ' text-left w-full hover:border-gray-300 dark:hover:border-gray-600'}>
-                    <SmmProjectCardBox c={c} />
-                    {/* Состав dev-проекта: стек команды + кто ведёт. Только раздел
-                        «Разработка» — в SMM-ветке условие ложно и DOM не меняется. */}
-                    {section === 'dev' && team && (
-                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 min-w-0">
-                        <DevTeamStack manager={team.manager} members={team.members} membersCount={team.membersCount} />
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
+              {cards.map(c => (
+                <button key={c.id} type="button" onClick={() => navigate(`/smm/projects/${c.id}`)}
+                  className={CARD_CLS + ' text-left w-full hover:border-gray-300 dark:hover:border-gray-600'}>
+                  <SmmProjectCardBox c={c} />
+                </button>
+              ))}
             </div>
           )}
         </div>

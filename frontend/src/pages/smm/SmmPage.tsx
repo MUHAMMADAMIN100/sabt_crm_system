@@ -13,7 +13,6 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { useSmmSection, SECTION_BASE } from './smmShared'
 import { isSmmViewOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 
@@ -218,7 +217,6 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const navigate = useNavigate()
   // Раздел: 'smm' — обычный СММ-календарь, 'dev' — тот же календарь, но
   // с проектами «Разработки» (провайдер стоит на роутах /dev/*).
-  const section = useSmmSection()
   const user = useAuthStore(s => s.user)
   // Менеджер по продажам календарь только смотрит (решение владельца
   // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
@@ -262,13 +260,15 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   }, [view, cursor])
 
   // Ключ кэша один на всех: и запрос, и оптимистичные правки. Раньше правки
-  // адресовались в ['smm-calendar', from, to] — без section, то есть в ключ,
-  // которого нет: карточка «оживала» только после ответа сервера.
-  const calKey = useMemo(() => ['smm-calendar', section, from, to], [section, from, to])
+  // адресовались в ['smm-calendar', from, to] — в ключ, которого нет:
+  // карточка «оживала» только после ответа сервера. Второй элемент 'smm'
+  // остался с тех пор, как календарь обслуживал и раздел «Разработка»:
+  // так ключ совпадает со страницами проектов и окном авторасстановки.
+  const calKey = useMemo(() => ['smm-calendar', 'smm', from, to], [from, to])
 
   const { data, isLoading } = useQuery<CalData>({
     queryKey: calKey,
-    queryFn: () => contentPlanApi.smmCalendar({ from, to, segment: section }),
+    queryFn: () => contentPlanApi.smmCalendar({ from, to }),
     placeholderData: keepPreviousData,
   })
 
@@ -287,7 +287,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const rawProjects = data?.projects ?? []
   const mineIds = new Set(rawProjects.filter(p => p.mine).map(p => p.id))
   // Только раздел СММ: тот же календарь в «Разработке» живёт по-старому.
-  const showScope = section === 'smm' && !embeddedProjectId && mineIds.size > 0 && mineIds.size < rawProjects.length
+  const showScope = !embeddedProjectId && mineIds.size > 0 && mineIds.size < rawProjects.length
   const mineOnly = showScope && scope === 'mine'
   const inScope = (pid: string) => !mineOnly || mineIds.has(pid)
   // Встроенный режим: показываем только выбранный проект (ограничиваем данные у истока).
@@ -399,7 +399,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
     // Наблюдателю настройки цикла не открываем — ведём на страницу проекта.
-    if (readOnly) { navigate(`${SECTION_BASE[section]}/projects/${id}`); return }
+    if (readOnly) { navigate(`/smm/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
     if (p) setProjSettings(p)
   }
@@ -625,7 +625,6 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // есть только за день, поэтому там считаем по «Не запланировано».
   const autoNeed = useMemo(() => {
     const m = new Map<string, number>()
-    if (section !== 'smm') return m   // рилсы и посты — только у SMM-проектов
     for (const p of projects) {
       const bl = backlog.filter(b => b.projectId === p.id && b.kind === 'publication')
       const cyc = projCycle(p.id)
@@ -642,14 +641,14 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       m.set(p.id, need)
     }
     return m
-  }, [projects, backlog, allEvents, view, section])
+  }, [projects, backlog, allEvents, view])
   const [autoProj, setAutoProj] = useState<string | null>(null)
   const autoWindow = (projectId: string) => {
     const cyc = projCycle(projectId)
     return cyc ?? { start: todayIso(), end: iso(addDays(new Date(), 30)) }
   }
   const autoModal = autoProj ? (
-    <AutoPlanModal key={autoProj} projectId={autoProj} segment={section}
+    <AutoPlanModal key={autoProj} projectId={autoProj}
       window={autoWindow(autoProj)} hasCycle={!!projCycle(autoProj)}
       color={projColor(autoProj)} isPhone={isPhone}
       busyWho={isSpecialist ? 'у вас' : 'у специалиста'}
@@ -707,7 +706,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onClose={() => setProjSettings(null)}
           onSave={(day, normReels, normPosts, anchor) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts, anchor })}
           onClear={() => clearMut.mutate(projSettings.id)}
-          onOpen={() => navigate(`${SECTION_BASE[section]}/projects/${projSettings.id}`)} />
+          onOpen={() => navigate(`/smm/projects/${projSettings.id}`)} />
       )}
     </>
   )
@@ -823,7 +822,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onClose={() => setProjSettings(null)}
           onSave={(day, normReels, normPosts, anchor) => cycleMut.mutate({ id: projSettings.id, day, normReels, normPosts, anchor })}
           onClear={() => clearMut.mutate(projSettings.id)}
-          onOpen={() => navigate(`${SECTION_BASE[section]}/projects/${projSettings.id}`)} />
+          onOpen={() => navigate(`/smm/projects/${projSettings.id}`)} />
       )}
 
       {autoModal}

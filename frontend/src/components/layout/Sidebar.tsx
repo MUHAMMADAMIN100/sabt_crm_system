@@ -48,14 +48,14 @@ const SMM_SUBNAV: SubNavItem[] = [
   { to: '/smm/control', label: 'Контроль', icon: ClipboardCheck },
 ]
 
-/** Подпункты раздела «Разработка» — один заголовок с пятью подпунктами:
- *  календарь и проекты видны всем из раздела, доска/KPI — по view,
- *  отчёты — по manage. Трекерные маршруты (/dev-board*) живут под ним же,
- *  отдельного top-level пункта «Доска разработки» больше нет. */
+/** Подпункты раздела «Разработка»: доска/KPI — по view, проекты — всем из
+ *  раздела, отчёты — по manage. Трекерные маршруты (/dev-board*) живут под
+ *  ним же, отдельного top-level пункта «Доска разработки» больше нет.
+ *  «Умного календаря» у раздела нет (вариант Б, 14.10.2026): это был
+ *  контент-план СММ; календарь разработки — вид «Календарь» на доске. */
 const DEV_SUBNAV: SubNavItem[] = [
-  { to: '/dev', label: 'Умный календарь', icon: CalendarRange, exact: true },
-  { to: '/dev/projects', label: 'Проекты', icon: FolderKanban },
   { to: '/dev-board', label: 'Доска', icon: KanbanSquare, exact: true, perm: 'dev-tracker.view' },
+  { to: '/dev/projects', label: 'Проекты', icon: FolderKanban },
   { to: '/dev-board/kpi', label: 'KPI', icon: BarChart3, perm: 'dev-tracker.view' },
   { to: '/dev-board/reports', label: 'Отчёты', icon: FileText, perm: 'dev-tracker.manage' },
 ]
@@ -264,8 +264,8 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                 </li>
               )
             }
-            // «СММ» / «Разработка» — раскрывающиеся разделы с подпунктами
-            // (первый — Умный календарь). Один блок на оба раздела.
+            // «СММ» / «Разработка» — раскрывающиеся разделы с подпунктами.
+            // Один блок на оба раздела.
             if (SECTION_SUBNAV[item.to]) {
               const isSecActive = sectionActive(item.to)
               const isSecOpen = !!openSections[item.to]

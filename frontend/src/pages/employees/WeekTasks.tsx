@@ -33,6 +33,8 @@ import {
 import { employeesApi, tasksApi, contentPlanApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
+import { useAuthStore } from '@/store/auth.store'
+import { canSeeSmmSection } from '@/lib/permissions'
 
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -108,6 +110,10 @@ const errText = (e: any, fallback: string) => {
 export default function WeekTasks() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  // Публикации СММ в неделе — только тем, кому открыт раздел «СММ».
+  // Руководитель разработки видит здесь задачи без контент-плана: СММ и
+  // разработка разделены (14.10.2026), календарь СММ ему не отдаётся.
+  const seesSmm = canSeeSmmSection(useAuthStore(s => s.user?.role))
   const narrow = useNarrow(900)
   const [offset, setOffset] = useState(0)
   /** Кому и на какой день выдаём — открывается «плюсом» в клетке. */
@@ -152,6 +158,7 @@ export default function WeekTasks() {
   const { data: cal } = useQuery<any>({
     queryKey: ['week-plan', from, to],
     queryFn: () => contentPlanApi.smmCalendar({ from, to }),
+    enabled: seesSmm,
   })
 
   // Окошко закрывается по Esc и при прокрутке — иначе висит не у своей карточки.

@@ -30,13 +30,3 @@ export function devRoleLabel(role?: string | null): string {
   if (!role) return ''
   return DEV_ROLE_LABELS[role] ?? getRoleLabel(role)
 }
-
-/** Дата «в команде с …» — только если бэк/юзер даёт дату, иначе null
- *  (вызывающий код дату просто не рисует). */
-export function teamSinceOf(m: DevTeamPerson): string | null {
-  const raw = m.joinedAt ?? m.memberSince ?? m.addedAt ?? m.since ?? null
-  if (!raw) return null
-  const d = new Date(raw)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-}

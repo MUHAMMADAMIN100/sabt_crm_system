@@ -153,7 +153,7 @@ describe('«Доход → SMM»: менеджер, срок и оплата', (
 
     await user.click(screen.getByRole('button', { name: 'Назначить' }));
     const menu = await screen.findByRole('menu');
-    expect(within(menu).getByText('Менеджеры по продажам')).toBeInTheDocument();
+    expect(within(menu).getByText('Менеджеры продаж СММ')).toBeInTheDocument();
     await user.click(within(menu).getByRole('menuitem', { name: /Фаррух/ }));
     await waitFor(() => expect(mocks.setSmmManager).toHaveBeenCalledWith('pB', 'm2'));
   });

@@ -16,7 +16,7 @@ export class SmmControlController {
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+    UserRole.SALES_MANAGER_SMM)
   list(@Query('ym') ym: string, @Request() req) {
     return this.service.list(ym, req.user);
   }
@@ -24,7 +24,7 @@ export class SmmControlController {
   /** Отметка: { ym, mood?, moodNote?, contact?, report? }. */
   @Patch(':projectId')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+    UserRole.SALES_MANAGER_SMM)
   update(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
     return this.service.update(projectId, body || {}, req.user);
   }
