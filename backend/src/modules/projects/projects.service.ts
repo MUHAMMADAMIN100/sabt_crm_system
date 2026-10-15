@@ -103,31 +103,13 @@ export class ProjectsService implements OnModuleInit {
   }
 
   /** СММ и разработка разделены (решение владельца 14.10.2026) — разовая
-   *  уборка данных, оставшихся от смешения. Повторный запуск ничего не
-   *  меняет: обе выборки находят только то, что ещё не исправлено. */
+   *  уборка данных, оставшихся от смешения: анкета SMM-клиента у проектов
+   *  разработки переезжает в контакты. Повторный запуск ничего не меняет.
+   *  (14.10 здесь же снимались менеджеры по продажам разработки с
+   *  SMM-проектов; 15.10 владелец вернул их в СММ — шаг убран, чтобы новые
+   *  назначения не стирались при каждом перезапуске.) */
   private async separateSmmFromDev() {
-    // 1. Ответственный за SMM-проект — только менеджер продаж СММ. Назначения
-    //    на менеджера продаж разработки снимаем: проект встаёт в «Без
-    //    менеджера», владелец назначит менеджера СММ.
-    const wrongManager: Array<{ id: string; name: string }> = await this.repo.manager.query(
-      `SELECT p.id, p.name FROM projects p
-        WHERE p."projectType" = 'SMM'
-          AND jsonb_typeof(p."smmData"->'salesManagerId') = 'string'
-          AND EXISTS (SELECT 1 FROM users u WHERE u.id::text = p."smmData"->>'salesManagerId'
-                AND (u.role = 'sales_manager_dev' OR u."secondaryRole" = 'sales_manager_dev'))
-          AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id::text = p."smmData"->>'salesManagerId'
-                AND (u.role = 'sales_manager_smm' OR u."secondaryRole" = 'sales_manager_smm'))`,
-    );
-    if (wrongManager.length) {
-      await this.repo.manager.query(
-        `UPDATE projects SET "smmData" = jsonb_set("smmData", '{salesManagerId}', 'null'::jsonb)
-          WHERE id = ANY($1::uuid[])`,
-        [wrongManager.map(p => p.id)],
-      );
-      this.logger.log(`SMM-проекты без менеджера продаж разработки: ${wrongManager.map(p => p.name).join(', ')}`);
-    }
-
-    // 2. Анкета SMM-клиента у проектов разработки → контакты клиента.
+    // Анкета SMM-клиента у проектов разработки → контакты клиента.
     const devRows: Array<{ id: string; smmData: any; clientInfo: any }> = await this.repo.manager.query(
       `SELECT id, "smmData", "clientInfo" FROM projects
         WHERE "projectType" = ANY($1::text[])
@@ -363,8 +345,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    // Бриф — только SMM: менеджер продаж разработки его не ведёт (14.10.2026).
-    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm'];
+    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = PM_OR_ADMIN.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -400,8 +381,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    // Бриф — только SMM: менеджер продаж разработки его не ведёт (14.10.2026).
-    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm'];
+    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = ADMIN_PM.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -1050,11 +1030,12 @@ export class ProjectsService implements OnModuleInit {
       relations: ['manager', 'members', 'tasks', 'tasks.assignee', 'files'],
     });
     if (!project) throw new NotFoundException('Project not found');
-    // Менеджер продаж не может открыть проект чужого направления. СММ и
-    // разработка разделены (решение владельца 14.10.2026): исключение
-    // 11.10, пускавшее менеджера продаж разработки в SMM-проекты, убрано.
+    // Менеджер продаж не может открыть проект чужого направления.
+    // Исключение — SMM-проекты: раздел «СММ» открыт обоим видам менеджеров по
+    // продажам на просмотр, и ответственным за SMM-проект владелец может
+    // назначить любого из них (решение 11.10.2026, подтверждено 15.10.2026).
     const segment = getSalesSegment(requestUserRole);
-    if (segment && !segment.projectTypes.includes(project.projectType as string)) {
+    if (segment && !segment.projectTypes.includes(project.projectType as string) && project.projectType !== 'SMM') {
       throw new ForbiddenException('Проект не относится к вашему направлению');
     }
     // ПМ по разработке — только dev-проекты (SMM/Дизайн не его направление).
@@ -2193,11 +2174,11 @@ export class ProjectsService implements OnModuleInit {
     return { specialists, unassigned };
   }
 
-  /** Ответственный менеджер SMM-проекта — менеджер продаж СММ: у проекта
-   *  он один, хранится в smmData.salesManagerId. С 14.10.2026 менеджер
-   *  продаж разработки ответственным за SMM-проект быть не может —
-   *  направления разделены. */
-  private static readonly SALES_ROLES = [UserRole.SALES_MANAGER_SMM];
+  /** Ответственный менеджер SMM-проекта — любой менеджер по продажам
+   *  (решение владельца 10.10.2026; 14.10 круг сужали до менеджеров СММ,
+   *  15.10 владелец вернул обоих): у проекта он один, хранится в
+   *  smmData.salesManagerId. */
+  private static readonly SALES_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
 
   /** «Схема менеджеров»: каждый менеджер по продажам с его SMM-проектами +
    *  проекты без менеджера. У проекта — имена его SMM-специалистов, чтобы
@@ -2245,7 +2226,7 @@ export class ProjectsService implements OnModuleInit {
       const u = await this.userRepo.findOne({ where: { id: managerId } });
       const roles = ProjectsService.SALES_ROLES as string[];
       if (!u || !u.isActive || !(roles.includes(u.role as string) || roles.includes((u as any).secondaryRole as string))) {
-        throw new BadRequestException('Ответственным может быть только менеджер продаж СММ');
+        throw new BadRequestException('Ответственным может быть только менеджер по продажам');
       }
     }
     const sd: any = { ...(project.smmData || {}) };

@@ -247,12 +247,11 @@ export class CalendarService {
       link: null,
     }));
 
-    // Оплаты клиентов (решение владельца 12.10.2026): менеджер продаж СММ
+    // Оплаты клиентов (решение владельца 12.10.2026): менеджер по продажам
     // видит в своём календаре, когда клиент должен заплатить, — только по
     // SMM-проектам, где он ответственный. Сроки из «Финансов», сумм нет.
     // При фильтре «Личные»/«Общие» и в чужом календаре не показываем.
-    // Менеджеру продаж разработки — нет: направления разделены (14.10.2026).
-    const SALES_ROLES = ['sales_manager_smm'];
+    const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
     const isSalesViewer = SALES_ROLES.includes(role)
       || (!!viewerSecondaryRole && SALES_ROLES.includes(viewerSecondaryRole));
     let paymentEvents: any[] = [];

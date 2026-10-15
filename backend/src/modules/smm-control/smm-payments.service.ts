@@ -8,9 +8,9 @@ import {
 
 /** Кто видит оплаты всех проектов и связывает проект с клиентом «Финансов». */
 const MONEY_ROLES = ['admin', 'founder'];
-/** Ответственные за SMM-проекты — только менеджеры продаж СММ: СММ и
- *  разработка разделены (решение владельца 14.10.2026). */
-const SALES_ROLES = ['sales_manager_smm'];
+/** Ответственные за SMM-проекты — менеджеры по продажам, оба вида
+ *  (решение владельца 10.10.2026, подтверждено 15.10.2026). */
+const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
 

@@ -111,8 +111,8 @@ export default function WeekTasks() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   // Публикации СММ в неделе — только тем, кому открыт раздел «СММ».
-  // Руководитель разработки видит здесь задачи без контент-плана: СММ и
-  // разработка разделены (14.10.2026), календарь СММ ему не отдаётся.
+  // Руководитель разработки видит здесь задачи без контент-плана: календарь
+  // СММ команде разработки не отдаётся (14.10.2026).
   const seesSmm = canSeeSmmSection(useAuthStore(s => s.user?.role))
   const narrow = useNarrow(900)
   const [offset, setOffset] = useState(0)

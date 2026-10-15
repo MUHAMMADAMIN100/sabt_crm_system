@@ -606,7 +606,7 @@ export default function SmmProjectPage() {
                 )}
               </div>
             </div>
-            {/* Ответственный менеджер продаж СММ — виден всем, меняет владелец. */}
+            {/* Ответственный менеджер по продажам — виден всем, меняет владелец. */}
             <div className={fRow + ' relative'}>
               <span className="text-sm text-gray-500">Менеджер</span>
               <div className="flex items-center gap-2 min-w-0">
@@ -627,7 +627,7 @@ export default function SmmProjectPage() {
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setMgrOpen(false)} />
                         <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
-                          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Менеджеры продаж СММ</div>
+                          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Менеджеры по продажам</div>
                           {!managerLoad?.managers?.length ? (
                             <p className="px-3 py-3 text-sm text-gray-400">Нет менеджеров</p>
                           ) : managerLoad.managers.map(u => {

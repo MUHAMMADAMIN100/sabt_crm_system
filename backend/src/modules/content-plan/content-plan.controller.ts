@@ -93,13 +93,14 @@ export class ContentPlanController {
   }
 
   /** Календарь производства СММ за месяц: публикации + съёмки, только
-   *  SMM-проекты. СММ и разработка разделены (решение владельца 14.10.2026):
-   *  команде разработки и менеджеру продаж разработки календарь СММ не
-   *  отдаём, у разработки свой календарь на доске задач. Менеджер продаж СММ
-   *  только смотрит — у изменяющих ручек ниже его роли нет. Объявлено ДО
+   *  SMM-проекты. Команде разработки календарь СММ не отдаём — у неё свой
+   *  календарь на доске задач (решение владельца 14.10.2026). Менеджеры по
+   *  продажам — оба вида (решение 11.10.2026, подтверждено 15.10.2026) —
+   *  только смотрят: у изменяющих ручек ниже их ролей нет. Объявлено ДО
    *  ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.SALES_MANAGER_SMM)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
     return this.service.smmCalendar(from, to, req.user?.id);
   }

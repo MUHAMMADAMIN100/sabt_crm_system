@@ -73,26 +73,24 @@ describe('userCan — персональные запреты', () => {
   })
 })
 
-// Раздел «СММ» у менеджеров по продажам (решение владельца 11.10.2026):
-// менеджер продаж СММ видит раздел целиком, но только смотрит — отмечает
-// лишь в «Контроле». Менеджеру продаж разработки раздел закрыт: СММ и
-// разработка разделены (14.10.2026). Сервер держит то же правило @Roles.
+// Раздел «СММ» у менеджеров по продажам (решение владельца 11.10.2026,
+// подтверждено 15.10.2026): раздел открыт обоим видам менеджеров, но только
+// на просмотр — отмечают они лишь в «Контроле». Сервер держит то же правило
+// своими @Roles. Команде разработки раздел закрыт.
 describe('раздел «СММ» — менеджеры по продажам', () => {
+  const SALES: UserRole[] = ['sales_manager_smm', 'sales_manager_dev']
   const ROUTES = ['/smm', '/smm/stories', '/smm/projects', '/smm/projects/abc', '/smm/control']
 
-  it('менеджер продаж СММ открывает все страницы раздела', () => {
-    expect(canSeeSmmSection('sales_manager_smm')).toBe(true)
-    for (const route of ROUTES) expect(canAccessRoute('sales_manager_smm', route)).toBe(true)
+  it('оба вида менеджеров открывают все страницы раздела', () => {
+    for (const role of SALES) {
+      expect(canSeeSmmSection(role)).toBe(true)
+      for (const route of ROUTES) expect(canAccessRoute(role, route)).toBe(true)
+    }
   })
 
-  it('менеджеру продаж разработки раздел «СММ» закрыт', () => {
-    expect(canSeeSmmSection('sales_manager_dev')).toBe(false)
-    for (const route of ROUTES) expect(canAccessRoute('sales_manager_dev', route)).toBe(false)
-  })
-
-  it('менеджер продаж СММ — наблюдатель, СММ-команда и руководство — нет', () => {
-    expect(isSmmViewOnly('sales_manager_smm')).toBe(true)
-    for (const role of ['founder', 'admin', 'smm_director', 'smm_specialist', 'sales_manager_dev'] as UserRole[]) {
+  it('менеджеры — наблюдатели, СММ-команда и руководство — нет', () => {
+    for (const role of SALES) expect(isSmmViewOnly(role)).toBe(true)
+    for (const role of ['founder', 'admin', 'smm_director', 'smm_specialist'] as UserRole[]) {
       expect(isSmmViewOnly(role)).toBe(false)
     }
   })

@@ -108,7 +108,7 @@ export default function SmmManagerBoard({ cardById }: { cardById: (id: string) =
     <div className="space-y-3">
       {managers.length === 0 && (
         <p className="text-[13px] text-gray-500 dark:text-gray-400">
-          Менеджеров продаж СММ пока нет. Колонка появится, когда у сотрудника будет роль «Менеджер продаж (СММ)».
+          Менеджеров по продажам пока нет. Колонка появится, когда у сотрудника будет роль «Менеджер по продажам».
         </p>
       )}
       <div className="grid gap-3.5 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
@@ -121,7 +121,7 @@ export default function SmmManagerBoard({ cardById }: { cardById: (id: string) =
                 <Avatar name={m.name} src={m.avatar || undefined} size={34} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-bold text-gray-900 dark:text-gray-100 truncate">{m.name}</p>
-                  <p className="text-[11px] text-gray-400">Менеджер продаж СММ</p>
+                  <p className="text-[11px] text-gray-400">Менеджер по продажам</p>
                 </div>
               </>
             }

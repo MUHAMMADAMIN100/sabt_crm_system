@@ -41,18 +41,17 @@ export class ProjectsController {
    *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM)
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
   }
 
-  /** «Схема менеджеров»: менеджеры продаж СММ с их SMM-проектами +
+  /** «Схема менеджеров»: менеджеры по продажам с их SMM-проектами +
    *  проекты без менеджера. Видят те же, кто видит «Схему» специалистов.
-   *  Менеджеру продаж разработки раздел «СММ» закрыт (14.10.2026).
    *  Объявлено ДО ':id'. */
   @Get('smm-manager-load')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM)
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmManagerLoad() {
     return this.service.smmManagerLoad();
   }
@@ -225,7 +224,7 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER,
     UserRole.SMM_DIRECTOR,
     UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM,
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {
     const { token } = await this.service.generateBriefShareToken(id, req.user);

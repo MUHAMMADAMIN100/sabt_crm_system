@@ -17,7 +17,7 @@ import { payStateText } from '@/pages/dashboard/components/ClientPayments'
 const longDay = (iso: string) => format(new Date(`${iso}T00:00:00`), 'd MMMM', { locale: ru })
 /** Кому сервер отдаёт срок оплаты. Остальным запрос не шлём: он вернул бы
  *  отказ и лишнюю запись в журнале безопасности. */
-const PAY_ROLES = ['founder', 'admin', 'sales_manager_smm']
+const PAY_ROLES = ['founder', 'admin', 'sales_manager_smm', 'sales_manager_dev']
 
 const CHIP: Record<ClientPayItem['state'], string> = {
   late: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
