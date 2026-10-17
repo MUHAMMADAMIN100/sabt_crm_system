@@ -236,7 +236,9 @@ export function OwnMark({ done, className }: { done?: boolean; className?: strin
 
 export type CellLine = {
   key: string
-  kind: 'reel' | 'maket' | 'shoot' | 'edit' | 'design' | 'own'
+  /** pay — оплата клиента на панели менеджера по продажам: proj — клиент,
+   *  text — сумма. */
+  kind: 'reel' | 'maket' | 'shoot' | 'edit' | 'design' | 'own' | 'pay'
   proj?: string | null
   text: string
   state: 'open' | 'late' | 'done'
@@ -266,6 +268,15 @@ export function OwnBox() {
   return <i className="w-[9px] h-[9px] mx-[1.5px] rounded-[3px] border-[1.5px] border-surface-400 dark:border-surface-400 shrink-0 inline-block" />
 }
 
+/** Метка оплаты: пустой кружок — ждём, зелёный — получено, красный
+ *  контур — просрочено (как в «Финансах → Планирование»). */
+export function PayDot({ state }: { state: CellLine['state'] }) {
+  return state === 'done'
+    ? <i className="w-[7px] h-[7px] mx-[2px] rounded-full bg-green-400 shrink-0 inline-block" />
+    : <i className={clsx('w-[7px] h-[7px] mx-[2px] rounded-full border-[1.5px] shrink-0 inline-block',
+        state === 'late' ? 'border-red-400' : 'border-surface-400')} />
+}
+
 /** Строки клетки: до трёх названий, дальше «ещё N». Просроченное красным,
  *  сделанное зачёркнуто. Только на компьютере. */
 export function CellLines({ lines, max = 3 }: { lines: CellLine[]; max?: number }) {
@@ -277,12 +288,15 @@ export function CellLines({ lines, max = 3 }: { lines: CellLine[]; max?: number 
       {shown.map(l => (
         <span key={l.key} title={l.proj ? `${l.proj} · ${l.text}` : l.text}
           className="flex items-center gap-1 min-w-0 text-[10.5px] leading-[1.3]">
-          {l.state === 'done' ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400 shrink-0" />
+          {l.kind === 'pay' ? <PayDot state={l.state} />
+            : l.state === 'done' ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400 shrink-0" />
             : l.kind === 'own' ? <OwnBox />
             : <CellBadge kind={l.kind} />}
-          {l.proj ? <span className="text-surface-400 dark:text-surface-500 truncate shrink-[2] max-w-[58%]">{l.proj}</span> : null}
-          <span className={clsx('truncate min-w-0',
-            l.state === 'done' ? 'line-through text-surface-400 dark:text-surface-500'
+          {l.proj ? <span className={clsx('text-surface-400 dark:text-surface-500 truncate', l.kind === 'pay' ? 'min-w-0' : 'shrink-[2] max-w-[58%]')}>{l.proj}</span> : null}
+          {/* Сумма оплаты не обрезается и не зачёркивается: получено — зелёным. */}
+          <span className={clsx(l.kind === 'pay' ? 'shrink-0 whitespace-nowrap tabular-nums' : 'truncate min-w-0',
+            l.kind === 'pay' && l.state === 'done' ? 'font-medium text-green-600 dark:text-green-400'
+              : l.state === 'done' ? 'line-through text-surface-400 dark:text-surface-500'
               : l.state === 'late' ? 'font-medium text-red-500 dark:text-red-400'
               : 'font-medium text-surface-800 dark:text-surface-100')}>{l.text}</span>
         </span>

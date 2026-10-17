@@ -16,7 +16,8 @@ import { storiesDailyTarget } from '@/pages/smm/smmShared'
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
 
-const SalesDashboard = lazy(() => import('./components/SalesDashboard'))
+// Менеджер по продажам: календарь денег клиентов, как у СММ (17.10.2026).
+const SalesManagerDashboard = lazy(() => import('./components/SalesManagerDashboard'))
 // Кабинет команды разработки: производственные карточки доски и обычные
 // поручения — ДВУМЯ отдельными блоками, чтобы одно не терялось в другом.
 const MyDevCards = lazy(() => import('./components/MyDevCards'))
@@ -189,14 +190,14 @@ function DashboardContent() {
       <div className="space-y-6">
         {/* Руководителю направления — KPI его команды первым блоком: сразу
             видно, кто чем занят и на каком этапе задачи. Ниже остаётся его
-            собственная продажная сводка. */}
+            собственная панель менеджера по продажам. */}
         {isDevDirectorView && (
           <Suspense fallback={null}>
             <DevTeamKpiWidget onCreateTask={uid => navigate(`/tasks?new=1&assignee=${uid}`)} />
           </Suspense>
         )}
         <Suspense fallback={<PageLoader />}>
-          <SalesDashboard />
+          <SalesManagerDashboard />
         </Suspense>
       </div>
     )

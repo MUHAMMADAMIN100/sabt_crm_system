@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import {
-  FinClient, FinPlan, PayItem, byUrgency, isEarning, paymentItems, resolveFinanceLinks,
+  CalPay, FinClient, FinPlan, FinTx, PayItem, byUrgency, calendarPays, isEarning, paymentItems, resolveFinanceLinks,
 } from './smm-payments.logic';
 
 /** Кто видит оплаты всех проектов и связывает проект с клиентом «Финансов». */
@@ -13,6 +13,13 @@ const MONEY_ROLES = ['admin', 'founder'];
 const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
+/** Клиент «Финансов» с полями, нужными календарю менеджера. */
+type FinClientRow = FinClient & { retentionMonths: number | null; salesManagerId: string | null };
+
+/** Деньги дня в календаре на «Панели» менеджера: сумма, клиент и проект CRM. */
+export type CalendarPayItem = CalPay & { name: string; projectId: string | null; direction: string | null };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Оплата проекта для менеджера: проект, день, состояние — без сумм. */
 export type ProjectPayItem = PayItem & { projectId: string; projectName: string };
@@ -22,6 +29,10 @@ const shiftMonth = (iso: string, delta: number) => {
   const d = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1 + delta, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
+const monthEnd = (iso: string) => {
+  const d = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), 0));
+  return d.toISOString().slice(0, 10);
+};
 const managerOf = (p: Project): string | null =>
   typeof (p.smmData as any)?.salesManagerId === 'string' ? (p.smmData as any).salesManagerId : null;
 const linkOf = (p: Project): string | null =>
@@ -30,8 +41,9 @@ const linkOf = (p: Project): string | null =>
 /**
  * «Когда клиент должен заплатить» — для ответственного менеджера SMM-проекта
  * (решение владельца 12.10.2026). Сроки берутся из плановых оплат «Финансов»;
- * менеджер видит только свои проекты (smmData.salesManagerId) и только
- * проект, день и состояние. Финансовые таблицы читаем SQL-запросом, а не
+ * менеджер видит только свои проекты (smmData.salesManagerId). В карточке
+ * проекта — день и состояние; в календаре «Панели» (17.10.2026) — ещё и
+ * суммы, и клиенты разработки. Финансовые таблицы читаем SQL-запросом, а не
  * через FinanceModule, — как раздел «Контроль»: модуль финансов тяжёлый и
  * тянет за собой половину приложения.
  */
@@ -52,15 +64,20 @@ export class SmmPaymentsService {
     return rows.filter(p => String(p.status) !== 'archived');
   }
 
-  private async clients(): Promise<FinClient[]> {
+  private async clients(): Promise<FinClientRow[]> {
     const rows: any[] = await this.ds.query(
       `SELECT id, name, direction, tariff::float AS tariff,
               to_char("contractDate", 'YYYY-MM-DD') AS "contractDate",
               to_char("cycleAnchor", 'YYYY-MM-DD') AS "cycleAnchor",
-              COALESCE(archived, false) AS archived, status
+              COALESCE(archived, false) AS archived, status,
+              "retentionMonths", "salesManagerId"
          FROM finance_projects`,
     ).catch((e: any) => { this.logger.warn(`finance clients query failed: ${e?.message || e}`); return []; });
-    return rows.map(r => ({ ...r, tariff: Number(r.tariff) || 0, archived: !!r.archived }));
+    return rows.map(r => ({
+      ...r, tariff: Number(r.tariff) || 0, archived: !!r.archived,
+      retentionMonths: r.retentionMonths == null ? null : Number(r.retentionMonths),
+      salesManagerId: r.salesManagerId || null,
+    }));
   }
 
   /** Плановые оплаты клиентов: все ожидаемые и полученные за последние месяцы
@@ -108,15 +125,79 @@ export class SmmPaymentsService {
     return (await this.collect(own, todayDushanbe())).items;
   }
 
-  /** Блок «Оплаты клиентов» на панели: менеджеру — свои проекты, владельцу
-   *  и админу — все. */
-  async mine(actor: Actor) {
+  /**
+   * Деньги в календаре «Панели» менеджера по продажам (решение владельца
+   * 17.10.2026): то же, что владелец видит в «Финансах → Планирование», но
+   * только по клиентам менеджера — SMM-проекты, где он ответственный в CRM,
+   * и клиенты разработки, где он назначен в «Доход → Разработка». Суммы
+   * видны. Владелец и админ видят всех клиентов, у которых есть менеджер.
+   */
+  async calendar(actor: Actor, fromRaw?: string, toRaw?: string) {
     const today = todayDushanbe();
-    const all = await this.smmProjects();
-    const scope = this.isTop(actor) ? all : all.filter(p => managerOf(p) === actor.id);
-    if (!scope.length) return { today, projects: 0, items: [], unlinked: [] };
-    const { items, unlinked } = await this.collect(scope, today);
-    return { today, projects: scope.length, items, unlinked };
+    const from = ISO_DAY.test(String(fromRaw || '')) ? String(fromRaw) : `${today.slice(0, 7)}-01`;
+    const to = ISO_DAY.test(String(toRaw || '')) && String(toRaw) >= from ? String(toRaw) : monthEnd(from);
+    const top = this.isTop(actor);
+    const mineOnly = (id: string | null) => (top ? !!id : id === actor.id);
+
+    const all = await this.clients();
+    const own = (await this.smmProjects()).filter(p => mineOnly(managerOf(p)));
+    const links = resolveFinanceLinks(own.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), all);
+    const scope = new Map<string, { client: FinClientRow; name: string; projectId: string | null }>();
+    for (const p of [...own].sort((a, b) => a.name.localeCompare(b.name, 'ru'))) {
+      const l = links.get(p.id);
+      if (l && !scope.has(l.client.id)) scope.set(l.client.id, { client: l.client, name: p.name, projectId: p.id });
+    }
+    for (const c of all) {
+      if (c.direction === 'smm' || scope.has(c.id) || !mineOnly(c.salesManagerId)) continue;
+      scope.set(c.id, { client: c, name: c.name, projectId: null });
+    }
+    if (!scope.size) return { today, from, to, clients: 0, items: [] as CalendarPayItem[] };
+
+    const ids = [...scope.keys()];
+    // Окно запросов шире календаря: текущий месяц нужен всегда (прогноз и
+    // «Просрочено»), месяц до окна — для оплат, полученных позже своего месяца.
+    const lo = [from, today].sort()[0];
+    const hi = [to, today].sort()[1];
+    const [plans, txs] = await Promise.all([this.calendarPlans(ids, lo), this.incomeTxs(ids, lo, hi)]);
+    const items: CalendarPayItem[] = [];
+    for (const { client, name, projectId } of scope.values()) {
+      for (const it of calendarPays(client, plans, txs, from, to, today)) {
+        items.push({ ...it, name, projectId, direction: client.direction });
+      }
+    }
+    items.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'ru') || a.partNo - b.partNo);
+    return { today, from, to, clients: scope.size, items };
+  }
+
+  /** Плановые оплаты для календаря: все ожидаемые (просрочка) и любые с
+   *  месяцем или сроком не раньше месяца до окна. */
+  private async calendarPlans(clientIds: string[], lo: string): Promise<FinPlan[]> {
+    const rows: any[] = await this.ds.query(
+      `SELECT pp.id, pp."projectId" AS "projectId", pp.ym, pp."partNo" AS "partNo", pp.status,
+              to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate", pp.amount::float AS amount,
+              to_char(tx.date, 'YYYY-MM-DD') AS "paidAt", pp."receivedTxId" AS "receivedTxId"
+         FROM finance_planned_payments pp
+         LEFT JOIN finance_transactions tx ON tx.id = pp."receivedTxId"
+        WHERE pp."projectId" = ANY($1::uuid[])
+          AND (pp.status = 'expected' OR pp.ym >= $2 OR pp."dueDate" >= $3::date)`,
+      [clientIds, shiftMonth(lo, -1), `${shiftMonth(lo, -1)}-01`],
+    ).catch((e: any) => { this.logger.warn(`finance calendar plans query failed: ${e?.message || e}`); return []; });
+    return rows.map(r => ({ ...r, partNo: Number(r.partNo) || 1, amount: Number(r.amount) || 0 }));
+  }
+
+  /** Поступления по клиентам за месяцы окна — для «получено» без плана и
+   *  чтобы не прогнозировать месяц, за который деньги уже пришли. */
+  private async incomeTxs(clientIds: string[], lo: string, hi: string): Promise<FinTx[]> {
+    const rows: any[] = await this.ds.query(
+      `SELECT id, "projectId" AS "projectId", to_char(date, 'YYYY-MM-DD') AS date, amount::float AS amount,
+              ("employeeId" IS NULL AND "subscriptionId" IS NULL AND "debtId" IS NULL) AS plain
+         FROM finance_transactions
+        WHERE type = 'income' AND COALESCE(status, 'completed') <> 'cancelled'
+          AND "projectId" = ANY($1::uuid[])
+          AND date >= $2::date AND date < $3::date`,
+      [clientIds, `${lo.slice(0, 7)}-01`, `${shiftMonth(hi, 1)}-01`],
+    ).catch((e: any) => { this.logger.warn(`finance income txs query failed: ${e?.message || e}`); return []; });
+    return rows.map(r => ({ ...r, amount: Number(r.amount) || 0, plain: !!r.plain }));
   }
 
   /** Строка «Оплата клиента» в карточке SMM-проекта. Владелец и админ видят
@@ -187,17 +268,25 @@ export class SmmPaymentsService {
       // Менеджера назначает только владелец — как в карточке проекта.
       canAssign: this.rolesOf(actor).includes('founder'),
       canLink: this.isTop(actor),
-      clients: all
-        .filter(c => c.direction === 'smm' && !c.archived)
-        .map(c => {
-          const hit = byClient.get(c.id) || null;
-          return {
-            financeProjectId: c.id,
-            project: hit ? { id: hit.project.id, name: hit.project.name } : null,
-            by: hit ? hit.by : null,
-            manager: hit ? person(managerOf(hit.project)) : null,
-          };
-        }),
+      clients: [
+        ...all
+          .filter(c => c.direction === 'smm' && !c.archived)
+          .map(c => {
+            const hit = byClient.get(c.id) || null;
+            return {
+              financeProjectId: c.id,
+              project: hit ? { id: hit.project.id, name: hit.project.name } : null,
+              by: hit ? hit.by : null,
+              manager: hit ? person(managerOf(hit.project)) : null,
+              direct: false,
+            };
+          }),
+        // Разработка (17.10.2026): менеджер хранится у клиента в «Финансах»,
+        // связь с проектом CRM не нужна.
+        ...all
+          .filter(c => c.direction === 'development' && !c.archived)
+          .map(c => ({ financeProjectId: c.id, project: null, by: null, manager: person(c.salesManagerId), direct: true })),
+      ],
       managers: users
         .filter(u => u.isActive && (SALES_ROLES.includes(u.role) || SALES_ROLES.includes(u.secondaryRole || '')))
         .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null }))
@@ -228,6 +317,23 @@ export class SmmPaymentsService {
       const sd: any = { ...(target.smmData || {}), financeProjectId };
       await this.projectRepo.update(target.id, { smmData: sd });
     }
+    return this.financeManagers(actor);
+  }
+
+  /** Менеджер клиента разработки в «Доход → Разработка» (null — снять).
+   *  У SMM-клиента менеджер назначается в карточке проекта CRM. */
+  async setClientManager(financeProjectId: string, userId: string | null, actor: Actor) {
+    if (!this.rolesOf(actor).includes('founder')) throw new BadRequestException('Менеджера назначает основатель');
+    const client = (await this.clients()).find(c => c.id === financeProjectId);
+    if (!client) throw new NotFoundException('Клиент в «Финансах» не найден');
+    if (client.direction === 'smm') throw new BadRequestException('Менеджер SMM-клиента назначается в карточке проекта');
+    if (userId) {
+      const [u]: any[] = await this.ds.query(`SELECT role, "secondaryRole", "isActive" FROM users WHERE id = $1`, [userId]);
+      if (!u || !u.isActive || !(SALES_ROLES.includes(u.role) || SALES_ROLES.includes(u.secondaryRole || ''))) {
+        throw new BadRequestException('Выберите менеджера по продажам');
+      }
+    }
+    await this.ds.query(`UPDATE finance_projects SET "salesManagerId" = $1 WHERE id = $2`, [userId, financeProjectId]);
     return this.financeManagers(actor);
   }
 

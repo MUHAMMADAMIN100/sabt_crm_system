@@ -1061,6 +1061,11 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
 
 function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any[]; months: string[]; totals: any; direction: string; onShift: (months: string[], d: number) => void }) {
   const qc = useQueryClient();
+  // «Менеджер» у клиента разработки (17.10.2026): его деньги видны в
+  // календаре на «Панели» этого менеджера по продажам.
+  const dev = direction === 'development';
+  const managers = useSmmManagers(dev);
+  const narrow = useNarrow(720);
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
   const [opsFor, setOpsFor] = useState<any>(null); // операции по проекту
@@ -1103,6 +1108,12 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                   <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(p)}><FinIcon name="archive" size={15} /></button>
                 </div>
               </div>
+              {dev && (
+                <div className="fin-pp-mgr">
+                  <span className="mini muted">Менеджер</span>
+                  <SmmManagerCell financeProjectId={p.id} clientName={p.name} data={managers} narrow={narrow} />
+                </div>
+              )}
 
               <div className="fin-pp-stat">
                 <div className="fin-pp-statrow">

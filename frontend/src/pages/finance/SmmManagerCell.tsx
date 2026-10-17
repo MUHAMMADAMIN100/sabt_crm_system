@@ -3,6 +3,8 @@
 // поля в «Финансах» нет, поэтому назначение здесь и в карточке проекта всегда
 // одно и то же. Клиент, которого нет среди SMM-проектов CRM, связывается с
 // проектом здесь же.
+// В «Доход → Разработка» (17.10.2026) тот же выбор, но менеджер хранится у
+// самого клиента «Финансов» (direct) — связь с проектом CRM не нужна.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -132,7 +134,7 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
 
   // Менеджер проекта: меняем кэш сразу, сервер догоняет.
   async function assign(manager: FinancePerson | null) {
-    if (!row?.project || busy) return;
+    if ((!row?.project && !row?.direct) || busy) return;
     setMenu(null);
     const prev = qc.getQueryData<FinanceManagers>(KEY);
     qc.setQueryData<FinanceManagers>(KEY, (old) => old && {
@@ -141,8 +143,11 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
     });
     setBusy(true);
     try {
-      await projectsApi.setSmmManager(row.project.id, manager?.id ?? null);
-      qc.invalidateQueries({ queryKey: KEY });
+      if (row.direct) qc.setQueryData(KEY, await smmPaymentsApi.setClientManager(financeProjectId, manager?.id ?? null));
+      else {
+        await projectsApi.setSmmManager(row.project!.id, manager?.id ?? null);
+        qc.invalidateQueries({ queryKey: KEY });
+      }
     } catch (e) {
       qc.setQueryData(KEY, prev);
       toast.error(apiErr(e));
@@ -157,8 +162,10 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
     } catch (e) { toast.error(apiErr(e)); } finally { setBusy(false); }
   }
 
+  // Подсказка у имени: у SMM — с каким проектом CRM связан клиент.
+  const hint = row.manager ? (row.project ? `${row.manager.name} · проект в CRM: ${row.project.name}` : row.manager.name) : '';
   let trigger;
-  if (!row.project) {
+  if (!row.project && !row.direct) {
     trigger = data.canLink
       ? <button ref={btnRef} type="button" className="fin-mgr-ghost warn" onClick={() => open('link')}>нет в CRM — связать</button>
       : <span className="mini" style={{ color: 'var(--amber)' }}>нет в CRM</span>;
@@ -170,7 +177,7 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
     trigger = (
       <button ref={btnRef} type="button" aria-expanded={menu === 'manager'}
         className={'fin-mgr' + (bordered ? ' bordered' : '') + (menu ? ' open' : '')}
-        title={`${row.manager.name} · проект в CRM: ${row.project.name}`} onClick={() => open('manager')}>
+        title={hint} onClick={() => open('manager')}>
         <Avatar person={row.manager} size={24} />
         <span className="name">{row.manager.name}</span>
         {/* В наборе значков «Финансов» стрелки вниз нет — поворачиваем правую. */}
@@ -179,7 +186,7 @@ export default function SmmManagerCell({ financeProjectId, clientName, data, nar
     );
   } else {
     trigger = (
-      <span className={'fin-mgr static' + (bordered ? ' bordered' : '')} title={`${row.manager.name} · проект в CRM: ${row.project.name}`}>
+      <span className={'fin-mgr static' + (bordered ? ' bordered' : '')} title={hint}>
         <Avatar person={row.manager} size={24} />
         <span className="name">{row.manager.name}</span>
       </span>

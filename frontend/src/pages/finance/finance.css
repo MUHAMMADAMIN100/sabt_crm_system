@@ -366,6 +366,7 @@
 .fin-root .fin-pp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fin-root .fin-pp-name { font-size: 15px; font-weight: 700; letter-spacing: -.2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fin-root .fin-pp-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.fin-root .fin-pp-mgr { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; }
 .fin-root .fin-pp-stat { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 12px; }
 .fin-root .fin-pp-statrow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .fin-root .fin-pp-pct { font-size: 23px; font-weight: 750; letter-spacing: -.6px; line-height: 1; color: var(--text); }

@@ -442,11 +442,24 @@ export type ClientPayProject = {
   next?: ClientPayItem | null; lastPaid?: ClientPayItem | null
 }
 
-/** «Когда клиент должен заплатить» по SMM-проектам: сроки из «Финансов».
- *  Менеджер по продажам получает только свои проекты. */
+/** Деньги дня в календаре «Панели» менеджера — как в «Финансах → Планирование»:
+ *  плановая оплата, поступление без плана или прогноз по тарифу. */
+export type SalesCalPay = {
+  key: string; clientId: string; name: string
+  /** SMM-проект CRM клиента; у разработки — null. */
+  projectId: string | null; direction: string | null
+  /** ym — месяц, за который оплата. */
+  date: string; ym: string; amount: number; partNo: number
+  state: 'late' | 'today' | 'wait' | 'paid'
+  source: 'plan' | 'tx' | 'forecast'
+}
+
+/** «Когда клиент должен заплатить»: сроки из «Финансов». Менеджер по
+ *  продажам получает только своих клиентов. */
 export const smmPaymentsApi = {
-  mine: (): Promise<{ today: string; projects: number; items: ClientPayItem[]; unlinked: { projectId: string; projectName: string }[] }> =>
-    api.get('/smm-payments/mine').then(r => r.data),
+  /** Деньги в календаре «Панели» менеджера за [from, to]; просроченные — всегда. */
+  calendar: (from: string, to: string): Promise<{ today: string; from: string; to: string; clients: number; items: SalesCalPay[] }> =>
+    api.get('/smm-payments/calendar', { params: { from, to } }).then(r => r.data),
   project: (projectId: string): Promise<ClientPayProject> =>
     api.get(`/smm-payments/project/${projectId}`).then(r => r.data),
   /** Клиенты SMM из «Финансов» — для выбора в карточке проекта (владелец, админ). */
@@ -461,13 +474,17 @@ export const smmPaymentsApi = {
   /** Связать клиента «Финансов» с SMM-проектом CRM; null — снять ручную связь. */
   linkClient: (financeProjectId: string, projectId: string | null): Promise<FinanceManagers> =>
     api.patch(`/smm-payments/finance-client/${financeProjectId}/project`, { projectId }).then(r => r.data),
+  /** Менеджер клиента разработки («Доход → Разработка»); null — снять. */
+  setClientManager: (financeProjectId: string, userId: string | null): Promise<FinanceManagers> =>
+    api.patch(`/smm-payments/finance-client/${financeProjectId}/manager`, { userId }).then(r => r.data),
 }
 
 export type FinancePerson = { id: string; name: string; avatar: string | null }
 /** Менеджеры клиентов «Финансов»: у клиента — проект CRM и его ответственный. */
 export type FinanceManagers = {
   canAssign: boolean; canLink: boolean
-  clients: { financeProjectId: string; project: { id: string; name: string } | null; by: 'manual' | 'name' | null; manager: FinancePerson | null }[]
+  /** direct — менеджер хранится у клиента в «Финансах» (разработка), без проекта CRM. */
+  clients: { financeProjectId: string; project: { id: string; name: string } | null; by: 'manual' | 'name' | null; manager: FinancePerson | null; direct?: boolean }[]
   managers: FinancePerson[]
   projects: { id: string; name: string; taken: boolean }[]
 }

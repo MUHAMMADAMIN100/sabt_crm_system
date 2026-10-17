@@ -1,13 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
 import { SmmPaymentsService } from './smm-payments.service';
 
-/** «Когда клиент должен заплатить» по SMM-проектам: менеджер по продажам
- *  видит свои проекты, владелец и админ — все. Сроки — из «Финансов», сумм
- *  в ответах нет. */
+/** «Когда клиент должен заплатить»: менеджер по продажам видит своих
+ *  клиентов, владелец и админ — всех. Сроки — из «Финансов»; суммы есть
+ *  только в календаре панели (решение владельца 17.10.2026). */
 @ApiTags('SMM payments')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -15,11 +15,11 @@ import { SmmPaymentsService } from './smm-payments.service';
 export class SmmPaymentsController {
   constructor(private service: SmmPaymentsService) {}
 
-  /** Блок «Оплаты клиентов» на панели менеджера. */
-  @Get('mine')
+  /** Деньги в календаре «Панели» менеджера: ?from=YYYY-MM-DD&to=YYYY-MM-DD. */
+  @Get('calendar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
-  mine(@Request() req) {
-    return this.service.mine(req.user);
+  calendar(@Query('from') from: string, @Query('to') to: string, @Request() req) {
+    return this.service.calendar(req.user, from, to);
   }
 
   /** Клиенты SMM из «Финансов» — для выбора в карточке проекта. */
@@ -42,6 +42,14 @@ export class SmmPaymentsController {
   linkClient(@Param('financeProjectId') financeProjectId: string, @Body() body: any, @Request() req) {
     const id = typeof body?.projectId === 'string' && body.projectId ? body.projectId : null;
     return this.service.linkClient(financeProjectId, id, req.user);
+  }
+
+  /** Менеджер клиента разработки в «Доход → Разработка»: { userId | null }. */
+  @Patch('finance-client/:financeProjectId/manager')
+  @Roles(UserRole.FOUNDER)
+  setClientManager(@Param('financeProjectId') financeProjectId: string, @Body() body: any, @Request() req) {
+    const id = typeof body?.userId === 'string' && body.userId ? body.userId : null;
+    return this.service.setClientManager(financeProjectId, id, req.user);
   }
 
   /** Строка «Оплата клиента» в карточке SMM-проекта. */

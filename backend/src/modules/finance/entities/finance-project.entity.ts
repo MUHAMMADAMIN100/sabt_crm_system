@@ -59,6 +59,12 @@ export class FinanceProject {
   @Column({ type: 'int', nullable: true })
   retentionMonths: number | null;
 
+  /** Ответственный менеджер по продажам клиента не из SMM (разработка) —
+   *  его деньги видны в календаре на «Панели» менеджера (17.10.2026). У SMM
+   *  ответственный живёт в карточке проекта CRM (smmData.salesManagerId). */
+  @Column({ type: 'uuid', nullable: true })
+  salesManagerId: string | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

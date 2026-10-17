@@ -32,6 +32,8 @@ export interface FinPlan {
   amount: number;
   /** Дата операции, которой платёж получен (finance_transactions.date). */
   paidAt: string | null;
+  /** Операция, которой платёж получен, — чтобы не показать её второй раз. */
+  receivedTxId?: string | null;
 }
 
 export interface PayItem {
@@ -184,4 +186,105 @@ function calendarDue(client: FinClient, mine: FinPlan[], today: string): PayItem
     return { key: `due:${client.id}:${next}`, date: next, dueDate: next, partNo: 1, state: 'wait', paidAt: null };
   }
   return null;
+}
+
+/** Поступление по проекту из журнала «Финансов» (finance_transactions). */
+export interface FinTx {
+  id: string;
+  projectId: string;
+  date: string;
+  amount: number;
+  /** Без привязки к зарплате, подписке и долгу — как источник 4 «Планирования». */
+  plain: boolean;
+}
+
+/** Оплата клиента в календаре менеджера (решение владельца 17.10.2026):
+ *  то же, что владелец видит в «Финансах → Планирование», — день, сумма,
+ *  состояние. */
+export interface CalPay {
+  key: string;
+  clientId: string;
+  date: string;
+  /** Месяц, за который оплата: у плана — его месяц, у поступления — месяц даты. */
+  ym: string;
+  amount: number;
+  partNo: number;
+  state: PayState;
+  /** plan — плановая оплата, tx — поступление без плана, forecast — прогноз по тарифу. */
+  source: 'plan' | 'tx' | 'forecast';
+}
+
+/** День в месяце по дню договора; без договора — первое число. */
+const contractDay = (client: FinClient, ym: string) => {
+  const d = dayOf(client.contractDate);
+  return d ? dueInMonth(ym, d) : `${ym}-01`;
+};
+const monthsBetween = (fromYm: string, toYm: string) => {
+  const out: string[] = [];
+  for (let ym = fromYm; ym <= toYm && out.length < 36; ym = shiftYm(ym, 1)) out.push(ym);
+  return out;
+};
+
+/**
+ * Деньги одного клиента в календаре менеджера за [from, to] — по правилам
+ * календаря «Планирования» (FinancePlanningPage, calTxns):
+ *  1) плановые оплаты: полученная — в день прихода денег, ожидаемая — в срок,
+ *     без срока — в день договора своего месяца; ожидаемые у клиента на паузе
+ *     не показываем;
+ *  2) поступления по проекту без плана — в свой день;
+ *  3) прогноз SMM/обслуживания на день договора по тарифу — для текущего и
+ *     будущих месяцев, где нет ни плана, ни поступления, в пределах срока
+ *     удержания (без срока — 12 месяцев).
+ * Просроченные ожидаемые возвращаются и вне окна — для блока «Просрочено».
+ */
+export function calendarPays(
+  client: FinClient & { retentionMonths?: number | null },
+  plans: FinPlan[], txs: FinTx[], from: string, to: string, today: string,
+): CalPay[] {
+  const mine = plans.filter(x => x.projectId === client.id);
+  const myTx = txs.filter(t => t.projectId === client.id);
+  const earning = isEarning(client);
+  const inWindow = (d: string) => d >= from && d <= to;
+  const stateOf = (d: string): PayState => (d < today ? 'late' : d === today ? 'today' : 'wait');
+  const planYm = (x: FinPlan) => (x.dueDate ? ymOf(x.dueDate) : x.ym);
+  const out: CalPay[] = [];
+
+  const linked = new Set(mine.map(x => x.receivedTxId).filter(Boolean) as string[]);
+  for (const x of mine) {
+    const partNo = x.partNo === 2 ? 2 : 1;
+    const amount = Number(x.amount) || 0;
+    if (x.status === 'received') {
+      const date = x.paidAt || x.dueDate || contractDay(client, x.ym);
+      if (inWindow(date)) out.push({ key: `plan:${x.id}`, clientId: client.id, date, ym: x.ym, amount, partNo, state: 'paid', source: 'plan' });
+      continue;
+    }
+    if (x.status !== 'expected' || !earning) continue;
+    const date = x.dueDate || contractDay(client, x.ym);
+    const state = stateOf(date);
+    if (inWindow(date) || state === 'late') out.push({ key: `plan:${x.id}`, clientId: client.id, date, ym: x.ym, amount, partNo, state, source: 'plan' });
+  }
+
+  for (const t of myTx) {
+    if (!t.plain || linked.has(t.id) || !inWindow(t.date)) continue;
+    const past = t.date <= today;
+    if (!past && !earning) continue;
+    out.push({ key: `tx:${t.id}`, clientId: client.id, date: t.date, ym: ymOf(t.date), amount: Number(t.amount) || 0, partNo: 1, state: past ? 'paid' : stateOf(t.date), source: 'tx' });
+  }
+
+  const tariff = Number(client.tariff) || 0;
+  if (earning && tariff > 0 && (client.direction === 'smm' || client.direction === 'maintenance')) {
+    const curYm = ymOf(today);
+    const startYm = client.contractDate ? ymOf(client.contractDate) : curYm;
+    const horizon = shiftYm(curYm, client.retentionMonths != null ? Number(client.retentionMonths) : 12);
+    const covered = new Set<string>([...mine.map(planYm), ...myTx.map(t => ymOf(t.date))]);
+    // Текущий месяц считаем всегда: его прошедший срок — это «Просрочено».
+    const months = new Set([curYm, ...monthsBetween(ymOf(from), ymOf(to))]);
+    for (const ym of [...months].sort()) {
+      if (ym < curYm || ym < startYm || ym > horizon || covered.has(ym)) continue;
+      const date = contractDay(client, ym);
+      const state = stateOf(date);
+      if (inWindow(date) || state === 'late') out.push({ key: `fc:${client.id}:${ym}`, clientId: client.id, date, ym, amount: tariff, partNo: 1, state, source: 'forecast' });
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.partNo - b.partNo || a.key.localeCompare(b.key));
 }

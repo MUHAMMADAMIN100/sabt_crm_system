@@ -446,6 +446,7 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "multiMonth" boolean NOT NULL DEFAULT false`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "status" varchar(16) DEFAULT 'active'`);
     await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "retentionMonths" int`);
+    await run(`ALTER TABLE finance_projects ADD COLUMN IF NOT EXISTS "salesManagerId" uuid`);
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_accounts ADD COLUMN IF NOT EXISTS "kind" varchar(16)`);
     await run(`ALTER TABLE finance_employees ADD COLUMN IF NOT EXISTS "advance" numeric(15,2) NOT NULL DEFAULT 0`);

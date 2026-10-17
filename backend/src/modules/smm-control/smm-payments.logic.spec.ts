@@ -1,5 +1,5 @@
 import {
-  FinClient, FinPlan, paymentItems, resolveFinanceLinks,
+  FinClient, FinPlan, FinTx, calendarPays, paymentItems, resolveFinanceLinks,
 } from './smm-payments.logic';
 
 // Сроки оплаты SMM-клиентов для менеджеров (решение владельца 12.10.2026):
@@ -150,5 +150,88 @@ describe('resolveFinanceLinks — какой клиент «Финансов» �
     ], clients);
     expect(links.has('p5')).toBe(false);
     expect(links.get('p1')).toEqual({ client: clients[0], by: 'name' });
+  });
+});
+
+describe('calendarPays — деньги в календаре менеджера, как в «Планировании»', () => {
+  const FROM = '2026-10-01';
+  const TO = '2026-10-31';
+  const tx = (over: Partial<FinTx> = {}): FinTx => ({ id: 't1', projectId: 'c1', date: '2026-10-05', amount: 2000, plain: true, ...over });
+  const pays = (c: Partial<FinClient> & { retentionMonths?: number | null }, ps: FinPlan[], ts: FinTx[] = []) =>
+    calendarPays(client(c), ps, ts, FROM, TO, TODAY);
+
+  it('ждём, сегодня, получено — с суммами; полученная стоит в день прихода денег', () => {
+    const items = pays({}, [
+      plan({ id: 'w', dueDate: '2026-10-25', amount: 3500 }),
+      plan({ id: 't', dueDate: TODAY, amount: 3000 }),
+      plan({ id: 'p', status: 'received', dueDate: '2026-10-06', paidAt: '2026-10-07', amount: 5500 }),
+    ]);
+    expect(items.map(i => [i.date, i.state, i.amount])).toEqual([
+      ['2026-10-07', 'paid', 5500],
+      [TODAY, 'today', 3000],
+      ['2026-10-25', 'wait', 3500],
+    ]);
+  });
+
+  it('просроченная из прошлого месяца приходит и вне окна — для «Просрочено»', () => {
+    const items = pays({}, [plan({ id: 'old', ym: '2026-09', dueDate: '2026-09-23', amount: 5500 })]);
+    // Октябрь без плана — прогноз по тарифу, как у владельца.
+    expect(items.map(i => [i.date, i.state, i.amount, i.source])).toEqual([
+      ['2026-09-23', 'late', 5500, 'plan'],
+      ['2026-10-14', 'wait', 4000, 'forecast'],
+    ]);
+  });
+
+  it('план без срока — в день договора своего месяца', () => {
+    const items = pays({ contractDate: '2026-06-14' }, [plan({ id: 'n', dueDate: null, ym: '2026-10' })]);
+    expect(items.map(i => [i.date, i.state])).toEqual([['2026-10-14', 'wait']]);
+  });
+
+  it('клиент на паузе: ожидаемые и прогноз не показываем, полученные — да', () => {
+    const items = pays({ status: 'paused' }, [
+      plan({ id: 'e', dueDate: '2026-10-09' }),
+      plan({ id: 'r', status: 'received', dueDate: '2026-10-02', paidAt: '2026-10-02' }),
+    ]);
+    expect(items.map(i => i.key)).toEqual(['plan:r']);
+  });
+
+  it('поступление без плана — «получено»; привязанное к плану второй раз не идёт', () => {
+    const items = pays({}, [
+      plan({ id: 'r', status: 'received', dueDate: '2026-10-14', paidAt: '2026-10-12', receivedTxId: 'linked' }),
+    ], [tx({ id: 'linked', date: '2026-10-12' }), tx({ id: 'extra', date: '2026-10-03', amount: 700 }), tx({ id: 'salary', plain: false })]);
+    expect(items.map(i => [i.key, i.state, i.amount])).toEqual([
+      ['tx:extra', 'paid', 700],
+      ['plan:r', 'paid', 4000],
+    ]);
+  });
+
+  it('прогноз SMM: нет плана в месяце — тариф на день договора', () => {
+    const items = pays({ contractDate: '2026-06-20' }, []);
+    expect(items).toEqual([expect.objectContaining({ date: '2026-10-20', state: 'wait', amount: 4000, source: 'forecast' })]);
+  });
+
+  it('прогноз текущего месяца с прошедшим днём договора — просрочено', () => {
+    const items = pays({ contractDate: '2026-06-05' }, []);
+    expect(items.map(i => [i.date, i.state])).toEqual([['2026-10-05', 'late']]);
+  });
+
+  it('прогноза нет, если в месяце уже есть план или поступление', () => {
+    expect(pays({ contractDate: '2026-06-20' }, [plan({ id: 'x', status: 'received', dueDate: '2026-10-20', paidAt: '2026-10-02' })]).map(i => i.source)).toEqual(['plan']);
+    expect(pays({ contractDate: '2026-06-20' }, [], [tx({ date: '2026-10-02' })]).map(i => i.source)).toEqual(['tx']);
+  });
+
+  it('прогноз — не раньше начала договора и не дальше срока удержания', () => {
+    expect(pays({ contractDate: '2026-11-03' }, [])).toEqual([]);
+    const nov = calendarPays(client({ contractDate: '2026-06-20', retentionMonths: 0 } as any), [], [], '2026-11-01', '2026-11-30', TODAY);
+    expect(nov.filter(i => i.date >= '2026-11-01')).toEqual([]);
+  });
+
+  it('прошлые месяцы не прогнозируем — там только факты и планы', () => {
+    const sep = calendarPays(client({ contractDate: '2026-06-20' }), [], [], '2026-09-01', '2026-09-30', TODAY);
+    expect(sep.filter(i => i.date < '2026-10-01')).toEqual([]);
+  });
+
+  it('разработка без планов: ничего не выдумываем', () => {
+    expect(pays({ direction: 'development' }, [])).toEqual([]);
   });
 });

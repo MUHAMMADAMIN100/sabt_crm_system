@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { smmPaymentsApi, type ClientPayItem } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { payStateText } from '@/pages/dashboard/components/ClientPayments'
+import { payStateText } from './payState'
 
 const longDay = (iso: string) => format(new Date(`${iso}T00:00:00`), 'd MMMM', { locale: ru })
 /** Кому сервер отдаёт срок оплаты. Остальным запрос не шлём: он вернул бы
