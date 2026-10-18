@@ -73,6 +73,7 @@ export interface UserKpi {
 const KEY_ICON: Record<string, any> = {
   board_delivery: CheckSquare,
   task_delivery: CheckSquare,
+  content_on_time: CheckSquare,
   stories_plan: Camera,
   cards_done: CheckSquare,
   deadline_rate: Target,
@@ -92,6 +93,7 @@ const METRIC_HINT: Record<string, string> = {
   board_delivery: 'Карточки, пришедшие к вам на этап: сдано в срок — 1, с опозданием — половина, просрочено и не сдано — 0.',
   task_delivery: 'Выданные вам задачи со сроком: сдано вовремя — 1, с опозданием — 0,4, не сдано — 0. Задачи без срока не учитываются.',
   stories_plan: 'Проекты × дни: за день по каждому вашему проекту нужна хотя бы одна история.',
+  content_on_time: 'Публикации ваших проектов или ваши карточки производства, чей день наступил: сдано в свой день — 1, позже — 0,4, не сдано — 0.',
 }
 
 function colorByPercent(p: number): string {

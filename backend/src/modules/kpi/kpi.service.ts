@@ -46,6 +46,48 @@ const SALES_ROLES = new Set<string>([
 const SMM_ROLES = new Set<string>([
   UserRole.SMM_SPECIALIST,
 ]);
+/** Производство контента: сдают карточки подготовки из контент-плана. */
+const PRODUCTION_ROLES = new Set<string>([
+  UserRole.VIDEOGRAPHER, UserRole.VIDEO_EDITOR, UserRole.DESIGNER,
+]);
+const PRODUCTION_LABEL: Record<string, string> = {
+  [UserRole.VIDEOGRAPHER]: 'Съёмки в срок',
+  [UserRole.VIDEO_EDITOR]: 'Монтаж в срок',
+  [UserRole.DESIGNER]: 'Макеты в срок',
+};
+
+/**
+ * Сдача в срок по контент-плану (17.10.2026, профиль сотрудника). Правило то
+ * же, что у задач разработки: ПЛАН — карточки с днём в периоде, день которых
+ * уже наступил, либо уже сданные; ЗАЧЁТ — сдано в свой день 1.0, позже 0.4,
+ * не сдано 0. Отменённые не считаются. День сдачи — последнее изменение
+ * карточки (отдельной даты «сдано» в контент-плане нет).
+ *  · SMM-специалист — публикации своих проектов (назначен или участник);
+ *  · видеограф, монтажёр, дизайнер — карточки подготовки, где он исполнитель.
+ * $1 = userIds, $2/$3 = границы периода, $4 = сегодня (Душанбе).
+ */
+export const CONTENT_ON_TIME_SQL = `
+  WITH mine AS (
+    SELECT ci.id, ci."publishDate"::date AS due, ci.status::text AS status,
+           ci."updatedAt"::date AS closed, u.uid
+    FROM content_plan_items ci
+    JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false
+    JOIN LATERAL unnest($1::uuid[]) AS u(uid) ON (
+      (ci."shootForItemId" IS NULL AND ci."contentType"::text <> 'story' AND (
+        jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), u.uid::text)
+        OR EXISTS (SELECT 1 FROM project_members pm WHERE pm."projectsId" = p.id AND pm."usersId" = u.uid)))
+      OR (ci."shootForItemId" IS NOT NULL AND ci."assigneeId" = u.uid)
+    )
+    WHERE ci.status::text <> 'cancelled'
+      AND ci."publishDate" IS NOT NULL
+      AND ci."publishDate"::date BETWEEN $2::date AND $3::date
+      AND (ci."publishDate"::date <= $4::date OR ci.status::text = 'published')
+  )
+  SELECT uid,
+         COUNT(*)::int AS planned,
+         ROUND(SUM(CASE WHEN status <> 'published' THEN 0
+                        WHEN closed <= due THEN 1.0 ELSE 0.4 END), 2)::float AS earned
+  FROM mine GROUP BY uid`;
 
 /** Истории ведут SMM-специалисты (роль сторисмейкера упразднена, оставлена
  *  для совместимости) — метрика «План сторис» показывается им (основная или
@@ -194,6 +236,11 @@ export class KpiService {
       FROM grid g LEFT JOIN logs l ON l.pid = g.pid AND l.day = g.day`;
   }
 
+  /** Локальная дата YYYY-MM-DD (границы периода — локальные полуночи). */
+  private isoDay(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   /** Сегодняшняя дата в часовом поясе компании (Душанбе). Все суточные
    *  сравнения в KPI идут по ней, а не по UTC-дате сервера. */
   private todayLocal(): string {
@@ -250,7 +297,7 @@ export class KpiService {
     // 2) Параллельно гонимся за всеми агрегациями.
     // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
     // выпилена, считать её больше не нужно.
-    const [tasksRows, sessionRows, storyRows, projectRows, deliveryRows] = await Promise.all([
+    const [tasksRows, sessionRows, storyRows, projectRows, deliveryRows, contentRows] = await Promise.all([
       this.taskRepo.manager.query(
         `SELECT "assigneeId" AS uid,
                 COUNT(*)::int AS done_count,
@@ -325,6 +372,11 @@ export class KpiService {
          FROM mine GROUP BY uid`,
         [userIds, periodFrom, periodTo, new Date()],
       ).catch(e => { this.logger.warn(`task delivery KPI query failed: ${e?.message || e}`); return [] as any[]; }),
+      // Публикации и карточки производства в срок — SMM и производство.
+      this.taskRepo.manager.query(
+        CONTENT_ON_TIME_SQL,
+        [userIds, this.isoDay(periodFrom), this.isoDay(periodTo), this.todayLocal()],
+      ).catch(e => { this.logger.warn(`content on-time KPI query failed: ${e?.message || e}`); return [] as any[]; }),
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
@@ -342,6 +394,16 @@ export class KpiService {
     for (const r of deliveryRows) {
       deliveryByUid.set(r.uid, { planned: Number(r.planned) || 0, earned: Number(r.earned) || 0 });
     }
+    const contentByUid = new Map<string, { planned: number; earned: number }>();
+    for (const r of contentRows) {
+      contentByUid.set(r.uid, { planned: Number(r.planned) || 0, earned: Number(r.earned) || 0 });
+    }
+    /** Метрика «сдано в срок»: план, зачёт и процент. */
+    const deliveryItem = (key: string, label: string, d?: { planned: number; earned: number }): KpiItem | null => {
+      if (!d || d.planned <= 0) return null;
+      const percent = Math.min(100, Math.round((d.earned / d.planned) * 100));
+      return { key, label, target: d.planned, value: Math.round(d.earned * 10) / 10, percent, done: percent >= 100 };
+    };
 
     // 3b) Сторисмейкеры — план сторис по проекто-дням, запрос на каждого.
     // Флаг isStoryMaker в employees означает «ведёт истории по ВСЕМ активным
@@ -457,6 +519,18 @@ export class KpiService {
         }
       }
 
+      // Профиль сотрудника (17.10.2026): SMM-специалист — публикации в срок,
+      // производство — свои карточки в срок; и те и другие — задачи
+      // руководителя в срок (правило то же, что у разработки).
+      const isProduction = PRODUCTION_ROLES.has(user.role);
+      if (SMM_ROLES.has(user.role) || isProduction) {
+        const content = deliveryItem('content_on_time',
+          isProduction ? PRODUCTION_LABEL[user.role] : 'Публикации в срок', contentByUid.get(uid));
+        if (content) items.push(content);
+        const tasks = deliveryItem('task_delivery', 'Задачи сдано в срок', deliveryByUid.get(uid));
+        if (tasks) items.push(tasks);
+      }
+
       if (SALES_ROLES.has(user.role)) {
         const salesKpi = salesKpis.get(uid);
         if (salesKpi?.items) {
@@ -523,6 +597,7 @@ export class KpiService {
     // всегда работаем с префиксом sales_*. Универсальные метрики остаются как есть.
     const UNIVERSAL_KEYS = new Set([
       'deadline_rate', 'activity_days', 'stories_posted', 'projects_managed', 'stories_plan',
+      'content_on_time', 'task_delivery',
     ]);
 
     const normalized = UNIVERSAL_KEYS.has(metric)
@@ -755,6 +830,69 @@ export class KpiService {
             date: closedAt ? new Date(closedAt).toISOString() : null,
             link: `/tasks/${t.id}`,
             meta: { onTime, deadline: t.deadline },
+          };
+        });
+      }
+
+      // ─── Публикации / карточки производства в срок ─────────────────────
+      case 'content_on_time': {
+        const rows: any[] = await this.taskRepo.manager.query(
+          `SELECT ci.id, COALESCE(NULLIF(ci.topic, ''), 'Без названия') AS title, p.name AS project,
+                  ci."projectId" AS "projectId", ci.status::text AS status,
+                  to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS due,
+                  to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS closed
+           FROM content_plan_items ci
+           JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false
+           WHERE ci.status::text <> 'cancelled'
+             AND ci."publishDate" IS NOT NULL
+             AND ci."publishDate"::date BETWEEN $2::date AND $3::date
+             AND (ci."publishDate"::date <= $4::date OR ci.status::text = 'published')
+             AND ((ci."shootForItemId" IS NULL AND ci."contentType"::text <> 'story' AND (
+                    jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::text)
+                    OR EXISTS (SELECT 1 FROM project_members pm WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)))
+                  OR (ci."shootForItemId" IS NOT NULL AND ci."assigneeId" = $1::uuid))
+           ORDER BY ci."publishDate" DESC`,
+          [userId, this.isoDay(periodFrom), this.isoDay(periodTo), this.todayLocal()],
+        ).catch(() => []);
+        return rows.map(r => {
+          const done = r.status === 'published';
+          const onTime = done && r.closed <= r.due;
+          return {
+            id: r.id,
+            title: r.title,
+            subtitle: `${r.project} · ${!done ? 'не сдано' : onTime ? 'в срок' : 'с опозданием'}`,
+            date: r.due,
+            link: null,
+            meta: { onTime, done },
+          };
+        });
+      }
+
+      // ─── Задачи со сроком: сдано вовремя / с опозданием / не сдано ─────
+      case 'task_delivery': {
+        const rows: any[] = await this.taskRepo.manager.query(
+          `SELECT t.id, t.title, t.deadline, t.status::text AS status,
+                  COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") AS closed_at
+           FROM tasks t
+           WHERE (t."assigneeId" = $1::uuid
+                  OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = $1::uuid))
+             AND t.status::text <> 'cancelled'
+             AND t.deadline IS NOT NULL
+             AND t.deadline BETWEEN $2 AND $3
+             AND (t.deadline <= $4 OR t.status::text = 'done')
+           ORDER BY t.deadline DESC`,
+          [userId, periodFrom, periodTo, new Date()],
+        ).catch(() => []);
+        return rows.map(t => {
+          const done = t.status === 'done';
+          const onTime = done && new Date(t.closed_at) <= new Date(t.deadline);
+          return {
+            id: t.id,
+            title: t.title,
+            subtitle: !done ? 'не сдана' : onTime ? 'в срок' : 'с опозданием',
+            date: t.deadline ? new Date(t.deadline).toISOString() : null,
+            link: `/tasks/${t.id}`,
+            meta: { onTime, done },
           };
         });
       }

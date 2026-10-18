@@ -15,6 +15,7 @@ import {
 } from '@/components/employees/EmployeeAnalyticsTabs'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import EmployeeKpiCard from '@/components/kpi/EmployeeKpiCard'
+import EmployeeGoals from './EmployeeGoals'
 
 /** Wave 13: KPI считается для всех «рабочих» ролей. */
 const hasKpi = (role?: string | null): boolean =>
@@ -198,6 +199,9 @@ export default function EmployeeDetailPage() {
           <EmployeeKpiCard userId={emp.userId} showPeriodSelector />
         </div>
       )}
+
+      {/* Цели месяца — ставят руководитель направления и основатель. */}
+      {hasKpi(emp?.user?.role) && emp?.userId && <EmployeeGoals userId={emp.userId} />}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

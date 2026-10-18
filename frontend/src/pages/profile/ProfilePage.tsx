@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 import { prepareAvatar } from '@/lib/imageCompress'
 import { money, shiftYm, currentSalaryYm, pluralRu, formatDate } from '@/pages/finance/finlib'
+import ProfileStatsBody, { useProfileStats, LevelBar, LevelBadge, tenureText } from './ProfileStats'
 
 /** Часы из минут: «68 ч 12 м», «45 м», «—». */
 function hoursOf(min: number): string {
@@ -215,24 +216,30 @@ export default function ProfilePage() {
 
   const showSalary = !(isFounder && sal && !sal.linked)
 
+  // Аналитика профиля (вариант Б, 17.10.2026). У руководства KPI нет —
+  // сервер отвечает visible: false, и профиль остаётся прежним.
+  const { data: statsData } = useProfileStats()
+  const stats = statsData && statsData.visible ? statsData : null
+
   return (
     <div className="space-y-4">
 
       {/* Шапка. Заголовок страницы, почта и бейджи убраны: человек знает,
           чей это профиль и чем он вошёл. Должность и дата прихода — одной
           строкой. Статус показываем, только если доступ закрыт. */}
-      <div className="card p-4 sm:p-5">
+      <div className="card p-4 sm:px-6 sm:py-[18px]">
         <div className="flex items-center gap-4">
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="relative group rounded-full shrink-0"
+            className={`relative group rounded-full shrink-0 ${stats ? 'ring-2 ring-amber-400 ring-offset-[3px] ring-offset-surface-50 dark:ring-offset-surface-800' : ''}`}
             title="Сменить аватар"
           >
             <Avatar name={user?.name} src={user?.avatar} size={56} zoomable={false} />
             <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
               <Camera size={18} className="text-white" />
             </span>
+            {stats && <LevelBadge level={stats.level.level} />}
             {uploadAvatarMut.isPending && (
               <span className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
                 <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -252,14 +259,20 @@ export default function ProfilePage() {
                 Переносим, а на широком экране оставляем одну строку. */}
             <p className="text-[13px] leading-snug text-surface-500 dark:text-surface-400 mt-1 sm:truncate">
               {getUserPositionLabel(user)}
-              {emp?.hireDate ? ` · в команде с ${formatDate(emp.hireDate)}` : ''}
+              {stats?.hireDate
+                ? <> · {tenureText(stats.tenureMonths)}<span className="hidden sm:inline"> в WeBrand</span></>
+                : emp?.hireDate ? ` · в команде с ${formatDate(emp.hireDate)}` : ''}
             </p>
           </div>
           {!user?.isActive && (
             <span className="badge status-cancelled shrink-0">Доступ закрыт</span>
           )}
+          {stats && <LevelBar stats={stats} className="hidden sm:flex w-[300px] shrink-0 ml-auto" />}
         </div>
+        {stats && <LevelBar stats={stats} className="sm:hidden mt-3.5" />}
       </div>
+
+      {stats && <ProfileStatsBody stats={stats} />}
 
       {/* Деньги — только на телефоне (решение владельца, 23.09.2026): за
           компьютером экран видят соседи по кабинету, зарплата на нём не место.

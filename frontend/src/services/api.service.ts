@@ -353,6 +353,46 @@ export const workShiftsApi = {
 export const meApi = {
   /** Моя зарплата за месяц: только свои начисления и удержания. */
   salary: (ym?: string) => api.get('/me/salary', { params: ym ? { ym } : undefined }).then(r => r.data),
+  /** Аналитика личного профиля (вариант Б, 17.10.2026) — только своя. */
+  profileStats: (): Promise<ProfileStats> => api.get('/me/profile-stats').then(r => r.data),
+}
+
+export type ProfileGoal = {
+  id: string; title: string
+  /** null — отмечает сотрудник; иначе CRM считает сама. */
+  metric: string | null; target: number | null
+  done: boolean; value: number | null; reached: boolean
+}
+export type ProfileAchievement = { key: string; title: string; unlocked: boolean; progress?: { value: number; target: number } }
+export type ProfileStats = { visible: false } | {
+  visible: true
+  today: string; ym: string; kind: 'smm' | 'production' | 'tasks'
+  hireDate: string | null; tenureMonths: number
+  level: { level: number; points: number; from: number; to: number }
+  streak: { unit: 'days' | 'cards' | 'tasks'; current: number; best: number; shiftsNoLate: number }
+  efficiency: {
+    percent: number | null; prevYm: string; delta: number | null
+    items: { key: string; label: string; value: number; target: number; percent: number }[]
+  }
+  bonus: { threshold: number; amount: number; percent: number | null }
+  goals: ProfileGoal[]
+  achievements: ProfileAchievement[]
+}
+export type GoalsOfUser = {
+  ym: string; canEdit: boolean; max: number
+  goals: ProfileGoal[]
+  metrics: { key: string; label: string; unit: '%' | 'days' | 'shifts' }[]
+}
+
+/** Цели месяца: ставят руководитель направления и основатель. */
+export const goalsApi = {
+  ofUser: (userId: string, ym?: string): Promise<GoalsOfUser> =>
+    api.get(`/goals/user/${userId}`, { params: ym ? { ym } : undefined }).then(r => r.data),
+  create: (data: { userId: string; ym?: string; title: string; metric?: string | null; target?: number | null }): Promise<GoalsOfUser> =>
+    api.post('/goals', data).then(r => r.data),
+  update: (id: string, data: { title?: string; metric?: string | null; target?: number | null; done?: boolean }) =>
+    api.patch(`/goals/${id}`, data).then(r => r.data),
+  remove: (id: string): Promise<GoalsOfUser> => api.delete(`/goals/${id}`).then(r => r.data),
 }
 
 // ─── Files ───────────────────────────────────────────────

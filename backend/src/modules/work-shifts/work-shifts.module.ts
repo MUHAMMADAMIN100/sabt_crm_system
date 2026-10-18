@@ -18,5 +18,7 @@ import { WorkShiftsController } from './work-shifts.controller';
   imports: [TypeOrmModule.forFeature([WorkShift, ShiftEditRequest, ShiftAbsence, WorkSchedule, LateNotice, ShiftSettings, User])],
   controllers: [WorkShiftsController],
   providers: [WorkShiftsService],
+  // Табель за месяц нужен личному профилю (серия смен без опозданий).
+  exports: [WorkShiftsService],
 })
 export class WorkShiftsModule {}
