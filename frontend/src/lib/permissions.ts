@@ -493,6 +493,10 @@ export function canAccessRoute(
   // userCan, а не hasPermissionAny: иначе персональный запрет закрывал бы
   // пункт меню, но страница по прямой ссылке всё равно открывалась.
   if (route.startsWith('/tasks/')) return userCan(u, 'tasks.view')
+  // Подстраницы «Сотрудников» (19.10.2026): кто видит — как раньше видел
+  // соответствующий значок на странице.
+  if (route === '/employees/sales-plan') return role === 'founder'
+  if (['/employees/kpi', '/employees/week', '/employees/activity'].includes(route)) return role === 'founder' || role === 'admin'
   if (route.startsWith('/employees/')) return userCan(u, 'employees.view')
 
   const perm = Object.entries(PERMISSION_TO_ROUTE).find(([_, r]) => r === route)?.[0] as Permission | undefined

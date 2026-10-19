@@ -74,6 +74,12 @@ const StoriesCheckPage  = lazy(() => import('@/pages/stories/StoriesCheckPage'))
 const EmployeesPage     = lazy(() => import('@/pages/employees/EmployeesPage'))
 const EmployeeAccessPage = lazy(() => import('@/pages/access/EmployeeAccessPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/employees/EmployeeDetailPage'))
+// Подстраницы раздела «Сотрудники» (19.10.2026).
+const EmployeesOrgPage = lazy(() => import('@/pages/employees/EmployeesSubPages').then(m => ({ default: m.EmployeesOrgPage })))
+const EmployeesWeekPage = lazy(() => import('@/pages/employees/EmployeesSubPages').then(m => ({ default: m.EmployeesWeekPage })))
+const EmployeesActivityPage = lazy(() => import('@/pages/employees/EmployeesSubPages').then(m => ({ default: m.EmployeesActivityPage })))
+const SalesPlanPage = lazy(() => import('@/pages/employees/SalesPlanPage'))
+const EmployeesKpiPage = lazy(() => import('@/pages/employees/EmployeesKpiPage'))
 const CalendarPage      = lazy(() => import('@/pages/calendar/CalendarPage'))
 const SmmPage           = lazy(() => import('@/pages/smm/SmmPage'))
 // Раздел «Разработка» — свои страницы, отдельные от СММ (14.10.2026): раньше
@@ -203,6 +209,11 @@ export default function App() {
           <Route path="projects/:id" element={<RoleGuard><ProjectDetailPage /></RoleGuard>} />
           <Route path="employees" element={<RoleGuard><EmployeesPage /></RoleGuard>} />
           <Route path="employee-access" element={<RoleGuard><EmployeeAccessPage /></RoleGuard>} />
+          <Route path="employees/org" element={<RoleGuard><EmployeesOrgPage /></RoleGuard>} />
+          <Route path="employees/week" element={<RoleGuard><EmployeesWeekPage /></RoleGuard>} />
+          <Route path="employees/activity" element={<RoleGuard><EmployeesActivityPage /></RoleGuard>} />
+          <Route path="employees/sales-plan" element={<RoleGuard><SalesPlanPage /></RoleGuard>} />
+          <Route path="employees/kpi" element={<RoleGuard><EmployeesKpiPage /></RoleGuard>} />
           <Route path="employees/:id" element={<RoleGuard><EmployeeDetailPage /></RoleGuard>} />
           <Route path="calendar" element={<RoleGuard><CalendarPage /></RoleGuard>} />
           <Route path="stories-check" element={<RoleGuard><StoriesCheckPage /></RoleGuard>} />
@@ -239,7 +250,7 @@ export default function App() {
           <Route path="security-log" element={<RoleGuard><SecurityLogPage /></RoleGuard>} />
           {/* «Активность команды» переехала вкладкой на страницу «Сотрудники»
               (19.09.2026). Старые ссылки и закладки ведут туда же. */}
-          <Route path="team-activity" element={<Navigate to="/employees" replace />} />
+          <Route path="team-activity" element={<Navigate to="/employees/activity" replace />} />
           <Route path="finance" element={<RoleGuard><FinanceOverviewPage /></RoleGuard>} />
           <Route path="finance/income" element={<RoleGuard><FinanceIncomePage /></RoleGuard>} />
           <Route path="finance/income/:direction" element={<RoleGuard><FinanceIncomeGroupPage /></RoleGuard>} />

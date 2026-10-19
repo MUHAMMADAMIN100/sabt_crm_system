@@ -1,13 +1,13 @@
-// «План продаж» на странице «Сотрудники» (макет владельца 19.10.2026,
-// вариант А): основатель ставит каждому менеджеру по продажам сумму на месяц,
-// рядом — сколько уже получено от его клиентов по «Финансам». Видит только
+// «Сотрудники → План продаж» (макет владельца 19.10.2026, вариант А):
+// основатель ставит каждому менеджеру по продажам сумму на месяц, рядом —
+// сколько уже получено от его клиентов по «Финансам». Видит только
 // основатель; менеджер видит своё окошко в профиле на телефоне.
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { Avatar } from '@/components/ui'
+import { Avatar, EmptyState, PageLoader } from '@/components/ui'
 import { salesPlanApi, type SalesPlanRow, type SalesPlans } from '@/services/api.service'
 import { currentYm, shiftYm } from '@/pages/finance/finlib'
 
@@ -54,7 +54,7 @@ function PlanInput({ row, onSave }: { row: SalesPlanRow; onSave: (v: number | nu
   )
 }
 
-export default function SalesPlanBox() {
+export default function SalesPlanPage() {
   const qc = useQueryClient()
   const [ym, setYm] = useState(currentYm)
   const key = ['sales-plans', ym]
@@ -67,30 +67,31 @@ export default function SalesPlanBox() {
   })
   const copy = useMutation({ mutationFn: () => salesPlanApi.copy(ym), onSuccess: put, onError: onErr })
 
-  if (!data || !data.managers.length) return null
+  if (!data) return <PageLoader />
   const share = elapsedShare(ym)
   const pctOf = (r: SalesPlanRow) => (r.plan ? Math.round((r.received / r.plan) * 100) : 0)
   const totalPct = data.total.plan ? Math.round((data.total.received / data.total.plan) * 100) : 0
   const prevMonth = MONTH_PREP[Number(data.prevYm.slice(5, 7)) - 1] || ''
 
   return (
-    <section className="card !p-4 sm:!px-[22px] sm:!py-[18px] flex flex-col gap-3.5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h2 className="text-base font-bold text-surface-900 dark:text-surface-100 mr-auto lg:mr-0">План продаж</h2>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3">
+        <h1 className="page-title mr-auto lg:mr-2">План продаж</h1>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setYm(shiftYm(ym, -1))} aria-label="Прошлый месяц"
-            className="w-8 h-8 lg:w-7 lg:h-7 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 flex items-center justify-center hover:bg-surface-100 dark:hover:bg-surface-700"><ChevronLeft size={15} /></button>
-          <span className="min-w-[110px] text-center text-[13px] text-surface-600 dark:text-surface-300 first-letter:uppercase">{monthOf(ym)} {ym.slice(0, 4)}</span>
+            className="w-9 h-9 lg:w-[30px] lg:h-[30px] rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 flex items-center justify-center hover:bg-surface-100 dark:hover:bg-surface-700"><ChevronLeft size={15} /></button>
+          <span className="min-w-[120px] text-center text-sm text-surface-600 dark:text-surface-300 first-letter:uppercase">{monthOf(ym)} {ym.slice(0, 4)}</span>
           <button type="button" onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
-            className="w-8 h-8 lg:w-7 lg:h-7 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 flex items-center justify-center hover:bg-surface-100 dark:hover:bg-surface-700"><ChevronRight size={15} /></button>
+            className="w-9 h-9 lg:w-[30px] lg:h-[30px] rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 flex items-center justify-center hover:bg-surface-100 dark:hover:bg-surface-700"><ChevronRight size={15} /></button>
         </div>
-        <span className="hidden lg:inline text-xs text-surface-400 dark:text-surface-500">видите только вы</span>
-        <button type="button" onClick={() => copy.mutate()} disabled={copy.isPending}
-          className="w-full lg:w-auto lg:ml-auto order-last lg:order-none h-11 lg:h-8 px-3 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-surface-600 dark:text-surface-300 text-[13px] hover:bg-surface-200 dark:hover:bg-surface-700">
+        <button type="button" onClick={() => copy.mutate()} disabled={copy.isPending || !data.managers.length}
+          className="w-full lg:w-auto lg:ml-auto h-11 lg:h-9 px-3.5 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-100 dark:bg-surface-700/60 text-surface-600 dark:text-surface-300 text-[13px] hover:bg-surface-200 dark:hover:bg-surface-700">
           Как в {prevMonth}
         </button>
       </div>
 
+      {!data.managers.length ? <EmptyState title="Менеджеров по продажам пока нет" /> : (
+    <section className="card !p-4 sm:!px-[22px] sm:!py-[18px] flex flex-col gap-3.5">
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,1.4fr)_190px_150px_minmax(0,1fr)] lg:items-center gap-x-5 gap-y-3">
         <span className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">Менеджер</span>
         <span className="hidden lg:block text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500">План на месяц</span>
@@ -138,5 +139,7 @@ export default function SalesPlanBox() {
         </div>
       )}
     </section>
+      )}
+    </div>
   )
 }

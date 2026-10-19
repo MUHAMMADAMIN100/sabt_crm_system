@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon,
   KanbanSquare, BarChart3, FileText, CalendarRange, Search, Wallet, TrendingUp, TrendingDown, Users,
-  Building2, Package, Activity, Settings, Car } from 'lucide-react'
+  Building2, Package, Activity, Settings, Car, Network, Target } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection, canSeeDevSection, isSmmViewOnly, userCan } from '@/lib/permissions'
@@ -139,17 +139,34 @@ export default function BottomNav() {
     ]
   }, [user])
 
+  // Подразделы «Сотрудников» (19.10.2026) — как у «СММ» и «Финансов».
+  // Кому какой — как в боковом меню.
+  const employeeLinks = useMemo(() => {
+    if (!userCan(user, 'employees.view')) return []
+    const top = user?.role === 'founder' || user?.role === 'admin'
+    return [
+      { to: '/employees', label: 'Все сотрудники', icon: Users, show: true },
+      { to: '/employees/org', label: 'Оргструктура', icon: Network, show: true },
+      { to: '/employees/week', label: 'Задачи недели', icon: CalendarRange, show: top },
+      { to: '/employees/activity', label: 'Активность и смены', icon: Activity, show: top },
+      { to: '/employees/sales-plan', label: 'План продаж', icon: Target, show: user?.role === 'founder' },
+      { to: '/employees/kpi', label: 'KPI', icon: BarChart3, show: top },
+    ].filter(l => l.show)
+  }, [user])
+
   // Поиск по шторке: разделов вместе с подразделами больше двадцати, и
   // пролистывать их глазами дольше, чем набрать два слога.
   const match = (label: string) => {
     const s = q.trim().toLowerCase()
     return !s || label.toLowerCase().includes(s)
   }
-  const restF = rest.filter(i => match(i.label))
+  // «Сотрудники» стоят своей группой ниже — в «Разделах» их не дублируем.
+  const restF = rest.filter(i => match(i.label) && !(employeeLinks.length && i.to === '/employees'))
+  const employeeF = employeeLinks.filter(l => match(l.label))
   const financeF = financeLinks.filter(l => match(l.label))
   const devF = devLinks.filter(l => match(l.label))
   const smmF = smmLinks.filter(l => match(l.label))
-  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length && !smmF.length
+  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length && !smmF.length && !employeeF.length
 
   // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
   // части: два слева от неё, остальное справа.
@@ -269,6 +286,10 @@ export default function BottomNav() {
                 {restF.length > 0 && <SheetGroup title="Разделы" />}
                 {restF.map(i => (
                   <SheetLink key={i.to} to={i.to} icon={i.icon} label={i.label} onGo={() => setMore(false)} />
+                ))}
+                {employeeF.length > 0 && <SheetGroup title="Сотрудники" />}
+                {employeeF.map(l => (
+                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
                 ))}
                 {financeF.length > 0 && <SheetGroup title="Финансы" />}
                 {financeF.map(l => (

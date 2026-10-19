@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { salesPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { paceTone } from '@/pages/employees/SalesPlanBox'
+import { paceTone } from '@/pages/employees/SalesPlanPage'
 import { plural } from './ProfileStats'
 
 const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev']

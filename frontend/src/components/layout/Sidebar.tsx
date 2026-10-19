@@ -10,7 +10,7 @@ import {
   Shield, ShieldCheck, LogOut, RotateCcw, Trello, Image as ImageIcon,
   Wallet, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, TrendingUp, TrendingDown, ArrowLeftRight, SlidersHorizontal, MoreHorizontal, CalendarRange,
   Package, PersonStanding, MapPin, ClipboardList, StickyNote, ClipboardCheck, LineChart, Megaphone,
-  Activity, KanbanSquare, Car,
+  Activity, KanbanSquare, Car, Network, Target,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useNavItems } from './navItems'
@@ -38,6 +38,8 @@ interface SubNavItem {
   icon: any
   exact?: boolean
   perm?: 'dev-tracker.view' | 'dev-tracker.manage'
+  /** Только для этих ролей (основная роль). */
+  roles?: string[]
 }
 
 /** Подпункты раздела «СММ». */
@@ -60,11 +62,24 @@ const DEV_SUBNAV: SubNavItem[] = [
   { to: '/dev-board/reports', label: 'Отчёты', icon: FileText, perm: 'dev-tracker.manage' },
 ]
 
+/** Подпункты раздела «Сотрудники» (решение владельца 19.10.2026): виды,
+ *  которые раньше переключались значками на одной странице, план продаж и
+ *  KPI — отдельными страницами, как у «СММ» и «Финансов». */
+const EMPLOYEES_SUBNAV: SubNavItem[] = [
+  { to: '/employees', label: 'Все сотрудники', icon: Users, exact: true },
+  { to: '/employees/org', label: 'Оргструктура', icon: Network },
+  { to: '/employees/week', label: 'Задачи недели', icon: CalendarRange, roles: ['founder', 'admin'] },
+  { to: '/employees/activity', label: 'Активность и смены', icon: Activity, roles: ['founder', 'admin'] },
+  { to: '/employees/sales-plan', label: 'План продаж', icon: Target, roles: ['founder'] },
+  { to: '/employees/kpi', label: 'KPI', icon: BarChart3, roles: ['founder', 'admin'] },
+]
+
 /** Раскрывающиеся разделы с подпунктами: путь пункта меню → его подменю.
  *  «СММ» и «Разработка» рендерятся одним и тем же блоком. */
 const SECTION_SUBNAV: Record<string, SubNavItem[]> = {
   '/smm': SMM_SUBNAV,
   '/dev': DEV_SUBNAV,
+  '/employees': EMPLOYEES_SUBNAV,
 }
 
 interface SidebarProps { open: boolean; onClose: () => void; onToggle: () => void }
@@ -296,7 +311,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                   </button>
                   {open && isSecOpen && (
                     <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {SECTION_SUBNAV[item.to].filter(sub => !sub.perm || userCan(user, sub.perm)).map(sub => (
+                      {SECTION_SUBNAV[item.to].filter(sub => (!sub.perm || userCan(user, sub.perm)) && (!sub.roles || sub.roles.includes(role || ''))).map(sub => (
                         <li key={sub.to}>
                           <NavLink
                             to={sub.to}

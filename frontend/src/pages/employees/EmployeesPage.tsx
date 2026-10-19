@@ -3,30 +3,24 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { employeesApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import TeamActivity from '@/pages/team-activity/TeamActivityPage'
 import { getRoleLabel } from '@/lib/permissions'
-import WeekTasks from './WeekTasks'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, Network, Activity, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal, CalendarRange } from 'lucide-react'
-import OrgChart from './OrgChart'
-import SalesPlanBox from './SalesPlanBox'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import EmployeeKpiCard, { KpiPeriod, KPI_PERIOD_LABELS } from '@/components/kpi/EmployeeKpiCard'
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
-  const [view, setView] = useState<'cards' | 'table' | 'org' | 'activity' | 'week'>('cards')
-  // Ленту событий и смены видят те же, кому была доступна страница
-  // «Активность команды»: основатель и админ.
-  const meRole = useAuthStore(s => s.user?.role)
-  const canSeeActivity = meRole === 'founder' || meRole === 'admin'
+  // Оргструктура, Задачи недели, Активность, План продаж и KPI — свои
+  // подстраницы раздела «Сотрудники» (решение владельца 19.10.2026); здесь
+  // только список людей карточками или таблицей.
+  const [view, setView] = useState<'cards' | 'table'>('cards')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 16
   const [showCreate, setShowCreate] = useState(false)
@@ -42,11 +36,8 @@ export default function EmployeesPage() {
   const [customPwd, setCustomPwd] = useState('')
   const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
   const [pwdCopied, setPwdCopied] = useState(false)
-  // Wave 14: общий период для KPI всех карточек на странице.
-  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>('month')
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder'
-  const canViewSalesKpi = canManage // те же роли, что и canManage
   const isAdmin = canManage  // alias for backward compat
   const isFounderUser = user?.role === 'founder'
   const canEditEmployee = (emp: any) => {
@@ -231,38 +222,16 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="page-title">{t('employees.title')}</h1>
+        <h1 className="page-title">Все сотрудники</h1>
         <div className="flex gap-2">
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-xl">
             <button onClick={() => setView('cards')} title="Карточки" className={clsx('p-1.5 rounded-lg', view==='cards' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><LayoutGrid size={16}/></button>
             <button onClick={() => setView('table')} title="Таблица" className={clsx('p-1.5 rounded-lg', view==='table' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><List size={16}/></button>
-            <button onClick={() => setView('org')} title="Оргструктура" className={clsx('p-1.5 rounded-lg', view==='org' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><Network size={16}/></button>
-            {/* «Задачи недели» — экран руководства: кто чем занят и кто не
-                загружен. Сотрудникам он не нужен, свои задачи они видят
-                в собственной панели. */}
-            {canManage && (
-              <button onClick={() => setView('week')} title="Задачи недели"
-                className={clsx('p-1.5 rounded-lg', view==='week' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><CalendarRange size={16}/></button>
-            )}
-            {/* «Активность команды» переехала сюда отдельной страницей не
-                осталась: смены и лента событий — это про людей, им место
-                рядом со списком сотрудников (решение владельца, 19.09.2026). */}
-            {canSeeActivity && (
-              <button onClick={() => setView('activity')} title="Активность и смены"
-                className={clsx('p-1.5 rounded-lg', view==='activity' ? 'bg-surface-50 dark:bg-surface-600 shadow-sm':'text-surface-500 dark:text-surface-400')}><Activity size={16}/></button>
-            )}
           </div>
           {isAdmin && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> {t('employees.add')}</button>}
         </div>
       </div>
 
-      {view === 'activity' && <TeamActivity />}
-      {view === 'week' && <WeekTasks />}
-
-      {/* План продаж менеджеров на месяц — ставит основатель (19.10.2026). */}
-      {isFounderUser && view !== 'activity' && view !== 'week' && <SalesPlanBox />}
-
-      {view !== 'activity' && view !== 'week' && (
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
@@ -273,37 +242,8 @@ export default function EmployeesPage() {
           {allPositions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
-      )}
 
-      {/* Wave 14: общий переключатель периода для KPI всех карточек на
-          странице. Показываем только основателю/сооснователю/админу
-          (тем кто реально видит KPI). */}
-      {canViewSalesKpi && view === 'cards' && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-surface-500 dark:text-surface-400">
-            Период KPI:
-          </span>
-          {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setKpiPeriod(p)}
-              className={clsx(
-                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                kpiPeriod === p
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
-              )}
-            >
-              {KPI_PERIOD_LABELS[p]}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {view === 'activity' || view === 'week' ? null : !employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'org' ? (
-        <OrgChart employees={employees} />
-      ) : view === 'cards' ? (
+      {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {pagedEmployees.map((emp: any) => (
             <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group relative cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full p-4">
@@ -400,31 +340,6 @@ export default function EmployeesPage() {
                   </div>
                 )}
               </div>
-              {/* Wave 13/14: KPI любого сотрудника. Видно только canManage-ролям.
-                  Период берётся из общего переключателя сверху страницы.
-                  mt-auto прижимает подвал вниз, поэтому карточки в ряду
-                  остаются одной высоты даже с разным числом метрик. */}
-              {/* KPI-слот единой высоты у ВСЕХ карточек (прогресс-бар) — сетка
-                  стандартизирована. Нет KPI/данных → «KPI не ведётся» той же
-                  высоты. Детальные метрики — в профиле сотрудника по клику. */}
-              {canViewSalesKpi && (
-                <div
-                  className="mt-3 pt-3 border-t border-surface-50 dark:border-surface-700 min-h-[54px]"
-                  onClick={e => e.stopPropagation()}
-                >
-                  {emp.userId ? (
-                    <EmployeeKpiCard userId={emp.userId} bar period={kpiPeriod} emptyLabel="KPI не ведётся" />
-                  ) : (
-                    <div>
-                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                        <span className="text-xs text-surface-500 dark:text-surface-400">Выполнение KPI</span>
-                        <span className="text-xs font-bold text-surface-400 dark:text-surface-500">KPI не ведётся</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700" />
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="flex items-center justify-between gap-2 mt-auto pt-3 border-t border-surface-50 dark:border-surface-700">
                 <div className="flex items-center gap-1.5 min-w-0">
                 {emp.user?.isBlocked ? (
@@ -561,8 +476,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Оргструктура — на одной странице, без постраничной навигации. */}
-      {view !== 'org' && <Pagination page={page} total={employees.length} pageSize={PAGE_SIZE} onChange={setPage} />}
+      <Pagination page={page} total={employees.length} pageSize={PAGE_SIZE} onChange={setPage} />
 
       <EmployeeForm open={showCreate || !!editEmp} initial={editEmp}
         onClose={() => { setShowCreate(false); setEditEmp(null) }}
