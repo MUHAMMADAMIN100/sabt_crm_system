@@ -98,7 +98,7 @@ export const projectsApi = {
   // Доступы к аккаунтам клиента. Сервер отдаёт их только руководителю СММ,
   // менеджеру продаж СММ и основателю — остальным вернётся 403.
   clientAccess: (id: string) => api.get(`/projects/${id}/client-access`).then(r => r.data),
-  saveClientAccess: (id: string, data: { login: string; password: string; note: string }) =>
+  saveClientAccess: (id: string, data: { login: string; password: string; note: string; pageUrl?: string }) =>
     api.patch(`/projects/${id}/client-access`, data).then(r => r.data),
 }
 
@@ -565,7 +565,9 @@ export const contentPlanApi = {
   planFact: (projectId: string) => api.get(`/content-plan/plan-fact/${projectId}`).then(r => r.data),
   // Календарь производства СММ за диапазон дат: публикации + съёмки,
   // только SMM-проекты (у разработки свой календарь — на доске задач).
-  smmCalendar: (params?: { from?: string; to?: string }) =>
+  /** projectId — только один проект (страница SMM-проекта); тогда в ответе
+   *  colorIds — все активные проекты, чтобы цвета совпадали с календарём. */
+  smmCalendar: (params?: { from?: string; to?: string; projectId?: string }) =>
     api.get('/content-plan/smm-calendar', { params }).then(r => r.data),
   // История задачи контент-плана: перенос, закрытие, отмена.
   /** «Мои задачи производства» — карточки, где я исполнитель (съёмка/монтаж/макет). */

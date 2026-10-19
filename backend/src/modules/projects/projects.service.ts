@@ -282,25 +282,36 @@ export class ProjectsService implements OnModuleInit {
     UserRole.FOUNDER,
   ];
 
-  private assertCanSeeClientAccess(user: { role?: string; secondaryRole?: string }) {
-    const ok = ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.role || '')
-      || ProjectsService.CLIENT_ACCESS_ROLES.includes((user as any)?.secondaryRole || '');
-    if (!ok) throw new ForbiddenException('Доступы клиента видит только руководитель СММ, менеджер продаж СММ и основатель');
+  /** + SMM-специалист этого проекта: он выкладывает контент, видит и меняет
+   *  доступы своего проекта (решение владельца 19.10.2026). */
+  private canSeeClientAccessFor(user: { id?: string; role?: string; secondaryRole?: string | null }, specialistIds: string[]): boolean {
+    return ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.role || '')
+      || ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.secondaryRole || '')
+      || (!!user?.id && specialistIds.includes(user.id));
+  }
+
+  private assertCanSeeClientAccess(user: { id?: string; role?: string; secondaryRole?: string | null }, project: { smmData?: any }) {
+    const ids = Array.isArray(project?.smmData?.smmSpecialistIds)
+      ? (project.smmData.smmSpecialistIds as any[]).filter(x => typeof x === 'string') : [];
+    if (!this.canSeeClientAccessFor(user, ids)) {
+      throw new ForbiddenException('Доступы клиента видят руководитель СММ, менеджер по продажам SMM, SMM-специалист проекта и основатель');
+    }
   }
 
   /** Доступы одного проекта. Пароль расшифровываем только здесь — в общей
    *  карточке проекта колонка не выбирается вовсе (select: false). */
-  async getClientAccess(projectId: string, user: { role?: string; secondaryRole?: string }) {
-    this.assertCanSeeClientAccess(user);
+  async getClientAccess(projectId: string, user: { id?: string; role?: string; secondaryRole?: string }) {
     const row = await this.repo
       .createQueryBuilder('p')
-      .select(['p.id'])
+      .select(['p.id', 'p.smmData'])
       .addSelect('p.clientAccess')
       .where('p.id = :id', { id: projectId })
       .getOne();
     if (!row) throw new NotFoundException('Проект не найден');
+    this.assertCanSeeClientAccess(user, row);
     const a = row.clientAccess || {};
     return {
+      pageUrl: typeof (row.smmData as any)?.pageUrl === 'string' ? (row.smmData as any).pageUrl : '',
       login: a.login || '',
       password: decryptSecret(a.password || ''),
       note: a.note || '',
@@ -311,12 +322,22 @@ export class ProjectsService implements OnModuleInit {
 
   async saveClientAccess(
     projectId: string,
-    body: { login?: string; password?: string; note?: string },
+    body: { login?: string; password?: string; note?: string; pageUrl?: string },
     user: { id: string; role?: string; secondaryRole?: string; name?: string },
   ) {
-    this.assertCanSeeClientAccess(user);
     const project = await this.repo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Проект не найден');
+    this.assertCanSeeClientAccess(user, project);
+
+    // Ссылка на страницу клиента живёт в smmData: её видят все, кто открыл
+    // проект, в отличие от логина и пароля.
+    if (body?.pageUrl !== undefined) {
+      let url = String(body.pageUrl ?? '').trim().slice(0, 500);
+      if (url && !/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, '')}`;
+      const sd: any = { ...(project.smmData || {}) };
+      if (url) sd.pageUrl = url; else delete sd.pageUrl;
+      await this.repo.update(projectId, { smmData: sd } as any);
+    }
 
     const login = String(body?.login ?? '').trim().slice(0, 200);
     const password = String(body?.password ?? '');
@@ -1982,82 +2003,78 @@ export class ProjectsService implements OnModuleInit {
     return users.length === 1 ? users[0] : null;
   }
 
-  async getSmmProfile(id: string) {
+  async getSmmProfile(id: string, viewer?: { id?: string; role?: string; secondaryRole?: string | null }) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
-    const base = this.normSmmProfile(project.smmData || {});
-    // Назначенные SMM-специалисты проекта: id храним в smmData, для отображения
-    // резолвим в мини-объекты (имя/аватар) — чтобы список видели и те, кому
-    // недоступен /users (руководитель SMM, сам специалист).
-    const ids: string[] = Array.isArray((project.smmData as any)?.smmSpecialistIds)
-      ? ((project.smmData as any).smmSpecialistIds as any[]).filter(x => typeof x === 'string')
-      : [];
-    let smmSpecialists: { id: string; name: string; avatar: string | null; role: string }[] = [];
-    if (ids.length) {
-      const users = await this.userRepo.find({ where: { id: In(ids) } });
-      const byId = new Map(users.map(u => [u.id, u] as const));
-      smmSpecialists = ids
-        .map(uid => byId.get(uid))
-        .filter((u): u is User => !!u)
-        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
-    }
-    // Производственная команда — теми же мини-объектами, что и специалисты.
+    const sd: any = project.smmData || {};
+    const base = this.normSmmProfile(sd);
+    const strIds = (v: any): string[] => (Array.isArray(v) ? v.filter((x: any) => typeof x === 'string') : []);
+    // Назначенные SMM-специалисты, производственная команда и ответственный
+    // менеджер: id храним в smmData, для отображения резолвим в мини-объекты
+    // (имя/аватар) — чтобы их видели и те, кому недоступен /users.
+    const specIds = strIds(sd.smmSpecialistIds);
+    const crewIds: Record<string, string[]> = Object.fromEntries(
+      ProjectsService.CREW_FIELDS.map(f => [f.key, strIds(sd[f.key])]));
+    const managerId = typeof sd.salesManagerId === 'string' ? sd.salesManagerId as string : null;
+    const wanted = [...new Set([...specIds, ...Object.values(crewIds).flat(), ...(managerId ? [managerId] : [])])];
+    const candRoles = ProjectsService.CREW_FIELDS.flatMap(f => f.roles as readonly UserRole[]);
+
+    // Все запросы к людям — одновременно (19.10.2026: раньше шли по очереди,
+    // и карточка проекта открывалась заметно дольше).
+    const [users, candidates, defaults] = await Promise.all([
+      wanted.length ? this.userRepo.find({ where: { id: In(wanted) } }).catch(() => [] as User[]) : Promise.resolve([] as User[]),
+      // Кандидаты для назначения отдаём прямо тут: список /users закрыт ролями,
+      // а назначать команду должен и СММ-специалист по своему проекту.
+      this.userRepo.find({
+        where: [
+          { role: In(candRoles as any), isActive: true },
+          { secondaryRole: In(candRoles as any), isActive: true },
+        ],
+      }).catch(() => [] as User[]),
+      // Кого работа найдёт сама, если на проекте никого не назначали: главного
+      // видеографа, а для монтажа и дизайна — единственного в агентстве человека
+      // с этой ролью. Ровно та же логика, по которой content-plan раздаёт
+      // карточки подготовки, — экран показывает того, кто реально получит работу.
+      Promise.all(ProjectsService.CREW_FIELDS.filter(f => !crewIds[f.key].length).map(async f => {
+        let u: User | null = null;
+        if (f.out === 'videographers') {
+          u = await this.userRepo.findOne({ where: { isDefaultVideographer: true, isActive: true } }).catch(() => null);
+          if (!u) u = await this.soleActiveByRole([UserRole.VIDEOGRAPHER]);
+        } else {
+          u = await this.soleActiveByRole(f.roles as readonly UserRole[]);
+        }
+        return [f.out, u] as const;
+      })),
+    ]);
+    const mini = (u: User) => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role });
+    const byId = new Map(users.map(u => [u.id, u] as const));
+    const resolve = (ids: string[]) => ids.map(uid => byId.get(uid)).filter((u): u is User => !!u).map(mini);
+
+    const smmSpecialists = resolve(specIds);
     const crew: Record<string, any> = {};
     for (const f of ProjectsService.CREW_FIELDS) {
-      const raw: string[] = Array.isArray((project.smmData as any)?.[f.key])
-        ? ((project.smmData as any)[f.key] as any[]).filter(x => typeof x === 'string') : [];
-      let people: { id: string; name: string; avatar: string | null; role: string }[] = [];
-      if (raw.length) {
-        const users = await this.userRepo.find({ where: { id: In(raw) } });
-        const byId = new Map(users.map(u => [u.id, u] as const));
-        people = raw.map(uid => byId.get(uid)).filter((u): u is User => !!u)
-          .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
-      }
+      const people = resolve(crewIds[f.key]);
       crew[f.key] = people.map(u => u.id);
       crew[f.out] = people;
     }
-    // Кого работа найдёт сама, если на проекте никого не назначали: главного
-    // видеографа, а для монтажа и дизайна — единственного в агентстве человека
-    // с этой ролью. Ровно та же логика, по которой content-plan раздаёт
-    // карточки подготовки, — экран должен показывать того, кто реально получит
-    // работу, а не «Не назначен». Данные не трогаем: сменится специалист —
-    // подставится новый сам собой.
     const crewDefaults: Record<string, any> = {};
-    for (const f of ProjectsService.CREW_FIELDS) {
-      if ((crew[f.key] as string[]).length) continue;   // назначен вручную
-      let u: User | null = null;
-      if (f.out === 'videographers') {
-        u = await this.userRepo.findOne({ where: { isDefaultVideographer: true, isActive: true } }).catch(() => null);
-        if (!u) u = await this.soleActiveByRole([UserRole.VIDEOGRAPHER]);
-      } else {
-        u = await this.soleActiveByRole(f.roles as readonly UserRole[]);
-      }
-      if (u) crewDefaults[f.out] = { id: u.id, name: u.name, avatar: u.avatar || null, role: u.role };
-    }
-
-    // Кандидаты для назначения отдаём прямо тут: список /users закрыт ролями,
-    // а назначать команду должен и СММ-специалист по своему проекту.
-    const candRoles = ProjectsService.CREW_FIELDS.flatMap(f => f.roles as readonly UserRole[]);
-    const candidates = await this.userRepo.find({
-      where: [
-        { role: In(candRoles as any), isActive: true },
-        { secondaryRole: In(candRoles as any), isActive: true },
-      ],
-    }).catch(() => [] as User[]);
+    for (const [out, u] of defaults) if (u) crewDefaults[out] = mini(u);
     const crewCandidates: Record<string, any[]> = {};
     for (const f of ProjectsService.CREW_FIELDS) {
       const roles = f.roles as readonly UserRole[];
       crewCandidates[f.out] = candidates
         .filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole)))
-        .map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, role: u.role }));
+        .map(mini);
     }
-    // Ответственный менеджер по продажам (назначает владелец в «Схеме
-    // менеджеров») — тем же мини-объектом, чтобы карточка проекта показала
-    // его без доступа к /users.
-    const managerId = typeof (project.smmData as any)?.salesManagerId === 'string' ? (project.smmData as any).salesManagerId as string : null;
-    const mgr = managerId ? await this.userRepo.findOne({ where: { id: managerId } }).catch(() => null) : null;
-    const salesManager = mgr ? { id: mgr.id, name: mgr.name, avatar: mgr.avatar || null, role: mgr.role } : null;
-    return { ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, salesManager, ...crew, crewCandidates, crewDefaults };
+    const mgr = managerId ? byId.get(managerId) : undefined;
+    const salesManager = mgr ? mini(mgr) : null;
+    return {
+      ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, salesManager, ...crew, crewCandidates, crewDefaults,
+      // Ссылка на страницу клиента — видят все, кто открыл проект; логин и
+      // пароль — только кому можно (canSeeAccess), отдельным запросом.
+      pageUrl: typeof sd.pageUrl === 'string' && sd.pageUrl ? sd.pageUrl : null,
+      canSeeAccess: !!viewer && this.canSeeClientAccessFor(viewer, specIds),
+    };
   }
 
   async setSmmProfile(
@@ -2148,7 +2165,7 @@ export class ProjectsService implements OnModuleInit {
     });
     this.gateway.broadcast('projects:changed', { projectId: id });
     // Возвращаем через getSmmProfile — с резолвом специалистов (имя/аватар).
-    return this.getSmmProfile(id);
+    return this.getSmmProfile(id, user);
   }
 
   /** Схема нагрузки SMM: каждый специалист (role=smm_specialist) с его

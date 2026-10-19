@@ -1093,7 +1093,10 @@ export class ContentPlanService {
    * «Календарь» на доске задач (решение владельца 14.10.2026, направления
    * не смешиваем).
    */
-  async smmCalendar(from?: string, to?: string, actorId?: string) {
+  /** projectId — только один проект (страница SMM-проекта, 19.10.2026):
+   *  раньше она грузила календарь всех проектов, чтобы показать один.
+   *  Цвета проектов при этом считаются по всем — отдаём colorIds. */
+  async smmCalendar(from?: string, to?: string, actorId?: string, projectId?: string) {
     // Диапазон дат [from, to] (YYYY-MM-DD). По умолчанию — текущий месяц.
     const ym = this.currentYm();
     const f = from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : `${ym}-01`;
@@ -1101,8 +1104,15 @@ export class ContentPlanService {
     const t = to && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : `${ym}-${String(lastDay).padStart(2, '0')}`;
 
     const projectRepo = this.repo.manager.getRepository(Project);
-    const all = await projectRepo.find({ where: { projectType: 'SMM' } });
+    const one = projectId && /^[0-9a-f-]{36}$/i.test(projectId) ? projectId : null;
+    const all = await projectRepo.find({ where: one ? { projectType: 'SMM', id: one } : { projectType: 'SMM' } });
     const active = all.filter(p => String(p.status) !== 'archived');
+    // Цвет проекта зависит от его места среди всех активных SMM-проектов.
+    const colorIds: string[] | undefined = one
+      ? (await this.repo.manager.query(
+          `SELECT id FROM projects WHERE "projectType" = 'SMM' AND COALESCE(status::text, '') <> 'archived'`,
+        ).catch(() => [] as any[])).map((r: any) => String(r.id))
+      : undefined;
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
     // «Мои проекты» — то же правило, что в кабинете специалиста: менеджер,
     // участник или назначенный SMM-специалист проекта.
@@ -1144,7 +1154,7 @@ export class ContentPlanService {
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
-    if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [] };
+    if (!ids.length) return { from: f, to: t, events: [], projects, backlog: [], colorIds };
 
     // Умный календарь работает на СВОЁМ хранилище (content_plan_items),
     // отдельном от «Доски проектов». Контент управляется НОРМОЙ цикла
@@ -1300,7 +1310,7 @@ export class ContentPlanService {
       })),
     ];
 
-    return { from: f, to: t, events, projects, backlog };
+    return { from: f, to: t, events, projects, backlog, colorIds };
   }
 
   /** Перенос старой съёмочной сессии (наследие удалённой «Доски проектов»)

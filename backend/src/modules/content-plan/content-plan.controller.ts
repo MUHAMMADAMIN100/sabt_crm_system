@@ -101,8 +101,8 @@ export class ContentPlanController {
   @Get('smm-calendar')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
-  smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string) {
-    return this.service.smmCalendar(from, to, req.user?.id);
+  smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('projectId') projectId?: string) {
+    return this.service.smmCalendar(from, to, req.user?.id, projectId);
   }
 
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —

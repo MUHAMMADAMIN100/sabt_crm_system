@@ -11,6 +11,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type SmmProj } from './smmShared'
 import SmmPage from './SmmPage'
 import ClientPaymentRow from './ClientPaymentRow'
+import ClientAccountCard from './ClientAccountCard'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -36,6 +37,8 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   & { crewDefaults?: Partial<Record<CrewOut, SmmSpec>> }
   // Ответственный менеджер по продажам (назначает владелец).
   & { salesManager?: SmmSpec | null }
+  // Ссылка на страницу клиента (видна всем) и можно ли смотреть логин/пароль.
+  & { pageUrl?: string | null; canSeeAccess?: boolean }
 
 const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
@@ -211,7 +214,13 @@ export default function SmmProjectPage() {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const monthPref = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const monthTitle = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`
-  const { data, isLoading } = useQuery<CalData>({ queryKey: ['smm-calendar', 'smm', from, to], queryFn: () => contentPlanApi.smmCalendar({ from, to }) })
+  // Только этот проект (19.10.2026): раньше страница грузила календарь всех
+  // SMM-проектов за месяц, чтобы показать цифры одного.
+  const { data, isLoading } = useQuery<CalData & { colorIds?: string[] }>({
+    queryKey: ['smm-calendar', 'project', id, from, to],
+    queryFn: () => contentPlanApi.smmCalendar({ from, to, projectId: id }),
+    enabled: !!id,
+  })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
 
   const saveMut = useMutation({
@@ -241,7 +250,7 @@ export default function SmmProjectPage() {
   const backlog = data?.backlog ?? []
   const events = data?.events ?? []
   const info = useMemo(() => {
-    assignProjectColors(projects.map(p => p.id))
+    assignProjectColors(data?.colorIds ?? projects.map(p => p.id))
     const p = projects.find(x => x.id === id)
     if (!p) return null
     const norm = (p.normReels ?? 0) + (p.normPosts ?? 0)
@@ -249,7 +258,7 @@ export default function SmmProjectPage() {
     const placed = Math.max(0, norm - left)
     const cycle = p.cycleStartDay ? cycleBoundsFor(new Date(), p.cycleStartDay) : null
     return { p, color: projColor(p.id), norm, left, placed, cycle }
-  }, [projects, backlog, id])
+  }, [projects, backlog, id, data?.colorIds])
   const p = info?.p
 
   // ── Цикл (редактирование) ──
@@ -681,6 +690,14 @@ export default function SmmProjectPage() {
           </div>
         </div>
 
+        {/* Правая колонка: выполнение плана и аккаунт клиента. На телефоне
+            колонка «растворяется», и аккаунт встаёт первым (макет 19.10.2026). */}
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
+        {(profile?.pageUrl || profile?.canSeeAccess) && (
+          <div className="order-first lg:order-none">
+            <ClientAccountCard projectId={id!} pageUrl={profile?.pageUrl ?? null} canSeeAccess={!!profile?.canSeeAccess} />
+          </div>
+        )}
         {/* Выполнение плана */}
         <div className={card}>
           <h2 className={secLabel + ' mb-3'}>Выполнение плана · {monthTitle}</h2>
@@ -692,6 +709,7 @@ export default function SmmProjectPage() {
               <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(storiesTotal, spm ?? storiesTotal)}%`, background: '#8b5cf6' }} /></div>
             </div>
           </div>
+        </div>
         </div>
       </div>
       )}

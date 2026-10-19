@@ -105,8 +105,8 @@ export class ProjectsController {
   /** Профиль клиента SMM-проекта: владелец, значимый день (дата + коммент),
    *  начало сотрудничества, предпочтения, история подписчиков по месяцам. */
   @Get(':id/smm-profile')
-  getSmmProfile(@Param('id') id: string) {
-    return this.service.getSmmProfile(id);
+  getSmmProfile(@Param('id') id: string, @Request() req) {
+    return this.service.getSmmProfile(id, req.user);
   }
 
   /** Ответственный менеджер SMM-проекта. Назначает только владелец. */
