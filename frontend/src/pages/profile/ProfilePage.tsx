@@ -10,6 +10,7 @@ import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
 import { prepareAvatar } from '@/lib/imageCompress'
 import { money, shiftYm, currentSalaryYm, pluralRu, formatDate } from '@/pages/finance/finlib'
 import ProfileStatsBody, { useProfileStats, LevelBar, LevelBadge, tenureText } from './ProfileStats'
+import SalesPlanCard from './SalesPlanCard'
 
 /** Часы из минут: «68 ч 12 м», «45 м», «—». */
 function hoursOf(min: number): string {
@@ -271,6 +272,10 @@ export default function ProfilePage() {
         </div>
         {stats && <LevelBar stats={stats} className="sm:hidden mt-3.5" />}
       </div>
+
+      {/* План продаж менеджера — деньги, поэтому только на телефоне, как
+          зарплата (решение владельца 19.10.2026). Без плана не показывается. */}
+      <SalesPlanCard className="lg:hidden" />
 
       {stats && <ProfileStatsBody stats={stats} />}
 

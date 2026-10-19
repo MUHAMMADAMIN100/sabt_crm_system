@@ -384,6 +384,21 @@ export type GoalsOfUser = {
   metrics: { key: string; label: string; unit: '%' | 'days' | 'shifts' }[]
 }
 
+/** План продаж менеджеров (19.10.2026): сумму на месяц ставит основатель,
+ *  «получено» — оплаты клиентов менеджера по «Финансам». */
+export type SalesPlanRow = { id: string; name: string; avatar: string | null; role: string; plan: number | null; received: number }
+export type SalesPlans = { ym: string; prevYm: string; managers: SalesPlanRow[]; total: { plan: number; received: number } }
+export type MySalesPlan = { ym: string; plan: null } | {
+  ym: string; plan: number; received: number; day: number; daysInMonth: number; daysLeft: number
+}
+export const salesPlanApi = {
+  list: (ym: string): Promise<SalesPlans> => api.get('/sales-plans', { params: { ym } }).then(r => r.data),
+  set: (userId: string, ym: string, amount: number | null): Promise<SalesPlans> =>
+    api.put(`/sales-plans/${userId}`, { ym, amount }).then(r => r.data),
+  copy: (ym: string): Promise<SalesPlans> => api.post('/sales-plans/copy', { ym }).then(r => r.data),
+  mine: (): Promise<MySalesPlan> => api.get('/me/sales-plan').then(r => r.data),
+}
+
 /** Цели месяца: ставят руководитель направления и основатель. */
 export const goalsApi = {
   ofUser: (userId: string, ym?: string): Promise<GoalsOfUser> =>

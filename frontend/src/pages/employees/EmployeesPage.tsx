@@ -10,6 +10,7 @@ import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, Network, Activity, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal, CalendarRange } from 'lucide-react'
 import OrgChart from './OrgChart'
+import SalesPlanBox from './SalesPlanBox'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -257,6 +258,9 @@ export default function EmployeesPage() {
 
       {view === 'activity' && <TeamActivity />}
       {view === 'week' && <WeekTasks />}
+
+      {/* План продаж менеджеров на месяц — ставит основатель (19.10.2026). */}
+      {isFounderUser && view !== 'activity' && view !== 'week' && <SalesPlanBox />}
 
       {view !== 'activity' && view !== 'week' && (
       <div className="flex flex-wrap gap-3">

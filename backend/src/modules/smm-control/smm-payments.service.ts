@@ -137,8 +137,25 @@ export class SmmPaymentsService {
     const from = ISO_DAY.test(String(fromRaw || '')) ? String(fromRaw) : `${today.slice(0, 7)}-01`;
     const to = ISO_DAY.test(String(toRaw || '')) && String(toRaw) >= from ? String(toRaw) : monthEnd(from);
     const top = this.isTop(actor);
-    const mineOnly = (id: string | null) => (top ? !!id : id === actor.id);
+    return this.calendarOf(id => (top ? !!id : id === actor.id), from, to);
+  }
 
+  /** Получено от клиентов менеджера за месяц — «сделано» в плане продаж
+   *  (решение владельца 19.10.2026, вариант А): те же оплаты, что зелёным
+   *  в его календаре, по данным «Финансов». */
+  async receivedOf(managerId: string, ym: string): Promise<number> {
+    const from = `${ym}-01`;
+    const to = monthEnd(from);
+    const { items } = await this.calendarOf(id => id === managerId, from, to);
+    const sum = items
+      .filter(it => it.state === 'paid' && it.date >= from && it.date <= to)
+      .reduce((s, it) => s + (Number(it.amount) || 0), 0);
+    return Math.round(sum * 100) / 100;
+  }
+
+  /** Деньги клиентов, чей менеджер подходит под mineOnly, за [from, to]. */
+  private async calendarOf(mineOnly: (managerId: string | null) => boolean, from: string, to: string) {
+    const today = todayDushanbe();
     const all = await this.clients();
     const own = (await this.smmProjects()).filter(p => mineOnly(managerOf(p)));
     const links = resolveFinanceLinks(own.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), all);
