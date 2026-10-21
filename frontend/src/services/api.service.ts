@@ -481,6 +481,8 @@ export const smmControlApi = {
   /** Отметка: отзыв клиента, «на связи», «отчёт отправлен». */
   update: (projectId: string, data: {
     ym: string; mood?: 'good' | 'meh' | 'bad' | null; moodNote?: string | null; contact?: boolean; report?: boolean
+    /** Реклама идёт / нет — состояние проекта, не месяца. */
+    ads?: boolean
   }) => api.patch(`/smm-control/${projectId}`, data).then(r => r.data),
 }
 

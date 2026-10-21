@@ -201,6 +201,11 @@ export class SmmControlService {
       const isMine = p.managerId === actor.id
         || (p.members || []).some(x => x.id === actor.id)
         || spec.includes(actor.id);
+      // Галочки в публикациях — как в календаре СММ (21.10.2026): руководство
+      // и руководитель СММ — везде, SMM-специалист — в своих проектах.
+      // Менеджеры по продажам только смотрят.
+      const canEditContent = roles.some(r => MANAGE_ROLES.includes(r))
+        || (roles.includes('smm_specialist') && isMine);
       return {
         id: p.id, name: p.name,
         specialists: spec.map(id => ({ id, name: userName.get(id) || 'Сотрудник' })),
@@ -208,6 +213,10 @@ export class SmmControlService {
         manager: managerOf(p) ? { id: managerOf(p) as string, name: userName.get(managerOf(p) as string) || 'Менеджер' } : null,
         mineAsManager: managerOf(p) === actor.id,
         canEdit: manage || isMine,
+        canEditContent,
+        // Реклама (21.10.2026, вариант А): «идёт / нет», держится, пока не
+        // выключат; since — с какого дня идёт.
+        ads: { running: !!sd.adsRunning, since: typeof sd.adsSince === 'string' ? sd.adsSince : null },
         mood: c?.mood ?? null, moodNote: c?.moodNote ?? null, moodAt: c?.moodAt ?? null,
         moodBy: c?.moodById ? userName.get(c.moodById) || null : null,
         contact: !!c?.contact, contactAt: c?.contactAt ?? null,
@@ -276,6 +285,20 @@ export class SmmControlService {
       if (!roles.includes('smm_specialist') || !mine) {
         throw new ForbiddenException('Отмечать можно только по своим проектам');
       }
+    }
+
+    // Реклама — состояние проекта, а не отметка месяца: держится, пока не
+    // выключат. Включили — запоминаем день; повторное «включить» день не сдвигает.
+    if ('ads' in (dto || {})) {
+      const sd: any = { ...(project.smmData || {}) };
+      const on = !!dto.ads;
+      if (on && !sd.adsRunning) sd.adsSince = todayDushanbe();
+      if (!on) delete sd.adsSince;
+      sd.adsRunning = on;
+      sd.adsById = actor.id;
+      await this.projectRepo.update(projectId, { smmData: sd } as any);
+      const monthly = ['mood', 'contact', 'report'].some(k => k in dto);
+      if (!monthly) return { ads: { running: on, since: on ? sd.adsSince : null } };
     }
 
     let row = await this.repo.findOne({ where: { projectId, ym } });

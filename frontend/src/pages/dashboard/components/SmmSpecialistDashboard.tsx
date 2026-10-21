@@ -694,8 +694,10 @@ function AnchoredMenu({ anchorRef, open, onClose, width = 236, children }: {
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
  *  переноса, потому что исполнитель двигает карточку только от сегодня до
  *  дня выхода и не отменяет задачи. */
-export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee, note }: {
+export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee, note, readOnly = false }: {
   e: any; onToggle: () => void; onInfo: () => void
+  /** Только смотреть («Контроль» у менеджеров по продажам): без галочки и меню. */
+  readOnly?: boolean
   onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
   canCancel?: boolean
   moveWindow?: { min: string; max?: string | null }
@@ -711,7 +713,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
   const menuBtnRef = useRef<HTMLButtonElement>(null)
   const done = isDone(e)
   const cancelled = isCancelled(e)
-  const canAct = !!e.itemId && !!onMove
+  const canAct = !readOnly && !!e.itemId && !!onMove
   const showCancel = canCancel && !!onCancel
   const tomorrow = addDays(new Date(), 1)
   // «На завтра» — только если завтра ещё внутри окна переноса.
@@ -731,7 +733,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
       {cancelled ? (
         <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-surface-400 dark:text-surface-500" title="Задача отменена"><Ban size={15} /></span>
       ) : (
-        <button onClick={ev => { ev.stopPropagation(); onToggle() }} disabled={!e.itemId} title="Отметить готовой"
+        <button onClick={ev => { ev.stopPropagation(); onToggle() }} disabled={readOnly || !e.itemId} title="Отметить готовой"
           className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
             done ? 'bg-green-500 border-green-500' : 'border-surface-300 dark:border-surface-600 hover:border-green-500')}>
           <Check size={13} className={clsx('text-white transition-opacity', done ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
@@ -896,8 +898,10 @@ function historyText(h: any): string {
 /** Панель задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
  *  отменить задачу может руководство, а не исполнитель. */
-export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow, assign }: {
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow, assign, readOnly = false }: {
   e: any; pos: number; total: number
+  /** Только смотреть: без отметки, переноса и отмены. */
+  readOnly?: boolean
   onPrev: () => void; onNext: () => void; onClose: () => void
   onToggle: () => void; onMove: (d: Date) => void; onCancel: (cancel: boolean) => void
   canCancel?: boolean
@@ -919,7 +923,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
   const { tag, group, descLabel } = taskInfo(e)
   const done = isDone(e)
   const cancelled = isCancelled(e)
-  const canAct = !!e.itemId
+  const canAct = !readOnly && !!e.itemId
   const desc = (e.scriptText && String(e.scriptText).trim()) || ''
   const caption = (e.caption && String(e.caption).trim()) || ''
   // Ссылку открываем только http(s): поле заполняют руками, javascript:-ссылка не должна пройти.

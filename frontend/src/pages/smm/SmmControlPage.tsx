@@ -25,6 +25,7 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, Circle, Frown, Loader2
 import { smmControlApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
+import CyclePublicationsModal from './CyclePublicationsModal'
 
 type Mood = 'good' | 'meh' | 'bad' | null
 type Row = {
@@ -34,6 +35,10 @@ type Row = {
   manager?: { id: string; name: string } | null
   mineAsManager?: boolean
   canEdit: boolean
+  /** Галочки в публикациях: SMM-специалист проекта и руководство. */
+  canEditContent?: boolean
+  /** Реклама идёт / нет; since — с какого дня. */
+  ads?: { running: boolean; since: string | null }
   mood: Mood; moodNote: string | null; moodAt: string | null; moodBy: string | null
   contact: boolean; contactAt: string | null
   report: boolean; reportAt: string | null
@@ -45,7 +50,7 @@ type Row = {
   payment?: 'paid' | 'wait' | 'late' | null
 }
 type Data = { ym: string; today: string; ref: string; seeMoney: boolean; projects: Row[] }
-type Filter = 'all' | 'mine' | 'behind' | 'unhappy' | 'nocontact' | 'late'
+type Filter = 'all' | 'mine' | 'behind' | 'unhappy' | 'nocontact' | 'late' | 'ads'
 
 const MON = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -120,6 +125,9 @@ export default function SmmControlPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
   const [moodFor, setMoodFor] = useState<Row | null>(null)
+  // Окно «Публикации цикла» — по id, чтобы после отметки шапка окна брала
+  // свежие «вышло / должно быть» из обновлённого списка.
+  const [pubsFor, setPubsFor] = useState<string | null>(null)
 
   const key = ['smm-control', ym]
   const { data, isLoading, isError, refetch } = useQuery<Data>({
@@ -146,6 +154,12 @@ export default function SmmControlPage() {
   }
   const toggle = (r: Row, field: 'contact' | 'report') =>
     save(r, { [field]: !r[field] } as Partial<Row>, { [field]: !r[field] })
+  const toggleAds = (r: Row) => {
+    const on = !r.ads?.running
+    const today = new Date()
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    save(r, { ads: { running: on, since: on ? (r.ads?.since || iso) : null } }, { ads: on })
+  }
 
   const counts = {
     all: rows.length,
@@ -154,6 +168,7 @@ export default function SmmControlPage() {
     unhappy: rows.filter(r => r.mood === 'bad').length,
     nocontact: rows.filter(r => !r.contact).length,
     late: rows.filter(r => r.payment === 'late').length,
+    ads: rows.filter(r => r.ads?.running).length,
   }
   const happy = rows.filter(r => r.mood === 'good').length
   const planKnown = rows.filter(r => r.plan)
@@ -169,6 +184,7 @@ export default function SmmControlPage() {
     if (filter === 'unhappy') return r.mood === 'bad'
     if (filter === 'nocontact') return !r.contact
     if (filter === 'late') return r.payment === 'late'
+    if (filter === 'ads') return !!r.ads?.running
     return true
   })
   // По специалистам, как на доске «Схема»; недовольные и отстающие — сверху.
@@ -189,7 +205,7 @@ export default function SmmControlPage() {
 
   const [y, m] = ym.split('-').map(Number)
   const monthLabel = `${MON[m - 1]} ${y}`
-  const cols = `minmax(130px,1.4fr) minmax(130px,1.2fr) minmax(210px,1.9fr) minmax(130px,1.3fr) 100px ${seeMoney ? '96px ' : ''}84px`
+  const cols = `minmax(130px,1.4fr) minmax(130px,1.2fr) minmax(210px,1.9fr) minmax(130px,1.3fr) 100px ${seeMoney ? '96px ' : ''}136px 84px`
 
   const filters: [Filter, string, number, string][] = [
     ['all', 'Все', counts.all, 'text-surface-600 dark:text-surface-300'],
@@ -200,6 +216,7 @@ export default function SmmControlPage() {
     ['nocontact', 'Не на связи', counts.nocontact, 'text-surface-600 dark:text-surface-300'],
   ]
   if (seeMoney) filters.push(['late', 'Оплата просрочена', counts.late, 'text-surface-600 dark:text-surface-300'])
+  filters.push(['ads', 'Реклама идёт', counts.ads, 'text-green-600 dark:text-green-400'])
   // Фильтр с нулём ничего не покажет — прячем (кроме «Все» и выбранного).
   const shownFilters = filters.filter(([k, , n]) => k === 'all' || n > 0 || filter === k)
 
@@ -266,18 +283,20 @@ export default function SmmControlPage() {
                   <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400">{g.name}</div>
                   {g.rows.map(r => (
                     <ProjectCard key={r.id} r={r} seeMoney={seeMoney}
-                      onMood={() => setMoodFor(r)} onToggle={f => toggle(r, f)} />
+                      onMood={() => setMoodFor(r)} onToggle={f => toggle(r, f)}
+                      onAds={() => toggleAds(r)} onPlan={() => setPubsFor(r.id)} />
                   ))}
                 </div>
               ))}
             </div>
           ) : (
             <div className="card p-0 overflow-x-auto">
-              <div className="min-w-[980px]">
+              <div className="min-w-[1100px]">
                 <div className="grid items-end gap-x-3 px-4 py-2.5 border-b border-surface-200 dark:border-surface-700 text-[11px] font-semibold uppercase tracking-wide text-surface-400"
                   style={{ gridTemplateColumns: cols }}>
                   <span>Проект</span><span>Клиент</span><span>По плану</span><span>Свежесть</span><span>Сторис · 7 дн.</span>
                   {seeMoney && <span>Оплата</span>}
+                  <span>Реклама</span>
                   <span>Связь · отчёт</span>
                 </div>
                 {groups.map(g => (
@@ -301,7 +320,7 @@ export default function SmmControlPage() {
                             <ManagerLine r={r} className="ml-[18px]" />
                           </span>
                           <MoodCell r={r} onClick={() => setMoodFor(r)} />
-                          <PlanCell r={r} />
+                          <PlanCell r={r} onOpen={() => setPubsFor(r.id)} />
                           <span className="text-[13px] text-surface-500">{freshOf(r.daysSincePost)}</span>
                           <Week s={r.stories7} />
                           {seeMoney && (
@@ -309,6 +328,7 @@ export default function SmmControlPage() {
                               ? <span className={clsx('text-[13px]', r.payment === 'late' ? 'font-semibold text-red-600 dark:text-red-400' : 'text-surface-500')}>{PAY_TXT[r.payment]}</span>
                               : <span className="text-[13px] text-surface-400" title="Проект с таким названием в Финансах не найден или платежей в этом месяце нет">—</span>
                           )}
+                          <AdsCell r={r} onToggle={() => toggleAds(r)} />
                           <span className="flex items-center gap-2">
                             <Tick on={r.contact} disabled={!r.canEdit} label="На связи с клиентом в этом месяце"
                               title={r.contact ? `На связи · отмечено ${dayMonth(r.contactAt)}` : 'На связи: был созвон или встреча в этом месяце'} onClick={() => toggle(r, 'contact')} />
@@ -325,6 +345,14 @@ export default function SmmControlPage() {
           )}
         </>
       )}
+
+      {(() => {
+        const r = pubsFor ? rows.find(x => x.id === pubsFor) : null
+        return r?.plan ? (
+          <CyclePublicationsModal projectId={r.id} name={r.name} plan={r.plan}
+            canEdit={!!r.canEditContent} onClose={() => setPubsFor(null)} />
+        ) : null
+      })()}
 
       {moodFor && (
         <MoodModal row={moodFor} onClose={() => setMoodFor(null)}
@@ -367,7 +395,7 @@ function MoodCell({ r, onClick, withDate = false }: { r: Row; onClick: () => voi
 }
 
 /** По плану: вышло публикаций из нормы цикла; чёрточка — сколько должно было выйти к сегодня. */
-function PlanCell({ r }: { r: Row }) {
+function PlanCell({ r, onOpen }: { r: Row; onOpen?: () => void }) {
   const p = r.plan
   if (!p) return <span className="text-[13px] text-surface-400" title="У проекта не задана норма рилсов и постов">нормы нет</span>
   const lag = lagOf(r)
@@ -376,9 +404,10 @@ function PlanCell({ r }: { r: Row }) {
   const pct = Math.min(100, Math.round((p.done / p.norm) * 100))
   const exp = Math.min(100, Math.round((p.expected / p.norm) * 100))
   return (
-    <span className="flex flex-col gap-1.5 min-w-0"
-      title={`Цикл ${dayMonth(p.start)} – ${dayMonth(p.end)}: вышло ${p.done} из ${p.norm}, к сегодня должно быть ${p.expected}`}>
-      <span className={clsx('inline-flex items-center gap-1.5 text-[13.5px] font-bold', text)}>
+    <button type="button" onClick={onOpen} disabled={!onOpen}
+      className="flex flex-col gap-1.5 min-w-0 text-left rounded-lg -mx-1.5 px-1.5 py-1 enabled:hover:bg-surface-100 dark:enabled:hover:bg-surface-800/70 disabled:cursor-default"
+      title={`Цикл ${dayMonth(p.start)} – ${dayMonth(p.end)}: вышло ${p.done} из ${p.norm}, к сегодня должно быть ${p.expected} · нажмите — публикации цикла`}>
+      <span className={clsx('inline-flex items-center gap-1.5 text-[13.5px] font-bold underline decoration-dotted underline-offset-[3px]', text)}>
         {lag === 0 ? <Check size={15} strokeWidth={3} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}
         {lag === 0 ? 'По плану' : `Отстаёт на ${lag}`}
       </span>
@@ -389,7 +418,24 @@ function PlanCell({ r }: { r: Row }) {
         </span>
         <span className="text-[12px] text-surface-500 tabular-nums whitespace-nowrap">{p.done} из {p.norm}</span>
       </span>
-    </span>
+    </button>
+  )
+}
+
+/** Реклама: «идёт · с 12 окт» / «нет». Нажатие переключает (вариант А,
+ *  21.10.2026): состояние держится, пока не выключат. */
+function AdsCell({ r, onToggle, big = false }: { r: Row; onToggle: () => void; big?: boolean }) {
+  const on = !!r.ads?.running
+  return (
+    <button type="button" aria-pressed={on} disabled={!r.canEdit} onClick={onToggle}
+      title={r.canEdit ? (on ? 'Нажмите, если реклама остановлена' : 'Нажмите, когда реклама запущена') : undefined}
+      className={clsx('inline-flex items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] font-semibold whitespace-nowrap disabled:cursor-default',
+        big ? 'min-h-[44px] flex-1 justify-center' : 'h-[30px] self-center justify-self-start',
+        on ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
+          : 'border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 enabled:hover:border-surface-400')}>
+      <span className={clsx('w-[7px] h-[7px] rounded-full shrink-0', on ? 'bg-green-500' : 'bg-surface-300 dark:bg-surface-600')} />
+      {on ? <>{big ? 'реклама идёт' : 'идёт'}{r.ads?.since ? ` · с ${dayMonth(r.ads.since)}` : ''}</> : big ? 'рекламы нет' : 'нет'}
+    </button>
   )
 }
 
@@ -430,8 +476,9 @@ function ManagerLine({ r, className }: { r: Row; className?: string }) {
   )
 }
 
-function ProjectCard({ r, seeMoney, onMood, onToggle }: {
+function ProjectCard({ r, seeMoney, onMood, onToggle, onAds, onPlan }: {
   r: Row; seeMoney: boolean; onMood: () => void; onToggle: (f: 'contact' | 'report') => void
+  onAds: () => void; onPlan: () => void
 }) {
   const big = (on: boolean, label: string, field: 'contact' | 'report') => (
     <button type="button" aria-pressed={on} disabled={!r.canEdit} onClick={() => onToggle(field)}
@@ -454,11 +501,12 @@ function ProjectCard({ r, seeMoney, onMood, onToggle }: {
         <ManagerLine r={r} className="ml-[18px]" />
       </div>
       <MoodCell r={r} onClick={onMood} withDate />
-      <PlanCell r={r} />
+      <PlanCell r={r} onOpen={onPlan} />
       <div className="flex gap-2">
         {big(r.contact, 'На связи', 'contact')}
         {big(r.report, 'Отчёт', 'report')}
       </div>
+      <div className="flex"><AdsCell r={r} onToggle={onAds} big /></div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-surface-500">
         <span>{freshOf(r.daysSincePost)}</span>
         <span className="inline-flex items-center gap-1.5">Сторис <Week s={r.stories7} /></span>
