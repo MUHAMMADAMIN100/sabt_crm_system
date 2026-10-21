@@ -3,7 +3,7 @@
 // отсюда, как задачи в панели СММ: галочка «готово», «На сегодня», перенос,
 // отмена, подробности. Галочки ставят SMM-специалист проекта, руководитель
 // СММ и руководство; менеджеры по продажам только смотрят.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, differenceInCalendarDays } from 'date-fns'
@@ -70,22 +70,29 @@ export default function CyclePublicationsModal({ projectId, name, plan, canEdit,
     events: (old.events || []).map((e: any) => (e.itemId === itemId ? fn(e) : e)),
     backlog: (old.backlog || []).map((e: any) => (e.itemId === itemId ? fn(e) : e)),
   })
+  // Что-то меняли — «Контроль» и календари пересчитываем один раз, при
+  // закрытии окна, а не после каждой галочки: перезапрос посреди быстрых
+  // отметок возвращал старое состояние, и галочки «не ставились».
+  const dirty = useRef(false)
+  useEffect(() => () => {
+    if (!dirty.current) return
+    qc.invalidateQueries({ queryKey: ['smm-control'] })
+    qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+  }, [qc])
   const mut = useMutation({
     mutationFn: (v: { itemId: string; body: Record<string, any>; local: (e: any) => any }) => contentPlanApi.smartUpdate(v.itemId, v.body),
     onMutate: async v => {
       await qc.cancelQueries({ queryKey: key })
-      const prev = qc.getQueryData(key)
+      const cur: any = qc.getQueryData(key)
+      const before = [...(cur?.events || []), ...(cur?.backlog || [])].find((e: any) => e.itemId === v.itemId)
       patch(v.itemId, v.local)
-      return { prev }
+      dirty.current = true
+      return { before }
     },
-    onError: (e: any, _v, ctx: any) => {
-      if (ctx?.prev) qc.setQueryData(key, ctx.prev)
+    // Ошибка — возвращаем только эту карточку, соседние отметки не трогаем.
+    onError: (e: any, v, ctx: any) => {
+      if (ctx?.before) patch(v.itemId, () => ctx.before)
       toast.error(e?.response?.data?.message || 'Не удалось сохранить')
-    },
-    // «По плану» в строке «Контроля» пересчитывается сразу после отметки.
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
-      qc.invalidateQueries({ queryKey: ['smm-control'] })
     },
   })
   const toggle = (e: any) => {

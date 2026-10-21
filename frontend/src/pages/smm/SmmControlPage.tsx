@@ -25,6 +25,7 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, Circle, Frown, Loader2
 import { smmControlApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
+import { useAuthStore } from '@/store/auth.store'
 import CyclePublicationsModal from './CyclePublicationsModal'
 
 type Mood = 'good' | 'meh' | 'bad' | null
@@ -128,6 +129,12 @@ export default function SmmControlPage() {
   // Окно «Публикации цикла» — по id, чтобы после отметки шапка окна брала
   // свежие «вышло / должно быть» из обновлённого списка.
   const [pubsFor, setPubsFor] = useState<string | null>(null)
+  // Галочки в публикациях: сервер отдаёт canEditContent; пока он старой
+  // версии — то же правило на месте: руководство, руководитель СММ и
+  // SMM-специалист своего проекта.
+  const myRole = useAuthStore(s => s.user?.role) || ''
+  const canContent = (r: Row) => r.canEditContent
+    ?? (['founder', 'admin', 'smm_director'].includes(myRole) || (myRole === 'smm_specialist' && r.canEdit))
 
   const key = ['smm-control', ym]
   const { data, isLoading, isError, refetch } = useQuery<Data>({
@@ -138,17 +145,27 @@ export default function SmmControlPage() {
   const rows = data?.projects ?? []
   const seeMoney = !!data?.seeMoney
 
-  /** Отметка с мгновенным откликом: строка меняется сразу, при ошибке — назад. */
+  /** Отметка с мгновенным откликом: строка меняется сразу, при ошибке
+   *  откатывается только то, что меняли. Весь список после каждой отметки
+   *  больше не перезапрашиваем (21.10.2026): пока шёл тяжёлый запрос, он
+   *  возвращал старые значения поверх уже нажатых галочек — отметки
+   *  «мигали» и будто не ставились. */
   async function save(r: Row, change: Partial<Row>, body: Record<string, any>) {
-    const prev = qc.getQueryData<Data>(key)
-    qc.setQueryData<Data>(key, old => old
-      ? { ...old, projects: old.projects.map(p => (p.id === r.id ? { ...p, ...change } : p)) }
+    await qc.cancelQueries({ queryKey: key })
+    const before = Object.fromEntries(Object.keys(change).map(k => [k, (r as any)[k]])) as Partial<Row>
+    const patchRow = (vals: Partial<Row>) => qc.setQueryData<Data>(key, old => old
+      ? { ...old, projects: old.projects.map(p => (p.id === r.id ? { ...p, ...vals } : p)) }
       : old)
+    patchRow(change)
     try {
-      await smmControlApi.update(r.id, { ym, ...body })
-      qc.invalidateQueries({ queryKey: ['smm-control', ym] })
+      const res: any = await smmControlApi.update(r.id, { ym, ...body })
+      // Сервер старой версии рекламу не сохраняет — не делаем вид, что сохранили.
+      if ('ads' in body && !(res && typeof res === 'object' && 'ads' in res)) {
+        patchRow(before)
+        toast('Реклама заработает после обновления сервера')
+      }
     } catch (e) {
-      qc.setQueryData(key, prev)
+      patchRow(before)
       toast.error(errText(e, 'Не удалось сохранить отметку'))
     }
   }
@@ -350,7 +367,7 @@ export default function SmmControlPage() {
         const r = pubsFor ? rows.find(x => x.id === pubsFor) : null
         return r?.plan ? (
           <CyclePublicationsModal projectId={r.id} name={r.name} plan={r.plan}
-            canEdit={!!r.canEditContent} onClose={() => setPubsFor(null)} />
+            canEdit={canContent(r)} onClose={() => setPubsFor(null)} />
         ) : null
       })()}
 
