@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { Between, IsNull, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { WorkShift } from './work-shift.entity';
+import { forgottenShiftEnd, staleOpenShifts } from './shift-autoclose';
 import { ShiftEditRequest } from './shift-edit-request.entity';
 import { ShiftAbsence } from './shift-absence.entity';
 import { WorkSchedule } from './work-schedule.entity';
@@ -56,8 +57,15 @@ const dushanbeDate = (d: Date = new Date()) =>
 const dushanbeTime = (d: Date) =>
   new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(d);
 
+/** Разовый пересчёт по новому правилу 23:59 (решение владельца 24.10.2026):
+ *  смены октября, закрытые автоматически по последней активности. Пересчёт
+ *  идемпотентный — повторный запуск ничего не меняет. После ноября 2026 блок
+ *  можно удалить. */
+const RECALC_AUTO_FROM = '2026-10-01';
+const RECALC_AUTO_TO = '2026-10-31';
+
 @Injectable()
-export class WorkShiftsService {
+export class WorkShiftsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(WorkShiftsService.name);
 
   constructor(
@@ -80,12 +88,6 @@ export class WorkShiftsService {
     const open = await this.repo.findOne({ where: { employeeId, endedAt: IsNull() } });
     const today = dushanbeDate();
     const rows = await this.repo.find({ where: { employeeId, date: today } });
-    // Отметка активности: по ней ночной крон закрывает забытую смену
-    // настоящим временем, а не полуночью.
-    if (open) {
-      open.lastPingAt = new Date();
-      await this.repo.update({ id: open.id }, { lastPingAt: open.lastPingAt });
-    }
     const last = rows
       .filter(r => r.endedAt)
       .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())[0];
@@ -981,35 +983,62 @@ export class WorkShiftsService {
     }
   }
 
-  /** Полночь по Душанбе: закрываем забытые смены. Без этого один
+  /** 23:59 по Душанбе: закрываем забытые смены ровно концом их дня (решение
+   *  владельца 24.10.2026, правило — в shift-autoclose.ts). Без этого один
    *  забывчивый даёт 40 часов за сутки и ломает всю статистику. */
   @Cron('59 23 * * *', { timeZone: TZ })
   async closeForgotten() {
     const open = await this.repo.find({ where: { endedAt: IsNull() } });
-    if (!open.length) return;
-    const scheds = await this.schedRepo.find();
-    for (const s of open) {
-      // Закрываем не полуночью, а последней активностью в системе: человек
-      // ушёл в 18:00 и забыл нажать — раньше ему писали 14 часов 59 минут.
-      // Активности не было вовсе (работал не за компьютером) — берём конец
-      // рабочего дня: это правдоподобнее полуночи, а пометка autoClosed
-      // честно говорит, что время не подтверждено нажатием.
-      const started = new Date(s.startedAt);
-      const ping = s.lastPingAt ? new Date(s.lastPingAt) : null;
-      // Конец дня — ЕГО смены: у монтажёра это 22:00, и закрывать его
-      // восемнадцатью часами было бы враньём в минус.
-      const [wh, wm] = this.schedFor(scheds, s.employeeId, String(s.date).slice(0, 10))
-        .endTime.split(':').map(Number);
-      const endOfWork = new Date(started);
-      endOfWork.setHours(wh, wm, 0, 0);
-      let end = ping && ping > started ? ping : endOfWork;
-      if (end < started) end = started;
-      s.endedAt = end;
+    const closed = await this.closeAsForgotten(open);
+    if (closed) this.logger.log(`Забытые смены закрыты автоматически: ${closed}`);
+  }
+
+  /** При запуске сервера. Крон в 23:59 не срабатывает, если сервер в эту
+   *  минуту перезапускался при выкладке, — смена висела бы открытой до
+   *  следующей ночи. Запуск не ждём: это уборка, а не условие работы. */
+  onApplicationBootstrap() {
+    void this.catchUpForgotten().catch(e =>
+      this.logger.warn(`Уборка забытых смен при запуске не удалась: ${e?.message || e}`));
+  }
+
+  /** Закрывает смены прошлых дней их же 23:59 и пересчитывает октябрь. */
+  async catchUpForgotten(): Promise<{ stale: number; recalculated: number }> {
+    const open = await this.repo.find({ where: { endedAt: IsNull() } });
+    const stale = await this.closeAsForgotten(staleOpenShifts(open, dushanbeDate()));
+    const recalculated = await this.recalcAutoClosed(RECALC_AUTO_FROM, RECALC_AUTO_TO);
+    if (stale || recalculated) {
+      this.logger.log(`Забытые смены: закрыто с прошлых дней ${stale}, пересчитано по 23:59 ${recalculated}`);
+    }
+    return { stale, recalculated };
+  }
+
+  /** Закрыть как забытые: 23:59 своего дня и честная пометка. */
+  private async closeAsForgotten(rows: WorkShift[]): Promise<number> {
+    if (!rows.length) return 0;
+    for (const s of rows) {
+      s.endedAt = forgottenShiftEnd(s);
       s.autoClosed = true;
       s.endReason = 'auto';
     }
-    await this.repo.save(open);
-    this.logger.log(`Забытые смены закрыты автоматически: ${open.length}`);
+    await this.repo.save(rows);
+    return rows.length;
+  }
+
+  /** Смены, закрытые автоматически по старому правилу, переводим на 23:59.
+   *  Поправленные через запрос на исправление не трогаем: у них пометку
+   *  autoClosed снимает decideEdit. */
+  private async recalcAutoClosed(from: string, to: string): Promise<number> {
+    const rows = await this.repo.find({
+      where: { autoClosed: true, endReason: 'auto', date: Between(from, to) },
+    });
+    const changed = rows.filter(s => {
+      const end = forgottenShiftEnd(s);
+      if (s.endedAt && new Date(s.endedAt).getTime() === end.getTime()) return false;
+      s.endedAt = end;
+      return true;
+    });
+    if (changed.length) await this.repo.save(changed);
+    return changed.length;
   }
 
 }
