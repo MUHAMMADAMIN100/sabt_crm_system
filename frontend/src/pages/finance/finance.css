@@ -73,6 +73,7 @@
 .fin-root .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .fin-root .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .fin-root .grid-4 { grid-template-columns: repeat(4, 1fr); }
+.fin-root .grid-5 { grid-template-columns: repeat(5, 1fr); }
 .fin-root .grid-balances { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .fin-root .grid-overview { grid-template-columns: 1fr 1fr 300px; }
 .fin-root .clickable { cursor: pointer; transition: border-color .12s, transform .06s; }
@@ -603,15 +604,17 @@
 /* ─── Адаптив: планшет и мобильный ───────────────────────── */
 @media (max-width: 1180px) {
   .fin-root .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .fin-root .grid-5 { grid-template-columns: repeat(3, 1fr); }
   .fin-root .grid-overview { grid-template-columns: 1fr 1fr; }
   .fin-root .grid-overview > :last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 1000px) {
   .fin-root .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .fin-root .grid-5 { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 720px) {
   .fin-root { font-size: 13.5px; }
-  .fin-root .grid-2, .fin-root .grid-3, .fin-root .grid-4, .fin-root .grid-overview { grid-template-columns: 1fr; }
+  .fin-root .grid-2, .fin-root .grid-3, .fin-root .grid-4, .fin-root .grid-5, .fin-root .grid-overview { grid-template-columns: 1fr; }
   .fin-root .grid-overview > :last-child { grid-column: auto; }
   .fin-root .grid-balances { grid-template-columns: repeat(2, 1fr); }
   .fin-root .form-grid { grid-template-columns: 1fr; }
@@ -2847,3 +2850,55 @@
   .fin-root .fin-smm-alert { border-radius: 14px; padding: 10px 12px; gap: 2px 6px; }
   .fin-root .fin-smm-alert b { font-size: 13px; }
 }
+
+/* ─── Рассрочки сотрудников (26.10.2026) ──────────────────────────────
+   Карточка на «Расходе», таблица по месяцам, блок в ведомости. Цвет
+   рассрочки — бирюзовый из палитры категорий (#47aaa4). */
+.fin-root { --inst: #47aaa4; --inst-soft: rgba(71, 170, 164, .14); }
+.fin-root button.fin-inst-card { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.fin-root .fin-inst-cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.fin-root .fin-inst-cellbtn {
+  border: 0; background: none; padding: 4px; margin: -4px; border-radius: 8px;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.fin-root .fin-inst-cellbtn:hover, .fin-root .fin-inst-cellbtn:focus-visible { background: var(--surface-hover); outline: none; }
+.fin-root .fin-inst-plan {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--muted) 55%, transparent);
+  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fin-root .fin-inst-plan.custom { border-style: solid; border-color: var(--inst); color: var(--inst); }
+.fin-root .fin-inst-skip {
+  display: inline-flex; padding: 3px 8px; border-radius: 8px; font-size: 11.5px; font-weight: 600;
+  background: var(--amber-soft); color: var(--amber); white-space: nowrap;
+}
+.fin-root .fin-inst-pay {
+  display: inline-flex; padding: 2px 7px; border-radius: 7px; font-size: 11.5px; font-weight: 600;
+  background: var(--inst-soft); color: var(--inst); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fin-root tr.fin-inst-done td { opacity: .62; }
+.fin-root .fin-inst-legend { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin-top: 12px; }
+.fin-root .fin-inst-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.fin-root .fin-inst-calc {
+  display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 11px;
+  background: var(--inst-soft); color: var(--text); font-size: 13px;
+}
+.fin-root .fin-inst-calc svg { color: var(--inst); flex: none; }
+.fin-root .fin-inst-paylist { display: flex; flex-direction: column; gap: 6px; }
+.fin-root .fin-inst-payrow {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 6px 6px 6px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+}
+.fin-root .fin-inst-payrow .mini { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-inst-payrow .num { font-variant-numeric: tabular-nums; }
+.fin-root .fin-debt-year .seg.skip i { background: var(--amber-soft); border-color: var(--amber); }
+.fin-root .fin-emp-month-form .fin-inst-part {
+  display: flex; flex-direction: column; gap: 6px; padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--inst) 45%, var(--border)); border-radius: 9px;
+  background: color-mix(in srgb, var(--inst) 6%, transparent);
+}
+.fin-root .fin-emp-month-form .fin-inst-part .t { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.fin-root .fin-emp-month-form .fin-inst-part .t b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-emp-month-form .fin-inst-part .t span { font-weight: 700; color: var(--inst); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-root .fin-emp-month-form .fin-inst-part .acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.fin-root .fin-emp-month-form .fin-inst-part .acts .btn { padding: 4px 8px; font-size: 12px; }

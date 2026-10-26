@@ -104,6 +104,79 @@ function Detail({ entries, sign }: { entries: Entry[]; sign?: '−' }) {
   )
 }
 
+/** 1 удержание, 2 удержания, 5 удержаний. */
+function countWord(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100
+  if (m100 >= 11 && m100 <= 14) return many
+  return m10 === 1 ? one : m10 >= 2 && m10 <= 4 ? few : many
+}
+
+/** Моя рассрочка: сколько осталось, когда следующее удержание и история.
+ *  Сотрудник только смотрит — менять суммы может руководство. */
+function MyInstallment({ item }: { item: any }) {
+  const [all, setAll] = useState(false)
+  const total = Number(item.total) || 0
+  const paid = Number(item.paid) || 0
+  const pctPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+  const history: any[] = item.history || []
+  const shown = all ? history : history.slice(0, 4)
+  const ymLong = (ym: string) => `${monthOnly(ym)} ${ym.slice(0, 4)}`
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="section-title">Моя рассрочка</h3>
+        <span className="text-[13px] text-surface-500 dark:text-surface-400 truncate">{item.name}</span>
+      </div>
+      {item.done ? (
+        <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400 font-medium">Закрыта — вернули {money(total)}</p>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-[30px] leading-none font-bold tabular-nums text-surface-900 dark:text-surface-50">{money(item.remaining)}</span>
+            <span className="text-[13px] text-surface-500 dark:text-surface-400">осталось</span>
+          </div>
+          <div className="h-2 rounded-full bg-surface-200 dark:bg-surface-700 overflow-hidden mt-3">
+            <div className="h-full rounded-full bg-teal-500" style={{ width: `${pctPaid}%` }} />
+          </div>
+          <div className="flex justify-between text-xs text-surface-500 dark:text-surface-400 mt-1.5 tabular-nums">
+            <span>вернули {money(paid)} из {money(total)}</span><span>{pctPaid}%</span>
+          </div>
+          {item.next && (
+            <div className="mt-3 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2.5 text-[13px] leading-snug text-surface-700 dark:text-surface-200">
+              Следующее удержание — <b className="tabular-nums">{money(item.next.amount)}</b> из зарплаты за {monthOnly(item.next.ym)}, {payoutDay(item.next.ym)}.
+              {item.endYm && (
+                <span className="block text-surface-500 dark:text-surface-400 mt-0.5">
+                  Ещё {item.paymentsLeft} {countWord(item.paymentsLeft, 'удержание', 'удержания', 'удержаний')} · последнее — {ymLong(item.endYm)}
+                </span>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {history.length > 0 && (
+        <div className="mt-2 divide-y divide-surface-100 dark:divide-surface-700/60">
+          {shown.map(h => (
+            <div key={h.key} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+              <span className="min-w-0">
+                <span className="text-surface-700 dark:text-surface-200 first-letter:uppercase">
+                  {h.kind === 'before' ? 'Вернули раньше' : h.kind === 'salary' ? ymLong(h.ym) : dayMonth(h.date)}
+                </span>
+                <span className="text-surface-400 dark:text-surface-500"> · {h.kind === 'salary' ? 'из зарплаты' : h.kind === 'manual' ? (h.note || 'внесено отдельно') : 'до учёта в CRM'}</span>
+              </span>
+              <span className="shrink-0 font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{money(h.amount)}</span>
+            </div>
+          ))}
+          {history.length > 4 && (
+            <button type="button" onClick={() => setAll(v => !v)} className="w-full text-left py-2.5 text-[13px] font-medium text-primary-600 dark:text-primary-400">
+              {all ? 'Свернуть' : `Вся история · ${history.length}`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Переключатель месяца. Вынесен из денежной карточки: на компьютере её
  *  больше нет, а «Мои смены» без выбора месяца остались бы немыми. */
 function MonthNav({ ym, setYm }: { ym: string; setYm: (v: string) => void }) {
@@ -192,11 +265,14 @@ export default function ProfilePage() {
   const bonus = Number(row?.bonus) || 0
   const fine = Number(row?.fine) || 0
   const vacation = Number(row?.vacation) || 0
+  const installment = Number(row?.installment) || 0
+  const installmentNames = ((row?.installmentParts || []) as any[]).map(p => p.name).join(', ')
+  const myInstallments: any[] = sal?.installments || []
   const paid = Number(row?.paid) || 0
   const toPay = Number(row?.toPay) || 0
   // Полоса делится по фактическим частям, а не по окладу: если месяц
   // переплатили, остаток обнуляется и сумма частей расходится с окладом.
-  const barTotal = toPay + paid + fine + vacation
+  const barTotal = toPay + paid + fine + vacation + installment
   const pct = (v: number) => (barTotal > 0 ? Math.round((v / barTotal) * 1000) / 10 : 0)
   const accrued = salary + bonus
 
@@ -206,6 +282,7 @@ export default function ProfilePage() {
     { key: 'left', label: row?.frozen ? 'выплачено на руки' : 'остаток к выплате', value: row?.frozen ? paid : toPay, dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
     { key: 'paid', label: 'уже получено', value: row?.frozen ? 0 : paid, dot: 'bg-primary-500', text: 'text-primary-600 dark:text-primary-400' },
     { key: 'fine', label: 'удержано', value: fine + vacation, dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
+    { key: 'inst', label: 'рассрочка', value: installment, dot: 'bg-teal-500', text: 'text-teal-600 dark:text-teal-400' },
   ].filter(p => p.value > 0)
 
   // Чего в этом месяце не было — одной серой припиской вместо пустых строк.
@@ -328,6 +405,7 @@ export default function ProfilePage() {
                         {toPay > 0 && !row.frozen && <div className="bg-emerald-500 rounded-full" style={{ width: `${pct(toPay)}%` }} />}
                         {paid > 0 && <div className={`${row.frozen ? 'bg-emerald-500' : 'bg-primary-500'} rounded-full`} style={{ width: `${pct(paid)}%` }} />}
                         {(fine + vacation) > 0 && <div className="bg-red-500 rounded-full" style={{ width: `${pct(fine + vacation)}%` }} />}
+                        {installment > 0 && <div className="bg-teal-500 rounded-full" style={{ width: `${pct(installment)}%` }} />}
                       </div>
                       <div className="flex flex-wrap gap-x-7 gap-y-2.5 mt-3">
                         {parts.map(p => (
@@ -367,6 +445,10 @@ export default function ProfilePage() {
                     </>
                   )}
 
+                  {installment > 0 && (
+                    <Row label="Рассрочка" hint={installmentNames || null} value={`−${money(installment)}`} tone="minus" />
+                  )}
+
                   {paid > 0 && (
                     <>
                       <Row label="Уже получено" hint={row.advance > 0 ? `в том числе аванс ${money(row.advance)}` : null} value={`−${money(paid)}`} tone="paid" open />
@@ -386,6 +468,9 @@ export default function ProfilePage() {
               )}
             </div>
           )}
+
+          {/* Рассрочка: только просмотр — суммы меняет руководство (26.10.2026). */}
+          {myInstallments.map(i => <MyInstallment key={i.id} item={i} />)}
         </div>
 
         <div className="space-y-4 min-w-0">
@@ -434,6 +519,7 @@ export default function ProfilePage() {
                     h.bonus > 0 ? `бонус ${money(h.bonus)}` : null,
                     h.fine > 0 ? `штраф ${money(h.fine)}` : null,
                     h.vacation > 0 ? `отпускные ${money(h.vacation)}` : null,
+                    h.installment > 0 ? `рассрочка ${money(h.installment)}` : null,
                   ].filter(Boolean) as string[]
                   const note = Number(h.paid) === Number(h.salary)
                     ? ''

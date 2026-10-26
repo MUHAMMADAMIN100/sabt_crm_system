@@ -30,6 +30,8 @@ type PayrollPeriod = {
   advance: number;
   bonus: number;
   fine: number;
+  /** Удержание по рассрочке за месяц. */
+  installment?: number;
   accrued: number | null;
   paidByOperations: number;
   finalPayment?: number;
@@ -225,11 +227,12 @@ function MonthPaymentHistory({ periods, rows }: { periods: PayrollPeriod[]; rows
               </p>
             )}
 
-            {(Number(period.bonus) > 0 || Number(period.fine) > 0 || Number(period.unclassifiedPayment) > 0) && (
+            {(Number(period.bonus) > 0 || Number(period.fine) > 0 || Number(period.installment) > 0 || Number(period.unclassifiedPayment) > 0) && (
               <p className="fin-payment-adjustments">
                 Начислено {money(accrued)}
                 {Number(period.bonus) > 0 ? ` · бонус ${money(period.bonus)}` : ''}
                 {Number(period.fine) > 0 ? ` · штраф ${money(period.fine)}` : ''}
+                {Number(period.installment) > 0 ? ` · рассрочка ${money(Number(period.installment))}` : ''}
                 {Number(period.unclassifiedPayment) > 0 ? ` · старая выплата без разбивки ${money(period.unclassifiedPayment!)}` : ''}
               </p>
             )}

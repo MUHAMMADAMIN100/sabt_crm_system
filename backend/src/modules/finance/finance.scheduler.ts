@@ -7,6 +7,8 @@ import { FinanceProject } from './entities/finance-project.entity';
 import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceTransaction, FinanceTxType } from './finance-transaction.entity';
+import { FinanceInstallment } from './entities/finance-installment.entity';
+import { capParts, deductionParts, sumParts } from './installments.logic';
 import { User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
@@ -74,6 +76,8 @@ export class FinanceScheduler {
     @InjectRepository(User) private userRepo: Repository<User>,
     private notifications: NotificationsService,
     private telegram: TelegramService,
+    // Последним и необязательным: тесты собирают планировщик по позициям.
+    @InjectRepository(FinanceInstallment) private instRepo?: Repository<FinanceInstallment>,
   ) {}
 
   /** Пользователи с доступом к разделу «Финансы». */
@@ -263,6 +267,7 @@ export class FinanceScheduler {
     // Остаток к выплате: по каждому сотруднику, закрытые (снапшот) месяцы —
     // пропускаем; аванс/бонус уже входят в выплаты, обязательство = оклад +
     // бонус − штраф (помесячные мапы — «за месяц начисления»).
+    const insts = this.instRepo ? await this.instRepo.find({ order: { createdAt: 'ASC' } }) : [];
     let toPay = 0;
     for (const e of emps) {
       if ((e.salarySnapshots || {})[ym]) continue;
@@ -274,8 +279,13 @@ export class FinanceScheduler {
       const bonus = Number((e.bonuses || {})[ym]) || 0;
       const fine = Number((e.fines || {})[ym]) || 0;
       const vacation = Number((e.vacations || {})[ym]) || 0;
-      const due = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine - vacation);
-      toPay += Math.max(0, due - paidE);
+      const owed = Math.max(0, salaryForFinanceMonth(e, ym) + bonus - fine - vacation);
+      // Рассрочка удерживается из зарплаты — к выплате меньше на её сумму.
+      const mine = insts.filter(i => i.employeeId === e.id);
+      const installment = mine.length
+        ? sumParts(capParts(deductionParts(mine, e.salarySnapshots, ym, m => workedInFinanceMonth(e, m)), owed))
+        : 0;
+      toPay += Math.max(0, owed - installment - paidE);
     }
     toPay = Math.round(toPay * 100) / 100;
     if (toPay <= 0) return { due: 0, notified: 0 };

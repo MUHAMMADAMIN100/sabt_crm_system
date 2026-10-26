@@ -719,6 +719,14 @@ export const financeApi = {
   updateDebt: (id: string, data: any) => api.patch(`/finance/debts/${id}`, data).then(r => r.data),
   removeDebt: (id: string) => api.delete(`/finance/debts/${id}`).then(r => r.data),
   regenerateDebtSchedule: (id: string) => api.post(`/finance/debts/${id}/regenerate-schedule`, {}).then(r => r.data),
+  // Рассрочки сотрудников: таблица по месяцам, своя сумма месяца, платежи вручную.
+  installments: (start?: string) => api.get('/finance/installments', { params: start ? { start } : undefined }).then(r => r.data),
+  createInstallment: (data: any) => api.post('/finance/installments', data).then(r => r.data),
+  updateInstallment: (id: string, data: any) => api.patch(`/finance/installments/${id}`, data).then(r => r.data),
+  removeInstallment: (id: string) => api.delete(`/finance/installments/${id}`).then(r => r.data),
+  setInstallmentMonth: (id: string, data: { ym: string; amount?: number | null }) => api.post(`/finance/installments/${id}/month`, data).then(r => r.data),
+  addInstallmentPayment: (id: string, data: { amount: number; date?: string; note?: string; accountId?: string }) => api.post(`/finance/installments/${id}/payments`, data).then(r => r.data),
+  removeInstallmentPayment: (id: string, paymentId: string) => api.delete(`/finance/installments/${id}/payments/${paymentId}`).then(r => r.data),
 
   // Планируемые оплаты (SMM части 1/2, матрицы Development/Design, график долгов)
   plannedPayments: (params?: any) => api.get('/finance/planned-payments', { params }).then(r => r.data),

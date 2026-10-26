@@ -13,6 +13,7 @@ import { EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
 import MonthNav from './MonthNav';
 import EmployeeSalaryHistory from './EmployeeSalaryHistory';
+import { InstallmentsList, InstallmentSalaryField, INSTALLMENT_COLOR } from './InstallmentsSection';
 import './finance.css';
 
 const SALARY_ROW_CONTROL_SELECTOR = [
@@ -66,6 +67,18 @@ export default function FinanceExpenseGroupPage() {
           <MonthNav ym={ym} onChange={setYm} />
         </div>
         <OtherExpenseList ym={ym} />
+      </div>
+    );
+  }
+
+  if (kind === 'installments') {
+    return (
+      <div className="fin-root">
+        <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+        <div className="page-head">
+          <div><h1 className="flex" style={{ color: INSTALLMENT_COLOR }}><FinIcon name="installment" size={22} /> <span style={{ color: 'var(--text)' }}>Рассрочки сотрудников</span></h1><p>Покупки сотрудникам с возвратом частями — из зарплаты или отдельно</p></div>
+        </div>
+        <InstallmentsList />
       </div>
     );
   }
@@ -249,8 +262,8 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   }
 
   function exportCsv() {
-    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Штраф', 'Отпускные', 'Выплачено', 'К выплате'];
-    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.fine ?? 0, e.vacation ?? 0, e.paid, e.toPay]);
+    const header = ['Сотрудник', 'Группа', 'Должность', 'Оклад', 'Бонус', 'Аванс', 'Штраф', 'Рассрочка', 'Отпускные', 'Выплачено', 'К выплате'];
+    const body = rows.map((e) => [e.name, e.category, e.role, e.salary, e.bonus, e.advance, e.fine ?? 0, e.installment ?? 0, e.vacation ?? 0, e.paid, e.toPay]);
     downloadCsv(`salary-${ym}.csv`, [header, ...body]);
   }
 
@@ -261,6 +274,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
           <div className="label">Фонд ЗП / мес</div><div className="value">{money(cards.fund)}</div>
           {(cards.bonuses ?? 0) > 0 && <div className="sub">+ бонусы {money(cards.bonuses)}</div>}
           {(cards.fines ?? 0) > 0 && <div className="sub">− штрафы {money(cards.fines)}</div>}
+          {(cards.installments ?? 0) > 0 && <div className="sub">− рассрочки {money(cards.installments)}</div>}
         </div>
         <div className="card stat"><div className="label">Авансы (выдано)</div><div className="value">{money(cards.advances)}</div></div>
         <div className="card stat"><div className="label">Выплачено за месяц</div><div className="value pos">{money(cards.paid)}</div></div>
@@ -323,16 +337,17 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
             <div className="table-wrap fin-wide-table fin-mobile-cards fin-salary-table">
               <table style={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
-                  <col style={{ width: '20%' }} />{/* ФИО */}
-                  <col style={{ width: '13%' }} />{/* Должность */}
+                  <col style={{ width: '18%' }} />{/* ФИО */}
+                  <col style={{ width: '12%' }} />{/* Должность */}
                   <col style={{ width: '8%' }} />{/* ЗП */}
                   <col style={{ width: '8%' }} />{/* Аванс */}
-                  <col style={{ width: '8%' }} />{/* Бонус */}
-                  <col style={{ width: '8%' }} />{/* Штраф */}
-                  <col style={{ width: '9%' }} />{/* Отпускные */}
-                  <col style={{ width: '10%' }} />{/* К выплате */}
+                  <col style={{ width: '7%' }} />{/* Бонус */}
+                  <col style={{ width: '7%' }} />{/* Штраф */}
+                  <col style={{ width: '8%' }} />{/* Рассрочка */}
+                  <col style={{ width: '8%' }} />{/* Отпускные */}
+                  <col style={{ width: '9%' }} />{/* К выплате */}
                   <col style={{ width: '12%' }} />{/* Статус */}
-                  <col style={{ width: '4%' }} />{/* ред. */}
+                  <col style={{ width: '3%' }} />{/* ред. */}
                 </colgroup>
                 <thead>
                   <tr>
@@ -340,6 +355,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     <th className="num">ЗП</th><th className="num">Аванс</th>
                     <th className="num">Бонус</th>
                     <th className="num">Штраф</th>
+                    <th className="num">Рассрочка</th>
                     <th className="num">Отпускные</th>
                     <th className="num">К выплате</th>
                     <th>Статус</th><th />
@@ -382,6 +398,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         <td data-label="Аванс" className="num">{Number(e.advance) ? money(e.advance) : <span className="muted">—</span>}</td>
                         <td data-label="Бонус" className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
                         <td data-label="Штраф" className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
+                        <td data-label="Рассрочка" className="num">{Number(e.installment) ? <span style={{ color: INSTALLMENT_COLOR }} title={(e.installmentParts || []).filter((p: any) => p.amount > 0).map((p: any) => p.name).join(', ')}>{money(e.installment)}</span> : <span className="muted">—</span>}</td>
                         <td data-label="Отпускные" className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
                         <td data-label="К выплате" className="num">{isPaid ? <span className="muted">—</span> : <b style={{ color: 'var(--accent)' }}>{money(e.toPay)}</b>}</td>
                         <td data-label="" className="fin-pay-cell">
@@ -395,7 +412,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       </tr>
                       {historyOpen && (
                         <tr className="fin-employee-history-row">
-                          <td colSpan={10}>
+                          <td colSpan={11}>
                             <div className="fin-emp-month">
                               <div className="fin-emp-month-head">
                                 <span style={{ textTransform: 'capitalize' }}>{monthLabel(ym, true)}</span>
@@ -413,6 +430,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                     <ReadonlyField label="Бонус" total={Number(e.bonus) || 0} entries={e.bonusEntries || []} />
                                     <ReadonlyField label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} deduction />
                                     <ReadonlyField label="Отпускные / нерабочие" total={Number(e.vacation) || 0} entries={e.vacationEntries || []} deduction />
+                                    <InstallmentSalaryField row={e} ym={ym} frozen />
                                   </div>
                                 </>
                               ) : (
@@ -421,6 +439,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                   <DeductionField row={e} ym={ym} field="bonus" label="Бонус" total={Number(e.bonus) || 0} entries={e.bonusEntries || []} />
                                   <DeductionField row={e} ym={ym} field="fine" label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} />
                                   <VacationField row={e} ym={ym} total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
+                                  <InstallmentSalaryField row={e} ym={ym} frozen={false} />
                                 </div>
                               )}
                             </div>
@@ -435,7 +454,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                   <tr>
                     <td colSpan={2}><b>Итого · {cat}</b></td>
                     <td className="num"><b>{money(sum(e => Number(e.salary)))}</b></td>
-                    <td className="num" /><td className="num" /><td className="num" /><td className="num" />
+                    <td className="num" /><td className="num" /><td className="num" /><td className="num" /><td className="num" />
                     <td className="num"><b style={{ color: 'var(--accent)' }}>{money(sum(e => Number(e.toPay)))}</b></td>
                     <td colSpan={2} />
                   </tr>
@@ -455,6 +474,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
           <span className="mini muted nowrap">Авансы <b style={{ color: 'var(--text)' }}>{money(cards.advances)}</b></span>
           <span className="mini muted nowrap">Бонусы <b style={{ color: 'var(--text)' }}>{money(cards.bonuses ?? 0)}</b></span>
           <span className="mini muted nowrap">Штрафы <b style={{ color: 'var(--text)' }}>{money(cards.fines ?? 0)}</b></span>
+          {(cards.installments ?? 0) > 0 && <span className="mini muted nowrap">Рассрочки <b style={{ color: 'var(--text)' }}>{money(cards.installments)}</b></span>}
           <span className="mini muted nowrap">Выплачено <b className="pos">{money(cards.paid)}</b></span>
           <span className="mini muted nowrap">К выплате <b className="neg">{money(cards.toPay)}</b></span>
         </div>
@@ -566,15 +586,19 @@ function patchSalaryRow(qc: any, ym: string, rowId: string, mutate: (r: any) => 
       if (r.id !== rowId) return r;
       const nr = mutate({ ...r });
       if (!nr.frozen) {
-        const t = (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0) - (Number(nr.paid) || 0);
-        nr.toPay = r2(Math.max(0, t));
+        // Рассрочку держим как пришла с сервера: она зависит от остатка,
+        // а точную сумму после правки вернёт перезапрос.
+        const owed = Math.max(0, (Number(nr.salary) || 0) + (Number(nr.bonus) || 0) - (Number(nr.fine) || 0) - (Number(nr.vacation) || 0));
+        const inst = Math.min(Number(nr.installment) || 0, owed);
+        nr.toPay = r2(Math.max(0, owed - inst - (Number(nr.paid) || 0)));
       }
       return nr;
     });
     const sum = (f: (r: any) => number) => r2(rows.reduce((s: number, r: any) => s + (Number(f(r)) || 0), 0));
     const cards = { ...(old.cards || {}),
       fund: sum((r) => r.salary), advances: sum((r) => r.advance), bonuses: sum((r) => r.bonus),
-      fines: sum((r) => r.fine), vacations: sum((r) => r.vacation), paid: sum((r) => r.paid), toPay: sum((r) => r.toPay),
+      fines: sum((r) => r.fine), vacations: sum((r) => r.vacation), installments: sum((r) => r.installment),
+      paid: sum((r) => r.paid), toPay: sum((r) => r.toPay),
     };
     return { ...old, rows, cards };
   });

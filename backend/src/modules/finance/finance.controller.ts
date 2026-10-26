@@ -33,6 +33,9 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
+import {
+  CreateInstallmentDto, InstallmentMonthDto, InstallmentPaymentDto, UpdateInstallmentDto,
+} from './dto/installment.dto';
 import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 
 /** Финансовый модуль — только основатель и сооснователь (право finance.manage). */
@@ -271,6 +274,16 @@ export class FinanceController {
   @Patch('debts/:id') updateDebt(@Param('id') id: string, @Body() dto: UpdateDebtDto) { return this.service.updateDebt(id, dto); }
   @Delete('debts/:id') removeDebt(@Param('id') id: string) { return this.service.removeDebt(id); }
   @Post('debts/:id/regenerate-schedule') regenerateSchedule(@Param('id') id: string) { return this.service.regenerateDebtScheduleById(id); }
+
+  // ─── Рассрочки сотрудников ───────────────────────────────────────
+  @Get('installments') installments(@Query('start') start?: string) { return this.service.installmentsBoard(start); }
+  @Post('installments') createInstallment(@Body() dto: CreateInstallmentDto, @Request() req) { return this.service.createInstallment(dto, req.user?.id); }
+  @Patch('installments/:id') updateInstallment(@Param('id') id: string, @Body() dto: UpdateInstallmentDto, @Request() req) { return this.service.updateInstallment(id, dto, req.user?.id); }
+  @Delete('installments/:id') removeInstallment(@Param('id') id: string) { return this.service.removeInstallment(id); }
+  /** Своя сумма удержания на месяц (0 — пропустить, без суммы — как обычно). */
+  @Post('installments/:id/month') setInstallmentMonth(@Param('id') id: string, @Body() dto: InstallmentMonthDto) { return this.service.setInstallmentMonth(id, dto); }
+  @Post('installments/:id/payments') addInstallmentPayment(@Param('id') id: string, @Body() dto: InstallmentPaymentDto, @Request() req) { return this.service.addInstallmentPayment(id, dto, req.user?.id); }
+  @Delete('installments/:id/payments/:paymentId') removeInstallmentPayment(@Param('id') id: string, @Param('paymentId') paymentId: string) { return this.service.removeInstallmentPayment(id, paymentId); }
 
   // ─── Инвентарь (оборудование + амортизация) ──────────────────────
   @Get('assets') listAssets() { return this.service.listAssets(); }

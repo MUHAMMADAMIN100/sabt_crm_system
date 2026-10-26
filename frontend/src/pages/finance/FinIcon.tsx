@@ -57,13 +57,15 @@ const PATHS: Record<string, ReactNode> = {
   folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
   checkCircle: <><circle cx="12" cy="12" r="9" /><polyline points="8.5 12 11 14.5 16 9" /></>,
   wallet: <><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M3 9h18" /><circle cx="16.5" cy="13" r="1.2" /></>,
+  // рассрочка сотрудника: человек и монета
+  installment: <><circle cx="9" cy="8" r="3.5" /><path d="M3 20c0-3.3 2.7-6 6-6 1.5 0 2.9.6 4 1.5" /><circle cx="17.5" cy="16.5" r="3.5" /><path d="M17.5 15v3" /></>,
 };
 
 /** Иконки, доступные для выбора у категории (в настройках). */
 export const PICKER_ICONS = [
   'banknote', 'currency', 'piggy', 'creditCard', 'wallet', 'percent', 'receipt',
   'megaphone', 'smm', 'development', 'design', 'maintenance', 'target', 'building', 'car', 'printer',
-  'box', 'shield', 'split', 'transactions', 'income', 'expense', 'undo', 'dots',
+  'box', 'shield', 'split', 'transactions', 'income', 'expense', 'undo', 'dots', 'installment',
 ] as const;
 
 export default function FinIcon({ name, size = 18, className, style }: {

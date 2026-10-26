@@ -2,11 +2,12 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
-import { money, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, withYm, shiftYm, monthLabel } from './finlib';
+import { money, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, withYm, shiftYm, monthLabel, pluralRu } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError } from './FinKit';
+import { INSTALLMENT_COLOR } from './InstallmentsSection';
 import './finance.css';
 
 export default function FinanceExpensePage() {
@@ -70,8 +71,8 @@ export default function FinanceExpensePage() {
         <MonthNav ym={ym} onChange={setYm} />
       </div>
 
-      {isLoading || salaryQ.isLoading ? <FinLoading cards={4} /> : isError ? <FinLoadError onRetry={() => refetch()} /> : (
-      <div className="cards grid-4">
+      {isLoading || salaryQ.isLoading ? <FinLoading cards={5} /> : isError ? <FinLoadError onRetry={() => refetch()} /> : (
+      <div className="cards grid-5">
         {EXPENSE_GROUPS.map((g) => {
           const pp = paidProgress(g.key);
           const allPaid = !!pp && pp.total > 0 && pp.paid >= pp.total;
@@ -100,8 +101,39 @@ export default function FinanceExpensePage() {
           <div className="mini muted" style={{ marginTop: 6 }}>реклама, транспорт, налоги…</div>
           <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
         </BreakdownHover>
+        <InstallmentsCard data={data?.installments} onOpen={() => navigate('/finance/expense/installments')} />
       </div>
       )}
     </div>
+  );
+}
+
+/** Рассрочки сотрудников: удержания из зарплаты месяца M−1 (её выдают в
+ *  этом месяце, как в карточке «Зарплата») и сколько ещё должны. */
+function InstallmentsCard({ data, onOpen }: { data?: any; onOpen: () => void }) {
+  const month = Number(data?.month) || 0;
+  const pending = Number(data?.pending) || 0;
+  const total = Number(data?.total) || 0;
+  const paid = Number(data?.paid) || 0;
+  const remaining = Number(data?.remaining) || 0;
+  const count = Number(data?.count) || 0;
+  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  return (
+    <button type="button" className="card clickable fin-inst-card" onClick={onOpen}>
+      <div className="summary-head"><span className="t" style={{ color: INSTALLMENT_COLOR }}><CatIcon icon="installment" color={INSTALLMENT_COLOR} size={30} /> Рассрочки</span></div>
+      <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(month)}</div>
+      <div className="mini muted" style={{ marginTop: 6 }}>
+        {data?.salaryYm ? `${pending > 0 ? 'удержим' : 'удержано'} из ЗП за ${monthLabel(data.salaryYm)}` : 'удержания из зарплаты'}
+      </div>
+      {total > 0 ? (
+        <div style={{ marginTop: 8 }}>
+          <div className="progress"><i style={{ width: `${pct}%`, background: INSTALLMENT_COLOR }} /></div>
+          <span className="mini muted">{count > 0 ? `осталось ${money(remaining)} · ${pluralRu(count, 'рассрочка', 'рассрочки', 'рассрочек')}` : 'все закрыты'}</span>
+        </div>
+      ) : (
+        <div className="mini muted" style={{ marginTop: 8 }}>рассрочек нет</div>
+      )}
+      <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
+    </button>
   );
 }
