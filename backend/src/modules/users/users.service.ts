@@ -214,7 +214,10 @@ export class UsersService implements OnModuleInit {
     // Sync employee status
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
     if (employee) {
-      employee.status = user.isActive ? EmployeeStatus.ACTIVE : EmployeeStatus.INACTIVE;
+      // Включили учётку обратно — отпуск, если он был, не сбрасываем.
+      employee.status = !user.isActive
+        ? EmployeeStatus.INACTIVE
+        : employee.status === EmployeeStatus.VACATION ? EmployeeStatus.VACATION : EmployeeStatus.ACTIVE;
       await this.employeeRepo.save(employee);
     }
     return user;

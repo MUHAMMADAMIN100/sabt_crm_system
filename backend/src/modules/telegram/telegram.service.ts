@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as https from 'https';
 import { Employee } from '../employees/employee.entity';
+import { vacationNow } from '../employees/vacation';
 
 /** Кнопка inline-клавиатуры Telegram. */
 export interface TgButton { text: string; callback_data: string }
@@ -54,6 +55,8 @@ export class TelegramService {
       // нет карточки сотрудника, или не нажал /start (нет telegramChatId).
       if (!employee) { this.logger.debug(`no employee row for user ${userId} — Telegram skipped`); return; }
       if (!employee.telegramChatId) { this.logger.debug(`user ${userId} has no telegramChatId (не нажал /start) — Telegram skipped`); return; }
+      // В отпуске не беспокоим: уведомления копятся в CRM, в Telegram — тишина.
+      if (vacationNow(employee)) { this.logger.debug(`user ${userId} on vacation — Telegram skipped`); return; }
       await this.sendMessage(employee.telegramChatId, text, buttons);
     } catch (e) {
       this.logger.warn(`Failed to send Telegram to user ${userId}: ${e?.message || e}`);

@@ -421,7 +421,8 @@ export class AnalyticsService {
    *    in the window, payroll from salary_history per month in the window. */
   async getPayrollStats(fromStr?: string, toStr?: string) {
     const allEmployees = await this.employeeRepo.find({
-      where: { status: EmployeeStatus.ACTIVE },
+      // В отпуске — тоже в штате (27.10.2026).
+      where: { status: In([EmployeeStatus.ACTIVE, EmployeeStatus.VACATION]) as any },
       relations: ['user'],
     });
     // Exclude top management from payroll — they're owners, not regular staff
@@ -705,7 +706,8 @@ export class AnalyticsService {
 
     // 2. Payroll expense (per month, excluding top roles)
     const allEmployees = await this.employeeRepo.find({
-      where: { status: EmployeeStatus.ACTIVE },
+      // В отпуске — тоже в штате (27.10.2026).
+      where: { status: In([EmployeeStatus.ACTIVE, EmployeeStatus.VACATION]) as any },
       relations: ['user'],
     });
     const TOP_ROLES = ['founder', 'admin'];
@@ -970,7 +972,7 @@ export class AnalyticsService {
   async getEmployeeReport(period: 'week' | 'month' = 'week', employeeId?: string) {
     const { from, to, label } = this.periodRange(period);
 
-    const where: any = employeeId ? { id: employeeId } : { status: EmployeeStatus.ACTIVE };
+    const where: any = employeeId ? { id: employeeId } : { status: In([EmployeeStatus.ACTIVE, EmployeeStatus.VACATION]) };
     const employees = await this.employeeRepo.find({
       where,
       relations: ['user'],

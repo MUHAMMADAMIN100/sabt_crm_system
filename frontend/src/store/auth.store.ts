@@ -41,6 +41,8 @@ export interface User {
   deniedPermissions?: string[] | null
   position?: string | null
   department?: string | null
+  /** Идёт отпуск (27.10.2026): в CRM открыт только профиль. */
+  vacation?: { from: string | null; until: string | null } | null
   isBlocked?: boolean
   blockedAt?: string | null
   blockedByName?: string | null

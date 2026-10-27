@@ -2,7 +2,7 @@
 
 export type UserRole = 'admin' | 'employee';
 
-export type EmployeeStatus = 'active' | 'inactive';
+export type EmployeeStatus = 'active' | 'inactive' | 'vacation';
 
 export type ProjectStatus = 'planning' | 'in_progress' | 'completed' | 'archived' | 'on_hold';
 
@@ -39,6 +39,9 @@ export interface Employee {
   birthDate: string | null;
   hireDate: string;
   status: EmployeeStatus;
+  /** Отпуск «с — по» — при статусе «В отпуске». */
+  vacationFrom?: string | null;
+  vacationUntil?: string | null;
   avatar: string | null;
   bio: string | null;
   salary: number | null;

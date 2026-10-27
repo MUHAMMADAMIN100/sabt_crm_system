@@ -7,6 +7,8 @@ import { User } from '../users/user.entity';
 export enum EmployeeStatus {
   ACTIVE = 'active',
   INACTIVE = 'inactive',
+  /** В отпуске (27.10.2026): войти можно, но открыт только профиль. */
+  VACATION = 'vacation',
 }
 
 @Entity('employees')
@@ -46,6 +48,13 @@ export class Employee {
 
   @Column({ type: 'enum', enum: EmployeeStatus, default: EmployeeStatus.ACTIVE })
   status: EmployeeStatus;
+
+  /** Отпуск «с — по» включительно; заполнено только при статусе «В отпуске». */
+  @Column({ type: 'date', nullable: true })
+  vacationFrom: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  vacationUntil: string | null;
 
   @Column({ nullable: true })
   avatar: string;

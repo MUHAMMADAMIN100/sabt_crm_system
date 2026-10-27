@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -13,6 +13,11 @@ import { MailService } from '../mail/mail.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { hasGrant } from '../auth/permissions';
 import { directionScopeOf, isInDirectory } from '../../common/direction-scope';
+import { dushanbeToday, ymd } from './vacation';
+
+/** Пометка дней отпуска, поставленных статусом, — их и только их убираем
+ *  при смене дат; ручные отметки (больничный, отгул) не трогаем. */
+const VACATION_ABSENCE_NOTE = 'Отпуск (статус)';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
@@ -179,9 +184,11 @@ export class EmployeesService implements OnModuleInit {
       await this.userRepo.update(savedUser.id, { role: newRole, secondaryRole: newSecondary });
     }
 
+    const vacation = this.normalizeVacation({ status: EmployeeStatus.ACTIVE, vacationFrom: null, vacationUntil: null }, dto);
     const { role: _r, secondaryRole: _sr, ...empDto } = dto as any;
     const emp = this.repo.create({ ...empDto, userId: savedUser.id } as Partial<Employee>);
     const saved = await this.repo.save(emp as Employee);
+    if (vacation !== undefined) await this.syncVacationAbsences(savedUser.id, vacation);
 
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_CREATE,
@@ -195,6 +202,60 @@ export class EmployeesService implements OnModuleInit {
     return saved;
   }
 
+  /** Проверяет и дописывает даты отпуска в dto. undefined — статус и даты не
+   *  трогали; null — отпуска нет (даты сброшены); иначе — даты «с — по». */
+  private normalizeVacation(
+    emp: { status?: EmployeeStatus | null; vacationFrom?: unknown; vacationUntil?: unknown },
+    dto: { status?: EmployeeStatus; vacationFrom?: string | null; vacationUntil?: string | null },
+  ): { from: string; until: string } | null | undefined {
+    const touched = dto.status !== undefined || dto.vacationFrom !== undefined || dto.vacationUntil !== undefined;
+    if (!touched) return undefined;
+    const next = dto.status ?? emp.status;
+    if (next !== EmployeeStatus.VACATION) {
+      const had = emp.status === EmployeeStatus.VACATION || !!ymd(emp.vacationFrom) || !!ymd(emp.vacationUntil);
+      if (!had) { delete dto.vacationFrom; delete dto.vacationUntil; return undefined; }
+      dto.vacationFrom = null; dto.vacationUntil = null;
+      return null;
+    }
+    const from = ymd(dto.vacationFrom !== undefined ? dto.vacationFrom : emp.vacationFrom) || dushanbeToday();
+    const until = ymd(dto.vacationUntil !== undefined ? dto.vacationUntil : emp.vacationUntil);
+    if (!until) throw new BadRequestException('Укажите, по какое число отпуск');
+    if (until < from) throw new BadRequestException('Дата «по» раньше даты «с»');
+    const days = Math.round((Date.parse(until) - Date.parse(from)) / 86400000) + 1;
+    if (days > 366) throw new BadRequestException('Отпуск не может быть длиннее года');
+    dto.vacationFrom = from; dto.vacationUntil = until;
+    return { from, until };
+  }
+
+  /** Дни отпуска — в табель смен как «отпуск», чтобы не выглядели прогулом.
+   *  Ручные отметки дней (больничный, отгул) не перезаписываем. Отпуск сняли
+   *  или сократили — освобождаем свои будущие дни, прошедшие оставляем. */
+  private async syncVacationAbsences(userId: string | null | undefined, vacation: { from: string; until: string } | null) {
+    if (!userId) return;
+    try {
+      if (vacation) {
+        await this.repo.manager.query(
+          `DELETE FROM shift_absences WHERE "employeeId" = $1 AND note = $2 AND (date < $3 OR date > $4)`,
+          [userId, VACATION_ABSENCE_NOTE, vacation.from, vacation.until],
+        );
+        await this.repo.manager.query(
+          `INSERT INTO shift_absences (id, "employeeId", date, kind, note, "createdAt")
+           SELECT gen_random_uuid(), $1, d::date, 'vacation', $2, now()
+           FROM generate_series($3::date, $4::date, interval '1 day') d
+           ON CONFLICT ("employeeId", date) DO NOTHING`,
+          [userId, VACATION_ABSENCE_NOTE, vacation.from, vacation.until],
+        );
+      } else {
+        await this.repo.manager.query(
+          `DELETE FROM shift_absences WHERE "employeeId" = $1 AND note = $2 AND date >= $3`,
+          [userId, VACATION_ABSENCE_NOTE, dushanbeToday()],
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`vacation absences not synced for ${userId}: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
   async update(id: string, dto: UpdateEmployeeDto, actor?: { id: string; name?: string; role?: string }) {
     const emp = await this.findOne(id);
     const oldPosition = emp.position;
@@ -203,6 +264,12 @@ export class EmployeesService implements OnModuleInit {
     const oldRole = oldUser?.role;
     // Учётку основателя/со-основателя правит только основатель/со-основатель.
     this.assertCanTouch(oldRole, actor);
+    // Отпуск: «В отпуске» требует даты «по», другой статус даты сбрасывает.
+    const vacation = this.normalizeVacation(emp, dto);
+    const changesVacation = vacation !== undefined && (
+      (ymd(dto.vacationFrom) ?? null) !== (ymd(emp.vacationFrom) ?? null)
+      || (ymd(dto.vacationUntil) ?? null) !== (ymd(emp.vacationUntil) ?? null)
+    );
 
     // Смена email и включение/отключение учётной записи — операции уровня
     // администратора: подменив email, можно запросить сброс пароля на свой
@@ -210,8 +277,8 @@ export class EmployeesService implements OnModuleInit {
     // человека доступа. Тому, кто правит карточки по гранту, это недоступно.
     if (!this.isTopActor(actor)) {
       const changesEmail = !!dto.email && !!oldUser && dto.email !== oldUser.email;
-      const changesStatus = dto.status !== undefined
-        && !!oldUser && (dto.status === 'active') !== oldUser.isActive;
+      // Статус (в т.ч. отпуск) закрывает человеку CRM — это решает руководство.
+      const changesStatus = (dto.status !== undefined && dto.status !== emp.status) || changesVacation;
       if (changesEmail || changesStatus) {
         throw new ForbiddenException(
           'Менять email и статус учётной записи может только администратор или основатель',
@@ -247,7 +314,9 @@ export class EmployeesService implements OnModuleInit {
       if (dto.fullName) userUpdate.name = dto.fullName;
       if (dto.email) userUpdate.email = dto.email;
       if ((dto as any).avatar !== undefined) userUpdate.avatar = (dto as any).avatar;
-      if (dto.status !== undefined) userUpdate.isActive = dto.status === 'active';
+      // В отпуске войти можно (откроется только профиль) — закрывает вход
+      // только «Неактивный».
+      if (dto.status !== undefined) userUpdate.isActive = dto.status !== EmployeeStatus.INACTIVE;
 
       // Determine new role: explicit role param > position-derived
       if (newRoleParam && !this.isTopActor(actor)) {
@@ -317,8 +386,12 @@ export class EmployeesService implements OnModuleInit {
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);
         this.gateway.notifyUser(emp.userId, 'me:changed', userUpdate);
+      } else if (changesVacation || (dto.status !== undefined && dto.status !== emp.status)) {
+        // Отпуск начался/кончился — открытая вкладка сама перезапросит профиль.
+        this.gateway.notifyUser(emp.userId, 'me:changed', {});
       }
     }
+    if (vacation !== undefined) await this.syncVacationAbsences(emp.userId, vacation);
 
     await this.activityLog.log({
       userId: actor?.id,

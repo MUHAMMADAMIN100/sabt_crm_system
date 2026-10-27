@@ -15,6 +15,9 @@ export class CreateEmployeeDto {
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() birthDate?: string;
   @ApiProperty() @IsDateString() hireDate: string;
   @ApiProperty({ enum: EmployeeStatus, required: false }) @IsOptional() @IsEnum(EmployeeStatus) status?: EmployeeStatus;
+  /** Отпуск «с — по» — при статусе «В отпуске». */
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsDateString() vacationFrom?: string | null;
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsDateString() vacationUntil?: string | null;
   @ApiProperty({ required: false }) @IsOptional() @IsString() bio?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() salary?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() userId?: string;

@@ -63,7 +63,8 @@ export default function OrgChart({ employees }: { employees: any[] }) {
 
   // В оргструктуру попадают только АКТИВНЫЕ и не заблокированные сотрудники —
   // уволенные/неактивные/заблокированные не отражают текущую структуру.
-  const active = (employees || []).filter(e => e?.status === 'active' && !e?.user?.isBlocked)
+  // В отпуске — тоже в штате (27.10.2026).
+  const active = (employees || []).filter(e => e?.status !== 'inactive' && !e?.user?.isBlocked)
 
   // Раскладываем сотрудников по уровням/отделам, каждый — ровно один раз.
   const assigned = new Set<string>()

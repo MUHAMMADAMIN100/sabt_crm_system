@@ -9,6 +9,7 @@ const { authenticator } = require('otplib');
 import * as QRCode from 'qrcode';
 import { User, UserRole } from '../users/user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
+import { vacationNow } from '../employees/vacation';
 import { WorkSession } from './work-session.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { SecurityEventType } from './security-event.entity';
@@ -588,6 +589,8 @@ export class AuthService implements OnModuleInit {
       department: employee?.department || null,
       isSubAdmin: employee?.isSubAdmin || false,
       isStoryMaker: employee?.isStoryMaker || false,
+      // Идёт отпуск — фронт открывает только профиль (27.10.2026).
+      vacation: vacationNow(employee),
     };
   }
 

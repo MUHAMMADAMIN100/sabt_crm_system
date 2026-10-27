@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { dushanbeToday, VACATION_NOW_SQL } from '../employees/vacation';
 import { Repository } from 'typeorm';
 import {
   ContentPlanItem,
@@ -156,6 +157,19 @@ export class ContentPlanService {
     return users.length === 1 ? users[0].id : null;
   }
 
+  /** Кто сейчас в отпуске — им карточки сами не назначаем (27.10.2026). */
+  private async usersOnVacation(): Promise<Set<string>> {
+    try {
+      const rows: Array<{ userId: string }> = await this.repo.manager.query(
+        `SELECT e."userId" FROM employees e WHERE e."userId" IS NOT NULL AND ${VACATION_NOW_SQL('e', '$1')}`,
+        [dushanbeToday()],
+      );
+      return new Set(rows.map(r => r.userId));
+    } catch {
+      return new Set();
+    }
+  }
+
   /** Кто получит карточку подготовки. Порядок такой:
    *    1. назначенный на ПРОЕКТЕ (smmData.videographerIds и т.п.) — руководитель
    *       закрепил человека за проектом, съёмки идут сразу ему;
@@ -172,17 +186,21 @@ export class ContentPlanService {
     stage: 'shoot' | 'edit' | 'design', project: Project | null,
   ): Promise<string | null> {
     try {
+      // Кто в отпуске — пропускаем: карточка достанется следующему по правилам
+      // или останется ничьей, и руководитель назначит сам.
+      const away = await this.usersOnVacation();
       const assigned = (project?.smmData as any)?.[ContentPlanService.PREP_FIELD[stage]];
       if (Array.isArray(assigned)) {
-        const first = assigned.find((x: any) => typeof x === 'string' && x);
+        const first = assigned.find((x: any) => typeof x === 'string' && x && !away.has(x));
         if (first) return first;
       }
       if (stage === 'shoot') {
         const main = await this.repo.manager.getRepository(User)
           .findOne({ where: { isDefaultVideographer: true, isActive: true }, select: ['id'] });
-        if (main) return main.id;
+        if (main && !away.has(main.id)) return main.id;
       }
-      return await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage]);
+      const sole = await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage]);
+      return sole && !away.has(sole) ? sole : null;
     } catch (e) {
       this.logger.warn(`resolvePrepAssignee(${stage}) failed: ${(e as Error).message}`);
       return null;

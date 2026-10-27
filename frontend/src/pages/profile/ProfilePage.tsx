@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
 import { usersApi, meApi, workShiftsApi } from '@/services/api.service'
 import { Avatar } from '@/components/ui'
-import { Camera, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight, Sun } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
 import toast from 'react-hot-toast'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
@@ -100,6 +100,59 @@ function Detail({ entries, sign }: { entries: Entry[]; sign?: '−' }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/** «16 ноября» — день после ISO-даты (выход на работу после отпуска). */
+function dayAfter(iso: string): string {
+  return new Date(Date.parse(iso) + 86400000).toISOString().slice(0, 10)
+}
+
+/** Сколько дней отпуска осталось, включая сегодня. */
+function daysLeft(until: string): number {
+  const today = new Date().toLocaleDateString('en-CA')
+  return Math.max(0, Math.round((Date.parse(until) - Date.parse(today)) / 86400000) + 1)
+}
+
+/** Полоса «Отпуск до 15 ноября» — главное, что видно в отпуске. */
+function VacationBanner({ until }: { from: string | null; until: string }) {
+  const left = daysLeft(until)
+  return (
+    <div className="rounded-2xl border border-amber-400/50 bg-amber-400/10 px-4 py-4 sm:px-6 sm:py-5 flex items-center gap-4">
+      <span className="hidden sm:flex w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-600 dark:text-amber-300 items-center justify-center shrink-0">
+        <Sun size={24} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11.5px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 sm:hidden">В отпуске</p>
+        <p className="text-[26px] sm:text-[30px] leading-tight font-extrabold text-surface-900 dark:text-surface-50">
+          <span className="sm:hidden">До {dayMonth(until)}</span>
+          <span className="hidden sm:inline">Отпуск до {dayMonth(until)}</span>
+        </p>
+        <p className="text-sm text-surface-600 dark:text-amber-100/80 mt-1">
+          {left > 0 ? `Ещё ${left} ${countWord(left, 'день', 'дня', 'дней')}. ` : ''}{dayMonth(dayAfter(until))} CRM откроется как обычно — пока открыт только профиль.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Отпуск на компьютере: даты без денег (деньги — только на телефоне). */
+function VacationDates({ from, until }: { from: string | null; until: string }) {
+  const back = dayAfter(until)
+  const weekday = new Date(back + 'T00:00:00').toLocaleDateString('ru-RU', { weekday: 'long' })
+  return (
+    <div className="card p-4 sm:p-5 hidden lg:block">
+      <h3 className="section-title mb-1">Отпуск</h3>
+      <div className="flex items-center justify-between gap-3 py-3 border-b border-surface-100 dark:border-surface-700/60">
+        <span className="text-sm text-surface-600 dark:text-surface-300">Даты</span>
+        <span className="text-[15px] font-semibold text-surface-900 dark:text-surface-100">{from ? `${dayMonth(from)} — ` : 'по '}{dayMonth(until)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-3 py-3">
+        <span className="text-sm text-surface-600 dark:text-surface-300">Выход на работу</span>
+        <span className="text-[15px] font-semibold text-surface-900 dark:text-surface-100">{dayMonth(back)}, {weekday}</span>
+      </div>
+      <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">Зарплату видно в профиле с телефона.</p>
     </div>
   )
 }
@@ -305,9 +358,14 @@ export default function ProfilePage() {
   // сервер отвечает visible: false, и профиль остаётся прежним.
   const { data: statsData } = useProfileStats()
   const stats = statsData && statsData.visible ? statsData : null
+  // Отпуск (27.10.2026): сверху жирно «до какого числа», остальное — только
+  // деньги на телефоне; KPI, смены и «печати» в отпуске не нужны.
+  const onLeave = user?.vacation ?? null
 
   return (
     <div className="space-y-4">
+
+      {onLeave?.until && <VacationBanner from={onLeave.from} until={onLeave.until} />}
 
       {/* Шапка. Заголовок страницы, почта и бейджи убраны: человек знает,
           чей это профиль и чем он вошёл. Должность и дата прихода — одной
@@ -359,9 +417,9 @@ export default function ProfilePage() {
 
       {/* План продаж менеджера — деньги, поэтому только на телефоне, как
           зарплата (решение владельца 19.10.2026). Без плана не показывается. */}
-      <SalesPlanCard className="lg:hidden" />
+      {!onLeave && <SalesPlanCard className="lg:hidden" />}
 
-      {stats && <ProfileStatsBody stats={stats} />}
+      {stats && !onLeave && <ProfileStatsBody stats={stats} />}
 
       {/* Деньги — только на телефоне (решение владельца, 23.09.2026): за
           компьютером экран видят соседи по кабинету, зарплата на нём не место.
@@ -482,8 +540,11 @@ export default function ProfilePage() {
 
         <div className="space-y-4 min-w-0">
 
+          {/* Отпуск на компьютере — без денег: даты и когда выходить. */}
+          {onLeave?.until && <VacationDates from={onLeave.from} until={onLeave.until} />}
+
           {/* Смены: три строки вместо четырёх плиток, месяц общий со страницей */}
-          {!isFounder && (
+          {!isFounder && !onLeave && (
             <div className="card p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="section-title">Мои смены</h3>
@@ -555,7 +616,7 @@ export default function ProfilePage() {
       </div>
 
       {/* «Печать успеха» за выполненную задачу — с ролевой проверкой внутри */}
-      <TaskCelebrationSection />
+      {!onLeave && <TaskCelebrationSection />}
     </div>
   )
 }

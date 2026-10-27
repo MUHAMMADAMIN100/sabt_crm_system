@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { dushanbeToday, VACATION_NOW_SQL } from '../employees/vacation';
 import { Repository } from 'typeorm';
 // Firebase Admin v14: namespace-импорт больше не несёт apps/credential/messaging
 // как свойства — они экспортируются функциями из lib/index (getApps, cert, ...).
@@ -64,6 +65,19 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
+  /** Сотрудник сейчас в отпуске (статус «В отпуске», сегодня внутри дат). */
+  private async onVacation(userId: string): Promise<boolean> {
+    try {
+      const rows = await this.repo.manager.query(
+        `SELECT 1 FROM employees e WHERE e."userId" = $1 AND ${VACATION_NOW_SQL('e', '$2')} LIMIT 1`,
+        [userId, dushanbeToday()],
+      );
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   /** Отправить нативный пуш на все устройства пользователя. Невалидные
    *  токены (приложение удалено/кэш сброшен) вычищаются из базы. */
   private async sendPush(userId: string, title: string, body: string, link?: string) {
@@ -110,8 +124,10 @@ export class NotificationsService implements OnModuleInit {
       this.logger.warn(`websocket-доставка не удалась: ${e?.message || e}`);
     }
     // Нативный пуш на телефон (мобильное приложение) — fire-and-forget,
-    // основной поток уведомлений не блокируем и не роняем.
-    this.sendPush(dto.userId, dto.title, dto.message, dto.link)
+    // основной поток уведомлений не блокируем и не роняем. В отпуске пуш не
+    // шлём: уведомление остаётся в CRM и будет видно после отпуска.
+    this.onVacation(dto.userId)
+      .then(away => (away ? undefined : this.sendPush(dto.userId, dto.title, dto.message, dto.link)))
       .catch(e => this.logger.warn(`FCM: отправка пуша не удалась: ${e?.message || e}`));
     return saved;
   }

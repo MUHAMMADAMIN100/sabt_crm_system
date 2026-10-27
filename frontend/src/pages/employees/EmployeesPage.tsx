@@ -7,7 +7,7 @@ import { getRoleLabel } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
@@ -17,6 +17,8 @@ import clsx from 'clsx'
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [position, setPosition] = useState('')
+  // «В отпуске · N» — кто сейчас в отпуске (27.10.2026).
+  const [onlyVacation, setOnlyVacation] = useState(false)
   // Оргструктура, Задачи недели, Активность, План продаж и KPI — свои
   // подстраницы раздела «Сотрудники» (решение владельца 19.10.2026); здесь
   // только список людей карточками или таблицей.
@@ -86,8 +88,10 @@ export default function EmployeesPage() {
     if (isSmmLead && !smmPositions.includes(emp.position || '') && !['smm_specialist', 'smm_director'].includes(emp.user?.role || '')) return false
     const matchesSearch = !search || emp.fullName?.toLowerCase().includes(search.toLowerCase()) || emp.email?.toLowerCase().includes(search.toLowerCase()) || emp.position?.toLowerCase().includes(search.toLowerCase())
     const matchesPosition = !position || emp.position === position
-    return matchesSearch && matchesPosition
+    const matchesVacation = !onlyVacation || emp.status === 'vacation'
+    return matchesSearch && matchesPosition && matchesVacation
   }) || []
+  const vacationCount = (allEmployees || []).filter((emp: any) => emp.status === 'vacation').length
 
   const pagedEmployees = employees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -241,12 +245,21 @@ export default function EmployeesPage() {
           <option value="">Все должности</option>
           {allPositions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
+        {(vacationCount > 0 || onlyVacation) && (
+          <button type="button" onClick={() => { setOnlyVacation(v => !v); setPage(1) }} aria-pressed={onlyVacation}
+            className={clsx('h-10 px-3.5 rounded-xl border text-sm font-semibold transition-colors',
+              onlyVacation
+                ? 'border-amber-400/70 bg-amber-400/10 text-amber-600 dark:text-amber-300'
+                : 'border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:border-amber-400/60')}>
+            В отпуске · {vacationCount}
+          </button>
+        )}
       </div>
 
       {!employees?.length ? <EmptyState title={t('employees.noEmployees')} /> : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {pagedEmployees.map((emp: any) => (
-            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className="card group relative cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full p-4">
+            <div key={emp.id} onClick={() => navigate(`/employees/${emp.id}`)} className={clsx('card group relative cursor-pointer hover:shadow-md transition-shadow flex flex-col h-full p-4', emp.status === 'vacation' && 'ring-1 ring-amber-400/60')}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Avatar name={emp.fullName} src={emp.avatar} size={40} />
@@ -347,7 +360,7 @@ export default function EmployeesPage() {
                     <Ban size={11} /> Заблокирован
                   </span>
                 ) : (
-                  <span className={clsx('badge shrink-0', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                  <EmployeeStatusBadge emp={emp} className="shrink-0" />
                 )}
                 {/* Контакты — иконками: три строки текста превращались в
                     треть высоты карточки. Наведение показывает адрес,
@@ -442,7 +455,7 @@ export default function EmployeesPage() {
                         <Ban size={11} /> Заблокирован
                       </span>
                     ) : (
-                      <span className={clsx('badge', emp.status==='active' ? 'status-done' : 'status-cancelled')}>{emp.status==='active' ? t('common.active') : t('common.inactive')}</span>
+                      <EmployeeStatusBadge emp={emp} />
                     )}
                   </td>
                   {isAdmin && (
@@ -603,6 +616,32 @@ export default function EmployeesPage() {
 
 function AtSignIcon() { return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg> }
 
+/** «1 ноября» — для подсказки об отпуске. */
+function ruDayMonth(iso: string): string {
+  const d = new Date(iso + 'T00:00:00')
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+}
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Активный', dot: 'bg-emerald-500', on: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+  { value: 'vacation', label: 'В отпуске', dot: 'bg-amber-400', on: 'border-amber-400/70 bg-amber-400/10 text-amber-700 dark:text-amber-300' },
+  { value: 'inactive', label: 'Неактивный', dot: 'bg-surface-400', on: 'border-surface-400 bg-surface-100 dark:bg-surface-700 text-surface-700 dark:text-surface-200' },
+]
+
+/** Статус в карточке и таблице; «В отпуске» — с датой «до 15 ноября». */
+function EmployeeStatusBadge({ emp, className }: { emp: any; className?: string }) {
+  const { t } = useTranslation()
+  if (emp.status === 'vacation') {
+    return (
+      <span className={clsx('badge bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300 whitespace-nowrap', className)}
+        title={emp.vacationUntil ? `Отпуск${emp.vacationFrom ? ` с ${ruDayMonth(String(emp.vacationFrom).slice(0, 10))}` : ''} по ${ruDayMonth(String(emp.vacationUntil).slice(0, 10))}` : undefined}>
+        В отпуске{emp.vacationUntil ? ` · до ${String(emp.vacationUntil).slice(8, 10)}.${String(emp.vacationUntil).slice(5, 7)}` : ''}
+      </span>
+    )
+  }
+  return <span className={clsx('badge', emp.status === 'active' ? 'status-done' : 'status-cancelled', className)}>{emp.status === 'active' ? t('common.active') : t('common.inactive')}</span>
+}
+
 interface EmployeeFormProps {
   open: boolean
   onClose: () => void
@@ -625,11 +664,27 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
         email: initial.email||'', phone: initial.phone||'', telegram: initial.telegram ? (initial.telegram.startsWith('@') ? initial.telegram : '@' + initial.telegram) : '@', instagram: initial.instagram||'',
         birthDate: initial.birthDate ? new Date(initial.birthDate).toISOString().split('T')[0] : '',
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'',
+        vacationFrom: initial.vacationFrom ? String(initial.vacationFrom).slice(0, 10) : '',
+        vacationUntil: initial.vacationUntil ? String(initial.vacationUntil).slice(0, 10) : '',
         secondaryRole: initial.user?.secondaryRole || '' })
     } else {
-      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'', secondaryRole:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'', secondaryRole:'', vacationFrom:'', vacationUntil:'' })
     }
   }, [initial, open, reset])
+
+  // Отпуск: сколько дней и когда статус вернётся сам.
+  const status = useWatch({ control, name: 'status' }) as string | undefined
+  const vacationFrom = useWatch({ control, name: 'vacationFrom' }) as string | undefined
+  const vacationUntil = useWatch({ control, name: 'vacationUntil' }) as string | undefined
+  const vacationInfo = (() => {
+    if (status !== 'vacation' || !vacationUntil) return null
+    const from = vacationFrom || new Date().toLocaleDateString('en-CA')
+    if (vacationUntil < from) return null
+    const days = Math.round((Date.parse(vacationUntil) - Date.parse(from)) / 86400000) + 1
+    const back = new Date(Date.parse(vacationUntil) + 86400000).toISOString().slice(0, 10)
+    const word = days % 10 === 1 && days % 100 !== 11 ? 'день' : [2, 3, 4].includes(days % 10) && ![12, 13, 14].includes(days % 100) ? 'дня' : 'дней'
+    return { days, daysWord: word, fromLabel: ruDayMonth(from), untilLabel: ruDayMonth(vacationUntil), backLabel: ruDayMonth(back) }
+  })()
 
   const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value
@@ -665,6 +720,9 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       await onSubmit({ fullName: data.fullName, position: data.position, department: 'Общий',
         email: data.email, phone: data.phone, telegram: data.telegram !== '@' ? data.telegram : undefined,
         instagram: data.instagram||undefined, birthDate: data.birthDate||null, hireDate: data.hireDate, status: data.status, bio: data.bio||undefined,
+        // Отпуск «с — по»: без «с» — с сегодняшнего дня (сервер подставит).
+        vacationFrom: data.status === 'vacation' ? (data.vacationFrom || null) : null,
+        vacationUntil: data.status === 'vacation' ? (data.vacationUntil || null) : null,
         ...(role && { role }),
         // Вторая роль: отправляем только если актёр вправе её менять.
         // '' → бэк снимет вторую роль; undefined → поле не трогается.
@@ -772,13 +830,44 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
             {errors.hireDate && <p className="text-xs text-red-400 mt-1">{String(errors.hireDate.message)}</p>}
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className="label">{t('common.status')}</label>
-            <select {...register('status')} className="input">
-              <option value="active">{t('common.active')}</option>
-              <option value="inactive">{t('common.inactive')}</option>
-            </select>
+            <Controller name="status" control={control}
+              render={({ field }) => (
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t('common.status')}>
+                  {STATUS_OPTIONS.map(o => (
+                    <button key={o.value} type="button" role="radio" aria-checked={field.value === o.value}
+                      onClick={() => field.onChange(o.value)}
+                      className={clsx('h-11 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-colors',
+                        field.value === o.value ? o.on : 'border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/40')}>
+                      <span className={clsx('w-2 h-2 rounded-full', o.dot)} />{o.label}
+                    </button>
+                  ))}
+                </div>
+              )} />
           </div>
+          {status === 'vacation' && (
+            <>
+              <div>
+                <label className="label">В отпуске с</label>
+                <Controller name="vacationFrom" control={control}
+                  render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+              </div>
+              <div>
+                <label className="label">по (включительно) *</label>
+                <Controller name="vacationUntil" control={control} rules={{ validate: v => status !== 'vacation' || !!v || 'Укажите, по какое число' }}
+                  render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
+                {errors.vacationUntil && <p className="text-xs text-red-400 mt-1">{String(errors.vacationUntil.message)}</p>}
+              </div>
+              {vacationInfo && (
+                <div className="sm:col-span-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-3 text-sm leading-relaxed text-surface-700 dark:text-amber-100/90">
+                  <b className="text-amber-600 dark:text-amber-300">{vacationInfo.days} {vacationInfo.daysWord}.</b>{' '}
+                  С {vacationInfo.fromLabel} по {vacationInfo.untilLabel} у сотрудника в CRM будет открыт только профиль.{' '}
+                  <b className="text-amber-600 dark:text-amber-300">{vacationInfo.backLabel}</b> статус сам вернётся в «Активный». Дни отпуска сами отметятся в табеле.
+                </div>
+              )}
+            </>
+          )}
         </div>
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="btn-secondary">{t('common.cancel')}</button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, Suspense } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import { PageLoader } from '@/components/ui'
@@ -94,6 +94,10 @@ export default function Layout() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  // В отпуске открыт только профиль: любая другая страница ведёт туда.
+  const onVacation = useAuthStore(s => !!s.user?.vacation)
+  if (onVacation && !location.pathname.startsWith('/profile')) return <Navigate to="/profile" replace />
+
   return (
     // app-shell — якорь для эффектов на весь интерфейс (например, встряска
     // при «печати успеха» в index.css). Фон у всех один — цвет темы.
@@ -135,10 +139,10 @@ export default function Layout() {
       </div>
       {/* Глобальный watcher KPI продаж — поздравительный модал поверх
           любой страницы, активен только для sales_manager_smm/dev. */}
-      <KpiCelebrationWatcher />
+      {!onVacation && <KpiCelebrationWatcher />}
       {/* «Печать успеха» за выполненную задачу — глобально, чтобы срабатывала
           на любом экране; сама решает, показываться ли роли. */}
-      <StampCelebration />
+      {!onVacation && <StampCelebration />}
     </div>
   )
 }

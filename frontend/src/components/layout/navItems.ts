@@ -7,7 +7,7 @@ import {
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
   Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Sparkles, Code2, UserCheck,
-  FileText,
+  FileText, User as UserIcon,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -27,6 +27,8 @@ export function useNavItems(): NavItem[] {
 
   const role = user?.role
   const secondaryRole = user?.secondaryRole
+  // В отпуске открыт только профиль (27.10.2026).
+  if (user?.vacation) return [{ to: '/profile', icon: UserIcon, label: 'Профиль', permission: 'dashboard' }]
   const isTopExec = role === 'founder'
   const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
 

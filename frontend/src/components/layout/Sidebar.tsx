@@ -382,9 +382,18 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
         <div className="p-3 border-t border-white/5 shrink-0">
           {/* Рабочая смена — над карточкой сотрудника: начало и конец дня
               всегда под рукой, на любой странице. Основателю не видна. */}
-          <div className="mb-2.5">
-            <ShiftButton variant="sidebar" collapsed={!open} />
-          </div>
+          {user.vacation ? (
+            // В отпуске смен нет — вместо кнопки смены подсказка, когда всё откроется.
+            open && user.vacation.until && (
+              <p className="mb-2.5 px-1.5 text-[11.5px] leading-snug text-[rgb(var(--sidebar-fg-dim))]">
+                Остальные разделы откроются после отпуска — {new Date(Date.parse(user.vacation.until) + 86400000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}.
+              </p>
+            )
+          ) : (
+            <div className="mb-2.5">
+              <ShiftButton variant="sidebar" collapsed={!open} />
+            </div>
+          )}
           <div className={clsx('flex items-center gap-2', !open && 'lg:flex-col')}>
             <NavLink
               to="/profile"

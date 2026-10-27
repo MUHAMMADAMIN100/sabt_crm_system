@@ -232,7 +232,7 @@ export default function WeekTasks() {
 
   // ── Люди по отделам, как в оргструктуре ────────────────────────────
   const groups = useMemo(() => {
-    const active = (Array.isArray(employees) ? employees : []).filter((e: any) => e.status === 'active' && e.userId)
+    const active = (Array.isArray(employees) ? employees : []).filter((e: any) => e.status !== 'inactive' && e.userId)
     const dep = (role?: string | null) => {
       if (['smm_specialist', 'smm_director', 'designer', 'targetologist'].includes(role || '')) return 'SMM'
       if (['videographer', 'video_editor'].includes(role || '')) return 'Видеография'
@@ -807,7 +807,7 @@ function IssueTask({ who, days, employees, onClose, onDone }: {
   const [busy, setBusy] = useState(false)
 
   const people = useMemo(
-    () => (Array.isArray(employees) ? employees : []).filter((e: any) => e.status === 'active' && e.userId),
+    () => (Array.isArray(employees) ? employees : []).filter((e: any) => e.status !== 'inactive' && e.userId),
     [employees],
   )
   const toggle = (id: string) => setIds(v => (v.includes(id) ? v.filter(x => x !== id) : [...v, id]))
