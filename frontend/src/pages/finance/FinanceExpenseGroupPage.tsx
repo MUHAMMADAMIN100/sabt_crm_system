@@ -75,9 +75,6 @@ export default function FinanceExpenseGroupPage() {
     return (
       <div className="fin-root">
         <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
-        <div className="page-head">
-          <div><h1 className="flex" style={{ color: INSTALLMENT_COLOR }}><FinIcon name="installment" size={22} /> <span style={{ color: 'var(--text)' }}>Рассрочки сотрудников</span></h1><p>Покупки сотрудникам с возвратом частями — из зарплаты или отдельно</p></div>
-        </div>
         <InstallmentsList />
       </div>
     );

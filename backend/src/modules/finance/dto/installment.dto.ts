@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested,
+  IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -42,6 +42,13 @@ export class CreateInstallmentDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   note?: string;
 
+  @ApiPropertyOptional({ enum: ['salary', 'separate'] }) @IsOptional() @IsIn(['salary', 'separate'])
+  method?: 'salary' | 'separate';
+
+  @ApiPropertyOptional({ example: 5, description: 'День оплаты для «платит отдельно»' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  dueDay?: number;
+
   @ApiPropertyOptional({ type: InstallmentPurchaseDto })
   @IsOptional() @ValidateNested() @Type(() => InstallmentPurchaseDto)
   purchase?: InstallmentPurchaseDto;
@@ -66,9 +73,24 @@ export class UpdateInstallmentDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   note?: string;
 
+  @ApiPropertyOptional({ enum: ['salary', 'separate'] }) @IsOptional() @IsIn(['salary', 'separate'])
+  method?: 'salary' | 'separate';
+
+  @ApiPropertyOptional({ example: 5 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  dueDay?: number;
+
   @ApiPropertyOptional({ type: InstallmentPurchaseDto })
   @IsOptional() @ValidateNested() @Type(() => InstallmentPurchaseDto)
   purchase?: InstallmentPurchaseDto;
+}
+
+/** Перенести дату платежа месяца («платит отдельно»); без даты — вернуть число. */
+export class InstallmentDueDto {
+  @ApiProperty({ example: '2026-11' }) @IsString() @Matches(YM)
+  ym!: string;
+
+  @ApiPropertyOptional({ example: '2026-11-20', nullable: true }) @IsOptional() @IsString() @Matches(DATE)
+  date?: string | null;
 }
 
 /** Своя сумма удержания на месяц: 0 — пропустить, null — как обычно. */

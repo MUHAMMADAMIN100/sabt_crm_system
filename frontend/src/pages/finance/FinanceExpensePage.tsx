@@ -108,31 +108,28 @@ export default function FinanceExpensePage() {
   );
 }
 
-/** Рассрочки сотрудников: удержания из зарплаты месяца M−1 (её выдают в
- *  этом месяце, как в карточке «Зарплата») и сколько ещё должны. */
+/** Рассрочки сотрудников: сколько ещё должны, ближайший платёж и
+ *  просрочка — то же, что сверху на странице рассрочек. */
 function InstallmentsCard({ data, onOpen }: { data?: any; onOpen: () => void }) {
-  const month = Number(data?.month) || 0;
-  const pending = Number(data?.pending) || 0;
   const total = Number(data?.total) || 0;
   const paid = Number(data?.paid) || 0;
   const remaining = Number(data?.remaining) || 0;
   const count = Number(data?.count) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const next = data?.next;
+  const late = data?.overdue;
+  const day = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   return (
-    <button type="button" className="card clickable fin-inst-card" onClick={onOpen}>
+    <button type="button" className="card clickable fin-inst-card-btn" onClick={onOpen}>
       <div className="summary-head"><span className="t" style={{ color: INSTALLMENT_COLOR }}><CatIcon icon="installment" color={INSTALLMENT_COLOR} size={30} /> Рассрочки</span></div>
-      <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(month)}</div>
-      <div className="mini muted" style={{ marginTop: 6 }}>
-        {data?.salaryYm ? `${pending > 0 ? 'удержим' : 'удержано'} из ЗП за ${monthLabel(data.salaryYm)}` : 'удержания из зарплаты'}
-      </div>
-      {total > 0 ? (
-        <div style={{ marginTop: 8 }}>
-          <div className="progress"><i style={{ width: `${pct}%`, background: INSTALLMENT_COLOR }} /></div>
-          <span className="mini muted">{count > 0 ? `осталось ${money(remaining)} · ${pluralRu(count, 'рассрочка', 'рассрочки', 'рассрочек')}` : 'все закрыты'}</span>
-        </div>
-      ) : (
-        <div className="mini muted" style={{ marginTop: 8 }}>рассрочек нет</div>
-      )}
+      <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(remaining)}</div>
+      <div className="mini muted" style={{ marginTop: 6 }}>{count > 0 ? `должны · ${pluralRu(count, 'рассрочка', 'рассрочки', 'рассрочек')}` : total > 0 ? 'все закрыты' : 'рассрочек нет'}</div>
+      {total > 0 && <div className="progress" style={{ marginTop: 8 }}><i style={{ width: `${pct}%`, background: INSTALLMENT_COLOR }} /></div>}
+      {late ? (
+        <div className="mini" style={{ marginTop: 8, color: 'var(--red)' }}>просрочено {money(late.amount)}</div>
+      ) : next ? (
+        <div className="mini muted" style={{ marginTop: 8 }}>ближайший · {day(next.date)}, {money(next.amount)}</div>
+      ) : null}
       <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
     </button>
   );

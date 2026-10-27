@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
@@ -45,6 +46,19 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
   const income = item.type === 'income';
   const doneLabel = done ? (income ? 'Получено' : 'Оплачено') : 'Запланировано';
 
+  if (id.startsWith('inst-')) {
+    // Рассрочка: отмечают на её странице — там же перенос даты и пропуск.
+    const late = String(item.comment || '').includes('просрочено');
+    const label = item.installmentMethod === 'separate'
+      ? (done ? 'Получено' : late ? 'Просрочено' : 'Ожидается')
+      : (done ? 'Удержано из зарплаты' : 'Удержим из зарплаты');
+    return (
+      <div className="cal-item-rows">
+        <div className="cal-item-row"><span>Статус</span><b>{label}</b></div>
+        <Link to="/finance/expense/installments" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть рассрочки</Link>
+      </div>
+    );
+  }
   if (!isPlan && !isSub) {
     return <div className="cal-item-rows"><div className="cal-item-row"><span>Статус</span><b>{doneLabel}</b></div></div>;
   }
@@ -127,6 +141,12 @@ export default function FinancePlanningPage() {
   const projectsQ = useQuery({
     queryKey: ['finance', 'projects'],
     queryFn: () => financeApi.projects(),
+    enabled: showCalendar,
+  });
+  // Рассрочки сотрудников (27.10.2026): дата каждого платежа — в календаре.
+  const instQ = useQuery({
+    queryKey: ['finance', 'installments', 'calendar', calYm],
+    queryFn: () => financeApi.installmentsCalendar(calYm),
     enabled: showCalendar,
   });
   const debtsQ = useQuery({
@@ -369,6 +389,31 @@ export default function FinancePlanningPage() {
           ]) });
       }
     }
+    // 6. Рассрочки сотрудников. «Платит отдельно» — ожидаемый приход на свою
+    // дату (просроченный — на сегодня, как остаток зарплаты). «Из зарплаты» и
+    // уже полученное — пометка без влияния на остаток: деньги не приходят
+    // отдельно, просто меньше уходит на зарплату, а полученное со счётом уже
+    // есть в журнале операций.
+    for (const x of (instQ.data || [])) {
+      const separate = x.method === 'separate';
+      const late = x.status === 'overdue';
+      const paidOff = x.status === 'done';
+      const expected = separate && !paidOff;
+      const date = late && x.date < today && calYm === currentYm() ? today : x.date;
+      items.push({
+        id: `inst-${x.key}`, date, amount: expected ? (Number(x.outstanding) || Number(x.amount)) : Number(x.amount),
+        type: expected ? 'income' : 'note', status: 'completed',
+        done: paidOff,
+        comment: `Рассрочка · ${x.employeeName}${late ? ' · просрочено' : ''}`,
+        installmentId: x.installmentId, installmentYm: x.ym, installmentMethod: x.method,
+        details: detailList([
+          { label: 'Что куплено', value: x.name },
+          { label: 'Как возвращает', value: separate ? 'платит отдельно' : 'удерживаем из зарплаты' },
+          { label: 'Срок', value: formatDate(x.date) },
+          late ? { label: 'Статус', value: 'просрочено' } : paidOff ? { label: 'Статус', value: 'получено' } : null,
+          { label: 'Остаток по рассрочке', value: money(Number(x.remaining) || 0) },
+        ]) });
+    }
     // Мелочь в одну строку: «Транспорт −20» занимал строку наравне с арендой
     // на 6 000, и за ними не было видно обязательств. Сворачиваем, только если
     // мелких расходов за день набралось несколько.
@@ -393,7 +438,7 @@ export default function FinancePlanningPage() {
         details: detailList(minor.map(x => ({ label: x.comment, value: money(Number(x.amount) || 0) }))) });
     }
     return out;
-  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, txById, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
+  }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, instQ.data, txById, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
 
   // Остаток денег на конец каждого дня. Считаем только для ТЕКУЩЕГО месяца:
   // «Текущий баланс» — это деньги на сейчас, от него можно честно пойти вперёд
@@ -408,6 +453,8 @@ export default function FinancePlanningPage() {
     for (let d = 1; d <= lastDay; d++) days.push(`${calYm}-${String(d).padStart(2, '0')}`);
     const net = new Map<string, { done: number; plan: number }>();
     for (const it of calTxns) {
+      // Пометки (рассрочка из зарплаты, уже полученное) на остаток не влияют.
+      if (it.type !== 'income' && it.type !== 'expense') continue;
       const d = String(it.date || '').slice(0, 10);
       if (!net.has(d)) net.set(d, { done: 0, plan: 0 });
       const v = (it.type === 'income' ? 1 : -1) * (Number(it.amount) || 0);
@@ -432,6 +479,7 @@ export default function FinancePlanningPage() {
     if (id.startsWith('tx-')) return true;               // разовая операция
     if (id.startsWith('pp-')) return !item.done;         // план-платёж, пока ожидается
     if (id.startsWith('sub-')) return !item.done;        // подписка, пока не оплачена
+    if (id.startsWith('inst-')) return !item.done && item.installmentMethod === 'separate'; // рассрочка «отдельно»
     return false;                                        // зарплата, прогноз — не двигаем
   };
   async function movePlanItem(item: any, dateISO: string) {
@@ -440,6 +488,7 @@ export default function FinancePlanningPage() {
       if (id.startsWith('tx-')) await financeApi.updateTransaction(id.slice(3), { date: dateISO });
       else if (id.startsWith('pp-')) await financeApi.updatePlanned(id.slice(3), { dueDate: dateISO });
       else if (id.startsWith('sub-')) await financeApi.updateSubscription(id.slice(4), { dueDay: Number(dateISO.slice(8, 10)) || 1 });
+      else if (id.startsWith('inst-')) await financeApi.setInstallmentDue(item.installmentId, { ym: item.installmentYm, date: dateISO });
       else return;
       invalidateFinanceAll(qc);
     } catch (e) { toast.error(apiErr(e)); throw e; }

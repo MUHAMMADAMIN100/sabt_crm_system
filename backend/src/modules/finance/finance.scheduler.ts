@@ -8,7 +8,7 @@ import { FinanceSubscription } from './entities/finance-subscription.entity';
 import { FinanceEmployee } from './entities/finance-employee.entity';
 import { FinanceTransaction, FinanceTxType } from './finance-transaction.entity';
 import { FinanceInstallment } from './entities/finance-installment.entity';
-import { capParts, deductionParts, sumParts } from './installments.logic';
+import { capParts, deductionParts, schedule as installmentSchedule, sumParts } from './installments.logic';
 import { User } from '../users/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
@@ -25,6 +25,7 @@ import {
 const SMM_LINK = '/finance/income/smm';
 const SUBS_LINK = '/finance/expense/rent_subs';
 const SALARY_LINK = '/finance/expense/salary';
+const INSTALLMENTS_LINK = '/finance/expense/installments';
 /** Страница направления дохода — для ссылки из напоминания об оплате. */
 function directionLink(direction?: string | null): string {
   return ['smm', 'development', 'design', 'maintenance'].includes(direction || '') ? `/finance/income/${direction}` : SMM_LINK;
@@ -140,8 +141,9 @@ export class FinanceScheduler {
     const subs = await this.checkSubscriptionsDue(today);
     const salary = await this.checkSalaryDue(today);
     const paused = await this.checkPausedRevisions(today);
-    due = pp.due + subs.due + salary.due + paused.due;
-    notified = pp.notified + subs.notified + salary.notified + paused.notified;
+    const inst = await this.checkInstallmentsDue(today);
+    due = pp.due + subs.due + salary.due + paused.due + inst.due;
+    notified = pp.notified + subs.notified + salary.notified + paused.notified + inst.notified;
     return { due, notified };
   }
 
@@ -297,5 +299,44 @@ export class FinanceScheduler {
       link: SALARY_LINK,
     });
     return { due: 1, notified };
+  }
+
+  /** Рассрочки «платит отдельно» (27.10.2026): за день до даты — напоминание;
+   *  дата прошла, а денег нет — напоминаем каждый день, пока владелец не
+   *  отметит «получено». «Из зарплаты» не напоминаем: удерживается само. */
+  private async checkInstallmentsDue(today: string): Promise<{ due: number; notified: number }> {
+    if (!this.instRepo) return { due: 0, notified: 0 };
+    const insts = (await this.instRepo.find()).filter(i => i.method === 'separate');
+    if (!insts.length) return { due: 0, notified: 0 };
+    const emps = new Map((await this.empRepo.find()).map(e => [e.id, e]));
+    const tomorrow = addDays(today, 1);
+    let due = 0, notified = 0;
+    for (const i of insts) {
+      const e = emps.get(i.employeeId);
+      const who = e?.name || 'Сотрудник';
+      const plan = installmentSchedule(i, e?.salarySnapshots, today, e ? (ym: string) => workedInFinanceMonth(e, ym) : undefined);
+      const late = plan.filter(x => x.status === 'overdue');
+      if (late.length) {
+        due++;
+        const sum = late.reduce((s, x) => s + x.outstanding, 0);
+        notified += await this.notifyFinanceUsers({
+          title: 'Просрочен платёж по рассрочке',
+          message: `${who} — ${fmtMoney(sum)}, срок был ${formatRu(late[0].date)} (${i.name}). Отметьте в «Рассрочках», когда деньги придут.`,
+          alertKey: `fin-inst-late:${i.id}:${today}`,
+          link: INSTALLMENTS_LINK,
+        });
+      }
+      const soon = plan.find(x => x.date === tomorrow && x.outstanding > 0);
+      if (soon) {
+        due++;
+        notified += await this.notifyFinanceUsers({
+          title: 'Завтра платёж по рассрочке',
+          message: `${who} — ${fmtMoney(soon.outstanding)}, ${formatRu(soon.date)} (${i.name}).`,
+          alertKey: `fin-inst-soon:${i.id}:${soon.ym}:${soon.date}`,
+          link: INSTALLMENTS_LINK,
+        });
+      }
+    }
+    return { due, notified };
   }
 }

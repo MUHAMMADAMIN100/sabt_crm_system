@@ -24,7 +24,7 @@ import { LateFineDecision } from './entities/late-fine-decision.entity';
 import { FinanceInstallment, InstallmentPayment } from './entities/finance-installment.entity';
 import {
   capParts, deductionParts, isSkipped as installmentSkipped, sumParts,
-  summarize as summarizeInstallment, walk as walkInstallment, DeductionPart,
+  schedule as scheduleInstallment, summarize as summarizeInstallment, DeductionPart,
 } from './installments.logic';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
@@ -301,6 +301,12 @@ function ymGenitive(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
   return `${RU_MONTHS_GEN[m - 1] || ym} ${y}`;
 }
+const RU_MONTHS_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+/** «ноябрь 2026» — для текстов ошибок. */
+function ymNominative(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return `${RU_MONTHS_NOM[m - 1] || ym} ${y}`;
+}
 /** «1 200 с.» — для текстов ошибок. */
 function som(n: number): string {
   return `${r2(n).toLocaleString('ru-RU').replace(/\u00a0/g, ' ')} с.`;
@@ -527,6 +533,10 @@ export class FinanceService implements OnModuleInit {
       "purchaseTxId" uuid, note text,
       "createdAt" timestamptz NOT NULL DEFAULT now(), "updatedAt" timestamptz NOT NULL DEFAULT now())`);
     await run(`CREATE INDEX IF NOT EXISTS "IDX_fin_installments_employee" ON finance_installments ("employeeId")`);
+    // Способ возврата и дата платежа (27.10.2026).
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS method varchar(16) NOT NULL DEFAULT 'salary'`);
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "dueDay" int`);
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "dueDates" jsonb`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -2385,7 +2395,7 @@ export class FinanceService implements OnModuleInit {
       subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly, toPay: subsToPay },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
-      installments: this.installmentsCard(instMap, m.employees, shiftYm(ym, -1)),
+      installments: this.installmentsCard(instMap, m.employees),
     };
   }
 
@@ -4860,9 +4870,11 @@ export class FinanceService implements OnModuleInit {
   }
 
   // ─── Рассрочки сотрудников ──────────────────────────────────────
-  // Компания купила сотруднику вещь, он возвращает частями: удержанием из
-  // зарплаты (колонка «Рассрочка» в ведомости) или деньгами мимо неё.
-  // Менять суммы может только владелец; сотрудник видит своё в профиле.
+  // Компания купила сотруднику вещь, он возвращает частями. Способ у каждой
+  // рассрочки свой (27.10.2026): «из зарплаты» — удерживаем в день выплаты
+  // ЗП (колонка «Рассрочка» в ведомости), «платит отдельно» — к своему числу
+  // месяца, владелец отмечает «получено». Менять может только владелец;
+  // сотрудник видит своё в профиле.
 
   private async installmentsOf(employeeId: string): Promise<FinanceInstallment[]> {
     if (!this.instRepo) return [];
@@ -4884,8 +4896,16 @@ export class FinanceService implements OnModuleInit {
     return e ? (ym: string) => workedInFinanceMonth(e, ym) : undefined;
   }
 
-  /** Удержание за месяц по всем рассрочкам сотрудника — не больше, чем ему
-   *  причитается (owed = оклад + бонус − штраф − отпускные). */
+  private installmentSummary(i: FinanceInstallment, e?: FinanceEmployee | null) {
+    return summarizeInstallment(i, e?.salarySnapshots, this.installmentWorked(e), todayISO());
+  }
+
+  private installmentSchedule(i: FinanceInstallment, e?: FinanceEmployee | null) {
+    return scheduleInstallment(i, e?.salarySnapshots, todayISO(), this.installmentWorked(e));
+  }
+
+  /** Удержание за месяц по рассрочкам «из зарплаты» — не больше, чем
+   *  сотруднику причитается (owed = оклад + бонус − штраф − отпускные). */
   private installmentDeduction(
     insts: FinanceInstallment[] | undefined, e: FinanceEmployee, ym: string, owed: number,
   ): DeductionPart[] {
@@ -4900,23 +4920,23 @@ export class FinanceService implements OnModuleInit {
     return { installment, installments: Object.fromEntries(parts.map(p => [p.id, p.amount])) };
   }
 
-  /** Рассрочки в раскрытой строке ведомости. Выплаченный месяц — только то,
-   *  что реально удержали; открытый — ещё и пропущенные/незакрытые. */
+  /** Рассрочки «из зарплаты» в раскрытой строке ведомости. Выплаченный
+   *  месяц — только то, что реально удержали; открытый — ещё и пропуски. */
   private installmentRowView(
     insts: FinanceInstallment[] | undefined, e: FinanceEmployee, ym: string,
     parts: DeductionPart[], frozen: boolean,
   ) {
     const amountOf = new Map(parts.map(p => [p.id, p.amount]));
-    const worked = this.installmentWorked(e);
     const known = new Set((insts || []).map(i => i.id));
     const views = (insts || [])
+      .filter(i => i.method !== 'separate' || amountOf.has(i.id))
       .filter(i => i.startYm <= ym || amountOf.has(i.id))
       .map(i => {
-        const sm = summarizeInstallment(i, e.salarySnapshots, worked);
+        const sm = this.installmentSummary(i, e);
         return {
           id: i.id, name: i.name, amount: amountOf.get(i.id) || 0,
           monthly: r2(i.monthlyAmount), total: r2(i.totalAmount),
-          paid: sm.paid, remaining: sm.remaining, endYm: sm.endYm, done: sm.done,
+          paid: sm.paid, remaining: sm.remaining, endDate: sm.endDate, done: sm.done,
           skipped: installmentSkipped(i, ym),
           custom: i.overrides?.[ym] != null && Number(i.overrides[ym]) > 0,
         };
@@ -4926,7 +4946,7 @@ export class FinanceService implements OnModuleInit {
       if (known.has(p.id)) continue;
       views.push({
         id: p.id, name: p.name, amount: p.amount, monthly: 0, total: 0, paid: 0, remaining: 0,
-        endYm: null, done: true, skipped: false, custom: false,
+        endDate: null, done: true, skipped: false, custom: false,
       });
     }
     return frozen ? views.filter(v => v.amount > 0) : views.filter(v => v.amount > 0 || !v.done);
@@ -4937,6 +4957,8 @@ export class FinanceService implements OnModuleInit {
       id: i.id, employeeId: i.employeeId, name: i.name,
       totalAmount: r2(i.totalAmount), monthlyAmount: r2(i.monthlyAmount), startYm: i.startYm,
       paidBefore: r2(i.paidBefore), overrides: i.overrides || {},
+      method: i.method === 'separate' ? 'separate' : 'salary',
+      dueDay: i.dueDay ?? null, dueDates: i.dueDates || {},
       payments: (i.payments || [])
         .map(p => ({ ...p, amount: r2(p.amount) }))
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
@@ -4962,51 +4984,46 @@ export class FinanceService implements OnModuleInit {
   }
 
   private installmentPersonalView(i: FinanceInstallment, e: FinanceEmployee) {
-    const sm = summarizeInstallment(i, e.salarySnapshots, this.installmentWorked(e));
+    const sm = this.installmentSummary(i, e);
     const history = this.installmentHistory(i, e.salarySnapshots);
     const last = history.find(h => h.kind !== 'before');
     return {
       id: i.id, name: i.name, total: r2(i.totalAmount), monthly: r2(i.monthlyAmount),
+      method: i.method === 'separate' ? 'separate' : 'salary', dueDay: i.dueDay ?? null,
       ...sm, history,
       lastAt: last ? (last.date || last.ym) : null,
     };
   }
 
-  /** Карточка «Рассрочки» на «Расходе». Удержания берём из зарплаты месяца
-   *  salaryYm — её выдают в следующем месяце, как и карточка «Зарплата». */
-  private installmentsCard(instMap: Map<string, FinanceInstallment[]>, emps: FinanceEmployee[], salaryYm: string) {
-    let remaining = 0, total = 0, paid = 0, deducted = 0, pending = 0, count = 0;
+  /** Карточка «Рассрочки» на «Расходе»: сколько должны, ближайший платёж и
+   *  просрочка — то же, что сверху на странице рассрочек. */
+  private installmentsCard(instMap: Map<string, FinanceInstallment[]>, emps: FinanceEmployee[]) {
+    let remaining = 0, total = 0, paid = 0, count = 0, lateAmount = 0, lateCount = 0;
+    let next: { date: string; amount: number; employeeName: string } | null = null;
     const people = new Set<string>();
     for (const e of emps) {
-      const insts = instMap.get(e.id);
-      if (!insts?.length) continue;
-      const worked = this.installmentWorked(e);
-      for (const i of insts) {
-        const sm = summarizeInstallment(i, e.salarySnapshots, worked);
+      for (const i of instMap.get(e.id) || []) {
+        const sm = this.installmentSummary(i, e);
         total += Number(i.totalAmount) || 0;
         paid += sm.paid;
         remaining += sm.remaining;
-        if (!sm.done) { count++; people.add(e.id); }
-      }
-      const snap = snapOf(e, salaryYm);
-      if (snap) deducted += snapInstallment(snap);
-      else if (workedInFinanceMonth(e, salaryYm)) {
-        const owed = Math.max(0, salaryForMonth(e, salaryYm) + bonusOf(e, salaryYm) - fineOf(e, salaryYm) - vacationOf(e, salaryYm));
-        pending += sumParts(this.installmentDeduction(insts, e, salaryYm, owed));
+        if (sm.done) continue;
+        count++;
+        people.add(e.id);
+        if (sm.overdue) { lateAmount += sm.overdue.amount; lateCount += sm.overdue.count; }
+        if (sm.next && (!next || sm.next.date < next.date)) next = { date: sm.next.date, amount: sm.next.amount, employeeName: e.name };
       }
     }
     return {
-      salaryYm, month: r2(deducted + pending), deducted: r2(deducted), pending: r2(pending),
-      remaining: r2(remaining), total: r2(total), paid: r2(paid), count, people: people.size,
+      remaining: r2(remaining), total: r2(total), paid: r2(paid), count, people: people.size, next,
+      overdue: lateCount ? { amount: r2(lateAmount), count: lateCount } : null,
     };
   }
 
-  /** Таблица рассрочек: шесть месяцев с start, по каждой — что удержано,
-   *  что впереди, пропуски и платежи вручную. */
-  async installmentsBoard(startRaw?: string) {
+  /** Страница «Рассрочки сотрудников»: карточка на каждую рассрочку — график
+   *  с датами, ближайший платёж, просрочка, история возврата. */
+  async installmentsBoard() {
     const period = await this.salaryPeriodState();
-    const start = startRaw && YM_RE.test(startRaw) ? startRaw : shiftYm(period.latestOpenYm, -2);
-    const months = Array.from({ length: 6 }, (_, k) => shiftYm(start, k));
     const [list, emps] = await Promise.all([
       this.instRepo ? this.instRepo.find({ order: { createdAt: 'ASC' } }) : Promise.resolve([] as FinanceInstallment[]),
       this.empRepo.find(),
@@ -5014,46 +5031,23 @@ export class FinanceService implements OnModuleInit {
     const empById = new Map(emps.map(e => [e.id, e]));
     const rows = list.map(i => {
       const e = empById.get(i.employeeId) || null;
-      const snaps = e?.salarySnapshots;
-      const worked = this.installmentWorked(e);
-      const sm = summarizeInstallment(i, snaps, worked);
-      const { steps } = walkInstallment(i, snaps, months[months.length - 1], worked);
-      const byYm = new Map(steps.map(x => [x.ym, x]));
-      // Сколько встанет в открытую ведомость — её месяц может быть вне окна.
-      const openAmount = walkInstallment(i, snaps, period.latestOpenYm, worked).steps
-        .find(x => x.ym === period.latestOpenYm && !x.frozen)?.amount ?? 0;
-      const cells = months.map(ym => {
-        const st = byYm.get(ym);
-        const status = !st ? 'none'
-          : st.frozen ? (st.amount > 0 ? 'deducted' : 'none')
-          : st.amount > 0 ? 'planned'
-          : installmentSkipped(i, ym) && !sm.done ? 'skip' : 'none';
-        return {
-          ym, amount: st?.amount ?? 0, status,
-          frozen: !!st?.frozen,
-          custom: i.overrides?.[ym] != null && Number(i.overrides[ym]) > 0,
-          payments: (i.payments || [])
-            .filter(p => (p.date || '').slice(0, 7) === ym)
-            .map(p => ({ ...p, amount: r2(p.amount) })),
-        };
-      });
       return {
         installment: this.installmentDto(i),
         employee: e ? { id: e.id, name: e.name, role: e.role, status: e.status } : null,
-        ...sm,
-        openAmount,
-        history: this.installmentHistory(i, snaps),
-        cells,
+        ...this.installmentSummary(i, e),
+        schedule: this.installmentSchedule(i, e),
+        history: this.installmentHistory(i, e?.salarySnapshots),
       };
     });
-    // Закрытые — вниз: сверху то, что ещё возвращают.
-    rows.sort((a, b) => Number(a.done) - Number(b.done));
+    // Сверху — с просрочкой, потом по ближайшей дате, закрытые — вниз.
+    const rank = (r: typeof rows[number]) => (r.done ? 2 : r.overdue ? 0 : 1);
+    rows.sort((a, b) => rank(a) - rank(b) || String(a.next?.date || '9').localeCompare(String(b.next?.date || '9')));
     const active = rows.filter(r => !r.done);
-    const perMonth = months.map(ym => ({
-      ym, total: r2(rows.reduce((s, r) => s + (r.cells.find(c => c.ym === ym)?.amount || 0), 0)),
-    }));
+    const nextRow = active.filter(r => r.next).sort((a, b) => a.next!.date.localeCompare(b.next!.date))[0];
+    const late = active.filter(r => r.overdue);
     return {
-      months, rows, perMonth,
+      rows,
+      today: todayISO(),
       latestOpenYm: period.latestOpenYm,
       stats: {
         remaining: r2(rows.reduce((s, r) => s + r.remaining, 0)),
@@ -5061,10 +5055,43 @@ export class FinanceService implements OnModuleInit {
         paid: r2(rows.reduce((s, r) => s + r.paid, 0)),
         count: active.length,
         people: new Set(active.map(r => r.installment.employeeId)).size,
-        nextEndYm: active.map(r => r.endYm).filter((x): x is string => !!x).sort()[0] ?? null,
-        openMonth: { ym: period.latestOpenYm, amount: r2(rows.reduce((s, r) => s + r.openAmount, 0)) },
+        next: nextRow ? { ...nextRow.next!, employeeName: nextRow.employee?.name ?? null, method: nextRow.installment.method } : null,
+        overdue: late.length
+          ? { amount: r2(late.reduce((s, r) => s + (r.overdue?.amount || 0), 0)), count: late.reduce((s, r) => s + (r.overdue?.count || 0), 0), since: late.map(r => r.overdue!.since).sort()[0] }
+          : null,
       },
     };
+  }
+
+  /** Платежи по рассрочкам для календаря «Планирование» за месяц ym.
+   *  Просроченные из прошлых месяцев отдаём только в текущем месяце — их
+   *  ставят на сегодня, как остаток зарплаты. */
+  async installmentsCalendar(ym: string) {
+    if (!YM_RE.test(ym || '')) throw new BadRequestException('Некорректный месяц');
+    const [list, emps] = await Promise.all([
+      this.instRepo ? this.instRepo.find() : Promise.resolve([] as FinanceInstallment[]),
+      this.empRepo.find(),
+    ]);
+    const empById = new Map(emps.map(e => [e.id, e]));
+    const isCurrent = ym === currentYm();
+    const items: any[] = [];
+    for (const i of list) {
+      const e = empById.get(i.employeeId) || null;
+      const sm = this.installmentSummary(i, e);
+      for (const x of this.installmentSchedule(i, e)) {
+        if (!(x.amount > 0)) continue;
+        const inMonth = x.date.slice(0, 7) === ym;
+        const carried = isCurrent && x.status === 'overdue' && x.date.slice(0, 7) < ym;
+        if (!inMonth && !carried) continue;
+        items.push({
+          key: `${i.id}:${x.ym}`, installmentId: i.id, ym: x.ym, date: x.date,
+          amount: x.amount, outstanding: x.outstanding, status: x.status,
+          method: i.method === 'separate' ? 'separate' : 'salary',
+          employeeName: e?.name ?? 'Сотрудник', name: i.name, remaining: sm.remaining,
+        });
+      }
+    }
+    return items.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   private async findInstallment(id: string): Promise<FinanceInstallment> {
@@ -5091,9 +5118,31 @@ export class FinanceService implements OnModuleInit {
     return tx.id;
   }
 
+  /** Первый месяц: из зарплаты — не раньше открытой ведомости; отдельно —
+   *  не раньше текущего месяца (прошлое вписывают в «Уже вернули»). */
+  private async assertInstallmentStart(method: string, startYm: string) {
+    if (method === 'separate') {
+      if (startYm < currentYm()) {
+        throw new BadRequestException(`Первый платёж — не раньше ${ymGenitive(currentYm())}. Что вернули раньше — впишите в «Уже вернули»`);
+      }
+      return;
+    }
+    const { latestOpenYm } = await this.salaryPeriodState();
+    if (startYm < latestOpenYm) {
+      throw new BadRequestException(`Удерживать можно с зарплаты за ${ymNominative(latestOpenYm)}: прошлые месяцы уже выплачены. Что вернули раньше — впишите в «Уже вернули»`);
+    }
+  }
+
+  private normInstallmentDueDay(v: any): number {
+    const n = Math.trunc(Number(v));
+    if (!(n >= 1 && n <= 31)) throw new BadRequestException('День оплаты — число от 1 до 31');
+    return n;
+  }
+
   async createInstallment(dto: {
     employeeId: string; name: string; totalAmount: number; monthlyAmount: number;
     startYm?: string; paidBefore?: number; note?: string;
+    method?: 'salary' | 'separate'; dueDay?: number;
     purchase?: { accountId: string; date?: string; amount?: number };
   }, userId?: string) {
     if (!this.instRepo) throw new BadRequestException('Рассрочки пока недоступны');
@@ -5103,18 +5152,20 @@ export class FinanceService implements OnModuleInit {
     const total = r2(dto.totalAmount);
     const monthly = r2(dto.monthlyAmount);
     const before = r2(dto.paidBefore || 0);
+    const method = dto.method === 'separate' ? 'separate' : 'salary';
     if (!name) throw new BadRequestException('Укажите, что куплено');
     if (!(total > 0)) throw new BadRequestException('Стоимость должна быть больше нуля');
     if (!(monthly > 0)) throw new BadRequestException('Сумма в месяц должна быть больше нуля');
     if (before < 0 || before > total) throw new BadRequestException('«Уже вернули» не может быть больше стоимости');
+    const dueDay = method === 'separate' ? this.normInstallmentDueDay(dto.dueDay) : null;
     const { latestOpenYm } = await this.salaryPeriodState();
-    const startYm = dto.startYm && YM_RE.test(dto.startYm) ? dto.startYm : latestOpenYm;
-    if (startYm < latestOpenYm) {
-      throw new BadRequestException(`Удерживать можно с ${ymGenitive(latestOpenYm)}: прошлые месяцы уже выплачены. Что вернули раньше — впишите в «Уже вернули»`);
-    }
+    const fallbackStart = method === 'separate' ? currentYm() : latestOpenYm;
+    const startYm = dto.startYm && YM_RE.test(dto.startYm) ? dto.startYm : fallbackStart;
+    await this.assertInstallmentStart(method, startYm);
     let inst = await this.instRepo.save(this.instRepo.create({
       employeeId: emp.id, name, totalAmount: total, monthlyAmount: monthly, startYm,
       paidBefore: before, overrides: null, payments: null, purchaseTxId: null,
+      method, dueDay, dueDates: null,
       note: (dto.note || '').trim() || null,
     }));
     if (dto.purchase?.accountId) {
@@ -5127,6 +5178,7 @@ export class FinanceService implements OnModuleInit {
   async updateInstallment(id: string, dto: {
     name?: string; totalAmount?: number; monthlyAmount?: number; startYm?: string;
     paidBefore?: number; note?: string | null;
+    method?: 'salary' | 'separate'; dueDay?: number;
     purchase?: { accountId: string; date?: string; amount?: number };
   }, userId?: string) {
     const inst = await this.findInstallment(id);
@@ -5148,18 +5200,23 @@ export class FinanceService implements OnModuleInit {
       if (r2(dto.paidBefore) < 0) throw new BadRequestException('«Уже вернули» не может быть меньше нуля');
       inst.paidBefore = r2(dto.paidBefore);
     }
-    if (dto.startYm !== undefined && dto.startYm !== inst.startYm) {
-      if (!YM_RE.test(dto.startYm)) throw new BadRequestException('Некорректный месяц');
-      const deducted = this.installmentHistory(inst, emp?.salarySnapshots).some(h => h.kind === 'salary');
-      if (deducted) throw new BadRequestException('Из зарплаты уже удерживали — первый месяц не поменять');
-      const { latestOpenYm } = await this.salaryPeriodState();
-      if (dto.startYm < latestOpenYm) {
-        throw new BadRequestException(`Удерживать можно с ${ymGenitive(latestOpenYm)}: прошлые месяцы уже выплачены`);
+    const methodChanged = dto.method !== undefined && (dto.method === 'separate' ? 'separate' : 'salary') !== (inst.method === 'separate' ? 'separate' : 'salary');
+    if (dto.method !== undefined) inst.method = dto.method === 'separate' ? 'separate' : 'salary';
+    if (inst.method === 'separate') {
+      if (dto.dueDay !== undefined || !inst.dueDay) inst.dueDay = this.normInstallmentDueDay(dto.dueDay ?? inst.dueDay);
+    }
+    if ((dto.startYm !== undefined && dto.startYm !== inst.startYm) || methodChanged) {
+      const next = dto.startYm ?? inst.startYm;
+      if (!YM_RE.test(next)) throw new BadRequestException('Некорректный месяц');
+      if (next !== inst.startYm) {
+        const deducted = this.installmentHistory(inst, emp?.salarySnapshots).some(h => h.kind === 'salary');
+        if (deducted) throw new BadRequestException('Из зарплаты уже удерживали — первый месяц не поменять');
       }
-      inst.startYm = dto.startYm;
+      await this.assertInstallmentStart(inst.method, next);
+      inst.startYm = next;
     }
     if (dto.note !== undefined) inst.note = (dto.note || '').trim() || null;
-    const sm = summarizeInstallment(inst, emp?.salarySnapshots, this.installmentWorked(emp));
+    const sm = this.installmentSummary(inst, emp);
     if (sm.paid > r2(inst.totalAmount) + 0.005) {
       throw new BadRequestException(`Стоимость меньше уже возвращённого (${som(sm.paid)})`);
     }
@@ -5184,14 +5241,16 @@ export class FinanceService implements OnModuleInit {
     return { ok: true, cancelled };
   }
 
-  /** Своя сумма удержания на месяц: 0 — пропустить, null — как обычно. */
+  /** Своя сумма на месяц: 0 — пропустить, null — как обычно. */
   async setInstallmentMonth(id: string, dto: { ym: string; amount?: number | null }) {
     const inst = await this.findInstallment(id);
     if (!YM_RE.test(dto.ym || '')) throw new BadRequestException('Некорректный месяц');
     if (dto.ym < inst.startYm) throw new BadRequestException(`Рассрочка начинается с ${ymGenitive(inst.startYm)}`);
-    const emp = await this.empRepo.findOne({ where: { id: inst.employeeId } });
-    if (emp && snapOf(emp, dto.ym)) throw new BadRequestException('Зарплата за этот месяц уже выплачена — сумму не поменять');
-    await this.assertPayrollPeriodOpen(dto.ym);
+    if (inst.method !== 'separate') {
+      const emp = await this.empRepo.findOne({ where: { id: inst.employeeId } });
+      if (emp && snapOf(emp, dto.ym)) throw new BadRequestException('Зарплата за этот месяц уже выплачена — сумму не поменять');
+      await this.assertPayrollPeriodOpen(dto.ym);
+    }
     const map = { ...(inst.overrides || {}) };
     if (dto.amount == null || r2(dto.amount) === r2(inst.monthlyAmount)) delete map[dto.ym];
     else {
@@ -5203,13 +5262,30 @@ export class FinanceService implements OnModuleInit {
     return this.installmentDto(await this.instRepo!.save(inst));
   }
 
+  /** Перенести дату платежа месяца («платит отдельно»). null — вернуть число. */
+  async setInstallmentDue(id: string, dto: { ym: string; date?: string | null }) {
+    const inst = await this.findInstallment(id);
+    if (inst.method !== 'separate') throw new BadRequestException('Из зарплаты удерживаем в день выплаты — дату не перенести');
+    if (!YM_RE.test(dto.ym || '')) throw new BadRequestException('Некорректный месяц');
+    if (dto.ym < inst.startYm) throw new BadRequestException(`Рассрочка начинается с ${ymGenitive(inst.startYm)}`);
+    const map = { ...(inst.dueDates || {}) };
+    if (!dto.date) delete map[dto.ym];
+    else {
+      const date = String(dto.date).slice(0, 10);
+      if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date)) throw new BadRequestException('Некорректная дата');
+      map[dto.ym] = date;
+    }
+    inst.dueDates = Object.keys(map).length ? map : null;
+    return this.installmentDto(await this.instRepo!.save(inst));
+  }
+
   /** Платёж мимо зарплаты. С accountId — ещё и доход «Возврат долга» на счёт. */
   async addInstallmentPayment(id: string, dto: { amount: number; date?: string; note?: string; accountId?: string }, userId?: string) {
     const inst = await this.findInstallment(id);
     const emp = await this.empRepo.findOne({ where: { id: inst.employeeId } });
     const amount = r2(dto.amount);
     if (!(amount > 0)) throw new BadRequestException('Сумма должна быть больше нуля');
-    const sm = summarizeInstallment(inst, emp?.salarySnapshots, this.installmentWorked(emp));
+    const sm = this.installmentSummary(inst, emp);
     if (amount > sm.remaining + 0.005) throw new BadRequestException(`Больше остатка: осталось ${som(sm.remaining)}`);
     const date = (dto.date || todayISO()).slice(0, 10);
     let txId: string | null = null;

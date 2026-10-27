@@ -141,12 +141,19 @@ function MyInstallment({ item }: { item: any }) {
           <div className="flex justify-between text-xs text-surface-500 dark:text-surface-400 mt-1.5 tabular-nums">
             <span>вернули {money(paid)} из {money(total)}</span><span>{pctPaid}%</span>
           </div>
+          {item.overdue && (
+            <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[13px] leading-snug text-red-700 dark:text-red-300">
+              Просрочен платёж — <b className="tabular-nums">{money(item.overdue.amount)}</b>, срок был {dayMonth(item.overdue.since)}.
+            </div>
+          )}
           {item.next && (
             <div className="mt-3 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2.5 text-[13px] leading-snug text-surface-700 dark:text-surface-200">
-              Следующее удержание — <b className="tabular-nums">{money(item.next.amount)}</b> из зарплаты за {monthOnly(item.next.ym)}, {payoutDay(item.next.ym)}.
-              {item.endYm && (
+              {item.method === 'separate'
+                ? <>Следующий платёж — <b className="tabular-nums">{money(item.next.amount)}</b> до {dayMonth(item.next.date)}. Деньги вносятся отдельно.</>
+                : <>Следующее удержание — <b className="tabular-nums">{money(item.next.amount)}</b> из зарплаты за {monthOnly(item.next.ym)}, {dayMonth(item.next.date)}.</>}
+              {item.endDate && (
                 <span className="block text-surface-500 dark:text-surface-400 mt-0.5">
-                  Ещё {item.paymentsLeft} {countWord(item.paymentsLeft, 'удержание', 'удержания', 'удержаний')} · последнее — {ymLong(item.endYm)}
+                  Ещё {item.paymentsLeft} {countWord(item.paymentsLeft, 'платёж', 'платежа', 'платежей')} · последний — {dayMonth(item.endDate)} {String(item.endDate).slice(0, 4)}
                 </span>
               )}
             </div>

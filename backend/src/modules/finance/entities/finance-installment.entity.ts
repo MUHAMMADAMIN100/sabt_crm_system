@@ -45,6 +45,19 @@ export class FinanceInstallment {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   paidBefore: number;
 
+  /** Как возвращает: 'salary' — удержание в день выплаты ЗП (10-го),
+   *  'separate' — вносит сам к своему числу месяца (dueDay). */
+  @Column({ type: 'varchar', length: 16, default: 'salary' })
+  method: 'salary' | 'separate';
+
+  /** День оплаты 1..31 для «платит отдельно». */
+  @Column({ type: 'int', nullable: true })
+  dueDay: number | null;
+
+  /** Перенесённые даты платежей: { 'YYYY-MM': 'YYYY-MM-DD' }. */
+  @Column({ type: 'jsonb', nullable: true })
+  dueDates: Record<string, string> | null;
+
   /** Своя сумма удержания на конкретный месяц: { 'YYYY-MM': сумма }, 0 — пропуск. */
   @Column({ type: 'jsonb', nullable: true })
   overrides: Record<string, number> | null;

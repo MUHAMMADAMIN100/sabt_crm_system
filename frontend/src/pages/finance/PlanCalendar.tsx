@@ -186,13 +186,15 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
 
   const rowNode = (t: any, key: string) => {
     const income = t.type === 'income';
+    // Пометка (рассрочка из зарплаты): видна в дне, но на суммы не влияет.
+    const note = t.type === 'note';
     const movable = canMove(t);
     const title = t.comment || t.categoryName || (income ? 'Приход' : 'Расход');
     const pending = !t.done;
     return (
       <div key={key} role="button" tabIndex={0}
-        className={'pcal-row ' + (income ? 'inc' : 'exp') + (pending ? ' plan' : '') + (movable ? ' movable' : '') + (dragId === t.id ? ' dragging' : '')}
-        title={`${pending ? (income ? 'Ещё не пришло · ' : 'Ещё не оплачено · ') : ''}${title} · ${money(t.amount)}${movable ? ' · перетащите на другой день' : ''}`}
+        className={'pcal-row ' + (note ? 'note' : income ? 'inc' : 'exp') + (pending ? ' plan' : '') + (movable ? ' movable' : '') + (dragId === t.id ? ' dragging' : '')}
+        title={`${note ? 'Не влияет на остаток · ' : pending ? (income ? 'Ещё не пришло · ' : 'Ещё не оплачено · ') : ''}${title} · ${money(t.amount)}${movable ? ' · перетащите на другой день' : ''}`}
         draggable={movable}
         onDragStart={movable ? (e) => {
           setDragId(t.id); e.dataTransfer.effectAllowed = 'move';
@@ -203,7 +205,7 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail(t); } }}>
         <i className="d" />
         <span className="t">{title}</span>
-        <span className="a">{income ? '+' : '−'}{moneyBare(t.amount)}</span>
+        <span className="a">{note ? '' : income ? '+' : '−'}{moneyBare(t.amount)}</span>
       </div>
     );
   };
@@ -427,13 +429,13 @@ function DaySheet({ iso, monthNo, list, tot, bal, isGap, backDay, canMove, onMov
           <span className="muted mini">Операции дня</span>
           {list.length === 0 && <p className="muted mini">В этот день движения денег нет.</p>}
           {list.map((t: any) => (
-            <div key={t.id} className={'pcal-sheet-row' + (t.type === 'income' ? ' inc' : '') + (t.done ? ' done' : '')}>
+            <div key={t.id} className={'pcal-sheet-row' + (t.type === 'income' ? ' inc' : t.type === 'note' ? ' note' : '') + (t.done ? ' done' : '')}>
               <i className="bar" />
               <button type="button" className="body" onClick={() => onOpen(t)}>
                 <span className="t">{t.comment || t.categoryName || (t.type === 'income' ? 'Приход' : 'Расход')}</span>
                 <span className="s muted mini">{t.done ? 'уже прошло' : 'ожидается'}</span>
               </button>
-              <span className="a">{t.type === 'income' ? '+' : '−'}{moneyBare(t.amount)}</span>
+              <span className="a">{t.type === 'income' ? '+' : t.type === 'note' ? '' : '−'}{moneyBare(t.amount)}</span>
               {canMove(t) && (
                 <label className="move">
                   <span className="sr-only">Перенести операцию на другой день</span>
