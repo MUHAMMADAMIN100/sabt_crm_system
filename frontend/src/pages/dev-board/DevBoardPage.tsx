@@ -424,6 +424,19 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
     setMenuOpen(false)
     menuBtnRef.current?.focus()
   }
+  // Шаг статусом влево/вправо по порядку колонок. На таче это основной жест:
+  // «···» + выбор из списка — два тапа вместо одного, а менеджеры и
+  // тестировщики работают доской как лентой колонок.
+  const canStep = !!onStatus
+  const statusIdx = DEV_TASK_STATUSES.indexOf(task.status)
+  const prevStatus = statusIdx > 0 ? DEV_TASK_STATUSES[statusIdx - 1] : null
+  const nextStatus =
+    statusIdx >= 0 && statusIdx < DEV_TASK_STATUSES.length - 1
+      ? DEV_TASK_STATUSES[statusIdx + 1]
+      : null
+  const stepStatus = (target: DevTaskStatus | null) => {
+    if (target) onStatus?.(task.id, target)
+  }
   const openTask = () => {
     setMenuOpen(false)
     navigate(taskUrl(task.id))
@@ -446,7 +459,32 @@ function TaskCard({ task, dragging, onDragStart, onDragEnd, onTagClick, sprintNa
         <p className="flex-1 min-w-0 pt-2 text-sm font-medium text-surface-900 dark:text-surface-100 leading-snug break-words">
           {task.title}
         </p>
-        <div className="relative shrink-0">
+        {/* Мобильные стрелки — шаг статусом; «···» остаётся за desktop. */}
+        {canStep && (
+          <div className="flex items-center gap-0.5 shrink-0 -mr-1.5 md:hidden">
+            <button
+              type="button"
+              disabled={!prevStatus}
+              aria-label={prevStatus ? `Вернуть в «${DEV_STATUS_LABELS[prevStatus]}»` : 'Первая колонка'}
+              title={prevStatus ? `← ${DEV_STATUS_LABELS[prevStatus]}` : 'Первая колонка'}
+              onClick={e => { e.stopPropagation(); stepStatus(prevStatus) }}
+              className="w-11 h-11 flex items-center justify-center rounded-md text-surface-400 active:text-primary-600 active:bg-primary-50 dark:active:bg-primary-900/40 disabled:opacity-25 transition-colors"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              type="button"
+              disabled={!nextStatus}
+              aria-label={nextStatus ? `Переместить в «${DEV_STATUS_LABELS[nextStatus]}»` : 'Последняя колонка'}
+              title={nextStatus ? `${DEV_STATUS_LABELS[nextStatus]} →` : 'Последняя колонка'}
+              onClick={e => { e.stopPropagation(); stepStatus(nextStatus) }}
+              className="w-11 h-11 flex items-center justify-center rounded-md text-surface-400 active:text-primary-600 active:bg-primary-50 dark:active:bg-primary-900/40 disabled:opacity-25 transition-colors"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        )}
+        <div className={clsx('relative shrink-0', canStep && 'hidden md:block')}>
           <button
             ref={menuBtnRef}
             type="button"
