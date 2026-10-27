@@ -34,7 +34,7 @@ import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
 import {
-  CreateInstallmentDto, InstallmentDueDto, InstallmentMonthDto, InstallmentPaymentDto, UpdateInstallmentDto,
+  CreateInstallmentDto, InstallmentDueDto, InstallmentMarkDto, InstallmentMonthDto, InstallmentPaymentDto, UpdateInstallmentDto,
 } from './dto/installment.dto';
 import { FinanceActivityInterceptor } from './finance-activity.interceptor';
 
@@ -286,6 +286,9 @@ export class FinanceController {
   @Post('installments/:id/month') setInstallmentMonth(@Param('id') id: string, @Body() dto: InstallmentMonthDto) { return this.service.setInstallmentMonth(id, dto); }
   /** Перенести дату платежа месяца («платит отдельно»). */
   @Post('installments/:id/due') setInstallmentDue(@Param('id') id: string, @Body() dto: InstallmentDueDto) { return this.service.setInstallmentDue(id, dto); }
+  /** «Удержано из зарплаты» за месяц — отметить или снять. */
+  @Post('installments/:id/mark') setInstallmentMark(@Param('id') id: string, @Body() dto: InstallmentMarkDto) { return this.service.setInstallmentMark(id, dto); }
+  /** Деньги внесли отдельно: доход на счёт, закрывает месяцы. */
   @Post('installments/:id/payments') addInstallmentPayment(@Param('id') id: string, @Body() dto: InstallmentPaymentDto, @Request() req) { return this.service.addInstallmentPayment(id, dto, req.user?.id); }
   @Delete('installments/:id/payments/:paymentId') removeInstallmentPayment(@Param('id') id: string, @Param('paymentId') paymentId: string) { return this.service.removeInstallmentPayment(id, paymentId); }
 

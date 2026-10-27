@@ -1,13 +1,16 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 /** Платёж, внесённый мимо зарплаты: сотрудник принёс деньги сам или владелец
- *  закрыл часть суммы досрочно. txId — доход на счёт, если его записали. */
+ *  закрыл часть суммы досрочно. txId — доход на счёт (у старых платежей его
+ *  может не быть). alloc — за какие месяцы платёж, проставляется при записи;
+ *  у старых платежей нет — они закрывают ближайшие открытые месяцы. */
 export interface InstallmentPayment {
   id: string;
   date: string;
   amount: number;
   note?: string | null;
   txId?: string | null;
+  alloc?: Array<{ ym: string; amount: number }> | null;
 }
 
 /** Рассрочка сотрудника: компания купила вещь, сотрудник возвращает частями.
@@ -64,6 +67,11 @@ export class FinanceInstallment {
 
   @Column({ type: 'jsonb', nullable: true })
   payments: InstallmentPayment[] | null;
+
+  /** «Удержано из зарплаты» отмечено вручную (способ «из зарплаты»), пока
+   *  выплату месяца не провели в CRM: { 'YYYY-MM': { date } }. */
+  @Column({ type: 'jsonb', nullable: true })
+  marks: Record<string, { date: string }> | null;
 
   /** Расход «покупка», если владелец попросил его записать. */
   @Column({ type: 'uuid', nullable: true })

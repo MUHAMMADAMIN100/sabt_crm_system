@@ -4,12 +4,15 @@
 // 27.10.2026 — вид «карточки» (вариант А), у каждой рассрочки свой способ:
 // «из зарплаты» (удерживаем в день выплаты ЗП, 10-го) или «платит отдельно»
 // (к своему числу месяца, владелец отмечает «получено»); просрочка красным.
+// Позже 27.10: деньги закрывают ближайшие месяцы (зелёные, из зарплаты за них
+// не удерживаем), счёт обязателен; месяц «из зарплаты» отмечают «удержано» —
+// удержание остаётся; любой месяц открывается окном с отменой.
 // Менять может только владелец, сотрудник видит своё в профиле.
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, moneyBare, monthLabel, shiftYm, todayISO, currentYm, apiErr, pluralRu, formatDate } from './finlib';
+import { money, moneyBare, monthLabel, shiftYm, todayISO, currentYm, apiErr, pluralRu } from './finlib';
 import { FinLoading, FinLoadError, FinModal, finConfirm, invalidateFinance } from './FinKit';
 import FinIcon from './FinIcon';
 
@@ -22,8 +25,12 @@ const num = (s: string) => parseFloat(String(s).replace(/\s/g, '').replace(',', 
 type Entry = {
   ym: string; date: string; amount: number; paid: number; outstanding: number;
   status: 'done' | 'planned' | 'overdue' | 'waiting' | 'skip'; frozen: boolean; custom: boolean;
+  /** Закрыто деньгами / удержано из зарплаты (выплаченной или отмеченное). */
+  cash: number; withheld: number; marked: boolean;
+  paymentIds: string[]; paidAt: string | null;
 };
 
+const MONTHS_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const MONTHS_SHORT = ['янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня', 'июля', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
 
@@ -34,6 +41,15 @@ function dayLabel(iso: string, short = false): string {
   const year = y !== Number(todayISO().slice(0, 4)) ? ` ${y}` : '';
   return `${d} ${(short ? MONTHS_SHORT : MONTHS_GEN)[m - 1]}${year}`;
 }
+
+/** «декабрь» — месяц начисления зарплаты, без года. */
+const monthName = (ym: string) => MONTHS_NOM[Number(ym.slice(5, 7)) - 1] ?? ym;
+
+/** «а», «а и б», «а, б и в». */
+const listRu = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} и ${xs[xs.length - 1]}`);
+
+/** «Зарипова Умрона» — фамилия и имя для заголовков окон. */
+const shortName = (name?: string | null) => String(name || '').split(/\s+/).slice(0, 2).join(' ');
 
 const lastDayOf = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); };
 
@@ -51,6 +67,22 @@ function useAccounts(): any[] {
 
 const isSeparate = (r: any) => r?.installment?.method === 'separate';
 
+/** Какие месяцы закроет платёж — как на сервере (allocatePayment): сначала
+ *  выбранный месяц, потом ближайшие открытые по порядку. */
+function allocPreview(plan: Entry[], amount: number, preferYm?: string) {
+  const open = plan.filter((e) => e.outstanding > 0 && !e.frozen && !e.marked);
+  const ordered = preferYm ? [...open.filter((e) => e.ym === preferYm), ...open.filter((e) => e.ym !== preferYm)] : open;
+  const out: Array<{ entry: Entry; amount: number; full: boolean }> = [];
+  let left = Math.round(amount * 100) / 100;
+  for (const e of ordered) {
+    if (left <= 0.005) break;
+    const take = Math.min(left, e.outstanding);
+    out.push({ entry: e, amount: take, full: take >= e.outstanding - 0.005 });
+    left = Math.round((left - take) * 100) / 100;
+  }
+  return out;
+}
+
 export function InstallmentsList() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'installments'],
@@ -58,7 +90,7 @@ export function InstallmentsList() {
   });
   const [formFor, setFormFor] = useState<any | 'new' | null>(null);
   const [entryFor, setEntryFor] = useState<{ row: any; entry: Entry } | null>(null);
-  const [payFor, setPayFor] = useState<{ row: any; amount?: number } | null>(null);
+  const [payFor, setPayFor] = useState<{ row: any; amount?: number; ym?: string } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
 
   if (isLoading) return <FinLoading />;
@@ -123,7 +155,7 @@ export function InstallmentsList() {
                 <div className="fin-inst-list">
                   {closed.map((r) => (
                     <InstallmentCard key={r.installment.id} row={r} openYm={openYm}
-                      onEdit={() => setFormFor(r)} onEntry={() => {}} onPay={() => {}} />
+                      onEdit={() => setFormFor(r)} onEntry={(entry) => setEntryFor({ row: r, entry })} onPay={() => {}} />
                   ))}
                 </div>
               )}
@@ -133,8 +165,11 @@ export function InstallmentsList() {
       )}
 
       {formFor && <InstallmentFormModal row={formFor === 'new' ? null : formFor} openYm={openYm} onClose={() => setFormFor(null)} />}
-      {entryFor && <InstallmentEntryModal row={entryFor.row} entry={entryFor.entry} onClose={() => setEntryFor(null)} />}
-      {payFor && <InstallmentPaymentModal row={payFor.row} amount={payFor.amount} onClose={() => setPayFor(null)} />}
+      {entryFor && (
+        <InstallmentEntryModal row={entryFor.row} entry={entryFor.entry} openYm={openYm} onClose={() => setEntryFor(null)}
+          onPay={(ym, amount) => { setPayFor({ row: entryFor.row, ym, amount }); setEntryFor(null); }} />
+      )}
+      {payFor && <InstallmentPaymentModal row={payFor.row} amount={payFor.amount} ym={payFor.ym} onClose={() => setPayFor(null)} />}
     </>
   );
 }
@@ -177,18 +212,21 @@ function InstallmentCard({ row, openYm, onEdit, onEntry, onPay }: {
     } catch (err) { toast.error(apiErr(err)); }
   }
 
+  // Любой месяц нажимается: оплаченный — посмотреть, когда и чем закрыт, и
+  // отменить; открытый — отметить, поменять сумму, пропустить.
   const pill = (e: Entry) => {
     const cls = e.status === 'done' ? 'done' : e.status === 'overdue' ? 'late' : e.status === 'skip' ? 'skip' : e === nextEntry ? 'now' : '';
     const value = e.status === 'skip' ? 'пропуск'
       : e.status === 'done' ? `✓ ${moneyBare(e.amount)}`
         : e.status === 'overdue' && e.paid > 0 ? `${moneyBare(e.outstanding)} из ${moneyBare(e.amount)}`
-          : moneyBare(e.amount);
-    const body = <><em>{dayLabel(e.date, true)}{e.status === 'overdue' ? ' · нет' : ''}</em><b>{value}</b></>;
-    if (!entryEditable(row, e, openYm)) return <span key={e.ym} className={`fin-inst-p ${cls}`}>{body}</span>;
+          : moneyBare(e.outstanding);
+    const note = e.status === 'done'
+      ? (e.cash > 0 && e.paidAt ? `получено ${dayLabel(e.paidAt, true)}` : 'удержано')
+      : e.cash > 0 && e.status !== 'overdue' ? `внесено ${moneyBare(e.cash)}` : null;
     return (
-      <button key={e.ym} type="button" className={`fin-inst-p ${cls}`} onClick={() => onEntry(e)}
-        title={separate ? 'Изменить сумму, перенести дату или пропустить' : 'Изменить сумму или пропустить'}>
-        {body}
+      <button key={e.ym} type="button" className={`fin-inst-p ${cls}`} onClick={() => onEntry(e)}>
+        <em>{dayLabel(e.date, true)}{e.status === 'overdue' ? ' · нет' : ''}</em><b>{value}</b>
+        {note && <small>{note}</small>}
       </button>
     );
   };
@@ -461,18 +499,33 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
   );
 }
 
-/** Платёж месяца: своя сумма, пропуск, для «отдельно» — перенос даты. */
-function InstallmentEntryModal({ row, entry, onClose }: { row: any; entry: Entry; onClose: () => void }) {
+/** Окно месяца: что с платежом сейчас — ожидается, получен, удержан — и что
+ *  можно сделать: отметить «Получено» / «Удержано из зарплаты», отменить,
+ *  поменять сумму или дату, пропустить. «Отмена» закрывает без изменений. */
+function InstallmentEntryModal({ row, entry, openYm, onPay, onClose }: {
+  row: any; entry: Entry; openYm: string;
+  onPay: (ym: string, amount?: number) => void; onClose: () => void;
+}) {
   const qc = useQueryClient();
+  const accounts = useAccounts();
   const inst = row.installment;
   const separate = isSeparate(row);
+  const plan: Entry[] = row.schedule ?? [];
   const usual = Number(inst.monthlyAmount) || 0;
-  const plannedDate = dueDate(inst.method, entry.ym, Number(inst.dueDay) || 1);
-  const [amount, setAmount] = useState<string>(String(entry.status === 'skip' ? usual : entry.amount || usual));
-  const [date, setDate] = useState<string>(entry.date);
-  const [busy, setBusy] = useState(false);
+  const month = monthName(entry.ym);
+  const isOpen = entry.status !== 'done' && entry.status !== 'skip';
+  const editable = entryEditable(row, entry, openYm);
   const isCustom = inst.overrides?.[entry.ym] != null;
   const isMoved = !!inst.dueDates?.[entry.ym];
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState<'amount' | 'date' | null>(null);
+  const [amount, setAmount] = useState<string>(String(entry.status === 'skip' ? usual : entry.amount || usual));
+  const [date, setDate] = useState<string>(entry.date);
+  const [got, setGot] = useState<string>(entry.outstanding > 0 ? String(entry.outstanding) : '');
+  const [gotDate, setGotDate] = useState<string>(todayISO());
+  const [accountId, setAccountId] = useState<string>('');
+  const payments: any[] = (inst.payments ?? []).filter((p: any) => entry.paymentIds?.includes(p.id));
+  const payout = (row.history ?? []).find((h: any) => h.key === `s-${entry.ym}`)?.date as string | undefined;
 
   async function run(fn: () => Promise<any>, done: string) {
     if (busy) return;
@@ -489,71 +542,214 @@ function InstallmentEntryModal({ row, entry, onClose }: { row: any; entry: Entry
   }
 
   const a = num(amount);
-  const save = () => run(async () => {
-    if (a !== entry.amount || entry.status === 'skip') await financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: a });
-    if (separate && date && date !== entry.date) await financeApi.setInstallmentDue(inst.id, { ym: entry.ym, date });
-  }, 'Платёж сохранён');
-  const reset = () => run(async () => {
-    if (isCustom) await financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: null });
-    if (isMoved) await financeApi.setInstallmentDue(inst.id, { ym: entry.ym, date: null });
-  }, 'Вернули как было');
+  const g = num(got);
+  const gotOver = g > (Number(row.remaining) || 0) + 0.005;
+  const saveAmount = () => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: a }), 'Сумма месяца сохранена');
+  const resetAmount = () => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: null }), 'Вернули как было');
+  const saveDate = () => run(() => financeApi.setInstallmentDue(inst.id, { ym: entry.ym, date }), 'Дата перенесена');
+  const resetDate = () => run(() => financeApi.setInstallmentDue(inst.id, { ym: entry.ym, date: null }), 'Вернули число');
+  const skip = () => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: 0 }), 'Месяц пропущен — срок сдвинулся');
+  const mark = (on: boolean) => run(() => financeApi.setInstallmentMark(inst.id, { ym: entry.ym, on }),
+    on ? 'Отмечено: удержано из зарплаты' : 'Отметка снята');
+  const receive = () => run(() => financeApi.addInstallmentPayment(inst.id, { amount: g, date: gotDate, accountId, ym: entry.ym }), 'Платёж записан');
+  const undo = (p: any) => run(() => financeApi.removeInstallmentPayment(inst.id, p.id), 'Получение отменено');
+
+  // Что с месяцем сейчас.
+  let badge: { cls: string; text: string };
+  let value: string;
+  let sub: string;
+  if (entry.status === 'skip') {
+    badge = { cls: 'skip', text: 'Пропуск' };
+    value = '—';
+    sub = separate ? 'платежа в этом месяце нет — срок сдвинулся' : `из зарплаты за ${month} не удерживаем — срок сдвинулся`;
+  } else if (entry.status === 'done' && (entry.frozen || entry.marked)) {
+    badge = { cls: 'ok', text: '✓ Удержано' };
+    value = money(entry.amount);
+    sub = entry.frozen
+      ? `из зарплаты за ${month}${payout ? `, выплачена ${dayLabel(payout)}` : ''}`
+      : `из зарплаты за ${month}${entry.paidAt ? ` · отмечено ${dayLabel(entry.paidAt)}` : ''}`;
+  } else if (entry.status === 'done') {
+    badge = { cls: 'ok', text: '✓ Получено' };
+    value = money(entry.cash);
+    sub = separate ? `получено ${dayLabel(entry.paidAt || entry.date)}` : `из зарплаты за ${month} не удержится`;
+  } else {
+    const part = entry.cash > 0 ? ` · внесено ${money(entry.cash)} из ${money(entry.amount)}` : '';
+    value = money(entry.outstanding);
+    if (entry.status === 'overdue') {
+      badge = { cls: 'late', text: 'Просрочено' };
+      sub = `срок был ${dayLabel(entry.date)}${part}`;
+    } else if (entry.status === 'waiting') {
+      badge = { cls: 'wait', text: 'Ждёт выплаты' };
+      sub = `удержится, когда выплатят зарплату за ${month}${part}`;
+    } else {
+      badge = { cls: '', text: 'Ожидается' };
+      sub = separate ? `платит отдельно · до ${dayLabel(entry.date)}${part}` : `удержится из зарплаты за ${month} · ${dayLabel(entry.date)}${part}`;
+    }
+  }
+  const coveredBy = (p: any) => plan.filter((x) => x.paymentIds?.includes(p.id));
 
   return (
-    <FinModal title={`${row.employee?.name ?? 'Рассрочка'} · ${dayLabel(entry.date)}`} onClose={onClose} width={460}
-      footer={<>
-        {entry.status !== 'skip' && (
-          <button className="btn ghost" style={{ marginRight: 'auto' }} disabled={busy}
-            onClick={() => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: 0 }), 'Месяц пропущен — срок сдвинулся')}>
-            Пропустить месяц
-          </button>
-        )}
-        {(isCustom || isMoved) && (
-          <button className="btn ghost" style={entry.status === 'skip' ? { marginRight: 'auto' } : undefined} disabled={busy} onClick={reset}>
-            Как было · {money(usual)}{separate ? `, ${dayLabel(plannedDate, true)}` : ''}
-          </button>
-        )}
-        <button className="btn primary" disabled={busy || !(a > 0) || (separate && !date)} onClick={save}>Сохранить</button>
-      </>}>
-      <p style={{ margin: 0 }}>
-        {inst.name}. {separate
-          ? <>Обычно — <b>{money(usual)}</b> {inst.dueDay}-го числа.</>
-          : <>Обычно удерживаем <b>{money(usual)}</b> из зарплаты за {monthLabel(entry.ym, true)} — {dayLabel(entry.date)}.</>}
-      </p>
-      <div className={separate ? 'form-grid' : undefined}>
-        <div className="field">
-          <label>{separate ? 'Сумма' : `Удержать из зарплаты за ${monthLabel(entry.ym, true)}`}</label>
-          <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </div>
-        {separate && (
-          <div className="field"><label>Дата платежа</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        )}
+    <FinModal title={`${shortName(row.employee?.name) || 'Рассрочка'} · ${dayLabel(entry.date)}`} onClose={onClose} width={620}
+      footer={<button className="btn ghost" onClick={onClose}>{isOpen || entry.status === 'skip' ? 'Отмена' : 'Закрыть'}</button>}>
+      <div className={`fin-inst-state ${badge.cls}`}>
+        <span className={`fin-inst-badge ${badge.cls}`}>{badge.text}</span>
+        <div className="tx"><div className="v">{value}</div><div className="s">{sub}</div></div>
       </div>
-      <p className="mini muted" style={{ margin: 0 }}>Больше обычного — рассрочка закроется раньше, меньше или пропуск — срок сдвинется. Осталось {money(row.remaining)}</p>
+
+      {/* Открытый месяц «из зарплаты»: отметить, что удержали. */}
+      {isOpen && !separate && !entry.frozen && (
+        <div className="fin-inst-got">
+          <b>Удержали из зарплаты?</b>
+          <button type="button" className="btn fin-inst-ok solid" disabled={busy} onClick={() => mark(true)}>✓ Удержано из зарплаты</button>
+          <span className="hint">Месяц станет зелёным. Удержание {money(entry.outstanding)} в ведомости за {month} остаётся.</span>
+        </div>
+      )}
+
+      {/* Открытый месяц «платит отдельно»: деньги пришли. */}
+      {isOpen && separate && (
+        <div className="fin-inst-got">
+          <b>Деньги уже внесли?</b>
+          <div className="form-grid">
+            <div className="field"><label>Сумма</label><input inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} /></div>
+            <div className="field"><label>Когда</label><input type="date" value={gotDate} onChange={(e) => setGotDate(e.target.value)} /></div>
+          </div>
+          <div className="field">
+            <label>Куда пришли деньги</label>
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="" disabled>Выберите счёт</option>
+              {accounts.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.name} — доход «Возврат долга»</option>)}
+            </select>
+          </div>
+          <button type="button" className="btn fin-inst-ok solid" disabled={busy || !(g > 0) || gotOver || !accountId} onClick={receive}>
+            Получено{g > 0 ? ` ${money(g)}` : ''}
+          </button>
+          <span className={`hint${gotOver ? ' neg' : ''}`}>
+            {gotOver ? `Больше остатка: осталось ${money(row.remaining)}`
+              : !accountId ? 'Выберите счёт — деньги запишутся доходом «Возврат долга».'
+                : g > entry.outstanding + 0.005 ? 'Месяц станет зелёным, лишнее закроет следующие месяцы.'
+                  : 'Месяц станет зелёным.'}
+          </span>
+        </div>
+      )}
+
+      {/* Поменять сумму, дату, пропустить. */}
+      {(isOpen || entry.status === 'skip') && !edit && (
+        <div className="fin-inst-links">
+          {entry.status === 'skip' ? (
+            editable && <button type="button" className="fin-inst-link" disabled={busy} onClick={resetAmount}>{separate ? 'Вернуть платёж' : 'Удерживать как обычно'}</button>
+          ) : (
+            <>
+              {!separate && <button type="button" className="fin-inst-link" onClick={() => onPay(entry.ym, entry.outstanding)}>Внесли деньгами</button>}
+              {editable && <button type="button" className="fin-inst-link" onClick={() => setEdit('amount')}>Изменить сумму месяца</button>}
+              {separate && <button type="button" className="fin-inst-link" onClick={() => setEdit('date')}>Перенести дату</button>}
+              {editable && <button type="button" className="fin-inst-link" disabled={busy} onClick={skip}>Пропустить месяц</button>}
+            </>
+          )}
+        </div>
+      )}
+      {edit === 'amount' && (
+        <>
+          <div className="fin-inst-edit">
+            <div className="field">
+              <label>{separate ? 'Сумма за месяц' : `Удержать из зарплаты за ${month}`}</label>
+              <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <button type="button" className="btn primary" disabled={busy || !(a > 0)} onClick={saveAmount}>Сохранить</button>
+            {isCustom && <button type="button" className="btn ghost" disabled={busy} onClick={resetAmount}>Как было · {money(usual)}</button>}
+          </div>
+          <p className="mini muted" style={{ margin: 0 }}>Больше обычного — рассрочка закроется раньше, меньше — срок сдвинется. Осталось {money(row.remaining)}</p>
+        </>
+      )}
+      {edit === 'date' && (
+        <div className="fin-inst-edit">
+          <div className="field"><label>Дата платежа</label><input autoFocus type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <button type="button" className="btn primary" disabled={busy || !date || date === entry.date} onClick={saveDate}>Сохранить</button>
+          {isMoved && <button type="button" className="btn ghost" disabled={busy} onClick={resetDate}>Вернуть {inst.dueDay}-е число</button>}
+        </div>
+      )}
+
+      {/* Чем закрыт месяц — и отмена. */}
+      {payments.length > 0 && (
+        <div className="fin-inst-by">
+          <div className="cap">Чем закрыто</div>
+          {payments.map((p) => (
+            <div key={p.id} className="row">
+              <span>{dayLabel(p.date)} · платёж {money(p.amount)}{p.note ? ` · ${p.note}` : ''}</span>
+              {payments.length > 1
+                ? <button type="button" className="btn ghost sm danger" disabled={busy} onClick={() => undo(p)}>Отменить</button>
+                : <span className="muted">{p.txId ? 'на счёт' : 'только учёт'}</span>}
+            </div>
+          ))}
+          {(payments.length > 1 || Number(payments[0].amount) !== entry.cash) && (
+            <div className="row"><span className="muted">{payments.length > 1 ? 'на этот месяц' : 'из него на этот месяц'}</span><b>{money(entry.cash)}</b></div>
+          )}
+        </div>
+      )}
+      {payments.length === 1 && (() => {
+        const p = payments[0];
+        const covered = coveredBy(p);
+        return (
+          <>
+            <button type="button" className="btn danger fin-inst-undo" disabled={busy} onClick={() => undo(p)}>Отменить получение</button>
+            <span className="fin-inst-undo-note">
+              Отменится платёж {dayLabel(p.date)} целиком — {money(p.amount)}
+              {covered.length > 1 ? `: ${listRu(covered.map((x) => dayLabel(x.date, true)))} снова станут «ожидается».` : ''}
+              {p.txId ? ' Доход на счёт тоже отменится.' : ''}
+            </span>
+          </>
+        );
+      })()}
+      {entry.marked && (
+        <>
+          <button type="button" className="btn danger fin-inst-undo" disabled={busy} onClick={() => mark(false)}>Снять отметку</button>
+          <span className="fin-inst-undo-note">Месяц снова станет «ожидается». Удержание в ведомости не меняется.</span>
+        </>
+      )}
+      {entry.frozen && (
+        <p className="fin-inst-undo-note" style={{ margin: 0 }}>
+          Эти деньги удержаны при выплате зарплаты. Отменить можно только вместе с выплатой: «Зарплата» → {month} → «Отменить выплату».
+        </p>
+      )}
     </FinModal>
   );
 }
 
-/** Платёж мимо зарплаты: деньги внесли или закрыли часть досрочно. Счёт — по
- *  желанию: тогда это ещё и доход «Возврат долга». */
-function InstallmentPaymentModal({ row, amount: suggestedRaw, onClose }: { row: any; amount?: number; onClose: () => void }) {
+/** Деньги внесли отдельно: доход «Возврат долга» на счёт (счёт обязателен).
+ *  Платёж закрывает выбранный месяц, потом ближайшие — окно сразу показывает
+ *  какие; месяцы «из зарплаты», закрытые деньгами, из зарплаты не удержатся. */
+function InstallmentPaymentModal({ row, amount: suggestedRaw, ym, onClose }: {
+  row: any; amount?: number; ym?: string; onClose: () => void;
+}) {
   const qc = useQueryClient();
   const accounts = useAccounts();
   const inst = row.installment;
+  const separate = isSeparate(row);
   const suggested = Math.min(Number(suggestedRaw) || Number(inst.monthlyAmount) || 0, Number(row.remaining) || 0);
   const [amount, setAmount] = useState<string>(suggested > 0 ? String(suggested) : '');
   const [date, setDate] = useState<string>(todayISO());
   const [accountId, setAccountId] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [busy, setBusy] = useState(false);
-  const payments: any[] = inst.payments ?? [];
   const a = num(amount);
   const over = a > (Number(row.remaining) || 0) + 0.005;
+  const preview = useMemo(() => (a > 0 && !over ? allocPreview(row.schedule ?? [], a, ym) : []), [row.schedule, a, over, ym]);
+
+  // «Из зарплаты за декабрь и январь ничего не удержится, за февраль — 630 с.»
+  let salaryNote = '';
+  if (!separate && preview.length) {
+    const full = preview.filter((x) => x.full).map((x) => monthName(x.entry.ym));
+    const part = preview.find((x) => !x.full);
+    const rest = part ? money(part.entry.outstanding - part.amount) : '';
+    salaryNote = full.length
+      ? `Из зарплаты за ${listRu(full)} ничего не удержится${part ? `, за ${monthName(part.entry.ym)} — ${rest}` : '.'}`
+      : part ? `Из зарплаты за ${monthName(part.entry.ym)} удержится ${rest} вместо ${money(part.entry.outstanding)}` : '';
+  }
 
   async function save() {
-    if (busy || !(a > 0) || over) return;
+    if (busy || !(a > 0) || over || !accountId) return;
     setBusy(true);
     try {
-      await financeApi.addInstallmentPayment(inst.id, { amount: a, date, note: note.trim() || undefined, accountId: accountId || undefined });
+      await financeApi.addInstallmentPayment(inst.id, { amount: a, date, note: note.trim() || undefined, accountId, ym });
       invalidateFinance(qc);
       toast.success('Платёж записан');
       onClose();
@@ -563,53 +759,40 @@ function InstallmentPaymentModal({ row, amount: suggestedRaw, onClose }: { row: 
     }
   }
 
-  async function removePayment(p: any) {
-    const ok = await finConfirm(
-      `Убрать платёж ${money(p.amount)} от ${formatDate(p.date)}?${p.txId ? ' Доход на счёт тоже отменится.' : ''}`,
-      { danger: true, confirmLabel: 'Убрать' },
-    );
-    if (!ok) return;
-    try {
-      await financeApi.removeInstallmentPayment(inst.id, p.id);
-      invalidateFinance(qc);
-      toast.success('Платёж убран');
-      onClose();
-    } catch (e) { toast.error(apiErr(e)); }
-  }
-
   return (
-    <FinModal title={`Получено · ${row.employee?.name ?? ''}`} onClose={onClose} width={460}
+    <FinModal title={`Получено · ${shortName(row.employee?.name)}`} onClose={onClose} width={620}
       footer={<>
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" disabled={busy || !(a > 0) || over} onClick={save}>{busy ? 'Записываю…' : 'Записать платёж'}</button>
+        <button className="btn primary" disabled={busy || !(a > 0) || over || !accountId} onClick={save}>{busy ? 'Записываю…' : 'Записать платёж'}</button>
       </>}>
       <p style={{ margin: 0 }}>{inst.name} · осталось <b>{money(row.remaining)}</b></p>
       <div className="form-grid">
         <div className="field"><label>Сумма</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
         <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
       </div>
-      {over && <p className="mini neg" style={{ margin: 0 }}>Больше остатка: осталось {money(row.remaining)}.</p>}
+      {over && <p className="mini neg" style={{ margin: 0 }}>Больше остатка: осталось {money(row.remaining)}</p>}
+      {preview.length > 0 && (
+        <div className="fin-inst-will">
+          <span className="lb">{ym ? 'Закроет:' : 'Закроет ближайшие месяцы:'}</span>
+          <div className="fin-inst-chips">
+            {preview.map((x) => (
+              <span key={x.entry.ym} className={`fin-inst-chip${x.full ? '' : ' part'}`}>
+                <span>{dayLabel(x.entry.date, true)}</span>
+                <b>{x.full ? `✓ ${moneyBare(x.amount)}` : `${moneyBare(x.amount)} из ${moneyBare(x.entry.outstanding)}`}</b>
+              </span>
+            ))}
+          </div>
+          {salaryNote && <span className="sb">{salaryNote}</span>}
+        </div>
+      )}
       <div className="field">
         <label>Куда пришли деньги</label>
         <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-          <option value="">Не записывать на счёт — только учёт</option>
+          <option value="" disabled>Выберите счёт</option>
           {accounts.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.name} — доход «Возврат долга»</option>)}
         </select>
       </div>
       <div className="field"><label>Комментарий</label><input value={note} maxLength={300} placeholder="например, наличными" onChange={(e) => setNote(e.target.value)} /></div>
-      {payments.length > 0 && (
-        <div className="fin-inst-paylist">
-          <span className="mini muted">Уже внесено отдельно</span>
-          {payments.map((p) => (
-            <div key={p.id} className="fin-inst-payrow">
-              <span>{formatDate(p.date)}</span>
-              <span className="mini muted">{p.note || (p.txId ? 'на счёт' : 'учёт')}</span>
-              <b className="num">{money(p.amount)}</b>
-              <button type="button" className="btn ghost sm" aria-label="Убрать платёж" onClick={() => removePayment(p)}><FinIcon name="close" size={13} /></button>
-            </div>
-          ))}
-        </div>
-      )}
     </FinModal>
   );
 }

@@ -2916,6 +2916,8 @@
 .fin-root .fin-inst-p.skip { border-style: dashed; }
 .fin-root .fin-inst-p.skip b { color: var(--amber); font-size: 13px; }
 .fin-root .fin-inst-p.more { justify-content: center; border-style: dashed; color: var(--muted); font-size: 12.5px; }
+.fin-root .fin-inst-p small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.fin-root .fin-inst-p.done small { color: var(--green); }
 .fin-root .fin-inst-closed-toggle { margin-top: 14px; }
 
 /* Форма: способ возврата, три поля в ряд, график по датам. */
@@ -2936,13 +2938,60 @@
 .fin-root .fin-inst-plan .sl span { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .fin-root .fin-inst-plan .sl b { color: var(--text); font-size: 13px; font-weight: 600; }
 
-.fin-root .fin-inst-paylist { display: flex; flex-direction: column; gap: 6px; }
-.fin-root .fin-inst-payrow {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
-  padding: 6px 6px 6px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+/* Окно месяца: состояние, «Получено» / «Удержано», ссылки, чем закрыт. */
+.fin-root .fin-inst-state {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+  border: 1px solid transparent; border-radius: 14px; background: var(--surface-2, var(--surface-hover));
 }
-.fin-root .fin-inst-payrow .mini { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fin-root .fin-inst-payrow .num { font-variant-numeric: tabular-nums; }
+.fin-root .fin-inst-state.ok { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.fin-root .fin-inst-state.late { background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.fin-root .fin-inst-state .tx { flex: 1; min-width: 0; }
+.fin-root .fin-inst-state .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fin-root .fin-inst-state.ok .v { color: var(--green); }
+.fin-root .fin-inst-state.late .v { color: var(--red); }
+.fin-root .fin-inst-state .s { font-size: 13px; color: var(--muted); }
+.fin-root .fin-inst-badge {
+  flex: none; padding: 5px 9px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--accent); background: var(--accent-soft);
+}
+.fin-root .fin-inst-badge.ok { color: var(--green); background: color-mix(in srgb, var(--green) 16%, transparent); }
+.fin-root .fin-inst-badge.late { color: var(--red); background: color-mix(in srgb, var(--red) 16%, transparent); }
+.fin-root .fin-inst-badge.wait, .fin-root .fin-inst-badge.skip { color: var(--amber); background: var(--amber-soft); }
+.fin-root .fin-inst-got {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); border-radius: 14px;
+}
+.fin-root .fin-inst-got > b { font-size: 14.5px; }
+.fin-root .fin-inst-got > .btn { align-self: flex-start; }
+.fin-root .fin-inst-got .hint { font-size: 12.5px; color: var(--muted); }
+.fin-root .fin-inst-got .hint.neg { color: var(--red); }
+.fin-root .btn.fin-inst-ok.solid { background: var(--green); border-color: var(--green); color: var(--surface); }
+.fin-root .btn.fin-inst-ok.solid:disabled { opacity: .55; }
+.fin-root .fin-inst-links { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.fin-root .fin-inst-links .fin-inst-link { font-size: 14px; font-weight: 600; }
+.fin-root .fin-inst-edit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.fin-root .fin-inst-edit .field { flex: 1 1 200px; margin: 0; }
+.fin-root .fin-inst-by .cap { margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.fin-root .fin-inst-by .row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0;
+  border-top: 1px solid var(--border); font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.fin-root .fin-inst-by .row:nth-child(2) { border-top: 0; }
+.fin-root .btn.danger.fin-inst-undo { align-self: flex-start; border-color: color-mix(in srgb, var(--red) 55%, transparent); }
+.fin-root .fin-inst-undo-note { margin-top: -6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.fin-root p.fin-inst-undo-note { margin-top: 0; font-size: 13.5px; line-height: 1.55; }
+/* «Принять платёж»: какие месяцы закроются. */
+.fin-root .fin-inst-will { display: flex; flex-direction: column; gap: 9px; padding: 12px 14px; border-radius: 13px; background: var(--surface-2, var(--surface-hover)); }
+.fin-root .fin-inst-will .lb { font-size: 13px; color: var(--muted); }
+.fin-root .fin-inst-will .sb { font-size: 12.5px; color: var(--muted); }
+.fin-root .fin-inst-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fin-root .fin-inst-chip {
+  display: inline-flex; flex-direction: column; padding: 6px 10px; border-radius: 10px; font-size: 12px; font-variant-numeric: tabular-nums;
+  border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); background: var(--green-soft); color: var(--green);
+}
+.fin-root .fin-inst-chip b { font-size: 13.5px; }
+.fin-root .fin-inst-chip.part { border-style: dashed; }
+
 
 /* Ведомость: блок «Рассрочка» в раскрытой строке сотрудника. */
 .fin-root .fin-emp-month-form .fin-inst-part {

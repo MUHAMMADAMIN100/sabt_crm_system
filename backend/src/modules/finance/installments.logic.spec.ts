@@ -1,5 +1,5 @@
 import {
-  capParts, deductionOf, deductionParts, dueDateOf, manualPaid, plannedFor, schedule, summarize, walk, InstallmentLike,
+  allocatePayment, capParts, deductionOf, deductionParts, dueDateOf, manualPaid, plannedFor, schedule, summarize, InstallmentLike,
 } from './installments.logic';
 
 const phone = (over: Partial<InstallmentLike> = {}): InstallmentLike => ({
@@ -54,11 +54,12 @@ describe('installments: удержание месяца', () => {
     expect(deductionOf(i, snaps, '2026-11')).toBe(1000);
   });
 
-  it('платёж вручную уменьшает остаток и закрывает рассрочку раньше', () => {
+  it('деньги закрывают ближайшие месяцы — из зарплаты за них не удерживаем', () => {
     const i = phone({ totalAmount: 2000, payments: [{ id: 'p', date: '2026-10-20', amount: 1500 }] });
     expect(manualPaid(i)).toBe(1500);
-    expect(deductionOf(i, null, '2026-10')).toBe(500);
-    expect(deductionOf(i, null, '2026-11')).toBe(0);
+    expect(deductionOf(i, null, '2026-10')).toBe(0);
+    expect(deductionOf(i, null, '2026-11')).toBe(100);
+    expect(deductionOf(i, null, '2026-12')).toBe(400);
   });
 
   it('месяц без работы в ведомости не удерживается и сдвигает срок', () => {
@@ -152,10 +153,106 @@ describe('installments: итог «из зарплаты»', () => {
     expect(s.paymentsLeft).toBe(1);
     expect(s.endDate).toBeNull();
   });
+});
 
-  it('walk отдаёт помесячный путь', () => {
-    const { steps, left } = walk(phone({ totalAmount: 1000 }), null, '2026-12');
-    expect(steps.map(x => x.amount)).toEqual([800, 200, 0]);
-    expect(left).toBe(0);
+describe('installments: какие месяцы закрыты', () => {
+  // Реальный случай: iPhone 14 518 с., до CRM 1 210, внесено 2 420, по 1 210 из зарплаты.
+  const iphone = (over: Partial<InstallmentLike> = {}) => phone({
+    name: 'iPhone 16 Pro Max', totalAmount: 14518, monthlyAmount: 1210, paidBefore: 1210,
+    payments: [{ id: 'a', date: '2026-10-20', amount: 1210 }, { id: 'b', date: '2026-10-27', amount: 1210 }],
+    ...over,
+  });
+
+  it('старые платежи без привязки закрывают ближайшие месяцы', () => {
+    const plan = schedule(iphone(), null, TODAY);
+    expect(plan.slice(0, 3).map(e => [e.date, e.status, e.cash, e.paymentIds])).toEqual([
+      ['2026-11-10', 'done', 1210, ['a']],
+      ['2026-12-10', 'done', 1210, ['b']],
+      ['2027-01-10', 'planned', 0, []],
+    ]);
+    expect(plan[0].paidAt).toBe('2026-10-20');
+    expect(deductionOf(iphone(), null, '2026-10')).toBe(0);
+    expect(deductionOf(iphone(), null, '2026-12')).toBe(1210);
+    const s = summarize(iphone(), null, undefined, TODAY);
+    expect(s.paid).toBe(3630);
+    expect(s.next).toEqual({ ym: '2026-12', date: '2027-01-10', amount: 1210 });
+    expect(s.endDate).toBe('2027-09-10');
+  });
+
+  it('после выплаты зарплаты закрытый деньгами месяц не съезжает', () => {
+    const snaps = { '2026-10': { installments: {} } };
+    const plan = schedule(iphone(), snaps, '2026-11-12');
+    expect(plan.slice(0, 2).map(e => [e.ym, e.status, e.frozen, e.cash])).toEqual([
+      ['2026-10', 'done', true, 1210],
+      ['2026-11', 'done', false, 1210],
+    ]);
+    expect(deductionOf(iphone(), snaps, '2026-11')).toBe(0);
+    expect(deductionOf(iphone(), snaps, '2026-12')).toBe(1210);
+    expect(summarize(iphone(), snaps, undefined, '2026-11-12').endDate).toBe('2027-09-10');
+  });
+
+  it('платёж за выбранный месяц закрывает именно его', () => {
+    const i = phone({ payments: [{ id: 'p', date: '2026-10-27', amount: 800, alloc: [{ ym: '2026-12', amount: 800 }] }] });
+    const plan = schedule(i, null, TODAY);
+    expect(plan.slice(0, 3).map(e => e.status)).toEqual(['planned', 'planned', 'done']);
+    expect(deductionOf(i, null, '2026-10')).toBe(800);
+    expect(deductionOf(i, null, '2026-12')).toBe(0);
+  });
+
+  it('месяц пропустили после платежа — деньги уходят в следующий открытый', () => {
+    const i = phone({
+      overrides: { '2026-12': 0 },
+      payments: [{ id: 'p', date: '2026-10-27', amount: 800, alloc: [{ ym: '2026-12', amount: 800 }] }],
+    });
+    const plan = schedule(i, null, TODAY);
+    expect(plan.slice(0, 4).map(e => [e.ym, e.status])).toEqual([
+      ['2026-10', 'planned'], ['2026-11', 'planned'], ['2026-12', 'skip'], ['2027-01', 'done'],
+    ]);
+  });
+
+  it('сумму месяцев подняли — деньги без места закрывают ближайший', () => {
+    const i = phone({
+      totalAmount: 1600, overrides: { '2026-10': 1600 },
+      payments: [{ id: 'p', date: '2026-10-27', amount: 800, alloc: [{ ym: '2026-11', amount: 800 }] }],
+    });
+    expect(deductionOf(i, null, '2026-10')).toBe(800);
+    expect(summarize(i, null, undefined, TODAY).remaining).toBe(800);
+  });
+
+  it('«удержано из зарплаты»: месяц зелёный, удержание остаётся', () => {
+    const i = phone({ marks: { '2026-10': { date: '2026-10-27' } } });
+    const [oct] = schedule(i, null, TODAY);
+    expect([oct.status, oct.marked, oct.withheld, oct.paidAt]).toEqual(['done', true, 800, '2026-10-27']);
+    expect(deductionOf(i, null, '2026-10')).toBe(800);
+    expect(summarize(i, null, undefined, TODAY).paid).toBe(800);
+  });
+
+  it('после выплаты отметка больше не считается — сумма из снимка', () => {
+    const i = phone({ marks: { '2026-10': { date: '2026-10-27' } } });
+    const snaps = { '2026-10': { installments: { i1: 800 } } };
+    const [oct] = schedule(i, snaps, '2026-11-12');
+    expect([oct.status, oct.frozen, oct.marked, oct.withheld]).toEqual(['done', true, false, 800]);
+    expect(summarize(i, snaps, undefined, '2026-11-12').paid).toBe(800);
+  });
+
+  it('деньги не ложатся на месяц с отметкой «удержано»', () => {
+    const i = phone({
+      marks: { '2026-10': { date: '2026-10-27' } },
+      payments: [{ id: 'p', date: '2026-10-27', amount: 800 }],
+    });
+    const plan = schedule(i, null, TODAY);
+    expect(plan.slice(0, 2).map(e => [e.ym, e.marked, e.cash])).toEqual([['2026-10', true, 0], ['2026-11', false, 800]]);
+  });
+
+  it('привязка платежа: выбранный месяц, потом ближайшие', () => {
+    const i = phone({ marks: { '2026-10': { date: '2026-10-27' } } });
+    expect(allocatePayment(i, null, 1000, TODAY)).toEqual([{ ym: '2026-11', amount: 800 }, { ym: '2026-12', amount: 200 }]);
+    expect(allocatePayment(i, null, 1000, TODAY, undefined, '2027-01')).toEqual([{ ym: '2027-01', amount: 800 }, { ym: '2026-11', amount: 200 }]);
+  });
+
+  it('«отдельно»: частичный платёж за месяц, остаток — просрочка', () => {
+    const i = separate({ startYm: '2026-10', totalAmount: 1800, monthlyAmount: 600, payments: [{ id: 'p', date: '2026-10-04', amount: 400, alloc: [{ ym: '2026-10', amount: 400 }] }] });
+    const [oct] = schedule(i, null, TODAY);
+    expect([oct.status, oct.cash, oct.outstanding]).toEqual(['overdue', 400, 200]);
   });
 });

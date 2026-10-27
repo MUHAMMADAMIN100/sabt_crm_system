@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested,
+  IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -103,7 +103,7 @@ export class InstallmentMonthDto {
   amount?: number | null;
 }
 
-/** Платёж мимо зарплаты (принёс сам / закрыли досрочно). */
+/** Платёж деньгами мимо зарплаты (принёс сам / закрыли досрочно). */
 export class InstallmentPaymentDto {
   @ApiProperty({ example: 1600 }) @Type(() => Number) @IsNumber() @Min(0)
   amount!: number;
@@ -114,7 +114,19 @@ export class InstallmentPaymentDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(300)
   note?: string;
 
-  @ApiPropertyOptional({ description: 'Счёт, куда пришли деньги; без него — только учёт возврата' })
-  @IsOptional() @IsUUID()
-  accountId?: string;
+  @ApiProperty({ description: 'Счёт, куда пришли деньги' }) @IsUUID()
+  accountId!: string;
+
+  @ApiPropertyOptional({ example: '2026-12', description: 'За какой месяц в первую очередь; остаток — ближайшие' })
+  @IsOptional() @IsString() @Matches(YM)
+  ym?: string;
+}
+
+/** «Удержано из зарплаты» за месяц: on=false — снять отметку. */
+export class InstallmentMarkDto {
+  @ApiProperty({ example: '2026-11' }) @IsString() @Matches(YM)
+  ym!: string;
+
+  @ApiProperty() @IsBoolean()
+  on!: boolean;
 }

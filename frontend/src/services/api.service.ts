@@ -729,7 +729,9 @@ export const financeApi = {
   setInstallmentMonth: (id: string, data: { ym: string; amount?: number | null }) => api.post(`/finance/installments/${id}/month`, data).then(r => r.data),
   /** Перенести дату платежа месяца («платит отдельно»); date: null — вернуть число. */
   setInstallmentDue: (id: string, data: { ym: string; date: string | null }) => api.post(`/finance/installments/${id}/due`, data).then(r => r.data),
-  addInstallmentPayment: (id: string, data: { amount: number; date?: string; note?: string; accountId?: string }) => api.post(`/finance/installments/${id}/payments`, data).then(r => r.data),
+  addInstallmentPayment: (id: string, data: { amount: number; date?: string; note?: string; accountId: string; ym?: string }) => api.post(`/finance/installments/${id}/payments`, data).then(r => r.data),
+  /** «Удержано из зарплаты» за месяц: on=false — снять отметку. */
+  setInstallmentMark: (id: string, data: { ym: string; on: boolean }) => api.post(`/finance/installments/${id}/mark`, data).then(r => r.data),
   removeInstallmentPayment: (id: string, paymentId: string) => api.delete(`/finance/installments/${id}/payments/${paymentId}`).then(r => r.data),
 
   // Планируемые оплаты (SMM части 1/2, матрицы Development/Design, график долгов)

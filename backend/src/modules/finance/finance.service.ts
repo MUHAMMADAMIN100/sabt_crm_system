@@ -23,8 +23,8 @@ import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 import { LateFineDecision } from './entities/late-fine-decision.entity';
 import { FinanceInstallment, InstallmentPayment } from './entities/finance-installment.entity';
 import {
-  capParts, deductionParts, isSkipped as installmentSkipped, sumParts,
-  schedule as scheduleInstallment, summarize as summarizeInstallment, DeductionPart,
+  allocatePayment, capParts, deductionParts, isSkipped as installmentSkipped, sumParts,
+  schedule as scheduleInstallment, summarize as summarizeInstallment, DeductionPart, ScheduleEntry,
 } from './installments.logic';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
@@ -537,6 +537,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS method varchar(16) NOT NULL DEFAULT 'salary'`);
     await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "dueDay" int`);
     await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "dueDates" jsonb`);
+    // Отметки «удержано из зарплаты» по месяцам (27.10.2026).
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS marks jsonb`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -4958,7 +4960,7 @@ export class FinanceService implements OnModuleInit {
       totalAmount: r2(i.totalAmount), monthlyAmount: r2(i.monthlyAmount), startYm: i.startYm,
       paidBefore: r2(i.paidBefore), overrides: i.overrides || {},
       method: i.method === 'separate' ? 'separate' : 'salary',
-      dueDay: i.dueDay ?? null, dueDates: i.dueDates || {},
+      dueDay: i.dueDay ?? null, dueDates: i.dueDates || {}, marks: i.marks || {},
       payments: (i.payments || [])
         .map(p => ({ ...p, amount: r2(p.amount) }))
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
@@ -4966,14 +4968,17 @@ export class FinanceService implements OnModuleInit {
     };
   }
 
-  /** История возврата: удержания выплаченных месяцев, платежи вручную и
-   *  «вернули до CRM» — новыми сверху. */
-  private installmentHistory(i: FinanceInstallment, snaps: Record<string, any> | null | undefined) {
+  /** История возврата: удержания выплаченных месяцев и отмеченные
+   *  «удержано из зарплаты», платежи деньгами и «вернули до CRM» — новыми сверху. */
+  private installmentHistory(i: FinanceInstallment, snaps: Record<string, any> | null | undefined, plan?: ScheduleEntry[]) {
     type Entry = { key: string; kind: 'salary' | 'manual' | 'before'; ym: string | null; date: string | null; amount: number; note: string | null };
     const out: Entry[] = [];
     for (const [ym, s] of Object.entries(snaps || {})) {
       const amount = r2(Number(s?.installments?.[i.id]) || 0);
       if (YM_RE.test(ym) && amount > 0) out.push({ key: `s-${ym}`, kind: 'salary', ym, date: s?.paidAt ?? null, amount, note: null });
+    }
+    for (const e of plan || []) {
+      if (e.marked && e.withheld > 0) out.push({ key: `m-${e.ym}`, kind: 'salary', ym: e.ym, date: e.paidAt, amount: e.withheld, note: null });
     }
     for (const p of i.payments || []) {
       out.push({ key: p.id, kind: 'manual', ym: (p.date || '').slice(0, 7), date: p.date, amount: r2(p.amount), note: p.note ?? null });
@@ -4985,7 +4990,7 @@ export class FinanceService implements OnModuleInit {
 
   private installmentPersonalView(i: FinanceInstallment, e: FinanceEmployee) {
     const sm = this.installmentSummary(i, e);
-    const history = this.installmentHistory(i, e.salarySnapshots);
+    const history = this.installmentHistory(i, e.salarySnapshots, this.installmentSchedule(i, e));
     const last = history.find(h => h.kind !== 'before');
     return {
       id: i.id, name: i.name, total: r2(i.totalAmount), monthly: r2(i.monthlyAmount),
@@ -5031,12 +5036,13 @@ export class FinanceService implements OnModuleInit {
     const empById = new Map(emps.map(e => [e.id, e]));
     const rows = list.map(i => {
       const e = empById.get(i.employeeId) || null;
+      const plan = this.installmentSchedule(i, e);
       return {
         installment: this.installmentDto(i),
         employee: e ? { id: e.id, name: e.name, role: e.role, status: e.status } : null,
         ...this.installmentSummary(i, e),
-        schedule: this.installmentSchedule(i, e),
-        history: this.installmentHistory(i, e?.salarySnapshots),
+        schedule: plan,
+        history: this.installmentHistory(i, e?.salarySnapshots, plan),
       };
     });
     // Сверху — с просрочкой, потом по ближайшей дате, закрытые — вниз.
@@ -5209,7 +5215,8 @@ export class FinanceService implements OnModuleInit {
       const next = dto.startYm ?? inst.startYm;
       if (!YM_RE.test(next)) throw new BadRequestException('Некорректный месяц');
       if (next !== inst.startYm) {
-        const deducted = this.installmentHistory(inst, emp?.salarySnapshots).some(h => h.kind === 'salary');
+        const deducted = Object.keys(inst.marks || {}).length > 0
+          || this.installmentHistory(inst, emp?.salarySnapshots).some(h => h.kind === 'salary');
         if (deducted) throw new BadRequestException('Из зарплаты уже удерживали — первый месяц не поменять');
       }
       await this.assertInstallmentStart(inst.method, next);
@@ -5279,26 +5286,51 @@ export class FinanceService implements OnModuleInit {
     return this.installmentDto(await this.instRepo!.save(inst));
   }
 
-  /** Платёж мимо зарплаты. С accountId — ещё и доход «Возврат долга» на счёт. */
-  async addInstallmentPayment(id: string, dto: { amount: number; date?: string; note?: string; accountId?: string }, userId?: string) {
+  /** Деньги внесли мимо зарплаты: доход «Возврат долга» на счёт. Платёж
+   *  закрывает выбранный месяц, остаток — ближайшие открытые; месяцы «из
+   *  зарплаты», закрытые деньгами, из зарплаты уже не удерживаются. */
+  async addInstallmentPayment(id: string, dto: { amount: number; date?: string; note?: string; accountId: string; ym?: string }, userId?: string) {
     const inst = await this.findInstallment(id);
     const emp = await this.empRepo.findOne({ where: { id: inst.employeeId } });
     const amount = r2(dto.amount);
     if (!(amount > 0)) throw new BadRequestException('Сумма должна быть больше нуля');
+    if (!dto.accountId) throw new BadRequestException('Выберите счёт, куда пришли деньги');
+    if (dto.ym && !YM_RE.test(dto.ym)) throw new BadRequestException('Некорректный месяц');
     const sm = this.installmentSummary(inst, emp);
     if (amount > sm.remaining + 0.005) throw new BadRequestException(`Больше остатка: осталось ${som(sm.remaining)}`);
+    const alloc = allocatePayment(inst, emp?.salarySnapshots, amount, todayISO(), this.installmentWorked(emp), dto.ym || null);
     const date = (dto.date || todayISO()).slice(0, 10);
-    let txId: string | null = null;
-    if (dto.accountId) {
-      const tx = await this.createOperation({
-        type: FinanceTxType.INCOME, amount, date, accountId: dto.accountId,
-        categoryId: await this.categoryIdByKey('debt_return'),
-        comment: `Рассрочка: ${inst.name} — ${emp?.name ?? 'сотрудник'}`,
-      }, userId);
-      txId = tx.id;
-    }
-    const payment: InstallmentPayment = { id: randomUUID(), date, amount, note: (dto.note || '').trim() || null, txId };
+    const tx = await this.createOperation({
+      type: FinanceTxType.INCOME, amount, date, accountId: dto.accountId,
+      categoryId: await this.categoryIdByKey('debt_return'),
+      comment: `Рассрочка: ${inst.name} — ${emp?.name ?? 'сотрудник'}`,
+    }, userId);
+    const payment: InstallmentPayment = {
+      id: randomUUID(), date, amount, note: (dto.note || '').trim() || null, txId: tx.id,
+      alloc: alloc.length ? alloc : null,
+    };
     inst.payments = [...(inst.payments || []), payment];
+    return this.installmentDto(await this.instRepo!.save(inst));
+  }
+
+  /** «Удержано из зарплаты» за месяц (способ «из зарплаты»): месяц зелёный,
+   *  удержание в ведомости остаётся. После выплаты зарплаты месяц берёт сумму
+   *  из снимка — отметка больше не нужна. */
+  async setInstallmentMark(id: string, dto: { ym: string; on: boolean }) {
+    const inst = await this.findInstallment(id);
+    if (inst.method === 'separate') throw new BadRequestException('Платит отдельно — отметьте «Получено»');
+    if (!YM_RE.test(dto.ym || '')) throw new BadRequestException('Некорректный месяц');
+    const emp = await this.empRepo.findOne({ where: { id: inst.employeeId } });
+    if (emp && snapOf(emp, dto.ym)) throw new BadRequestException('Зарплата за этот месяц уже выплачена — удержание уже учтено');
+    const map = { ...(inst.marks || {}) };
+    if (!dto.on) delete map[dto.ym];
+    else {
+      const entry = this.installmentSchedule(inst, emp).find(e => e.ym === dto.ym && e.status !== 'skip');
+      if (!entry) throw new BadRequestException('В этом месяце удержания нет');
+      if (!entry.marked && entry.outstanding <= 0) throw new BadRequestException('Месяц уже закрыт деньгами');
+      map[dto.ym] = { date: todayISO() };
+    }
+    inst.marks = Object.keys(map).length ? map : null;
     return this.installmentDto(await this.instRepo!.save(inst));
   }
 

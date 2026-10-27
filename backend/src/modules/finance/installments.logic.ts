@@ -1,13 +1,28 @@
 /** Рассрочки сотрудников: чистая арифметика без БД.
  *
- *  Два способа возврата (решение владельца 27.10.2026 — у каждой рассрочки свой):
- *  - «из зарплаты» (salary): удержание месяца M = min(план месяца, остаток),
- *    деньги удерживаются в день выплаты зарплаты — 10-го числа месяца M+1.
- *    Выплаченный месяц берёт сумму из снимка зарплаты
- *    (salarySnapshots[M].installments[id]) — она не меняется задним числом;
+ *  Способ возврата у каждой рассрочки свой (решение владельца 27.10.2026):
+ *  - «из зарплаты» (salary): удержание месяца M встаёт в ведомость и
+ *    удерживается в день выплаты ЗП — 10-го числа месяца M+1. Выплаченный
+ *    месяц берёт сумму из снимка зарплаты (salarySnapshots[M].installments[id])
+ *    — она не меняется задним числом. Владелец может отметить месяц
+ *    «удержано из зарплаты» (marks) — месяц зелёный, удержание в ведомости
+ *    остаётся;
  *  - «платит отдельно» (separate): сотрудник вносит деньги к своему числу.
- *    Платежи покрывают график по порядку («водопадом»): лишнее закрывает
- *    следующие месяцы, недостача висит на самом раннем — он и просрочен. */
+ *
+ *  Деньги, внесённые отдельно (payments), закрывают месяцы, к которым их
+ *  привязали при записи (alloc), остаток — ближайшие открытые месяцы по
+ *  порядку. Месяц «из зарплаты», закрытый деньгами, из зарплаты уже не
+ *  удерживается — иначе сотрудник заплатил бы дважды. */
+
+export interface InstallmentPaymentLike {
+  id: string;
+  date: string;
+  amount: number | string;
+  note?: string | null;
+  txId?: string | null;
+  /** За какие месяцы платёж: [{ ym, amount }]; без него — ближайшие по порядку. */
+  alloc?: Array<{ ym: string; amount: number | string }> | null;
+}
 
 export interface InstallmentLike {
   id: string;
@@ -17,11 +32,13 @@ export interface InstallmentLike {
   startYm: string;
   paidBefore?: number | string | null;
   overrides?: Record<string, number> | null;
-  payments?: Array<{ id: string; date: string; amount: number | string; note?: string | null; txId?: string | null }> | null;
+  payments?: InstallmentPaymentLike[] | null;
   method?: string | null;
   dueDay?: number | null;
   /** Перенесённая дата платежа месяца: { 'YYYY-MM': 'YYYY-MM-DD' }. */
   dueDates?: Record<string, string> | null;
+  /** «Удержано из зарплаты» отмечено вручную: { 'YYYY-MM': { date } }. */
+  marks?: Record<string, { date?: string | null }> | null;
 }
 
 export type SalarySnapshots = Record<string, any> | null | undefined;
@@ -35,6 +52,8 @@ const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const MAX_MONTHS = 240;
 /** День выплаты зарплаты — в этот день удерживаем рассрочку «из зарплаты». */
 export const SALARY_PAY_DAY = 10;
+/** Для расчёта удержания дата «сегодня» не нужна — статусы не используются. */
+const FAR_FUTURE = '9999-12-31';
 
 export function shiftYm(ym: string, delta: number): string {
   const [y, m] = ym.split('-').map(Number);
@@ -80,7 +99,7 @@ export function frozenFor(inst: InstallmentLike, snaps: SalarySnapshots, ym: str
   return r2(Number(s.installments?.[inst.id]) || 0);
 }
 
-/** Возвращено мимо зарплаты: до CRM + платежи вручную. */
+/** Возвращено мимо зарплаты: до CRM + платежи деньгами. */
 export function manualPaid(inst: InstallmentLike): number {
   const pays = (inst.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
   return r2((Number(inst.paidBefore) || 0) + pays);
@@ -97,38 +116,158 @@ export function salaryPaid(inst: InstallmentLike, snaps: SalarySnapshots): numbe
   return r2(sum);
 }
 
-export interface MonthStep { ym: string; amount: number; frozen: boolean }
+// ─── График с датами ─────────────────────────────────────────────
 
-/** Помесячный путь удержаний из зарплаты до untilYm включительно.
- *  worked(ym) = false — сотрудника нет в ведомости этого месяца. */
-export function walk(
-  inst: InstallmentLike, snaps: SalarySnapshots, untilYm: string,
-  worked?: (ym: string) => boolean,
-): { steps: MonthStep[]; left: number } {
-  let left = r2((Number(inst.totalAmount) || 0) - manualPaid(inst));
-  const steps: MonthStep[] = [];
-  if (!YM_RE.test(inst.startYm || '') || !YM_RE.test(untilYm || '')) return { steps, left };
-  let ym = inst.startYm;
-  for (let i = 0; i < MAX_MONTHS && ym <= untilYm; i++, ym = shiftYm(ym, 1)) {
-    const fz = frozenFor(inst, snaps, ym);
-    let amount: number;
-    if (fz != null) amount = fz;
-    else if (worked && !worked(ym)) amount = 0;
-    else amount = Math.min(plannedFor(inst, ym), Math.max(0, left));
-    amount = r2(Math.max(0, amount));
-    left = r2(left - amount);
-    steps.push({ ym, amount, frozen: fz != null });
-  }
-  return { steps, left };
+/** done — оплачено; planned — впереди; overdue — дата прошла, денег нет
+ *  (только «отдельно»); waiting — дата выплаты ЗП прошла, но месяц ещё не
+ *  выплачен (вина не сотрудника); skip — месяц пропущен владельцем. */
+export type EntryStatus = 'done' | 'planned' | 'overdue' | 'waiting' | 'skip';
+
+export interface ScheduleEntry {
+  ym: string;
+  date: string;
+  amount: number;
+  /** Сколько из суммы уже закрыто (деньгами, зарплатой или отметкой). */
+  paid: number;
+  /** Сколько ещё должны за этот месяц. */
+  outstanding: number;
+  status: EntryStatus;
+  /** Месяц удержан выплаченной зарплатой — сумма зафиксирована. */
+  frozen: boolean;
+  /** Своя сумма на месяц (не обычная). */
+  custom: boolean;
+  /** Закрыто деньгами, внесёнными отдельно. */
+  cash: number;
+  /** Удержано из зарплаты: выплаченной (frozen) или отмеченное вручную. */
+  withheld: number;
+  /** Отмечено «удержано из зарплаты» вручную (зарплата ещё не выплачена). */
+  marked: boolean;
+  /** Какие платежи закрыли месяц. */
+  paymentIds: string[];
+  /** Когда закрыт: дата последнего платежа или отметки. */
+  paidAt: string | null;
 }
 
-/** Удержание по одной рассрочке за месяц (для ведомости). «Отдельно» — 0. */
+/** Полный график: месяцы, их даты и чем каждый закрыт. Один проход по
+ *  месяцам: сначала деньги, привязанные к месяцу, потом отметка «удержано»,
+ *  потом свободные деньги (старые платежи без привязки и лишнее) — в
+ *  ближайший открытый месяц. Выплаченный месяц стоит удержанное + внесённое
+ *  деньгами. Месяцы, где удерживать не из чего (сотрудник не в ведомости),
+ *  в график не попадают. */
+export function schedule(
+  inst: InstallmentLike, snaps: SalarySnapshots, today: string, worked?: (ym: string) => boolean,
+): ScheduleEntry[] {
+  const out: ScheduleEntry[] = [];
+  if (!YM_RE.test(inst.startYm || '')) return out;
+  const salary = !isSeparate(inst);
+
+  type Cash = { id: string; date: string; left: number };
+  const allocs = new Map<string, Cash[]>();
+  const pool: Cash[] = [];
+  const payments = (inst.payments || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  for (const p of payments) {
+    let rest = r2(p.amount);
+    for (const a of p.alloc || []) {
+      const amount = r2(Math.min(Number(a.amount) || 0, rest));
+      if (!YM_RE.test(a.ym) || amount <= 0) continue;
+      allocs.set(a.ym, [...(allocs.get(a.ym) || []), { id: p.id, date: p.date, left: amount }]);
+      rest = r2(rest - amount);
+    }
+    if (rest > 0.005) pool.push({ id: p.id, date: p.date, left: rest });
+  }
+  // Месяц выпал из графика — его деньги становятся свободными.
+  const release = (ym: string) => { for (const c of allocs.get(ym) || []) if (c.left > 0.005) pool.push(c); };
+  const take = (e: ScheduleEntry, c: Cash, room: number): number => {
+    const amount = r2(Math.min(room, c.left));
+    if (amount <= 0) return 0;
+    c.left = r2(c.left - amount);
+    e.cash = r2(e.cash + amount);
+    if (!e.paymentIds.includes(c.id)) e.paymentIds.push(c.id);
+    if (!e.paidAt || c.date > e.paidAt) e.paidAt = c.date;
+    return amount;
+  };
+
+  // «Отдельно» после смены способа: удержанное раньше из зарплаты уже
+  // вернуло часть суммы.
+  let planLeft = r2((Number(inst.totalAmount) || 0) - (Number(inst.paidBefore) || 0) - (salary ? 0 : salaryPaid(inst, snaps)));
+  let ym = inst.startYm;
+  for (let i = 0; i < MAX_MONTHS && planLeft > 0.005; i++, ym = shiftYm(ym, 1)) {
+    const date = dueDateOf(inst, ym);
+    const fz = salary ? frozenFor(inst, snaps, ym) : null;
+    if (fz == null) {
+      if (salary && worked && !worked(ym)) {
+        release(ym);
+        if (hasEnded(worked, ym)) break;
+        continue;
+      }
+      if (isSkipped(inst, ym)) {
+        release(ym);
+        out.push({
+          ym, date, amount: 0, paid: 0, outstanding: 0, status: 'skip', frozen: false, custom: false,
+          cash: 0, withheld: 0, marked: false, paymentIds: [], paidAt: null,
+        });
+        continue;
+      }
+    }
+    const target = r2(Math.min(plannedFor(inst, ym), planLeft));
+    const e: ScheduleEntry = {
+      ym, date, amount: 0, paid: 0, outstanding: 0, status: 'planned', frozen: fz != null,
+      custom: inst.overrides?.[ym] != null && Number(inst.overrides[ym]) > 0,
+      cash: 0, withheld: fz ?? 0, marked: false, paymentIds: [], paidAt: null,
+    };
+    let room = r2(Math.max(0, target - (fz ?? 0)));
+    for (const c of allocs.get(ym) || []) {
+      room = r2(room - take(e, c, room));
+      if (c.left > 0.005) pool.push(c);
+    }
+    const mark = salary && fz == null ? inst.marks?.[ym] : null;
+    if (mark && room > 0.005) {
+      e.marked = true;
+      e.withheld = room;
+      e.paidAt = e.paidAt || mark.date || null;
+      room = 0;
+    }
+    for (const c of pool) {
+      if (room <= 0.005) break;
+      room = r2(room - take(e, c, room));
+    }
+    e.amount = fz != null ? r2(fz + e.cash) : target;
+    if (!(e.amount > 0)) continue;
+    planLeft = r2(planLeft - e.amount);
+    out.push(e);
+  }
+  // Деньги, привязанные к месяцам, которых в графике больше нет (сумму месяцев
+  // подняли и рассрочка кончилась раньше), — в ближайшие открытые месяцы.
+  const spare = new Set<Cash>(pool);
+  for (const list of allocs.values()) for (const c of list) spare.add(c);
+  for (const e of out) {
+    if (e.status === 'skip') continue;
+    if (!e.frozen && !e.marked) {
+      let room = r2(e.amount - e.cash);
+      for (const c of spare) {
+        if (room <= 0.005) break;
+        room = r2(room - take(e, c, room));
+      }
+    }
+    e.paid = r2(Math.min(e.amount, e.withheld + e.cash));
+    const left = r2(e.amount - e.paid);
+    e.outstanding = left > 0.005 ? left : 0;
+    e.status = e.outstanding === 0 ? 'done'
+      : e.date < today ? (salary ? 'waiting' : 'overdue')
+      : 'planned';
+  }
+  return out;
+}
+
+/** Удержание по одной рассрочке из зарплаты за месяц: сумма месяца минус то,
+ *  что внесли деньгами. Отметка «удержано» удержание не отменяет. */
 export function deductionOf(
   inst: InstallmentLike, snaps: SalarySnapshots, ym: string, worked?: (ym: string) => boolean,
 ): number {
   if (isSeparate(inst) || ym < inst.startYm) return 0;
-  const { steps } = walk(inst, snaps, ym, worked);
-  return steps.length && steps[steps.length - 1].ym === ym ? steps[steps.length - 1].amount : 0;
+  const e = schedule(inst, snaps, FAR_FUTURE, worked).find(x => x.ym === ym && x.status !== 'skip');
+  if (!e) return 0;
+  return e.frozen ? r2(e.withheld) : r2(Math.max(0, e.amount - e.cash));
 }
 
 /** Все удержания сотрудника из зарплаты за месяц, по рассрочкам. */
@@ -162,88 +301,22 @@ export function partsToSnapshot(parts: DeductionPart[]): Record<string, number> 
   return Object.fromEntries(parts.map(p => [p.id, p.amount]));
 }
 
-// ─── График с датами ─────────────────────────────────────────────
-
-/** done — оплачено; planned — впереди; overdue — дата прошла, денег нет
- *  (только «отдельно»); waiting — дата выплаты ЗП прошла, но месяц ещё не
- *  выплачен (вина не сотрудника); skip — месяц пропущен владельцем. */
-export type EntryStatus = 'done' | 'planned' | 'overdue' | 'waiting' | 'skip';
-
-export interface ScheduleEntry {
-  ym: string;
-  date: string;
-  amount: number;
-  /** Сколько из суммы уже покрыто. */
-  paid: number;
-  /** Сколько ещё должны за этот месяц. */
-  outstanding: number;
-  status: EntryStatus;
-  /** Сумма зафиксирована выплаченной зарплатой. */
-  frozen: boolean;
-  /** Своя сумма на месяц (не обычная). */
-  custom: boolean;
-}
-
-/** Полный график от первого месяца до последнего платежа. Месяцы, где
- *  удерживать не из чего (сотрудник не в ведомости), в график не попадают. */
-export function schedule(
-  inst: InstallmentLike, snaps: SalarySnapshots, today: string, worked?: (ym: string) => boolean,
-): ScheduleEntry[] {
-  const out: ScheduleEntry[] = [];
-  if (!YM_RE.test(inst.startYm || '')) return out;
-  const custom = (ym: string) => inst.overrides?.[ym] != null && Number(inst.overrides[ym]) > 0;
-
-  if (!isSeparate(inst)) {
-    let left = r2((Number(inst.totalAmount) || 0) - manualPaid(inst));
-    let ym = inst.startYm;
-    for (let i = 0; i < MAX_MONTHS; i++, ym = shiftYm(ym, 1)) {
-      const fz = frozenFor(inst, snaps, ym);
-      const date = dueDateOf(inst, ym);
-      if (fz != null) {
-        left = r2(left - fz);
-        if (fz > 0) out.push({ ym, date, amount: fz, paid: fz, outstanding: 0, status: 'done', frozen: true, custom: custom(ym) });
-        if (left <= 0.005) break;
-        continue;
-      }
-      if (left <= 0.005) break;
-      if (worked && !worked(ym)) {
-        if (hasEnded(worked, ym)) break;
-        continue;
-      }
-      if (isSkipped(inst, ym)) {
-        out.push({ ym, date, amount: 0, paid: 0, outstanding: 0, status: 'skip', frozen: false, custom: false });
-        continue;
-      }
-      const amount = r2(Math.min(plannedFor(inst, ym), left));
-      if (!(amount > 0)) continue;
-      left = r2(left - amount);
-      out.push({
-        ym, date, amount, paid: 0, outstanding: amount,
-        status: date < today ? 'waiting' : 'planned', frozen: false, custom: custom(ym),
-      });
-    }
-    return out;
-  }
-
-  // «Отдельно»: план по месяцам, деньги покрывают его по порядку.
-  const pays = r2((inst.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  let planLeft = r2((Number(inst.totalAmount) || 0) - (Number(inst.paidBefore) || 0) - salaryPaid(inst, snaps));
-  let cover = pays;
-  let ym = inst.startYm;
-  for (let i = 0; i < MAX_MONTHS && planLeft > 0.005; i++, ym = shiftYm(ym, 1)) {
-    const date = dueDateOf(inst, ym);
-    if (isSkipped(inst, ym)) {
-      out.push({ ym, date, amount: 0, paid: 0, outstanding: 0, status: 'skip', frozen: false, custom: false });
-      continue;
-    }
-    const amount = r2(Math.min(plannedFor(inst, ym), planLeft));
-    if (!(amount > 0)) continue;
-    planLeft = r2(planLeft - amount);
-    const paid = r2(Math.min(amount, Math.max(0, cover)));
-    cover = r2(cover - paid);
-    const outstanding = r2(amount - paid);
-    const status: EntryStatus = outstanding <= 0.005 ? 'done' : date < today ? 'overdue' : 'planned';
-    out.push({ ym, date, amount, paid, outstanding: outstanding <= 0.005 ? 0 : outstanding, status, frozen: false, custom: custom(ym) });
+/** Платёж деньгами → за какие месяцы: сначала выбранный, потом ближайшие
+ *  открытые по порядку. Что не легло в график — без привязки. */
+export function allocatePayment(
+  inst: InstallmentLike, snaps: SalarySnapshots, amount: number, today: string,
+  worked?: (ym: string) => boolean, preferYm?: string | null,
+): Array<{ ym: string; amount: number }> {
+  const open = schedule(inst, snaps, today, worked).filter(e => e.outstanding > 0 && !e.frozen && !e.marked);
+  const ordered = preferYm
+    ? [...open.filter(e => e.ym === preferYm), ...open.filter(e => e.ym !== preferYm)]
+    : open;
+  const out: Array<{ ym: string; amount: number }> = [];
+  let left = r2(amount);
+  for (const e of ordered) {
+    if (left <= 0.005) break;
+    const take = r2(Math.min(left, e.outstanding));
+    if (take > 0) { out.push({ ym: e.ym, amount: take }); left = r2(left - take); }
   }
   return out;
 }
@@ -257,7 +330,7 @@ export interface InstallmentSummary {
   endYm: string | null;
   /** Сколько платежей ещё впереди (включая просроченные). */
   paymentsLeft: number;
-  /** Ближайший платёж, который ещё не наступил. */
+  /** Ближайший платёж, который ещё не просрочен. */
   next: { ym: string; date: string; amount: number } | null;
   /** Просрочено (только «отдельно»): сумма, число платежей, с какой даты. */
   overdue: { amount: number; count: number; since: string; ym: string } | null;
@@ -270,17 +343,19 @@ export function summarize(
   today = new Date().toISOString().slice(0, 10),
 ): InstallmentSummary {
   const total = r2(inst.totalAmount);
-  const paid = r2(manualPaid(inst) + salaryPaid(inst, snaps));
+  const plan = schedule(inst, snaps, today, worked);
+  // Отметки «удержано» — тоже возвращённые деньги, пока зарплату не выплатили
+  // (потом сумма берётся из снимка, отметка больше не считается).
+  const markPaid = plan.filter(e => e.marked).reduce((s, e) => s + e.withheld, 0);
+  const paid = r2(manualPaid(inst) + salaryPaid(inst, snaps) + markPaid);
   const remaining = r2(Math.max(0, total - paid));
   const progress = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   if (remaining <= 0.005) {
     return { paid, remaining: 0, progress: total > 0 ? 100 : 0, endDate: null, endYm: null, paymentsLeft: 0, next: null, overdue: null, done: true };
   }
-  const plan = schedule(inst, snaps, today, worked);
   const open = plan.filter(e => e.outstanding > 0);
   const late = open.filter(e => e.status === 'overdue');
   const ahead = open.find(e => e.status !== 'overdue');
-  // Закрывается ли рассрочка по плану: сумма графика покрывает остаток.
   const planned = r2(open.reduce((s, e) => s + e.outstanding, 0));
   const closes = planned >= remaining - 0.005;
   const last = closes && open.length ? open[open.length - 1] : null;
