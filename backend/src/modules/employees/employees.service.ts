@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, InternalServerErrorException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -293,7 +293,15 @@ export class EmployeesService implements OnModuleInit {
     // Strip role/secondaryRole from dto before updating employee
     // (обе роли принадлежат User, а не Employee)
     const { role: newRoleParam, secondaryRole: secondaryRoleParam, ...empDto } = dto as any;
-    await this.repo.update(id, empDto);
+    try {
+      await this.repo.update(id, empDto);
+    } catch (e: any) {
+      // Ошибку базы показываем как есть: без логов Railway иначе не понять,
+      // что не так (так 27.10 молча падал статус «В отпуске»).
+      const reason = String(e?.message || e).slice(0, 200);
+      this.logger.error(`employee ${id} not updated: ${reason}`);
+      throw new InternalServerErrorException(`Не удалось сохранить сотрудника: ${reason}`);
+    }
 
     // ── Record salary history if salary actually changed ──────────────
     if (dto.salary !== undefined && Number(dto.salary) !== oldSalary) {

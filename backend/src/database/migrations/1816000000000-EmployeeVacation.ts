@@ -10,7 +10,13 @@ export class EmployeeVacation1816000000000 implements MigrationInterface {
   transaction = false as const;
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TYPE "employees_status_enum" ADD VALUE IF NOT EXISTS 'vacation'`);
+    // Имя типа в разных базах разное — точное значение дописывает
+    // EmployeeVacationStatusType (тип берёт из самой колонки).
+    try {
+      await queryRunner.query(`ALTER TYPE "employees_status_enum" ADD VALUE IF NOT EXISTS 'vacation'`);
+    } catch {
+      // Типа с таким именем нет — ок.
+    }
     await queryRunner.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS "vacationFrom" date`);
     await queryRunner.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS "vacationUntil" date`);
   }
