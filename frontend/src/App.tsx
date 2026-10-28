@@ -125,6 +125,9 @@ const FinanceTransportPage    = lazy(() => import('@/pages/finance/FinanceTransp
 const FinanceSettingsPage     = lazy(() => import('@/pages/finance/FinanceSettingsPage'))
 const EmployeeSalaryPage      = lazy(() => import('@/pages/finance/EmployeeSalaryPage'))
 const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
+// Публичная политика конфиденциальности — нужна для Google Play и App Store,
+// поэтому открывается без авторизации и вне Layout.
+const PrivacyPolicyPage = lazy(() => import('@/pages/public/PrivacyPolicyPage'))
 // «Доска разработки» — канбан dev-трекера (Jira/Notion-стиль).
 const DevBoardPage      = lazy(() => import('@/pages/dev-board/DevBoardPage'))
 const DevTaskDetailPage = lazy(() => import('@/pages/dev-board/DevTaskDetailPage'))
@@ -198,6 +201,9 @@ export default function App() {
         <Route path="/auth" element={authenticated ? <Navigate to="/" replace /> : <AuthPage />} />
         {/* Публичная страница брифа — без авторизации, по токену. */}
         <Route path="/public/brief/:token" element={<PublicBriefPage />} />
+        {/* Политика конфиденциальности — публичная, без авторизации. */}
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+        <Route path="/privacy" element={<Navigate to="/privacy-policy" replace />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<HomeRoute />} />
           <Route path="my-notes" element={<RoleGuard><MyNotesPage /></RoleGuard>} />

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useForm, Controller } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -399,6 +400,20 @@ export default function AuthPage() {
             </div>
           </form>
 
+        </div>
+
+        {/* Публичная ссылка: Google Play требует, чтобы политика была доступна
+            без авторизации, — проверяющий открывает её прямо с экрана входа. */}
+        <div className="mt-5 flex flex-col items-center gap-1.5 text-center">
+          <Link
+            to="/privacy-policy"
+            className="text-xs font-medium text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 hover:underline underline-offset-4 transition-colors"
+          >
+            Политика конфиденциальности
+          </Link>
+          <p className="text-[11px] text-surface-400">
+            © {new Date().getFullYear()} WeBrand · Sabt CRM
+          </p>
         </div>
       </div>
     </div>
