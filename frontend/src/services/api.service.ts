@@ -690,6 +690,10 @@ export const financeApi = {
   addEmployeeDeduction: (id: string, data: { kind: 'fine' | 'vacation' | 'bonus'; ym: string; amount: number; date?: string; dateFrom?: string; dateTo?: string; note?: string }) => api.post(`/finance/employees/${id}/deduction`, data).then(r => r.data),
   updateEmployeeDeduction: (id: string, entryId: string, data: { kind: 'fine' | 'vacation' | 'bonus'; ym: string; note?: string }) => api.patch(`/finance/employees/${id}/deduction/${entryId}`, data).then(r => r.data),
   removeEmployeeDeduction: (id: string, entryId: string, params: { kind: 'fine' | 'vacation' | 'bonus'; ym: string }) => api.delete(`/finance/employees/${id}/deduction/${entryId}`, { params }).then(r => r.data),
+  /** Отпуск «за свой счёт»: «Удержать» (amount — своя сумма) или «Не удерживать». */
+  decideVacationHint: (id: string, data: { vacationId: string; ym: string; action: 'withhold' | 'dismiss'; amount?: number }) => api.post(`/finance/employees/${id}/vacation-hint`, data).then(r => r.data),
+  /** Сколько отпуск стоит по месяцам — для карточки сотрудника. */
+  vacationPreview: (params: { userId: string; from: string; until: string }) => api.get('/finance/vacation-preview', { params }).then(r => r.data as { linked: boolean; workdays: number; months: Array<{ ym: string; days: number; monthWorkdays: number; amount: number | null }> }),
   salaryPeriod: (ym?: string) => api.get('/finance/salary/period', { params: ym ? { ym } : undefined }).then(r => r.data),
   // Закрытие разрешено только после реальных выплат по всем сотрудникам.
   closeSalaryMonth: (ym: string) => api.post('/finance/salary/close-month', { ym }).then(r => r.data),

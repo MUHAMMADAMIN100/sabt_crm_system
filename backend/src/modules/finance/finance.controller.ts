@@ -22,6 +22,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetEmployeeBonusDto } from './dto/set-employee-bonus.dto';
 import { AddDeductionDto, UpdateDeductionNoteDto, RemoveDeductionQueryDto } from './dto/deduction.dto';
+import { VacationHintDto, VacationPreviewQueryDto } from './dto/vacation-hint.dto';
 import { CreateAssetDto, UpdateAssetDto } from './dto/asset.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
@@ -243,6 +244,10 @@ export class FinanceController {
   @Post('employees/:id/deduction') addDeduction(@Param('id') id: string, @Body() dto: AddDeductionDto) { return this.service.addEmployeeDeduction(id, dto); }
   @Patch('employees/:id/deduction/:entryId') updateDeduction(@Param('id') id: string, @Param('entryId') entryId: string, @Body() dto: UpdateDeductionNoteDto) { return this.service.updateEmployeeDeductionNote(id, entryId, dto); }
   @Delete('employees/:id/deduction/:entryId') removeDeduction(@Param('id') id: string, @Param('entryId') entryId: string, @Query() q: RemoveDeductionQueryDto) { return this.service.removeEmployeeDeduction(id, entryId, q); }
+  /** Отпуск «за свой счёт»: «Удержать» (можно своей суммой) или «Не удерживать». */
+  @Post('employees/:id/vacation-hint') decideVacationHint(@Param('id') id: string, @Body() dto: VacationHintDto) { return this.service.decideVacationHint(id, dto); }
+  /** Сколько отпуск стоит по месяцам — карточка сотрудника, пока выбирают даты. */
+  @Get('vacation-preview') vacationPreview(@Query() q: VacationPreviewQueryDto) { return this.service.vacationPreview(q); }
   /** Текущий workflow-период и последний открытый период ведомости. */
   @Get('salary/period') salaryPeriod(@Query('ym') ym?: string) {
     return this.service.salaryPeriodState(ym);

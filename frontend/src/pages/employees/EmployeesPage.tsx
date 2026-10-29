@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { employeesApi, usersApi } from '@/services/api.service'
+import { employeesApi, usersApi, financeApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { getRoleLabel } from '@/lib/permissions'
+import { getRoleLabel, userCan } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
 import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
@@ -622,6 +622,24 @@ function ruDayMonth(iso: string): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
 }
 
+/** «октябрь» — для «Зарплата за октябрь». */
+function ruMonth(ym: string): string {
+  const d = new Date(ym + '-01T00:00:00')
+  return isNaN(d.getTime()) ? ym : d.toLocaleDateString('ru-RU', { month: 'long' })
+}
+
+/** «6 рабочих дней», «1 рабочий день», «3 рабочих дня». */
+function workdaysWord(n: number): string {
+  if (n % 10 === 1 && n % 100 !== 11) return 'рабочий день'
+  if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'рабочих дня'
+  return 'рабочих дней'
+}
+
+const VACATION_KINDS = [
+  { paid: true, label: 'Оплачиваемый', hint: 'зарплата не меняется, дни видны в ведомости' },
+  { paid: false, label: 'За свой счёт', hint: 'дни отпуска вычитаются из зарплаты' },
+]
+
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Активный', dot: 'bg-emerald-500', on: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
   { value: 'vacation', label: 'В отпуске', dot: 'bg-amber-400', on: 'border-amber-400/70 bg-amber-400/10 text-amber-700 dark:text-amber-300' },
@@ -653,8 +671,11 @@ interface EmployeeFormProps {
 function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFormProps) {
   const { register, handleSubmit, reset, setValue, setError, control, formState: { errors } } = useForm()
   const { t } = useTranslation()
-  const actorRole = useAuthStore(s => s.user?.role)
+  const actor = useAuthStore(s => s.user)
+  const actorRole = actor?.role
   const isFounderActor = actorRole === 'founder'
+  // Суммы отпуска — из ведомости, их видит только тот, кому открыты финансы.
+  const canSeeFinance = !!actor && userCan(actor as any, 'finance.manage')
   // Вторую роль могут назначать только admin / founder / co_founder.
   const canAssignSecondRole = ['admin', 'founder'].includes(actorRole || '')
 
@@ -666,9 +687,10 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
         hireDate: initial.hireDate ? new Date(initial.hireDate).toISOString().split('T')[0] : '', status: initial.status||'active', bio: initial.bio||'',
         vacationFrom: initial.vacationFrom ? String(initial.vacationFrom).slice(0, 10) : '',
         vacationUntil: initial.vacationUntil ? String(initial.vacationUntil).slice(0, 10) : '',
+        vacationPaid: !!initial.vacationPaid,
         secondaryRole: initial.user?.secondaryRole || '' })
     } else {
-      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'', secondaryRole:'', vacationFrom:'', vacationUntil:'' })
+      reset({ fullName:'', position:'', email:'', phone:'', telegram:'@', instagram:'', birthDate:'', hireDate:'', status:'active', bio:'', secondaryRole:'', vacationFrom:'', vacationUntil:'', vacationPaid: false })
     }
   }, [initial, open, reset])
 
@@ -683,8 +705,18 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
     const days = Math.round((Date.parse(vacationUntil) - Date.parse(from)) / 86400000) + 1
     const back = new Date(Date.parse(vacationUntil) + 86400000).toISOString().slice(0, 10)
     const word = days % 10 === 1 && days % 100 !== 11 ? 'день' : [2, 3, 4].includes(days % 10) && ![12, 13, 14].includes(days % 100) ? 'дня' : 'дней'
-    return { days, daysWord: word, fromLabel: ruDayMonth(from), untilLabel: ruDayMonth(vacationUntil), backLabel: ruDayMonth(back) }
+    return { from, until: vacationUntil, days, daysWord: word, fromLabel: ruDayMonth(from), untilLabel: ruDayMonth(vacationUntil), backLabel: ruDayMonth(back) }
   })()
+  const vacationPaid = !!useWatch({ control, name: 'vacationPaid' })
+  // Сколько отпуск стоит по месяцам: оклад ÷ рабочие дни месяца по графику ×
+  // рабочие дни отпуска. В зарплату само не идёт — ведомость подскажет.
+  const { data: vacationCost } = useQuery({
+    queryKey: ['finance', 'vacationPreview', initial?.userId, vacationInfo?.from, vacationInfo?.until],
+    queryFn: () => financeApi.vacationPreview({ userId: initial!.userId!, from: vacationInfo!.from, until: vacationInfo!.until }),
+    enabled: open && canSeeFinance && !!initial?.userId && !!vacationInfo,
+    staleTime: 60_000,
+    retry: false,
+  })
 
   const handleTelegramChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value
@@ -723,6 +755,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
         // Отпуск «с — по»: без «с» — с сегодняшнего дня (сервер подставит).
         vacationFrom: data.status === 'vacation' ? (data.vacationFrom || null) : null,
         vacationUntil: data.status === 'vacation' ? (data.vacationUntil || null) : null,
+        vacationPaid: data.status === 'vacation' ? !!data.vacationPaid : false,
         ...(role && { role }),
         // Вторая роль: отправляем только если актёр вправе её менять.
         // '' → бэк снимет вторую роль; undefined → поле не трогается.
@@ -859,11 +892,44 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                   render={({ field }) => <DatePicker value={(field.value as string) || ''} onChange={field.onChange} />} />
                 {errors.vacationUntil && <p className="text-xs text-red-400 mt-1">{String(errors.vacationUntil.message)}</p>}
               </div>
+              <div className="sm:col-span-2">
+                <label className="label">Отпуск</label>
+                <Controller name="vacationPaid" control={control}
+                  render={({ field }) => (
+                    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Отпуск">
+                      {VACATION_KINDS.map(o => {
+                        const on = !!field.value === o.paid
+                        return (
+                          <button key={o.label} type="button" role="radio" aria-checked={on}
+                            onClick={() => field.onChange(o.paid)}
+                            className={clsx('rounded-xl border px-3.5 py-2.5 text-left transition-colors',
+                              on ? 'border-amber-400/70 bg-amber-400/10' : 'border-surface-200 dark:border-surface-600 hover:bg-surface-50 dark:hover:bg-surface-700/40')}>
+                            <b className={clsx('block text-sm font-semibold', on ? 'text-amber-700 dark:text-amber-300' : 'text-surface-800 dark:text-surface-100')}>{o.label}</b>
+                            <span className="block text-xs text-surface-500 dark:text-surface-400 mt-0.5">{o.hint}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )} />
+              </div>
               {vacationInfo && (
                 <div className="sm:col-span-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-3 text-sm leading-relaxed text-surface-700 dark:text-amber-100/90">
-                  <b className="text-amber-600 dark:text-amber-300">{vacationInfo.days} {vacationInfo.daysWord}.</b>{' '}
+                  <b className="text-amber-600 dark:text-amber-300">
+                    {vacationInfo.days} {vacationInfo.daysWord}{vacationCost ? ` (${vacationCost.workdays} ${vacationCost.workdays % 10 === 1 && vacationCost.workdays % 100 !== 11 ? 'рабочий' : 'рабочих'})` : ''}.
+                  </b>{' '}
                   С {vacationInfo.fromLabel} по {vacationInfo.untilLabel} у сотрудника в CRM будет открыт только профиль.{' '}
                   <b className="text-amber-600 dark:text-amber-300">{vacationInfo.backLabel}</b> статус сам вернётся в «Активный». Дни отпуска сами отметятся в табеле.
+                  {!vacationPaid && !!vacationCost?.months.length && (
+                    <div className="grid grid-cols-2 gap-2 mt-2.5">
+                      {vacationCost.months.map(m => (
+                        <div key={m.ym} className="rounded-lg bg-white/80 dark:bg-surface-800 px-3 py-2 leading-snug">
+                          <span className="block text-xs text-surface-500 dark:text-surface-400">Зарплата за {ruMonth(m.ym)}</span>
+                          {m.amount != null && <b className="block text-base text-red-500 dark:text-red-300 tabular-nums">− {m.amount.toLocaleString('ru-RU')} с.</b>}
+                          <span className="block text-xs text-surface-500 dark:text-surface-400">{m.days} {workdaysWord(m.days)} из {m.monthWorkdays}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>

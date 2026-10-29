@@ -8,7 +8,8 @@ import { dushanbeToday } from './vacation';
 
 /** Отпуск кончился — статус сам возвращается в «Активный» (27.10.2026).
  *  Доступ открывается уже по датам (vacationNow), крон лишь наводит порядок
- *  в статусе, чтобы в списке сотрудников не висело «В отпуске». */
+ *  в статусе, чтобы в списке сотрудников не висело «В отпуске». Запись
+ *  отпуска (employee_vacations) остаётся — по ней считается зарплата. */
 @Injectable()
 export class VacationScheduler {
   private readonly logger = new Logger(VacationScheduler.name);
@@ -29,6 +30,7 @@ export class VacationScheduler {
         e.status = EmployeeStatus.ACTIVE;
         e.vacationFrom = null;
         e.vacationUntil = null;
+        e.vacationPaid = false;
         await this.repo.save(e);
         if (e.userId) this.gateway.notifyUser(e.userId, 'me:changed', {});
       }

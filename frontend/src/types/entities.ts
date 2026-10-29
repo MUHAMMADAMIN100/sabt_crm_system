@@ -42,6 +42,8 @@ export interface Employee {
   /** Отпуск «с — по» — при статусе «В отпуске». */
   vacationFrom?: string | null;
   vacationUntil?: string | null;
+  /** Оплачиваемый отпуск или за свой счёт. */
+  vacationPaid?: boolean;
   avatar: string | null;
   bio: string | null;
   salary: number | null;

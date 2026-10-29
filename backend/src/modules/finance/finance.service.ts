@@ -26,6 +26,9 @@ import {
   allocatePayment, capParts, deductionParts, isSkipped as installmentSkipped, sumParts,
   schedule as scheduleInstallment, summarize as summarizeInstallment, DeductionPart, ScheduleEntry,
 } from './installments.logic';
+import {
+  vacationHint, vacationMonthCost, ScheduleRowLike, VacationDecision, VacationHint, VacationRecordLike,
+} from './vacation-pay.logic';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
 import { TelegramService } from '../telegram/telegram.service';
@@ -2420,6 +2423,7 @@ export class FinanceService implements OnModuleInit {
       // Аванс выдаётся сразу отдельной операцией — колонка показывает выданное.
       const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => workedInFinanceMonth(e, ym));
+      const vacCtx = await this.vacationContext(from, to);
       const rows = activeEmps.map(e => {
         // Снапшот фиксирует выплаты и корректировки месяца, но не является
         // источником оклада: старые версии могли записать туда аванс/остаток.
@@ -2483,6 +2487,8 @@ export class FinanceService implements OnModuleInit {
           bonusEntries: bonusJournal,
           fineEntries,
           vacationEntries,
+          // Отпуск в этом месяце: «за свой счёт» ждёт решения владельца.
+          vacationHints: this.vacationHintsFor(e, ym, vacCtx, vacationEntries),
           // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
           // аванс и бонус уже внутри «выплачено», поэтому остаток =
           // оклад − штраф − отпускные − (финальные выплаты + авансы).
@@ -4869,6 +4875,104 @@ export class FinanceService implements OnModuleInit {
   async updateEmployeeDeductionNote(id: string, entryId: string, dto: { kind: 'fine' | 'vacation' | 'bonus'; ym?: string; note?: string }) {
     const note = (dto.note || '').trim() || null;
     return this.mutateDeduction(id, dto.kind, dto.ym, list => list.map(x => x.id === entryId ? { ...x, note } : x));
+  }
+
+  // ─── Отпуск в зарплате (29.10.2026, вариант Б) ───────────────────
+  //  Отпуск «за свой счёт» сам не вычитается: ведомость подсказывает сумму
+  //  (оклад ÷ рабочие дни месяца по графику × рабочие дни отпуска), а
+  //  владелец жмёт «Удержать» или «Не удерживать». Отпуска пишет карточка
+  //  сотрудника (employee_vacations), графики — табель (work_schedules).
+
+  /** Отпуска, задевающие промежуток, и все строки графиков. Без таблиц
+   *  (миграция не прошла) ведомость работает как раньше, без подсказок. */
+  private async vacationContext(from: string, to: string) {
+    const safe = async <T>(sql: string, params: unknown[]): Promise<T[]> => {
+      try { return await this.ds.query(sql, params); } catch { return []; }
+    };
+    const vacations = await safe<VacationRecordLike>(
+      `SELECT id, "userId", to_char("dateFrom", 'YYYY-MM-DD') AS "dateFrom",
+              to_char("dateUntil", 'YYYY-MM-DD') AS "dateUntil", paid, decisions
+         FROM employee_vacations
+        WHERE "dateFrom" <= $2 AND "dateUntil" >= $1
+        ORDER BY "dateFrom"`,
+      [from, to],
+    );
+    const schedules = await safe<ScheduleRowLike>(
+      `SELECT "userId", to_char("validFrom", 'YYYY-MM-DD') AS "validFrom", workdays, "followsCompany" FROM work_schedules`,
+      [],
+    );
+    return { vacations, schedules };
+  }
+
+  /** Подсказки по отпускам строки ведомости. Отпуск привязан к аккаунту,
+   *  строка ведомости — тоже (finance_employees.userId). */
+  private vacationHintsFor(
+    e: FinanceEmployee, ym: string,
+    ctx: { vacations: VacationRecordLike[]; schedules: ScheduleRowLike[] },
+    entries: DeductionEntry[],
+  ): VacationHint[] {
+    if (!e.userId) return [];
+    const ids = new Set(entries.map(x => x.id));
+    const salary = salaryForMonth(e, ym);
+    return ctx.vacations
+      .filter(v => v.userId === e.userId)
+      .map(v => vacationHint(v, ctx.schedules, salary, ym, ids))
+      .filter((h): h is VacationHint => !!h);
+  }
+
+  /** «Удержать» (своя сумма — amount) или «Не удерживать». Удержание —
+   *  обычная запись «Отпускные» с датами отпуска в этом месяце. Прошлое
+   *  удержание по этому отпуску (даты потом поменяли) заменяем, а при
+   *  «Не удерживать» убираем. */
+  async decideVacationHint(id: string, dto: { vacationId: string; ym: string; action: 'withhold' | 'dismiss'; amount?: number }) {
+    const e = await this.empRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Сотрудник не найден');
+    const { from, to } = monthRange(dto.ym);
+    const ctx = await this.vacationContext(from, to);
+    const v = ctx.vacations.find(x => x.id === dto.vacationId && !!e.userId && x.userId === e.userId);
+    if (!v) throw new NotFoundException('Отпуск не найден — обновите страницу');
+    const entries = readDeductionEntries(e as any, 'vacationEntries', 'vacations', dto.ym);
+    const ids = new Set(entries.map(x => x.id));
+    const hint = vacationHint(v, ctx.schedules, salaryForMonth(e, dto.ym), dto.ym, ids);
+    if (!hint) throw new BadRequestException('В этом месяце рабочих дней отпуска нет');
+    if (hint.paid) throw new BadRequestException('Отпуск оплачиваемый — из зарплаты не вычитаем');
+    const prevId = v.decisions?.[dto.ym]?.entryId;
+    const prev = prevId && ids.has(prevId) ? prevId : null;
+    let decision: VacationDecision;
+    if (dto.action === 'withhold') {
+      const amount = dto.amount !== undefined ? r2(dto.amount) : hint.amount;
+      if (!(amount > 0)) throw new BadRequestException('Сумма должна быть больше нуля');
+      const entry: DeductionEntry = {
+        id: randomUUID(), date: hint.monthFrom, amount, note: 'Отпуск за свой счёт',
+        dateFrom: hint.monthFrom, dateTo: hint.monthUntil,
+      };
+      await this.mutateDeduction(id, 'vacation', dto.ym, list => [...list.filter(x => x.id !== prev), entry]);
+      decision = { decision: 'withheld', from: hint.monthFrom, until: hint.monthUntil, entryId: entry.id, amount };
+    } else {
+      if (prev) await this.mutateDeduction(id, 'vacation', dto.ym, list => list.filter(x => x.id !== prev));
+      decision = { decision: 'dismissed', from: hint.monthFrom, until: hint.monthUntil };
+    }
+    await this.ds.query(
+      `UPDATE employee_vacations
+          SET decisions = COALESCE(decisions, '{}'::jsonb) || jsonb_build_object($2::text, $3::jsonb), "updatedAt" = now()
+        WHERE id = $1`,
+      [v.id, dto.ym, JSON.stringify(decision)],
+    );
+    return { ok: true };
+  }
+
+  /** Сколько отпуск стоит по месяцам — для карточки сотрудника, пока
+   *  выбирают даты. Человека нет в ведомости — только дни, без сумм. */
+  async vacationPreview(q: { userId: string; from: string; until: string }) {
+    if (q.until < q.from) throw new BadRequestException('Дата «по» раньше даты «с»');
+    const e = await this.empRepo.findOne({ where: { userId: q.userId } as any });
+    const { schedules } = await this.vacationContext(q.from, q.until);
+    const months: Array<{ ym: string; days: number; monthWorkdays: number; amount: number | null }> = [];
+    for (let ym = q.from.slice(0, 7); ym <= q.until.slice(0, 7) && months.length < 13; ym = shiftYm(ym, 1)) {
+      const cost = vacationMonthCost(schedules, q.userId, e ? salaryForMonth(e, ym) : 0, q.from, q.until, ym);
+      if (cost) months.push({ ym, days: cost.days, monthWorkdays: cost.monthWorkdays, amount: e ? cost.amount : null });
+    }
+    return { linked: !!e, workdays: months.reduce((s, m) => s + m.days, 0), months };
   }
 
   // ─── Рассрочки сотрудников ──────────────────────────────────────

@@ -56,6 +56,11 @@ export class Employee {
   @Column({ type: 'date', nullable: true })
   vacationUntil: string | null;
 
+  /** Отпуск оплачиваемый (зарплата не меняется) или за свой счёт — тогда
+   *  ведомость подскажет удержать дни отпуска (29.10.2026). */
+  @Column({ default: false })
+  vacationPaid: boolean;
+
   @Column({ nullable: true })
   avatar: string;
 

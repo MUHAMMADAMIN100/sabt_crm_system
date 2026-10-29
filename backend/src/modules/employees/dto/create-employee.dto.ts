@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsEnum, IsDateString, IsNumber } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsEnum, IsDateString, IsNumber, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { EmployeeStatus } from '../employee.entity';
 import { UserRole } from '../../users/user.entity';
@@ -18,6 +18,8 @@ export class CreateEmployeeDto {
   /** Отпуск «с — по» — при статусе «В отпуске». */
   @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsDateString() vacationFrom?: string | null;
   @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsDateString() vacationUntil?: string | null;
+  /** Оплачиваемый отпуск или за свой счёт. */
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() vacationPaid?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsString() bio?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() salary?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() userId?: string;

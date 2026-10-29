@@ -375,6 +375,9 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                     // выплаченной, а кнопка отмены молча ничего не делала.
                     const nothingToPay = !isPaid && gross > 0 && Number(e.toPay) <= 0.005;
                     const historyOpen = expandedEmployeeId === e.id;
+                    // Отпуск в месяце: «за свой счёт» ждёт решения — «проверить».
+                    const vacHints: any[] = isPaid ? [] : (e.vacationHints || []);
+                    const vacPending = vacHints.some((h) => h.state === 'pending');
                     return (
                       <Fragment key={e.id}>
                       <tr
@@ -389,6 +392,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                       >
                         <td data-label="" className="fin-name-cell">
                           <b className="fin-employee-name" title={e.name}>{shortName(e.name)}</b>
+                          {vacHints.length > 0 && <span className="fin-vac-chip">{vacationChip(vacHints[vacHints.length - 1])}</span>}
                         </td>
                         <td data-label="Должность" className="muted fin-role-cell">{e.role ?? '—'}</td>
                         <td data-label="ЗП" className="num">{money(e.salary)}</td>
@@ -396,7 +400,10 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                         <td data-label="Бонус" className="num">{Number(e.bonus) ? money(e.bonus) : <span className="muted">—</span>}</td>
                         <td data-label="Штраф" className="num">{Number(e.fine) ? <span style={{ color: 'var(--red)' }}>{money(e.fine)}</span> : <span className="muted">—</span>}</td>
                         <td data-label="Рассрочка" className="num">{Number(e.installment) ? <span style={{ color: INSTALLMENT_COLOR }} title={(e.installmentParts || []).filter((p: any) => p.amount > 0).map((p: any) => p.name).join(', ')}>{money(e.installment)}</span> : <span className="muted">—</span>}</td>
-                        <td data-label="Отпускные" className="num">{Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : <span className="muted">—</span>}</td>
+                        <td data-label="Отпускные" className="num">
+                          {Number(e.vacation) ? <span style={{ color: 'var(--red)' }}>{money(e.vacation)}</span> : !vacPending && <span className="muted">—</span>}
+                          {vacPending && <span className="fin-vac-check" title="Отпуск за свой счёт — решите, удерживать ли"><i />проверить</span>}
+                        </td>
                         <td data-label="К выплате" className="num">{isPaid ? <span className="muted">—</span> : <b style={{ color: 'var(--accent)' }}>{money(e.toPay)}</b>}</td>
                         <td data-label="" className="fin-pay-cell">
                           {isPaid
@@ -435,7 +442,7 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
                                   <IssueField label="Аванс" kind="advance" row={e} ym={ym} total={Number(e.advance) || 0} entries={e.advanceEntries || []} accounts={accounts} onIssue={(amt) => setPayoutFor({ row: e, kind: 'advance', amount: amt })} />
                                   <DeductionField row={e} ym={ym} field="bonus" label="Бонус" total={Number(e.bonus) || 0} entries={e.bonusEntries || []} />
                                   <DeductionField row={e} ym={ym} field="fine" label="Штраф" total={Number(e.fine) || 0} entries={e.fineEntries || []} />
-                                  <VacationField row={e} ym={ym} total={Number(e.vacation) || 0} entries={e.vacationEntries || []} />
+                                  <VacationField row={e} ym={ym} total={Number(e.vacation) || 0} entries={e.vacationEntries || []} hints={vacHints} />
                                   <InstallmentSalaryField row={e} ym={ym} frozen={false} />
                                 </div>
                               )}
@@ -786,9 +793,10 @@ function DeductionField({ row, ym, field, label, total, entries }: {
 /** Поле «Отпускные / нерабочие»: каждая запись — период «от–до» с суммой
  *  удержания (кнопка открывает окно с датами и суммой). Ниже — журнал
  *  периодов: «1 – 7 сен · 1000 с.» · ✕; клик раскрывает даты и комментарий. */
-function VacationField({ row, ym, total, entries }: { row: any; ym: string; total: number; entries: any[] }) {
+function VacationField({ row, ym, total, entries, hints = [] }: { row: any; ym: string; total: number; entries: any[]; hints?: any[] }) {
   const qc = useQueryClient();
   const [modal, setModal] = useState(false);
+  const shown = hints.filter((h) => h.state === 'pending' || h.state === 'paid');
 
   const remove = async (entry: any) => {
     patchSalaryRow(qc, ym, row.id, (r) => {
@@ -811,8 +819,9 @@ function VacationField({ row, ym, total, entries }: { row: any; ym: string; tota
   };
 
   return (
-    <div className="fld">
+    <div className={shown.some((h) => h.state === 'pending') ? 'fld wide' : 'fld'}>
       <div className="cap"><span className="lbl">Отпускные / нерабочие</span>{total > 0 && <span className="tot red">{money(total)}</span>}</div>
+      {shown.map((h) => <VacationHintCard key={h.vacationId} row={row} ym={ym} hint={h} />)}
       <button type="button" className="fin-vac-add" onClick={() => setModal(true)}><FinIcon name="plus" size={14} /> Добавить период</button>
       {entries.length > 0 && (
         <div className="fin-log">
@@ -825,6 +834,91 @@ function VacationField({ row, ym, total, entries }: { row: any; ym: string; tota
         </div>
       )}
       {modal && <VacationModal row={row} ym={ym} onClose={() => setModal(false)} />}
+    </div>
+  );
+}
+
+const ruDay = (iso: string, month: 'short' | 'long') =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month });
+
+/** «26–31 октября» / «26 окт. – 9 нояб.» */
+function vacRange(from: string, until: string, month: 'short' | 'long') {
+  if (from === until) return ruDay(from, month);
+  if (from.slice(0, 7) === until.slice(0, 7)) return `${Number(from.slice(8, 10))}–${ruDay(until, month)}`;
+  return `${ruDay(from, month)} – ${ruDay(until, month)}`;
+}
+
+/** Пометка под именем: «в отпуске до 9 нояб.» или «отпуск 3–7 окт.». */
+function vacationChip(h: any) {
+  const today = todayISO();
+  const base = h.from <= today && today <= h.until ? `в отпуске до ${ruDay(h.until, 'short')}` : `отпуск ${vacRange(h.from, h.until, 'short')}`;
+  return h.paid ? `${base} · оплачиваемый` : base;
+}
+
+function workdaysLabel(n: number) {
+  if (n % 10 === 1 && n % 100 !== 11) return 'рабочий день';
+  if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'рабочих дня';
+  return 'рабочих дней';
+}
+
+/** Отпуск в зарплате (вариант Б): за свой счёт — подсказка «Удержать N?»,
+ *  решает владелец; оплачиваемый — только виден, зарплата не меняется. */
+function VacationHintCard({ row, ym, hint }: { row: any; ym: string; hint: any }) {
+  const qc = useQueryClient();
+  const [custom, setCustom] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const customAmt = custom === null ? NaN : parseFloat(custom.replace(',', '.'));
+
+  const send = async (action: 'withhold' | 'dismiss', amount?: number) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await financeApi.decideVacationHint(row.id, { vacationId: hint.vacationId, ym, action, ...(amount !== undefined ? { amount } : {}) });
+      invalidateFinance(qc);
+      toast.success(action === 'withhold' ? `Удержано ${money(amount ?? hint.amount)}` : 'Отпуск не удерживаем');
+    } catch (err) { toast.error(apiErr(err)); }
+    finally { setBusy(false); }
+  };
+
+  if (hint.state === 'paid') {
+    return (
+      <div className="fin-vac-hint paid">
+        <div className="row"><b>Отпуск {vacRange(hint.monthFrom, hint.monthUntil, 'short')}</b><span>{hint.days} {workdaysLabel(hint.days)}</span></div>
+        <span className="txt">Оплачиваемый — из зарплаты не вычитаем.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fin-vac-hint">
+      <span className="lead">В отпуске <b>{vacRange(hint.monthFrom, hint.monthUntil, 'long')}</b> — {hint.days} {workdaysLabel(hint.days)} из {hint.monthWorkdays}, за свой счёт.</span>
+      {custom === null ? (
+        <>
+          <div className="sum"><span>Удержать</span><b>{money(hint.amount)}?</b></div>
+          <span className="calc">{money(hint.salary)} ÷ {hint.monthWorkdays} × {hint.days}</span>
+        </>
+      ) : (
+        <div className="in">
+          <input autoFocus inputMode="decimal" placeholder="своя сумма" value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && customAmt > 0) { e.preventDefault(); send('withhold', customAmt); } if (e.key === 'Escape') setCustom(null); }} />
+        </div>
+      )}
+      {hint.previousAmount != null && <span className="calc">Даты отпуска поменялись. Раньше удержали {money(hint.previousAmount)} — эту запись заменим.</span>}
+      <div className="acts">
+        {custom === null ? (
+          <>
+            <button type="button" className="btn warn" disabled={busy} onClick={() => send('withhold')}>Удержать {money(hint.amount)}</button>
+            <button type="button" className="btn" onClick={() => setCustom('')}>Своя сумма</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => send('dismiss')}>Не удерживать</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn warn" disabled={busy || !(customAmt > 0)} onClick={() => send('withhold', customAmt)}>{customAmt > 0 ? `Удержать ${money(customAmt)}` : 'Удержать'}</button>
+            <button type="button" className="btn" onClick={() => setCustom(null)}>Отмена</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

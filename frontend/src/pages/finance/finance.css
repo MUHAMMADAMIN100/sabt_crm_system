@@ -3024,3 +3024,27 @@
   .fin-root .fin-inst-row3, .fin-root .fin-inst-method { grid-template-columns: 1fr; }
   .fin-root .fin-inst-plan .sl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ─── Отпуск в зарплате (29.10.2026, вариант Б) ─────────────────────
+   «За свой счёт» сам не вычитается: в колонке «Отпускные» — «проверить»,
+   в раскрытой строке — подсказка «Удержать N?». Оплачиваемый — только виден. */
+.fin-root .fin-vac-chip { display: inline-flex; align-items: center; margin-top: 4px; border-radius: 7px; padding: 2px 7px; font-size: 11px; font-weight: 600; color: var(--amber); background: var(--amber-soft); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.fin-root .fin-name-cell .fin-vac-chip { display: flex; width: fit-content; }
+.fin-root .fin-vac-check { display: flex; justify-content: flex-end; align-items: center; gap: 5px; color: var(--amber); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.fin-root .fin-vac-check i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); flex: none; }
+.fin-root .fin-vac-hint { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--amber); border-radius: 10px; background: var(--amber-soft); padding: 11px 12px; }
+.fin-root .fin-vac-hint .lead { font-size: 13px; line-height: 1.45; color: var(--text); }
+.fin-root .fin-vac-hint .sum { display: flex; align-items: baseline; gap: 7px; font-size: 13px; color: var(--muted); }
+.fin-root .fin-vac-hint .sum b { font-size: 18px; color: var(--amber); font-variant-numeric: tabular-nums; }
+.fin-root .fin-vac-hint .calc { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fin-root .fin-vac-hint .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.fin-root .fin-vac-hint .acts .btn { min-height: 34px; padding: 6px 11px; font-size: 12.5px; }
+.fin-root .fin-vac-hint .acts .btn.warn { background: var(--amber); border-color: var(--amber); color: var(--surface); }
+.fin-root .fin-vac-hint .acts .btn.warn:disabled { opacity: .55; }
+.fin-root .fin-vac-hint.paid { border-color: var(--border); background: var(--surface-2, var(--surface)); }
+.fin-root .fin-vac-hint.paid .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+.fin-root .fin-vac-hint.paid .row span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.fin-root .fin-vac-hint.paid .txt { font-size: 12.5px; color: var(--muted); }
+@media (min-width: 760px) {
+  .fin-root .fin-emp-month-form .fld.wide { grid-column: span 2; }
+}

@@ -188,7 +188,10 @@ export class EmployeesService implements OnModuleInit {
     const { role: _r, secondaryRole: _sr, ...empDto } = dto as any;
     const emp = this.repo.create({ ...empDto, userId: savedUser.id } as Partial<Employee>);
     const saved = await this.repo.save(emp as Employee);
-    if (vacation !== undefined) await this.syncVacationAbsences(savedUser.id, vacation);
+    if (vacation !== undefined) {
+      await this.syncVacationAbsences(savedUser.id, vacation);
+      await this.syncVacationRecord(saved, null, vacation, !!dto.vacationPaid);
+    }
 
     await this.activityLog.log({
       action: ActivityAction.EMPLOYEE_CREATE,
@@ -206,15 +209,15 @@ export class EmployeesService implements OnModuleInit {
    *  трогали; null — отпуска нет (даты сброшены); иначе — даты «с — по». */
   private normalizeVacation(
     emp: { status?: EmployeeStatus | null; vacationFrom?: unknown; vacationUntil?: unknown },
-    dto: { status?: EmployeeStatus; vacationFrom?: string | null; vacationUntil?: string | null },
+    dto: { status?: EmployeeStatus; vacationFrom?: string | null; vacationUntil?: string | null; vacationPaid?: boolean },
   ): { from: string; until: string } | null | undefined {
     const touched = dto.status !== undefined || dto.vacationFrom !== undefined || dto.vacationUntil !== undefined;
     if (!touched) return undefined;
     const next = dto.status ?? emp.status;
     if (next !== EmployeeStatus.VACATION) {
       const had = emp.status === EmployeeStatus.VACATION || !!ymd(emp.vacationFrom) || !!ymd(emp.vacationUntil);
-      if (!had) { delete dto.vacationFrom; delete dto.vacationUntil; return undefined; }
-      dto.vacationFrom = null; dto.vacationUntil = null;
+      if (!had) { delete dto.vacationFrom; delete dto.vacationUntil; delete dto.vacationPaid; return undefined; }
+      dto.vacationFrom = null; dto.vacationUntil = null; dto.vacationPaid = false;
       return null;
     }
     const from = ymd(dto.vacationFrom !== undefined ? dto.vacationFrom : emp.vacationFrom) || dushanbeToday();
@@ -256,6 +259,57 @@ export class EmployeesService implements OnModuleInit {
     }
   }
 
+  /** Отпуск — отдельной записью (employee_vacations): статус после отпуска
+   *  сам сбрасывается, а зарплату за месяц считают позже, и ведомости нужно
+   *  знать, сколько дней человека не было и за чей счёт. Текущий отпуск
+   *  узнаём по дате «с», которая была до правки. Сняли отпуск досрочно —
+   *  как и в табеле, прошедшие дни остаются, будущие уходят. */
+  private async syncVacationRecord(
+    emp: { id: string; userId?: string | null; status?: EmployeeStatus | null },
+    prevFrom: string | null,
+    vacation: { from: string; until: string } | null,
+    paid: boolean,
+  ) {
+    try {
+      const q = (sql: string, params: unknown[]) => this.repo.manager.query(sql, params);
+      const current: Array<{ id: string; dateFrom: string; dateUntil: string }> = emp.status === EmployeeStatus.VACATION && prevFrom
+        ? await q(
+          `SELECT id, to_char("dateFrom", 'YYYY-MM-DD') AS "dateFrom", to_char("dateUntil", 'YYYY-MM-DD') AS "dateUntil" FROM employee_vacations
+            WHERE "employeeId" = $1 AND "dateFrom" = $2 ORDER BY "createdAt" DESC LIMIT 1`,
+          [emp.id, prevFrom],
+        )
+        : [];
+      const rec = current[0] ?? null;
+      if (vacation) {
+        // Прошлый отпуск уже кончился (крон ещё не сбросил статус), а ставят
+        // новый — это новая запись, прошлую не переписываем.
+        if (rec && vacation.from <= rec.dateUntil) {
+          await q(
+            `UPDATE employee_vacations SET "dateFrom" = $2, "dateUntil" = $3, paid = $4, "userId" = $5, "updatedAt" = now() WHERE id = $1`,
+            [rec.id, vacation.from, vacation.until, paid, emp.userId ?? null],
+          );
+        } else {
+          await q(
+            `INSERT INTO employee_vacations ("employeeId", "userId", "dateFrom", "dateUntil", paid) VALUES ($1, $2, $3, $4, $5)`,
+            [emp.id, emp.userId ?? null, vacation.from, vacation.until, paid],
+          );
+        }
+      } else if (rec) {
+        const today = dushanbeToday();
+        if (rec.dateFrom >= today) {
+          await q(`DELETE FROM employee_vacations WHERE id = $1`, [rec.id]);
+        } else {
+          await q(
+            `UPDATE employee_vacations SET "dateUntil" = LEAST("dateUntil", $2::date - 1), "updatedAt" = now() WHERE id = $1`,
+            [rec.id, today],
+          );
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`vacation record not synced for ${emp.id}: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
   async update(id: string, dto: UpdateEmployeeDto, actor?: { id: string; name?: string; role?: string }) {
     const emp = await this.findOne(id);
     const oldPosition = emp.position;
@@ -269,6 +323,7 @@ export class EmployeesService implements OnModuleInit {
     const changesVacation = vacation !== undefined && (
       (ymd(dto.vacationFrom) ?? null) !== (ymd(emp.vacationFrom) ?? null)
       || (ymd(dto.vacationUntil) ?? null) !== (ymd(emp.vacationUntil) ?? null)
+      || (dto.vacationPaid !== undefined && !!dto.vacationPaid !== !!emp.vacationPaid)
     );
 
     // Смена email и включение/отключение учётной записи — операции уровня
@@ -399,7 +454,11 @@ export class EmployeesService implements OnModuleInit {
         this.gateway.notifyUser(emp.userId, 'me:changed', {});
       }
     }
-    if (vacation !== undefined) await this.syncVacationAbsences(emp.userId, vacation);
+    if (vacation !== undefined) {
+      await this.syncVacationAbsences(emp.userId, vacation);
+      const paid = dto.vacationPaid !== undefined ? !!dto.vacationPaid : !!emp.vacationPaid;
+      await this.syncVacationRecord(emp, ymd(emp.vacationFrom), vacation, paid);
+    }
 
     await this.activityLog.log({
       userId: actor?.id,
