@@ -61,6 +61,7 @@ const ROLE_LABEL: Record<string, string> = {
   developer:         'Разработчик',
   videographer:      'Видеограф',
   video_editor:      'Монтажёр',
+  producer:          'Продюсер',
   employee:          'Сотрудник',
 }
 

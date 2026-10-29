@@ -17,6 +17,8 @@ export type UserRole =
   | 'developer'
   | 'videographer'
   | 'video_editor'
+  /** Продюсер — один на команду, отвечает за съёмки (29.10.2026). */
+  | 'producer'
   | 'targetologist'
   /** Проверяющий сторис — только смотрит, кто отметил сторис, а кто нет. */
   | 'stories_checker'

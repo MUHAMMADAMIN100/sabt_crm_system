@@ -19,6 +19,7 @@ export const ROLE_LABELS: Record<string, string> = {
   developer: 'Разработчик',
   videographer: 'Видеограф',
   video_editor: 'Монтажёр',
+  producer: 'Продюсер',
   targetologist: 'Таргетолог',
   stories_checker: 'Проверяющий сторис',
   employee: 'Сотрудник',
@@ -237,6 +238,13 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'files.view', 'files.upload',
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
+  ],
+  // Продюсер (29.10.2026) — отвечает за съёмки и почти не заходит в CRM:
+  // съёмки приходят в Telegram. На панели — календарь съёмок для просмотра.
+  producer: [
+    'dashboard',
+    'tasks.view', 'tasks.edit',
+    'notifications.view', 'profile.view',
   ],
   // Таргетолог — запуск рекламы (этап «Реклама»).
   targetologist: [

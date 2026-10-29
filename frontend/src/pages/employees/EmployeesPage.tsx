@@ -66,6 +66,7 @@ export default function EmployeesPage() {
     'Дизайнер',
     'Видеограф',
     'Монтажёр',
+    'Продюсер',
     'Проверяющий сторис',
     'Менеджер продаж (СММ)',
     'Менеджер продаж (Разработка)',
@@ -737,6 +738,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
       'Дизайнер': 'designer',
       'Видеограф': 'videographer',
       'Монтажёр': 'video_editor',
+      'Продюсер': 'producer',
       'Проверяющий сторис': 'stories_checker',
       'Таргетолог': 'targetologist',
       'Менеджер продаж (СММ)': 'sales_manager_smm',
@@ -791,6 +793,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
                 'Дизайнер',
                 'Видеограф',
                 'Монтажёр',
+                'Продюсер',
                 'Проверяющий сторис',
                 'Таргетолог',
                 'Менеджер продаж (СММ)',
@@ -819,6 +822,7 @@ function EmployeeForm({ open, onClose, onSubmit, initial, loading }: EmployeeFor
               <option value="designer">Дизайнер</option>
               <option value="videographer">Видеограф</option>
               <option value="video_editor">Монтажёр</option>
+              <option value="producer">Продюсер</option>
               <option value="stories_checker">Проверяющий сторис</option>
               <option value="targetologist">Таргетолог</option>
               <option value="developer">Разработчик</option>

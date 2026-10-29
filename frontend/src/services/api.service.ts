@@ -102,6 +102,28 @@ export const projectsApi = {
     api.patch(`/projects/${id}/client-access`, data).then(r => r.data),
 }
 
+/** Съёмка на панели продюсера. */
+export interface ProducerShoot {
+  id: string; date: string; time: string | null; projectName: string; title: string | null
+  videographer: string | null; hasScript: boolean; done: boolean
+}
+
+/** Продюсер (29.10.2026): съёмки всех SMM-проектов — только посмотреть. */
+export const producerApi = {
+  shoots: (from: string, to: string) =>
+    api.get('/producer/shoots', { params: { from, to } }).then(r => r.data as { from: string; to: string; items: ProducerShoot[] }),
+}
+
+/** Сценарий съёмки по ссылке из Telegram — без входа. */
+export interface PublicScript {
+  title: string | null; projectName: string | null
+  shoot: { date: string | null; time: string | null; videographer: string | null } | null
+  publishDate: string | null; script: string | null; updatedAt: string | null
+}
+export const publicScriptApi = {
+  get: (token: string) => api.get(`/public/script/${token}`).then(r => r.data as PublicScript),
+}
+
 /** Публичные эндпоинты брифа (для клиентской ссылки без auth). */
 export const publicBriefApi = {
   get: (token: string) => api.get(`/public/brief/${token}`).then(r => r.data),

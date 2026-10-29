@@ -13,7 +13,7 @@ const OWNER_ROLES = ['founder']
  *  первый подходящий отдел забирает сотрудника (пересечений ролей нет). */
 const DEPARTMENTS: { key: string; title: string; head: string | null; members: string[] }[] = [
   { key: 'smm',   title: 'SMM',          head: 'smm_director',   members: ['smm_specialist', 'targetologist', 'designer'] },
-  { key: 'video', title: 'Видеография',  head: null,             members: ['videographer', 'video_editor'] },
+  { key: 'video', title: 'Видеография',  head: null,             members: ['videographer', 'video_editor', 'producer'] },
   { key: 'dev',   title: 'Разработка',   head: 'dev_director',   members: ['pm_dev', 'developer'] },
   { key: 'sales', title: 'Продажи',      head: null,             members: ['sales_manager_smm', 'sales_manager_dev'] },
 ]

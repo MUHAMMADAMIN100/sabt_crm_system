@@ -32,7 +32,7 @@ const FOUNDERS = ['founder'];
 const ALL_ROLES = [
   'admin', 'founder', 'smm_director', 'dev_director',
   'smm_specialist', 'designer', 'sales_manager_smm', 'sales_manager_dev',
-  'pm_dev', 'developer', 'videographer', 'video_editor', 'targetologist', 'employee',
+  'pm_dev', 'developer', 'videographer', 'video_editor', 'producer', 'targetologist', 'employee',
 ];
 
 export const GRANTABLE: Record<string, GrantDef> = {

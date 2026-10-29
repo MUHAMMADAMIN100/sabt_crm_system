@@ -27,6 +27,7 @@ const StorymakerDashboard = lazy(() => import('./components/StorymakerDashboard'
 const SmmSpecialistDashboard = lazy(() => import('./components/SmmSpecialistDashboard'))
 const TransportCard = lazy(() => import('@/components/transport/TransportCard'))
 const ProductionDashboard = lazy(() => import('./components/ProductionDashboard'))
+const ProducerDashboard = lazy(() => import('./components/ProducerDashboard'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
 
@@ -200,6 +201,15 @@ function DashboardContent() {
           <SalesManagerDashboard />
         </Suspense>
       </div>
+    )
+  }
+
+  // Продюсер — только календарь съёмок: всё остальное приходит в Telegram.
+  if (role === 'producer') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <ProducerDashboard />
+      </Suspense>
     )
   }
 

@@ -15,6 +15,7 @@ const ROLES: { value: string; label: string; position: string }[] = [
   { value: 'designer',         label: 'Дизайнер',             position: 'Дизайнер' },
   { value: 'videographer',     label: 'Видеограф',            position: 'Видеограф' },
   { value: 'video_editor',     label: 'Монтажёр',             position: 'Монтажёр' },
+  { value: 'producer',         label: 'Продюсер',             position: 'Продюсер' },
   { value: 'sales_manager_smm', label: 'Менеджер продаж (СММ)',        position: 'Менеджер продаж (СММ)' },
   { value: 'sales_manager_dev', label: 'Менеджер продаж (Разработка)', position: 'Менеджер продаж (Разработка)' },
   { value: 'developer',        label: 'Разработчик',          position: 'Разработчик' },

@@ -30,6 +30,7 @@ const ROLE_LABELS: Record<string, string> = {
   developer: 'Разработчик',
   videographer: 'Видеограф',
   video_editor: 'Монтажёр',
+  producer: 'Продюсер',
   targetologist: 'Таргетолог',
   employee: 'Сотрудник',
 };
@@ -629,6 +630,7 @@ export class EmployeesService implements OnModuleInit {
     if (norm.includes('руководительsmm') || norm.includes('главныйsmm') || norm.includes('headsmm')
       || (norm.includes('smm') && (norm.includes('главн') || norm.includes('head') || norm.includes('руковод')))) return UserRole.SMM_DIRECTOR;
     if (norm.includes('таргетолог') || norm.includes('targetolog')) return UserRole.TARGETOLOGIST;
+    if (norm.includes('продюсер') || norm.includes('producer')) return UserRole.PRODUCER;
     if (norm.includes('smm')) return UserRole.SMM_SPECIALIST;
     if (norm.includes('дизайнер') || norm.includes('designer')) return UserRole.DESIGNER;
     if (norm.includes('монтаж') || norm.includes('editor')) return UserRole.VIDEO_EDITOR;
