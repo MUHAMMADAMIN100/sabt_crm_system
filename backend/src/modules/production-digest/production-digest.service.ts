@@ -24,7 +24,8 @@ export class ProductionDigestService {
   /** 9:00 по Душанбе: каждому исполнителю — что у него сегодня. Именно это и
    *  значит «задачи приходят сами»: человек не заходит проверять кабинет.
    *  Шлём только тем, у кого есть незакрытые карточки: пустые «задач нет»
-   *  быстро приучают не читать уведомления. */
+   *  быстро приучают не читать уведомления. Съёмок здесь нет (29.10.2026):
+   *  видеограф получает их накануне в 18:00 со сценарием (ProducerService). */
   @Cron('0 9 * * *', { timeZone: 'Asia/Dushanbe' })
   async notifyProductionMorning() {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
@@ -38,6 +39,9 @@ export class ProductionDigestService {
        WHERE ci."assigneeId" IS NOT NULL
          AND ci."publishDate"::date = ($1)::date
          AND ci.status NOT IN ('published', 'cancelled')
+         AND NOT (COALESCE(ci."prepStage"::text, '') = 'shoot'
+                  OR (ci."prepStage" IS NULL AND ci."shootForItemId" IS NOT NULL
+                      AND COALESCE(parent."contentType"::text, '') <> 'post'))
        ORDER BY ci."publishTime" NULLS LAST`,
       [today],
     ).catch((e: any) => { this.logger.warn(`Сводка производству: запрос упал — ${e?.message || e}`); return []; });

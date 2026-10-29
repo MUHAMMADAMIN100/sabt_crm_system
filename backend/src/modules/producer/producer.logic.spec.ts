@@ -67,4 +67,15 @@ describe('producer.logic', () => {
     const text = weeklyMessage('2026-11-02', '2026-11-08', [shoot({ date: '2026-11-08' })], 'x', link)!;
     expect(text).toContain('\n2–8 ноября\n');
   });
+
+  it('видеографу — «Ваши съёмки», без «снимает …»', () => {
+    const day = dailyMessage('2026-10-30', [shoot()], 'x', link, { own: true })!;
+    expect(day.startsWith('🎬 <b>Ваши съёмки на завтра — 1</b>')).toBe(true);
+    expect(day).not.toContain('снимает');
+    expect(day).toContain('«5 видов кофе за 30 секунд»\n<a href=');
+    const week = weeklyMessage('2026-11-02', '2026-11-08', [shoot({ date: '2026-11-02' })], 'x', link, { own: true })!;
+    expect(week.startsWith('📅 <b>Ваши съёмки на неделю — 1</b>')).toBe(true);
+    expect(week).toContain('«5 видов кофе за 30 секунд»\n<a href=');
+    expect(week).not.toContain(' · Бехруз');
+  });
 });

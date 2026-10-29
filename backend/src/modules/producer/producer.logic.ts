@@ -4,7 +4,8 @@ import { createHmac, timingSafeEqual } from 'crypto';
  *  заходит в CRM. Всё нужное приходит в Telegram — в 18:00 накануне съёмки
  *  на завтра, в субботу в 18:00 съёмки на следующую неделю. Под каждой
  *  съёмкой — ссылка на сценарий: простая страница без входа, живёт, пока
- *  рилс не вышел. Здесь — то, что не зависит от базы: тексты и ссылки. */
+ *  рилс не вышел. Видеограф получает то же самое, но только свои съёмки.
+ *  Здесь — то, что не зависит от базы: тексты и ссылки. */
 
 export interface ProducerShoot {
   id: string;
@@ -13,6 +14,8 @@ export interface ProducerShoot {
   projectName: string;
   title: string | null;      // название рилса
   videographer: string | null;
+  /** Кто снимает — ему уходят «Ваши съёмки». */
+  assigneeId?: string | null;
   /** Чей сценарий открывает ссылка: рилс, под который съёмка (или сама съёмка). */
   scriptItemId: string;
   hasScript: boolean;
@@ -82,6 +85,9 @@ export function readScriptToken(token: string, secret: string): string | null {
 
 // ── Сообщения ─────────────────────────────────────────────────────────
 
+/** own — сообщение видеографу о его съёмках: «Ваши съёмки», без «снимает …». */
+export interface MessageOpts { own?: boolean }
+
 const byTime = (a: ProducerShoot, b: ProducerShoot) =>
   a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99');
 
@@ -93,20 +99,25 @@ const scriptLine = (s: ProducerShoot, link: (s: ProducerShoot) => string) =>
   s.hasScript ? `<a href="${link(s)}">📄 Сценарий</a>` : 'сценария пока нет';
 
 /** 18:00 накануне: съёмки на завтра. Нет съёмок — null, пустых сообщений не шлём. */
-export function dailyMessage(dateIso: string, shoots: ProducerShoot[], appUrl: string, link: (s: ProducerShoot) => string): string | null {
+export function dailyMessage(
+  dateIso: string, shoots: ProducerShoot[], appUrl: string, link: (s: ProducerShoot) => string, opts: MessageOpts = {},
+): string | null {
   const list = shoots.filter(s => s.date === dateIso && !s.done).sort(byTime);
   if (!list.length) return null;
   const blocks = list.map(s => [
     `<b>${s.time ? `${s.time} · ` : ''}${escapeHtml(s.projectName)}</b>`,
     quoted(s),
-    `снимает ${who(s)}`,
+    ...(opts.own ? [] : [`снимает ${who(s)}`]),
     scriptLine(s, link),
   ].join('\n'));
-  return `🎬 <b>Съёмки на завтра — ${list.length}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n👉 ${appUrl}/`;
+  const head = opts.own ? 'Ваши съёмки на завтра' : 'Съёмки на завтра';
+  return `🎬 <b>${head} — ${list.length}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n👉 ${appUrl}/`;
 }
 
 /** Суббота, 18:00: съёмки на следующую неделю по дням. */
-export function weeklyMessage(from: string, to: string, shoots: ProducerShoot[], appUrl: string, link: (s: ProducerShoot) => string): string | null {
+export function weeklyMessage(
+  from: string, to: string, shoots: ProducerShoot[], appUrl: string, link: (s: ProducerShoot) => string, opts: MessageOpts = {},
+): string | null {
   const list = shoots.filter(s => s.date >= from && s.date <= to && !s.done).sort(byTime);
   if (!list.length) return null;
   // Неделя у нас пн–сб; воскресенье упоминаем, только если в него есть съёмка.
@@ -114,8 +125,9 @@ export function weeklyMessage(from: string, to: string, shoots: ProducerShoot[],
   const days: string[] = [];
   for (const day of [...new Set(list.map(s => s.date))]) {
     const lines = list.filter(s => s.date === day).map(s =>
-      `${s.time ? `<b>${s.time}</b> · ` : ''}${escapeHtml(s.projectName)}\n${quoted(s)} · ${who(s)}\n${scriptLine(s, link)}`);
+      `${s.time ? `<b>${s.time}</b> · ` : ''}${escapeHtml(s.projectName)}\n${quoted(s)}${opts.own ? '' : ` · ${who(s)}`}\n${scriptLine(s, link)}`);
     days.push(`<b>${ruShortDay(day)}</b>\n${lines.join('\n\n')}`);
   }
-  return `📅 <b>Съёмки на неделю — ${list.length}</b>\n${ruRange(from, last)}\n\n${days.join('\n\n')}\n\nНакануне каждой съёмки придёт напоминание.\n👉 ${appUrl}/`;
+  const head = opts.own ? 'Ваши съёмки на неделю' : 'Съёмки на неделю';
+  return `📅 <b>${head} — ${list.length}</b>\n${ruRange(from, last)}\n\n${days.join('\n\n')}\n\nНакануне каждой съёмки придёт напоминание.\n👉 ${appUrl}/`;
 }

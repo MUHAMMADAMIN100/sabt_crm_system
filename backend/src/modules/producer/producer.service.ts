@@ -12,9 +12,11 @@ const TZ = 'Asia/Dushanbe';
 const dushanbeToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 
 /** Продюсер (29.10.2026, вариант А): съёмки всех SMM-проектов — ему, без
- *  назначения на проект (продюсер в команде один, как видеограф). Отдельный
- *  модуль по той же причине, что и сводка производству: Telegram в
- *  зависимостях ContentPlanModule замкнул бы кольцо модулей. */
+ *  назначения на проект (продюсер в команде один, как видеограф). Видеограф
+ *  получает те же сообщения, но только о своих съёмках — в утренней сводке
+ *  9:00 их больше нет. Отдельный модуль по той же причине, что и сводка
+ *  производству: Telegram в зависимостях ContentPlanModule замкнул бы
+ *  кольцо модулей. */
 @Injectable()
 export class ProducerService {
   private readonly logger = new Logger(ProducerService.name);
@@ -40,7 +42,7 @@ export class ProducerService {
     const rows: any[] = await this.ds.query(
       `SELECT ci.id, to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date, ci."publishTime" AS time,
               p.name AS "projectName", COALESCE(parent.topic, ci.topic) AS title,
-              au.name AS videographer,
+              au.name AS videographer, ci."assigneeId" AS "assigneeId",
               COALESCE(parent.id, ci.id) AS "scriptItemId",
               btrim(COALESCE(CASE WHEN parent.id IS NOT NULL THEN parent."scriptText" ELSE ci."scriptText" END, '')) <> '' AS "hasScript",
               ci.status::text = 'published' AS done
@@ -62,7 +64,7 @@ export class ProducerService {
     );
     return rows.map(r => ({
       id: r.id, date: r.date, time: r.time || null, projectName: r.projectName || 'Проект',
-      title: r.title || null, videographer: r.videographer || null,
+      title: r.title || null, videographer: r.videographer || null, assigneeId: r.assigneeId || null,
       scriptItemId: r.scriptItemId, hasScript: !!r.hasScript, done: !!r.done,
     }));
   }
@@ -75,7 +77,7 @@ export class ProducerService {
       this.logger.warn(`producer shoots failed: ${e?.message || e}`);
       return [] as ProducerShoot[];
     });
-    return { from, to, items: items.map(({ scriptItemId: _s, ...rest }) => rest) };
+    return { from, to, items: items.map(({ scriptItemId: _s, assigneeId: _a, ...rest }) => rest) };
   }
 
   /** Кому слать: все действующие продюсеры (основная или вторая роль). */
@@ -86,46 +88,69 @@ export class ProducerService {
     return rows.map(r => r.id);
   }
 
-  private async deliver(text: string, title: string, message: string) {
-    const users = await this.producers();
+  private async deliver(users: string[], text: string, title: string, message: string) {
     for (const userId of users) {
       await this.telegram.sendToUser(userId, text);
       try {
         await this.notifications.create({ userId, type: NotificationType.NEW_TASK, title, message, link: '/' });
       } catch (e) {
-        this.logger.warn(`Уведомление продюсеру не создано ${userId}: ${(e as Error).message}`);
+        this.logger.warn(`Уведомление о съёмках не создано ${userId}: ${(e as Error).message}`);
       }
     }
-    return users.length;
   }
 
-  /** 18:00 накануне: съёмки на завтра. */
+  /** Видеографам — каждому его съёмки: сообщение «Ваши съёмки…» строит build. */
+  private async deliverOwn(
+    list: ProducerShoot[], build: (own: ProducerShoot[]) => string | null, title: (n: number) => string, message: string,
+  ) {
+    const byUser = new Map<string, ProducerShoot[]>();
+    for (const s of list) {
+      if (!s.assigneeId || s.done) continue;
+      byUser.set(s.assigneeId, [...(byUser.get(s.assigneeId) || []), s]);
+    }
+    for (const [userId, own] of byUser) {
+      const text = build(own);
+      if (text) await this.deliver([userId], text, title(own.length), message);
+    }
+    return byUser.size;
+  }
+
+  /** 18:00 накануне: съёмки на завтра — продюсеру все, видеографу свои. */
   @Cron('0 18 * * *', { timeZone: TZ })
   async notifyTomorrow() {
     try {
       const day = addDays(dushanbeToday(), 1);
       const list = await this.shoots(day, day);
-      const text = dailyMessage(day, list, this.telegram.appUrl, s => this.scriptUrl(s));
+      const link = (s: ProducerShoot) => this.scriptUrl(s);
+      const text = dailyMessage(day, list, this.telegram.appUrl, link);
       if (!text) return;
       const n = list.filter(s => !s.done).length;
-      const sent = await this.deliver(text, `Съёмки на завтра — ${n}`, ruLongDay(day));
-      this.logger.log(`Продюсеру — съёмки на ${day}: ${n} (получателей ${sent})`);
+      const producers = await this.producers();
+      await this.deliver(producers, text, `Съёмки на завтра — ${n}`, ruLongDay(day));
+      const crew = await this.deliverOwn(list, own => dailyMessage(day, own, this.telegram.appUrl, link, { own: true }),
+        k => `Ваши съёмки на завтра — ${k}`, ruLongDay(day));
+      this.logger.log(`Съёмки на ${day}: ${n} (продюсеров ${producers.length}, видеографов ${crew})`);
     } catch (e: any) {
       this.logger.warn(`Съёмки на завтра не отправлены: ${String(e?.message || e).slice(0, 160)}`);
     }
   }
 
-  /** Суббота, 18:00: съёмки на следующую неделю. */
+  /** Суббота, 18:00: съёмки на следующую неделю — продюсеру все, видеографу свои. */
   @Cron('0 18 * * 6', { timeZone: TZ })
   async notifyNextWeek() {
     try {
       const { from, to } = nextWeek(dushanbeToday());
       const list = await this.shoots(from, to);
-      const text = weeklyMessage(from, to, list, this.telegram.appUrl, s => this.scriptUrl(s));
+      const link = (s: ProducerShoot) => this.scriptUrl(s);
+      const text = weeklyMessage(from, to, list, this.telegram.appUrl, link);
       if (!text) return;
       const n = list.filter(s => !s.done).length;
-      const sent = await this.deliver(text, `Съёмки на неделю — ${n}`, ruRange(from, addDays(to, -1)));
-      this.logger.log(`Продюсеру — съёмки на неделю ${from}…${to}: ${n} (получателей ${sent})`);
+      const range = ruRange(from, addDays(to, -1));
+      const producers = await this.producers();
+      await this.deliver(producers, text, `Съёмки на неделю — ${n}`, range);
+      const crew = await this.deliverOwn(list, own => weeklyMessage(from, to, own, this.telegram.appUrl, link, { own: true }),
+        k => `Ваши съёмки на неделю — ${k}`, range);
+      this.logger.log(`Съёмки на неделю ${from}…${to}: ${n} (продюсеров ${producers.length}, видеографов ${crew})`);
     } catch (e: any) {
       this.logger.warn(`Съёмки на неделю не отправлены: ${String(e?.message || e).slice(0, 160)}`);
     }
