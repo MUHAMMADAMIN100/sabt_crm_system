@@ -95,13 +95,13 @@ export default function FinanceExpensePage() {
             </BreakdownHover>
           );
         })}
+        <InstallmentsCard data={data?.installments} onOpen={() => navigate('/finance/expense/installments')} />
         <BreakdownHover className="card clickable" ym={ym} kind="group" id="other" title={OTHER_GROUP.label} color={OTHER_GROUP.color} icon={OTHER_GROUP.icon} onClick={() => navigate(withYm('/finance/expense/other', ym))}>
           <div className="summary-head"><span className="t" style={{ color: OTHER_GROUP.color }}><CatIcon icon={OTHER_GROUP.icon} color={OTHER_GROUP.color} size={30} /> {OTHER_GROUP.label}</span></div>
           <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(data?.other?.spent ?? 0)}</div>
           <div className="mini muted" style={{ marginTop: 6 }}>реклама, транспорт, налоги…</div>
           <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
         </BreakdownHover>
-        <InstallmentsCard data={data?.installments} onOpen={() => navigate('/finance/expense/installments')} />
       </div>
       )}
     </div>
