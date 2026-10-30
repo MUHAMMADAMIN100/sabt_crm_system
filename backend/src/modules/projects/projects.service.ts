@@ -2096,7 +2096,8 @@ export class ProjectsService implements OnModuleInit {
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
     // Назначенные SMM-специалисты проекта. Принимаем только id пользователей с
-    // ролью smm_specialist (защита «в выборе только специалисты»), дедуп, cap 10.
+    // ролью smm_specialist (защита «в выборе только специалисты») и руководителя
+    // SMM — он ведёт свои проекты как специалист (30.10.2026), дедуп, cap 10.
     // Сам СММ-специалист переставлять проекты НЕ может — игнорируем это поле от него.
     if ('smmSpecialistIds' in dto && user?.role !== UserRole.SMM_SPECIALIST) {
       const raw = Array.isArray(dto.smmSpecialistIds) ? dto.smmSpecialistIds.filter(x => typeof x === 'string') : [];
@@ -2104,7 +2105,9 @@ export class ProjectsService implements OnModuleInit {
       let valid: string[] = [];
       if (uniq.length) {
         const users = await this.userRepo.find({ where: { id: In(uniq) } });
-        const allowed = new Set(users.filter(u => u.role === UserRole.SMM_SPECIALIST).map(u => u.id));
+        const allowed = new Set(users
+          .filter(u => u.role === UserRole.SMM_SPECIALIST || u.role === UserRole.SMM_DIRECTOR)
+          .map(u => u.id));
         valid = uniq.filter(x => allowed.has(x));
       }
       setOrDel('smmSpecialistIds', valid.length ? valid : null);
@@ -2169,13 +2172,17 @@ export class ProjectsService implements OnModuleInit {
   }
 
   /** Схема нагрузки SMM: каждый специалист (role=smm_specialist) с его
-   *  активными SMM-проектами + проекты без назначенного специалиста. */
+   *  активными SMM-проектами + проекты без назначенного специалиста.
+   *  Руководитель SMM — своей колонкой: свои проекты он ведёт как
+   *  специалист (30.10.2026). */
   async smmSpecialistLoad() {
     const projects = await this.repo.find({ where: { projectType: 'SMM' } });
     const active = projects.filter(p => String(p.status) !== 'archived');
-    const allSpecs = await this.userRepo.find({ where: { role: UserRole.SMM_SPECIALIST } });
-    const specMap = new Map<string, { id: string; name: string; avatar: string | null; projects: { id: string; name: string }[] }>();
-    for (const u of allSpecs) specMap.set(u.id, { id: u.id, name: u.name, avatar: u.avatar || null, projects: [] });
+    const allSpecs = await this.userRepo.find({
+      where: [{ role: UserRole.SMM_SPECIALIST }, { role: UserRole.SMM_DIRECTOR, isActive: true }],
+    });
+    const specMap = new Map<string, { id: string; name: string; avatar: string | null; role: string; projects: { id: string; name: string }[] }>();
+    for (const u of allSpecs) specMap.set(u.id, { id: u.id, name: u.name, avatar: u.avatar || null, role: u.role, projects: [] });
     const unassigned: { id: string; name: string }[] = [];
     for (const p of active) {
       const ids = Array.isArray((p.smmData as any)?.smmSpecialistIds)

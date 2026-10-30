@@ -15,8 +15,9 @@ import { AppGateway } from '../gateway/app.gateway';
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
 const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
 const STORY_MGMT_ROLES = ['admin', 'founder', 'smm_director'];
-/** Кто ведёт сторис проекта: только SMM-специалисты (основная или вторая
- *  роль) — участники проекта и назначенные через smmData.smmSpecialistIds.
+/** Кто ведёт сторис проекта: SMM-специалисты (основная или вторая
+ *  роль) — участники проекта и назначенные через smmData.smmSpecialistIds,
+ *  плюс назначенный туда же руководитель SMM (isAssignedStoryCrew).
  *  Раньше «командой» считались ВСЕ участники проекта, и основатель числился
  *  ответственным за сторис в десяти проектах (замечание владельца 02.10.2026).
  *  Руководство, видеографы и дизайнеры сторис не ведут; если кто-то из них
@@ -24,6 +25,11 @@ const STORY_MGMT_ROLES = ['admin', 'founder', 'smm_director'];
  *  вешается. */
 const isStoryCrew = (u?: { role?: string | null; secondaryRole?: string | null; isActive?: boolean } | null) =>
   !!u && u.isActive !== false && [u.role, u.secondaryRole].includes('smm_specialist');
+/** Руководитель SMM ведёт сторис только тех проектов, где его назначили
+ *  SMM-специалистом (30.10.2026): по ним норма и проверка — как у
+ *  специалиста. Просто участие в проекте как руководителя сторис не вешает. */
+const isAssignedStoryCrew = (u?: { role?: string | null; secondaryRole?: string | null; isActive?: boolean } | null) =>
+  isStoryCrew(u) || (!!u && u.isActive !== false && [u.role, u.secondaryRole].includes('smm_director'));
 /** Статус дня в сводке проверки: выполнено / частично / не отмечено. */
 type CheckDay = 'done' | 'partial' | 'none';
 /** Число дней в месяце даты 'YYYY-MM-DD' — дневная норма = месячная / дни месяца. */
@@ -149,9 +155,9 @@ export class StoriesService {
     // Неизвестный/удалённый id в smmSpecialistIds и не-специалисты отпадают.
     const crewOf = new Map<string, string[]>();
     for (const p of projects) {
-      const ids = new Set<string>((p.members || []).map(m => m.id));
-      for (const id of assignedOf(p)) ids.add(id);
-      crewOf.set(p.id, [...ids].filter(id => isStoryCrew(known.get(id))));
+      const crew = new Set<string>((p.members || []).map(m => m.id).filter(id => isStoryCrew(known.get(id))));
+      for (const id of assignedOf(p)) if (isAssignedStoryCrew(known.get(id))) crew.add(id);
+      crewOf.set(p.id, [...crew]);
     }
     return { projects, known, crewOf };
   }
@@ -410,8 +416,11 @@ export class StoriesService {
       const extraUsers = extraIds.length
         ? await this.userRepo.find({ where: { id: In(extraIds) } }).catch(() => [] as User[])
         : [];
-      // Только SMM-специалисты (isStoryCrew) — так же, как на странице проверки.
-      const crew = [...(project.members || []), ...extraUsers].filter(isStoryCrew);
+      // Только SMM-специалисты (isStoryCrew) и назначенный на проект
+      // руководитель SMM — так же, как на странице проверки.
+      const assignedSet = new Set(assignedIds);
+      const crew = [...(project.members || []), ...extraUsers]
+        .filter(u => isStoryCrew(u) || (assignedSet.has(u.id) && isAssignedStoryCrew(u)));
 
       // План на день для этого проекта (на проект, не на каждого участника).
       // Сторис — это командная работа: достаточно, чтобы любой участник

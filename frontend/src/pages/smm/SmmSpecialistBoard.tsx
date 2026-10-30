@@ -10,7 +10,7 @@ import clsx from 'clsx'
 import { SmmProjectMiniBox, MINI_CLS, type SmmCard } from './SmmProjectCard'
 
 type Proj = { id: string; name: string }
-type Spec = { id: string; name: string; avatar: string | null; projects: Proj[] }
+type Spec = { id: string; name: string; avatar: string | null; role?: string; projects: Proj[] }
 type LoadData = { specialists: Spec[]; unassigned: Proj[] }
 
 const UNASSIGNED = '__unassigned__'
@@ -147,7 +147,7 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
               <Avatar name={s.name} src={s.avatar || undefined} size={34} />
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-bold text-gray-900 dark:text-gray-100 truncate">{s.name}</p>
-                <p className="text-[11px] text-gray-400">SMM-специалист</p>
+                <p className="text-[11px] text-gray-400">{s.role === 'smm_director' ? 'Руководитель SMM' : 'SMM-специалист'}</p>
               </div>
             </>
           }

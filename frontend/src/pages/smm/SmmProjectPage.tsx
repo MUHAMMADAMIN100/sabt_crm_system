@@ -321,11 +321,15 @@ export default function SmmProjectPage() {
 
   // ── SMM-специалист проекта ──
   // Назначает руководство (у него есть доступ к списку /users); руководитель SMM
-  // и сам специалист видят назначенных, но не меняют. Выбор — только специалисты.
+  // и сам специалист видят назначенных, но не меняют. Выбор — специалисты и
+  // руководитель SMM: свои проекты он ведёт как специалист (30.10.2026).
   const canAssignSpec = ['admin', 'founder'].includes((user as any)?.role ?? '')
   const { data: specialistUsers } = useQuery<SmmSpec[]>({
-    queryKey: ['users', 'smm_specialist'],
-    queryFn: () => usersApi.list('smm_specialist'),
+    queryKey: ['users', 'smm_specialist', 'smm_director'],
+    queryFn: async () => {
+      const [specs, leads] = await Promise.all([usersApi.list('smm_specialist'), usersApi.list('smm_director')])
+      return [...(specs || []), ...(leads || []).filter((u: any) => u.isActive !== false)]
+    },
     enabled: canAssignSpec,
   })
   const [specOpen, setSpecOpen] = useState(false)
@@ -601,7 +605,10 @@ export default function SmmProjectPage() {
                                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                               >
                                 <Avatar name={u.name} src={u.avatar || undefined} size={26} />
-                                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 flex-1 truncate">{u.name}</span>
+                                <span className="flex-1 min-w-0 flex flex-col">
+                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{u.name}</span>
+                                  {u.role === 'smm_director' && <span className="text-[11px] text-gray-400">Руководитель SMM</span>}
+                                </span>
                                 <span className={'w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ' + (on ? 'bg-[#3f7a58] border-[#3f7a58]' : 'border-gray-300 dark:border-gray-600')}>
                                   {on && <Check size={13} className="text-white" />}
                                 </span>

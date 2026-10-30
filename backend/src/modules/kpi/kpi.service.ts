@@ -91,10 +91,18 @@ export const CONTENT_ON_TIME_SQL = `
 
 /** Истории ведут SMM-специалисты (роль сторисмейкера упразднена, оставлена
  *  для совместимости) — метрика «План сторис» показывается им (основная или
- *  вторая роль). */
+ *  вторая роль). Руководителю SMM — по проектам, где его назначили
+ *  специалистом (30.10.2026); нет таких — метрики нет (план 0). */
 function isStoryMaker(user: { role?: string | null; secondaryRole?: string | null }): boolean {
-  const STORY_ROLES: string[] = [UserRole.SMM_SPECIALIST];
+  const STORY_ROLES: string[] = [UserRole.SMM_SPECIALIST, UserRole.SMM_DIRECTOR];
   return STORY_ROLES.includes(user.role || '') || STORY_ROLES.includes(user.secondaryRole || '');
+}
+
+/** Руководитель SMM отвечает за сторис только назначенных ему проектов:
+ *  участником он числится во многих проектах как руководитель. */
+function storiesAssignedOnly(user: { role?: string | null; secondaryRole?: string | null }): boolean {
+  const roles = [user.role, user.secondaryRole];
+  return roles.includes(UserRole.SMM_DIRECTOR) && !roles.includes(UserRole.SMM_SPECIALIST);
 }
 
 /** Базовые таргеты на 30-дневный период. Для других периодов скейлим
@@ -209,8 +217,9 @@ export class KpiService {
               END > 0
           AND (
             $5::boolean
-            OR EXISTS (SELECT 1 FROM project_members pm
-                       WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)
+            -- участие в проекте не считается, если $6 (руководитель SMM)
+            OR (NOT $6::boolean AND EXISTS (SELECT 1 FROM project_members pm
+                       WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid))
             -- назначен SMM-специалистом проекта (smmData.smmSpecialistIds), без членства
             OR jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::uuid::text)
           )
@@ -422,7 +431,7 @@ export class KpiService {
       await Promise.all(storyUserIds.map(async (uid) => {
         const rows = await this.storyRepo.manager.query(
           this.storiesPlanSql(),
-          [uid, periodFrom, periodTo, this.todayLocal(), coversAll.get(uid) ?? false],
+          [uid, periodFrom, periodTo, this.todayLocal(), coversAll.get(uid) ?? false, storiesAssignedOnly(userMap.get(uid)!)],
         ).catch(e => { this.logger.warn(`stories KPI query failed: ${e?.message || e}`); return [] as any[]; });
         const r = rows?.[0];
         if (r) storyPlanByUid.set(uid, { closed: Number(r.closed) || 0, planned: Number(r.planned) || 0 });
@@ -624,9 +633,9 @@ export class KpiService {
                      WHEN p."smmData"->>'storiesPerDay' ~ '^[0-9]+$' THEN (p."smmData"->>'storiesPerDay')::int
                      ELSE 3
                    END > 0
-               AND ($5::boolean OR EXISTS (
+               AND ($5::boolean OR (NOT $6::boolean AND EXISTS (
                  SELECT 1 FROM project_members pm
-                 WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)
+                 WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid))
                  OR jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::uuid::text))
            ),
            logs AS (
@@ -644,7 +653,7 @@ export class KpiService {
            WHERE days.day >= proj.since
              AND (COALESCE(l.total, 0) = 0 OR COALESCE(l.mine, 0) > 0)
            ORDER BY days.day DESC, proj.name ASC`,
-          [userId, periodFrom, periodTo, this.todayLocal(), !!emp?.isStoryMaker],
+          [userId, periodFrom, periodTo, this.todayLocal(), !!emp?.isStoryMaker, storiesAssignedOnly(user)],
         ).catch(() => []);
         return rows.map(r => ({
           id: `${r.pid}-${r.day}`,
