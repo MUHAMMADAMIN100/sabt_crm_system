@@ -34,6 +34,13 @@ export class FinanceDebt {
   @Column({ type: 'text', nullable: true })
   note: string | null;
 
+  /** «Что это» (30.10.2026): 'debt' — настоящий долг (заняли у человека или
+   *  компании), живёт в «Долгах»; 'bank' — кредит или рассрочка компании в
+   *  банке, живёт в «Рассрочках» (в т. ч. банковская часть рассрочки
+   *  сотруднику). Платежи и «Планирование» у обоих одинаковые. */
+  @Column({ type: 'varchar', length: 16, default: 'debt' })
+  kind: 'debt' | 'bank';
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

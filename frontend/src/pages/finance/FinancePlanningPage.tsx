@@ -251,12 +251,14 @@ export default function FinancePlanningPage() {
           const dday = Math.min(Number(debt?.dueDay) || 10, lastDay);
           date = `${calYm}-${String(dday).padStart(2, '0')}`;
         }
+        // Кредит или рассрочка банка (30.10.2026) — «Рассрочка», не «Долг».
+        const bank = debt?.kind === 'bank';
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
-          comment: debtNameById.get(p.debtId) || 'Погашение долга',
+          comment: debtNameById.get(p.debtId) || (bank ? 'Платёж банку' : 'Погашение долга'),
           details: detailList([
-            { label: 'Долг', value: debt?.name || debtNameById.get(p.debtId) },
-            { label: 'Кому', value: debt?.counterparty },
-            { label: 'Остаток долга', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
+            { label: bank ? 'Рассрочка' : 'Долг', value: debt?.name || debtNameById.get(p.debtId) },
+            { label: bank ? 'Банк' : 'Кому', value: debt?.counterparty },
+            { label: bank ? 'Осталось банку' : 'Остаток долга', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
             { label: 'Платёж/мес', value: debt?.monthlyPayment ? money(Number(debt.monthlyPayment)) : null },
             { label: 'День оплаты', value: `${Number(debt?.dueDay) || 10}-го` },
           ]) });

@@ -395,6 +395,9 @@ const DIRECTION_CATEGORY_KEY: Record<string, string> = {
 };
 
 /** Справочники + индексы по id (кэш на один запрос). */
+/** Кредит или рассрочка компании в банке — живёт в «Рассрочках», не в «Долгах». */
+const isBankDebt = (d?: { kind?: string | null } | null) => d?.kind === 'bank';
+
 interface FinMaps {
   accounts: FinanceAccount[];
   categories: FinanceCategory[];
@@ -402,6 +405,8 @@ interface FinMaps {
   employees: FinanceEmployee[];
   subscriptions: FinanceSubscription[];
   debts: FinanceDebt[];
+  /** Настоящие долги — без кредитов и рассрочек банков. */
+  realDebts: FinanceDebt[];
   acc: Map<string, FinanceAccount>;
   cat: Map<string, FinanceCategory>;
   proj: Map<string, FinanceProject>;
@@ -555,6 +560,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "position" int NOT NULL DEFAULT 0`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "dueDay" int`);
+    // Кредиты и рассрочки банков — в «Рассрочках», не в «Долгах» (30.10.2026).
+    await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS kind varchar(16) NOT NULL DEFAULT 'debt'`);
     // Отметки «оплачено без операции» по месяцам (см. FinanceSubscription.paidMarks).
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
     // День оплаты подписки/аренды — для напоминаний.
@@ -1471,6 +1478,7 @@ export class FinanceService implements OnModuleInit {
     ]);
     return {
       accounts, categories, projects, employees, subscriptions, debts,
+      realDebts: debts.filter(d => !isBankDebt(d)),
       acc: new Map(accounts.map(a => [a.id, a])),
       cat: new Map(categories.map(c => [c.id, c])),
       proj: new Map(projects.map(p => [p.id, p])),
@@ -1494,14 +1502,16 @@ export class FinanceService implements OnModuleInit {
     return tx.categoryId ? (m.cat.get(tx.categoryId)?.key ?? null) : null;
   }
 
-  /** Группа дашборда: направления дохода; расход → salary/rent_subs/debts. */
+  /** Группа дашборда: направления дохода; расход → salary/rent_subs/debts/
+   *  installments (платежи банкам по кредитам и рассрочкам компании). */
   private groupOf(tx: FinanceTransaction, m: FinMaps): string | null {
     if (tx.type === FinanceTxType.INCOME) return this.directionOf(tx, m);
     if (tx.type === FinanceTxType.EXPENSE) {
       const key = this.catKey(tx, m);
       if (tx.employeeId || key === 'salary') return 'salary';
       if (tx.subscriptionId || key === 'rent' || key === 'subscription') return 'rent_subs';
-      if (tx.debtId || key === 'debt') return 'debts';
+      if (tx.debtId) return isBankDebt(m.debt.get(tx.debtId)) ? 'installments' : 'debts';
+      if (key === 'debt') return 'debts';
     }
     return null;
   }
@@ -1772,10 +1782,13 @@ export class FinanceService implements OnModuleInit {
     const subsMonthly = r2(subs.filter(s => s.active).reduce((s, x) => s + Number(x.amount), 0));
     const rentSubFact = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'rent_subs'));
 
-    // Долги.
-    const totalDebt = r2(m.debts.reduce((s, d) => s + this.debtRemaining(d, allTx), 0));
-    const debtPlan = r2(m.debts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment), this.debtRemaining(d, allTx)), 0));
+    // Долги — только настоящие; кредиты и рассрочки банков — отдельной строкой.
+    const totalDebt = r2(m.realDebts.reduce((s, d) => s + this.debtRemaining(d, allTx), 0));
+    const debtPlan = r2(m.realDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment), this.debtRemaining(d, allTx)), 0));
     const debtFact = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'debts'));
+    const bankDebts = m.debts.filter(isBankDebt);
+    const bankPlan = r2(bankDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment), this.debtRemaining(d, allTx)), 0));
+    const bankFact = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'installments'));
 
     const expensePlan = [
       // План ЗП — полное обязательство месяца (фонд + бонусы − авансы), а не
@@ -1783,6 +1796,7 @@ export class FinanceService implements OnModuleInit {
       { group: 'salary', plan: salaryPlan, fact: salaryPaid },
       { group: 'rent_subs', plan: subsMonthly, fact: rentSubFact },
       { group: 'debts', plan: debtPlan, fact: debtFact },
+      { group: 'installments', plan: bankPlan, fact: bankFact },
     ];
 
     const expectedIncome = r2(planned
@@ -1912,7 +1926,7 @@ export class FinanceService implements OnModuleInit {
       salaryMode = !!id && m.cat.get(id)?.key === 'salary';
     } else if (kind === 'group') {
       if (id === 'other') {
-        txs = all.filter(x => x.type === FinanceTxType.EXPENSE && !['salary', 'rent_subs', 'debts'].includes(this.groupOf(x, m) || ''));
+        txs = all.filter(x => x.type === FinanceTxType.EXPENSE && !['salary', 'rent_subs', 'debts', 'installments'].includes(this.groupOf(x, m) || ''));
       } else {
         txs = all.filter(x => x.type === FinanceTxType.EXPENSE && this.groupOf(x, m) === id);
         salaryMode = id === 'salary';
@@ -1923,7 +1937,7 @@ export class FinanceService implements OnModuleInit {
       if (salaryMode) return isAdvanceTx(t) ? 'Авансы' : isBonusTx(t) ? 'Бонусы' : 'Зарплата';
       // Подписки/аренда: имя позиции хранится в комментарии операции.
       if (kind === 'group' && id === 'rent_subs') return (t.comment || '').trim() || 'Аренда/подписка';
-      if (kind === 'group' && id === 'debts') return (t.debtId && m.debt.get(t.debtId)?.name) || (t.comment || '').trim() || 'Долг';
+      if (kind === 'group' && (id === 'debts' || id === 'installments')) return (t.debtId && m.debt.get(t.debtId)?.name) || (t.comment || '').trim() || 'Долг';
       return (t.comment || '').trim() || 'Без описания';
     };
     for (const t of txs) add(labelOf(t), Number(t.amount));
@@ -2387,16 +2401,17 @@ export class FinanceService implements OnModuleInit {
     // с каждой оплатой, как у зарплаты.
     const subsToPay = r2(activeSubs.reduce((sum, s) => sum + subRemaining(s), 0));
 
-    const debtIds = new Set(m.debts.map(d => d.id));
+    const debtIds = new Set(m.realDebts.map(d => d.id));
     const debtsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'debts'));
-    const totalRemaining = r2(m.debts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
+    const totalRemaining = r2(m.realDebts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
     const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
     // Месячное обязательство по долгам — как в эталоне (карточка «Долги» на
     // странице Расход и план/факт Обзора): Σ min(платёж/мес, остаток).
-    const debtsMonthly = r2(m.debts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment) || 0, this.debtRemaining(d, allExp)), 0));
-    const debtCount = m.debts.filter(d => this.debtRemaining(d, allExp) > 0).length;
+    const debtsMonthly = r2(m.realDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment) || 0, this.debtRemaining(d, allExp)), 0));
+    const debtCount = m.realDebts.filter(d => this.debtRemaining(d, allExp) > 0).length;
+    const banks = this.bankStats(await this.bankDebtsView(m.debts, allExp, planned));
 
-    const otherSpent = this.sum(monthExp.filter(t => !['salary', 'rent_subs', 'debts'].includes(this.groupOf(t, m) || '')));
+    const otherSpent = this.sum(monthExp.filter(t => !['salary', 'rent_subs', 'debts', 'installments'].includes(this.groupOf(t, m) || '')));
 
     return {
       ym,
@@ -2404,7 +2419,7 @@ export class FinanceService implements OnModuleInit {
       subscriptions: { spent: subsSpent, count: subsCount, paidCount: subsPaidCount, monthly: subMonthly, toPay: subsToPay },
       debts: { spent: debtsSpent, count: debtCount, remaining: totalRemaining, dueMonth, monthly: debtsMonthly },
       other: { spent: otherSpent },
-      installments: this.installmentsCard(instMap, m.employees),
+      installments: { ...this.installmentsCard(instMap, m.employees), banks },
     };
   }
 
@@ -2567,7 +2582,8 @@ export class FinanceService implements OnModuleInit {
     }
 
     if (kind === 'debts') {
-      const debts = await this.debtRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+      // Только настоящие долги: кредиты и рассрочки банков — в «Рассрочках».
+      const debts = (await this.debtRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } })).filter(d => !isBankDebt(d));
       const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
       const planned = await this.ppRepo.find();
       const winStart = start || this.defaultStartDebts(debts, planned);
@@ -2600,7 +2616,7 @@ export class FinanceService implements OnModuleInit {
     }
 
     // other
-    const other = monthExp.filter(t => !['salary', 'rent_subs', 'debts'].includes(this.groupOf(t, m) || ''));
+    const other = monthExp.filter(t => !['salary', 'rent_subs', 'debts', 'installments'].includes(this.groupOf(t, m) || ''));
     const total = this.sum(other);
     const map = new Map<string | null, number>();
     for (const t of other) { const k = t.categoryId ?? null; map.set(k, (map.get(k) ?? 0) + Number(t.amount)); }
@@ -5136,8 +5152,53 @@ export class FinanceService implements OnModuleInit {
     };
   }
 
-  /** Страница «Рассрочки сотрудников»: карточка на каждую рассрочку — график
-   *  с датами, ближайший платёж, просрочка, история возврата. */
+  /** Кредиты и рассрочки компании в банках (30.10.2026, вариант Б): остаток,
+   *  платёж, ближайший плановый платёж и рассрочка сотрудника, если это её
+   *  банковская часть. Оплаты — расходы с debtId, как у долгов. */
+  private async bankDebtsView(debts: FinanceDebt[], allExp: FinanceTransaction[], pps?: FinancePlannedPayment[]) {
+    const banks = debts.filter(isBankDebt);
+    if (!banks.length) return [];
+    const ids = banks.map(d => d.id);
+    const plans = pps ?? await this.ppRepo.find({ where: { debtId: In(ids) } as any });
+    const insts = this.instRepo ? await this.instRepo.find() : [];
+    const today = todayISO();
+    return banks.map(d => {
+      const remaining = this.debtRemaining(d, allExp);
+      const total = r2(d.totalAmount);
+      const nextPp = plans
+        .filter(p => p.debtId === d.id && p.status === 'expected')
+        .sort((a, b) => String(a.dueDate || a.ym).localeCompare(String(b.dueDate || b.ym)))[0];
+      const nextDate = nextPp ? (nextPp.dueDate || `${nextPp.ym}-01`) : null;
+      return {
+        id: d.id, name: d.name, bank: d.counterparty || null,
+        total, paidBefore: r2(d.paidBefore), monthly: r2(d.monthlyPayment), dueDay: d.dueDay ?? null,
+        remaining, paid: r2(Math.max(0, total - remaining)),
+        progress: total > 0 ? Math.min(100, Math.round(((total - remaining) / total) * 100)) : 0,
+        done: remaining <= 0.005,
+        next: nextPp && nextDate && remaining > 0.005
+          ? { date: nextDate, amount: r2(Math.min(Number(nextPp.amount), remaining)), overdue: nextDate < today }
+          : null,
+        installmentId: insts.find(i => i.debtId === d.id)?.id ?? null,
+        note: d.note ?? null,
+      };
+    });
+  }
+
+  /** Итог по банкам: сколько осталось, платёж в месяц, ближайший платёж. */
+  private bankStats(list: Awaited<ReturnType<FinanceService['bankDebtsView']>>) {
+    const active = list.filter(b => !b.done);
+    const next = active.filter(b => b.next).sort((a, b) => a.next!.date.localeCompare(b.next!.date))[0];
+    return {
+      remaining: r2(active.reduce((s, b) => s + b.remaining, 0)),
+      monthly: r2(active.reduce((s, b) => s + Math.min(b.monthly, b.remaining), 0)),
+      count: active.length,
+      closed: list.length - active.length,
+      next: next ? { ...next.next!, name: next.name, bank: next.bank } : null,
+    };
+  }
+
+  /** Страница «Рассрочки»: банки (кредиты и рассрочки компании) и рассрочки
+   *  сотрудникам — график с датами, ближайший платёж, просрочка, история. */
   async installmentsBoard() {
     const period = await this.salaryPeriodState();
     const [list, emps] = await Promise.all([
@@ -5162,8 +5223,16 @@ export class FinanceService implements OnModuleInit {
     const active = rows.filter(r => !r.done);
     const nextRow = active.filter(r => r.next).sort((a, b) => a.next!.date.localeCompare(b.next!.date))[0];
     const late = active.filter(r => r.overdue);
+    const allDebts = await this.debtRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
+    const bankIds = allDebts.filter(isBankDebt).map(d => d.id);
+    const bankExp = bankIds.length
+      ? this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE, debtId: In(bankIds) } as any }))
+      : [];
+    const banks = await this.bankDebtsView(allDebts, bankExp);
     return {
       rows,
+      banks,
+      bankStats: this.bankStats(banks),
       today: todayISO(),
       latestOpenYm: period.latestOpenYm,
       stats: {
@@ -5277,6 +5346,7 @@ export class FinanceService implements OnModuleInit {
       paidBefore: r2(inst.paidBefore),
       dueDay: inst.bankDueDay,
       note: `Рассрочка сотрудника${emp?.name ? ` — ${emp.name}` : ''}`,
+      kind: 'bank' as const,
     };
     const debt = existing
       ? await this.debtRepo.save(Object.assign(existing, fields))
@@ -5583,6 +5653,7 @@ export class FinanceService implements OnModuleInit {
       name: dto.name.trim(), counterparty: dto.counterparty ?? null, totalAmount: Number(dto.totalAmount) || 0,
       monthlyPayment: Number(dto.monthlyPayment) || 0, paidBefore: Number(dto.paidBefore) || 0, note: dto.note ?? null,
       dueDay: this.normDueDay(dto.dueDay), position,
+      kind: dto.kind === 'bank' ? 'bank' : 'debt',
     }));
     await this.regenerateDebtSchedule(d.id);
     return d;

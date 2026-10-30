@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, apiErr, INCOME_GROUPS, EXPENSE_GROUPS , useYmParam, withYm, todayISO } from './finlib';
+import { money, apiErr, INCOME_GROUPS, EXPENSE_GROUPS, BANK_GROUP, useYmParam, withYm, todayISO } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
@@ -59,10 +59,11 @@ export default function FinanceOverviewPage() {
   const incomeReceivedTotal = incomeRows.reduce((s, r) => s + r.fact, 0);
 
   // Расход по статьям: план/факт из бэка (expensePlan), метаданные из EXPENSE_GROUPS
-  const expenseRows = useMemo(() => EXPENSE_GROUPS.map((g) => {
+  // Кредиты и рассрочки банков — своей строкой после долгов (30.10.2026).
+  const expenseRows = useMemo(() => [...EXPENSE_GROUPS, BANK_GROUP].map((g) => {
     const p = (ov.expensePlan || []).find((x: any) => x.group === g.key);
     return { ...g, plan: p?.plan || 0, fact: p?.fact || 0 };
-  }), [ov.expensePlan]);
+  }).filter((r) => r.key !== 'installments' || r.plan > 0 || r.fact > 0), [ov.expensePlan]);
   const expensePlanTotal = expenseRows.reduce((s, r) => s + r.plan, 0);
 
   const handleDelete = async (t: any) => {

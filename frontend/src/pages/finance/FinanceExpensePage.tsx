@@ -118,6 +118,7 @@ function InstallmentsCard({ data, onOpen }: { data?: any; onOpen: () => void }) 
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const next = data?.next;
   const late = data?.overdue;
+  const banks = data?.banks;
   const day = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   return (
     <button type="button" className="card clickable fin-inst-card-btn" onClick={onOpen}>
@@ -130,6 +131,12 @@ function InstallmentsCard({ data, onOpen }: { data?: any; onOpen: () => void }) 
       ) : next ? (
         <div className="mini muted" style={{ marginTop: 8 }}>ближайший · {day(next.date)}, {money(next.amount)}</div>
       ) : null}
+      {/* Кредиты и рассрочки банков теперь здесь, а не в «Долгах» (30.10.2026). */}
+      {banks?.count > 0 && (
+        <div className="mini muted" style={{ marginTop: 6 }}>
+          банкам осталось {money(banks.remaining)}{banks.next ? ` · ${day(banks.next.date)}, ${money(banks.next.amount)}` : ''}
+        </div>
+      )}
       <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
     </button>
   );

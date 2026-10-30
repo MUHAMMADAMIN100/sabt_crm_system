@@ -96,27 +96,53 @@ export function InstallmentsList() {
   const [entryFor, setEntryFor] = useState<{ row: any; entry: Entry } | null>(null);
   const [payFor, setPayFor] = useState<{ row: any; amount?: number; ym?: string } | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  // «+ Рассрочка»: компании в банке или сотруднику (30.10.2026, вариант Б).
+  const [addOpen, setAddOpen] = useState(false);
+  const [bankFor, setBankFor] = useState<any | 'new' | null>(null);
 
   if (isLoading) return <FinLoading />;
   if (isError) return <FinLoadError onRetry={refetch} />;
 
   const rows: any[] = data?.rows ?? [];
   const stats = data?.stats ?? { remaining: 0, total: 0, paid: 0, count: 0, people: 0, next: null, overdue: null };
+  const banks: any[] = data?.banks ?? [];
+  const bankStats = data?.bankStats ?? { remaining: 0, monthly: 0, count: 0, closed: 0, next: null };
   const openYm: string = data?.latestOpenYm ?? currentYm();
   const active = rows.filter((r) => !r.done);
   const closed = rows.filter((r) => r.done);
+  // Банковская часть рассрочки сотруднику — внутри её карточки; кредиты
+  // компании (без сотрудника) — своими карточками.
+  const bankOf = (instId: string) => banks.find((b) => b.installmentId === instId) ?? null;
+  const ownBanks = banks.filter((b) => !b.installmentId);
+  const ownActive = ownBanks.filter((b) => !b.done);
+  const ownClosed = ownBanks.filter((b) => b.done);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1 className="flex" style={{ color: INSTALLMENT_COLOR }}><FinIcon name="installment" size={22} /> <span style={{ color: 'var(--text)' }}>Рассрочки сотрудников</span></h1>
-          <p>Покупки сотрудникам с возвратом частями — из зарплаты или отдельно</p>
+          <h1 className="flex" style={{ color: INSTALLMENT_COLOR }}><FinIcon name="installment" size={22} /> <span style={{ color: 'var(--text)' }}>Рассрочки</span></h1>
+          <p>Кредиты и рассрочки компании в банках и покупки сотрудникам</p>
         </div>
-        <button className="btn primary" onClick={() => setFormFor('new')}><FinIcon name="plus" size={16} /> Рассрочка</button>
+        <div className="fin-inst-add">
+          <button className="btn primary" aria-expanded={addOpen} onClick={() => setAddOpen((v) => !v)}><FinIcon name="plus" size={16} /> Рассрочка</button>
+          {addOpen && (
+            <>
+              <div className="fin-inst-add-shade" onClick={() => setAddOpen(false)} />
+              <div className="fin-inst-add-menu" role="menu" aria-label="Новая рассрочка">
+                <button type="button" role="menuitem" onClick={() => { setAddOpen(false); setBankFor('new'); }}>
+                  <b>Компании — кредит или рассрочка в банке</b><span>платим банку сами, сотрудник не участвует</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setAddOpen(false); setFormFor('new'); }}>
+                  <b>Сотруднику</b><span>вернёт из зарплаты или отдельно; можно через банк</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && banks.length === 0 ? (
         <div className="card empty">
           <div className="big"><FinIcon name="installment" size={30} /></div>
           Рассрочек нет — нажмите «＋ Рассрочка», если купили сотруднику вещь с возвратом частями
@@ -125,42 +151,51 @@ export function InstallmentsList() {
         <>
           <section className="fin-inst-sum" aria-label="Итого по рассрочкам">
             <div>
-              <span className="lb">Сотрудники должны</span>
+              <span className="lb">Банкам осталось</span>
+              <span className="vl" style={bankStats.remaining > 0 ? { color: 'var(--red)' } : undefined}>{money(bankStats.remaining)}</span>
+              <span className="sb">
+                {bankStats.count > 0 ? pluralRu(bankStats.count, 'рассрочка', 'рассрочки', 'рассрочек') : 'рассрочек в банках нет'}
+                {bankStats.closed > 0 ? ` · ${bankStats.closed} ${bankStats.closed === 1 ? 'закрыта' : 'закрыты'}` : ''}
+              </span>
+            </div>
+            <div>
+              <span className="lb">Ближайший платёж банку</span>
+              <span className="vl" style={bankStats.next?.overdue ? { color: 'var(--red)' } : undefined}>{bankStats.next ? `${dayLabel(bankStats.next.date)} · ${money(bankStats.next.amount)}` : '—'}</span>
+              <span className="sb">{bankStats.next ? [bankStats.next.bank, bankStats.next.name].filter(Boolean).join(' · ') : 'платежей банкам впереди нет'}</span>
+            </div>
+            <div>
+              <span className="lb">Сотрудники должны нам</span>
               <span className="vl" style={{ color: INSTALLMENT_COLOR }}>{money(stats.remaining)}</span>
-              <span className="sb">из {money(stats.total)} · вернули {money(stats.paid)}</span>
-            </div>
-            <div>
-              <span className="lb">Ближайший платёж</span>
-              <span className="vl">{stats.next ? `${dayLabel(stats.next.date)} · ${money(stats.next.amount)}` : '—'}</span>
-              <span className="sb">{stats.next ? `${stats.next.employeeName ?? ''} · ${stats.next.method === 'separate' ? 'платит отдельно' : 'из зарплаты'}` : 'платежей впереди нет'}</span>
-            </div>
-            <div>
-              <span className="lb">Просрочено</span>
-              <span className="vl" style={stats.overdue ? { color: 'var(--red)' } : undefined}>{stats.overdue ? money(stats.overdue.amount) : 'нет'}</span>
-              <span className="sb">{stats.overdue ? `${pluralRu(stats.overdue.count, 'платёж', 'платежа', 'платежей')} · с ${dayLabel(stats.overdue.since)}` : 'все платежи вовремя'}</span>
+              {stats.overdue ? (
+                <span className="sb" style={{ color: 'var(--red)' }}>просрочено {money(stats.overdue.amount)} · с {dayLabel(stats.overdue.since)}</span>
+              ) : (
+                <span className="sb">{stats.next ? `ближайший возврат ${dayLabel(stats.next.date)} · ${money(stats.next.amount)}` : 'возвратов впереди нет'}</span>
+              )}
             </div>
           </section>
 
           <div className="fin-inst-list">
             {active.map((r) => (
-              <InstallmentCard key={r.installment.id} row={r} openYm={openYm}
+              <InstallmentCard key={r.installment.id} row={r} openYm={openYm} bank={bankOf(r.installment.id)}
                 onEdit={() => setFormFor(r)}
                 onEntry={(entry) => setEntryFor({ row: r, entry })}
                 onPay={(amount) => setPayFor({ row: r, amount })} />
             ))}
+            {ownActive.map((b) => <BankCreditCard key={b.id} bank={b} onEdit={() => setBankFor(b)} />)}
           </div>
 
-          {closed.length > 0 && (
+          {closed.length + ownClosed.length > 0 && (
             <>
               <button type="button" className="btn ghost sm fin-inst-closed-toggle" onClick={() => setShowClosed((v) => !v)} aria-expanded={showClosed}>
-                {showClosed ? 'Скрыть закрытые' : `Закрытые · ${closed.length}`}
+                {showClosed ? 'Скрыть закрытые' : `Закрытые · ${closed.length + ownClosed.length}`}
               </button>
               {showClosed && (
                 <div className="fin-inst-list">
                   {closed.map((r) => (
-                    <InstallmentCard key={r.installment.id} row={r} openYm={openYm}
+                    <InstallmentCard key={r.installment.id} row={r} openYm={openYm} bank={bankOf(r.installment.id)}
                       onEdit={() => setFormFor(r)} onEntry={(entry) => setEntryFor({ row: r, entry })} onPay={() => {}} />
                   ))}
+                  {ownClosed.map((b) => <BankCreditCard key={b.id} bank={b} onEdit={() => setBankFor(b)} />)}
                 </div>
               )}
             </>
@@ -174,7 +209,144 @@ export function InstallmentsList() {
           onPay={(ym, amount) => { setPayFor({ row: entryFor.row, ym, amount }); setEntryFor(null); }} />
       )}
       {payFor && <InstallmentPaymentModal row={payFor.row} amount={payFor.amount} ym={payFor.ym} onClose={() => setPayFor(null)} />}
+      {bankFor && <BankCreditModal bank={bankFor === 'new' ? null : bankFor} onClose={() => setBankFor(null)} />}
     </>
+  );
+}
+
+/** Строка «Платим банку» (30.10.2026): сколько осталось банку и ближайший
+ *  платёж. В карточке рассрочки сотрудника и в карточке кредита компании. */
+function BankRow({ bank }: { bank: any }) {
+  return (
+    <div className="fin-inst-bankrow">
+      <div className="who">
+        <AccountMark name={bank.bank || 'банк'} compact />
+        <div><b>Платим банку</b><small>{bank.bank || 'банк'}{bank.dueDay ? ` · ${bank.dueDay}-го числа` : ''}</small></div>
+      </div>
+      <div className="mid">
+        <span className="t">{bank.done ? <b>Выплачено</b> : <><b>{money(bank.remaining)}</b> осталось из {money(bank.total)}</>}</span>
+        <div className="progress"><i style={{ width: `${bank.progress ?? 0}%`, background: bank.done ? 'var(--green)' : 'var(--red)' }} /></div>
+      </div>
+      <div className={`nx${bank.next?.overdue ? ' late' : ''}`}>
+        {bank.next ? (
+          <>{bank.next.overdue ? 'не оплачено' : 'следующий'}<b>{dayLabel(bank.next.date, true)} · {money(bank.next.amount)}</b></>
+        ) : <>платежей впереди нет</>}
+      </div>
+    </div>
+  );
+}
+
+/** Кредит или рассрочка компании в банке — своя карточка (без сотрудника). */
+function BankCreditCard({ bank, onEdit }: { bank: any; onEdit: () => void }) {
+  return (
+    <section className={`fin-inst-card${bank.done ? ' closed' : ''}`}>
+      <div className="fin-inst-bankhead">
+        <b>{bank.name}</b>
+        <span className="fin-inst-chip">кредит компании{bank.bank ? ` · ${bank.bank}` : ''}</span>
+        {bank.done && <span className="fin-inst-chip ok">✓ выплачено полностью</span>}
+        <button type="button" className="fin-inst-link" onClick={onEdit}>изменить</button>
+      </div>
+      <BankRow bank={bank} />
+    </section>
+  );
+}
+
+/** Окно «Кредит или рассрочка компании в банке»: что взяли, банк, сумма,
+ *  платёж и день. Хранится долгом вида «банк» — платежи стоят в
+ *  «Планировании», «Оплачено» пишет расход (30.10.2026). */
+function BankCreditModal({ bank, onClose }: { bank: any | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const isEdit = !!bank;
+  const [name, setName] = useState<string>(bank?.name ?? '');
+  const [bankPick, setBankPick] = useState<string>(bank?.bank ? (BANKS.includes(bank.bank) ? bank.bank : 'other') : BANKS[0]);
+  const [bankOther, setBankOther] = useState<string>(bank?.bank && !BANKS.includes(bank.bank) ? bank.bank : '');
+  const [total, setTotal] = useState<string>(bank ? String(bank.total) : '');
+  const [before, setBefore] = useState<string>(bank ? String(bank.paidBefore || '') : '');
+  const [monthly, setMonthly] = useState<string>(bank ? String(bank.monthly || '') : '');
+  const [day, setDay] = useState<number>(Number(bank?.dueDay) || 10);
+  const [busy, setBusy] = useState(false);
+  const bankName = bankPick === 'other' ? bankOther.trim() : bankPick;
+  const t = num(total), b = num(before), mo = num(monthly);
+  const rest = Math.max(0, t - b);
+  const count = mo > 0 ? Math.ceil(rest / mo - 1e-9) : 0;
+  const lastAmount = count > 0 ? Math.round((rest - mo * (count - 1)) * 100) / 100 : 0;
+  const start = dueDate('separate', currentYm(), day) < todayISO() ? shiftYm(currentYm(), 1) : currentYm();
+  const dates = Array.from({ length: Math.min(count, 120) }, (_, i) => dueDate('separate', shiftYm(start, i), day));
+  const valid = !!name.trim() && !!bankName && t > 0 && b <= t && mo > 0;
+
+  async function save() {
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      const body = { name: name.trim(), counterparty: bankName, totalAmount: t, paidBefore: b, monthlyPayment: mo, dueDay: day };
+      if (isEdit) await financeApi.updateDebt(bank.id, body);
+      else await financeApi.createDebt({ ...body, kind: 'bank' });
+      invalidateFinance(qc);
+      toast.success(isEdit ? 'Сохранено' : 'Кредит добавлен');
+      onClose();
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
+  }
+
+  async function remove() {
+    if (!bank || busy) return;
+    const ok = await finConfirm(`Удалить «${bank.name}»? Уже оплаченные платежи останутся в расходах.`, { danger: true, confirmLabel: 'Удалить' });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await financeApi.removeDebt(bank.id);
+      invalidateFinance(qc);
+      toast.success('Удалено');
+      onClose();
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
+  }
+
+  return (
+    <FinModal title={isEdit ? bank.name : 'Кредит или рассрочка компании'} onClose={onClose} width={580}
+      footer={<>
+        {isEdit && !bank.installmentId && <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={remove}>Удалить</button>}
+        <button className="btn ghost" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={!valid || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
+      </>}>
+      <div className="field"><label>Что взяли</label><input autoFocus={!isEdit} value={name} maxLength={200} placeholder="например, камера Sony" onChange={(e) => setName(e.target.value)} /></div>
+      <div className="field">
+        <label>Банк</label>
+        <div className="fin-inst-banks" role="radiogroup" aria-label="Банк">
+          {BANKS.map((x) => (
+            <button key={x} type="button" role="radio" aria-checked={bankPick === x} className={bankPick === x ? 'on' : ''} onClick={() => setBankPick(x)}>
+              <AccountMark name={x} compact />{x}
+            </button>
+          ))}
+          <button type="button" role="radio" aria-checked={bankPick === 'other'} className={bankPick === 'other' ? 'on' : ''} onClick={() => setBankPick('other')}>
+            <AccountMark name="банк" compact />Другой
+          </button>
+        </div>
+        {bankPick === 'other' && <input value={bankOther} maxLength={200} placeholder="название банка" onChange={(e) => setBankOther(e.target.value)} style={{ marginTop: 8 }} />}
+      </div>
+      <div className="form-grid">
+        <div className="field"><label>Сумма кредита</label><input inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} /></div>
+        <div className="field"><label>Уже заплатили банку</label><input inputMode="decimal" value={before} placeholder="0" onChange={(e) => setBefore(e.target.value)} /></div>
+      </div>
+      {b > t && <p className="mini neg" style={{ margin: 0 }}>«Уже заплатили» больше суммы кредита.</p>}
+      <div className="form-grid">
+        <div className="field"><label>В месяц</label><input inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></div>
+        <div className="field">
+          <label>День оплаты</label>
+          <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}-е число</option>)}
+          </select>
+        </div>
+      </div>
+      {count > 0 && b <= t && dates.length > 0 && (
+        <div className="fin-inst-plan">
+          <div className="h">
+            <b>{pluralRu(count, 'платёж', 'платежа', 'платежей')} по {money(mo)}</b>
+            {lastAmount !== mo ? `, последний ${money(lastAmount)}` : ''}
+            {' · '}{count > 1 ? `с ${dayLabel(dates[0])} по ${dayLabel(dates[dates.length - 1])}` : dayLabel(dates[0])}
+          </div>
+          <span className="mini muted">Каждый платёж встанет в «Планирование» на {day}-е. «Оплачено» — расход со счёта, остаток банку уменьшится.</span>
+        </div>
+      )}
+    </FinModal>
   );
 }
 
@@ -185,8 +357,8 @@ function entryEditable(row: any, e: Entry, openYm: string): boolean {
   return isSeparate(row) || (!e.frozen && e.ym >= openYm);
 }
 
-function InstallmentCard({ row, openYm, onEdit, onEntry, onPay }: {
-  row: any; openYm: string;
+function InstallmentCard({ row, openYm, bank, onEdit, onEntry, onPay }: {
+  row: any; openYm: string; bank?: any | null;
   onEdit: () => void; onEntry: (e: Entry) => void; onPay: (amount?: number) => void;
 }) {
   const qc = useQueryClient();
@@ -308,6 +480,8 @@ function InstallmentCard({ row, openYm, onEdit, onEntry, onPay }: {
           {hidden > 0 && lastOpen && <span className="fin-inst-p more">ещё {hidden} · до {dayLabel(lastOpen.date, true)}</span>}
         </div>
       )}
+      {/* Куплено через банк — та же покупка, сторона «платим банку». */}
+      {bank && <BankRow bank={bank} />}
     </section>
   );
 }

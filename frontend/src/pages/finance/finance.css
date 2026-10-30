@@ -3061,3 +3061,31 @@
 .fin-root .fin-inst-banks button.on, .fin-overlay .fin-inst-banks button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .fin-root .fin-inst-bank .fin-inst-plan, .fin-overlay .fin-inst-bank .fin-inst-plan { background: var(--surface-2, var(--surface)); }
 
+
+/* ─── Рассрочки: банки и сотрудники вместе (30.10.2026, вариант Б) ──── */
+.fin-root .fin-inst-add { position: relative; }
+.fin-root .fin-inst-add-shade { position: fixed; inset: 0; z-index: 30; }
+.fin-root .fin-inst-add-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 31; width: 340px; display: flex; flex-direction: column; padding: 6px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 18px 40px rgba(0, 0, 0, .28); }
+.fin-root .fin-inst-add-menu button { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.fin-root .fin-inst-add-menu button:hover { background: var(--surface-2, var(--surface)); }
+.fin-root .fin-inst-add-menu b { font-size: 14px; }
+.fin-root .fin-inst-add-menu span { font-size: 12.5px; color: var(--muted); }
+.fin-root .fin-inst-bankrow { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 220px); gap: 18px; align-items: center; margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2, var(--surface)); }
+.fin-root .fin-inst-bankrow .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fin-root .fin-inst-bankrow .who b { display: block; font-size: 14px; }
+.fin-root .fin-inst-bankrow .who small { display: block; font-size: 12px; color: var(--muted); }
+.fin-root .fin-inst-bankrow .mid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fin-root .fin-inst-bankrow .mid .t { font-size: 13px; color: var(--muted); }
+.fin-root .fin-inst-bankrow .mid .t b { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-root .fin-inst-bankrow .nx { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--muted); }
+.fin-root .fin-inst-bankrow .nx b { font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-root .fin-inst-bankrow .nx.late b { color: var(--red); }
+.fin-root .fin-inst-bankhead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fin-root .fin-inst-bankhead > b { font-size: 16.5px; font-weight: 650; }
+.fin-root .fin-inst-bankhead .fin-inst-link { margin-left: auto; }
+.fin-root .fin-inst-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface-2, var(--surface)); }
+.fin-root .fin-inst-chip.ok { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+@media (max-width: 760px) {
+  .fin-root .fin-inst-bankrow { grid-template-columns: 1fr; gap: 10px; }
+  .fin-root .fin-inst-add-menu { width: min(340px, calc(100vw - 32px)); }
+}

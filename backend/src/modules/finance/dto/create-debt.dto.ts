@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -24,4 +24,8 @@ export class CreateDebtDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(2000)
   note?: string;
+
+  /** 'bank' — кредит или рассрочка компании в банке («Рассрочки»). */
+  @ApiPropertyOptional({ enum: ['debt', 'bank'] }) @IsOptional() @IsIn(['debt', 'bank'])
+  kind?: 'debt' | 'bank';
 }

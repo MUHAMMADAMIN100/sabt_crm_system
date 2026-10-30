@@ -120,6 +120,9 @@ export const EXPENSE_GROUPS: GroupMeta[] = [
 
 export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'box', color: '#8b909a' }
 
+/** Платежи банкам по кредитам и рассрочкам компании — строка «Обзора». */
+export const BANK_GROUP: GroupMeta = { key: 'installments', label: 'Рассрочки банкам', icon: 'installment', color: '#47aaa4' }
+
 export const TYPE_LABEL: Record<string, string> = {
   income: 'Доход',
   expense: 'Расход',
