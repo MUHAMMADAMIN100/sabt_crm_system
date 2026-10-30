@@ -3,11 +3,12 @@ import alifLogo from '@/assets/finance/alif.svg';
 import dushanbeCityLogo from '@/assets/finance/dushanbe-city.svg';
 import FinIcon from './FinIcon';
 
-export type AccountBrand = 'alif' | 'dushanbe-city' | 'cash' | 'generic';
+export type AccountBrand = 'alif' | 'eskhata' | 'dushanbe-city' | 'cash' | 'generic';
 
 export function accountBrand(name?: string | null): AccountBrand {
   const normalized = String(name || '').trim().toLocaleLowerCase('ru-RU');
   if (normalized.includes('alif') || normalized.includes('алиф')) return 'alif';
+  if (normalized.includes('eskhata') || normalized.includes('эсхата')) return 'eskhata';
   if (normalized.includes('dushanbe city') || normalized.includes('душанбе сити') || normalized === 'dc' || normalized === 'дс') return 'dushanbe-city';
   if (normalized.includes('cash') || normalized.includes('налич')) return 'cash';
   return 'generic';
@@ -19,8 +20,11 @@ export function AccountMark({ name, color, compact = false }: {
   compact?: boolean;
 }) {
   const brand = accountBrand(name);
+  // Значка Эсхаты в CRM нет — буква вместо логотипа.
   const content: ReactNode = brand === 'alif'
     ? <img src={alifLogo} alt="" aria-hidden="true" />
+    : brand === 'eskhata'
+      ? <span className="fin-account-letter">Э</span>
     : brand === 'dushanbe-city'
       ? <img src={dushanbeCityLogo} alt="" aria-hidden="true" />
       : <FinIcon name={brand === 'cash' ? 'banknote' : 'wallet'} size={compact ? 14 : 16} />;

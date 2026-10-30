@@ -15,6 +15,7 @@ import { financeApi } from '@/services/api.service';
 import { money, moneyBare, monthLabel, shiftYm, todayISO, currentYm, apiErr, pluralRu } from './finlib';
 import { FinLoading, FinLoadError, FinModal, finConfirm, invalidateFinance } from './FinKit';
 import FinIcon from './FinIcon';
+import { AccountMark } from './AccountIdentity';
 
 export const INSTALLMENT_COLOR = '#47aaa4';
 /** День выплаты зарплаты — в этот день удерживается рассрочка «из зарплаты». */
@@ -52,6 +53,9 @@ const listRu = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -
 const shortName = (name?: string | null) => String(name || '').split(/\s+/).slice(0, 2).join(' ');
 
 const lastDayOf = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+
+/** Банки, через которые компания обычно берёт рассрочку (30.10.2026). */
+const BANKS = ['Алиф', 'Эсхата'];
 
 /** Дата платежа за месяц ym по правилам сервера (installments.logic dueDateOf). */
 function dueDate(method: string, ym: string, dueDay: number, moved?: string | null): string {
@@ -335,6 +339,12 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
   const [startYm, setStartYm] = useState<string | null>(inst?.startYm ?? null);
   const [note, setNote] = useState<string>(inst?.note ?? '');
   const [buy, setBuy] = useState(false);
+  // Через банк: компания сама платит банку в свой день; суммы — как у сотрудника.
+  const [viaBank, setViaBank] = useState<boolean>(!!inst?.bankName);
+  const [bankPick, setBankPick] = useState<string>(
+    inst?.bankName ? (BANKS.includes(inst.bankName) ? inst.bankName : 'other') : BANKS[0]);
+  const [bankOther, setBankOther] = useState<string>(inst?.bankName && !BANKS.includes(inst.bankName) ? inst.bankName : '');
+  const [bankDay, setBankDay] = useState<number>(Number(inst?.bankDueDay) || 15);
   const [buyAccount, setBuyAccount] = useState<string>('');
   const [buyDate, setBuyDate] = useState<string>(todayISO());
   const [busy, setBusy] = useState(false);
@@ -356,16 +366,23 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
   const lastAmount = count > 0 ? Math.round((rest - mo * (count - 1)) * 100) / 100 : 0;
   const dates = Array.from({ length: Math.min(count, 120) }, (_, i) => dueDate(method, shiftYm(start, i), dueDay));
   const accountForBuy = buyAccount || accounts[0]?.id || '';
-  const valid = !!employeeId && !!name.trim() && t > 0 && mo > 0 && b <= t && (!buy || !!accountForBuy);
+  const bankName = viaBank ? (bankPick === 'other' ? bankOther.trim() : bankPick) : '';
+  // Банку — столько же платежей, первый — ближайшее число банка, которое ещё впереди.
+  const bankStart = dueDate('separate', currentYm(), bankDay) < todayISO() ? shiftYm(currentYm(), 1) : currentYm();
+  const bankDates = Array.from({ length: Math.min(count, 120) }, (_, i) => dueDate('separate', shiftYm(bankStart, i), bankDay));
+  const valid = !!employeeId && !!name.trim() && t > 0 && mo > 0 && b <= t
+    && (!buy || viaBank || !!accountForBuy) && (!viaBank || !!bankName);
 
   async function save() {
     if (!valid || busy) return;
     setBusy(true);
     try {
-      const purchase = buy && !inst?.purchaseTxId ? { accountId: accountForBuy, date: buyDate } : undefined;
+      const purchase = buy && !viaBank && !inst?.purchaseTxId ? { accountId: accountForBuy, date: buyDate } : undefined;
       const body: any = {
         name: name.trim(), totalAmount: t, monthlyAmount: mo, paidBefore: b,
         method, note: note.trim(), purchase,
+        bankName: viaBank ? bankName : null,
+        ...(viaBank ? { bankDueDay: bankDay } : {}),
       };
       if (method === 'separate') body.dueDay = dueDay;
       if (!isEdit || start !== inst.startYm) body.startYm = start;
@@ -474,7 +491,54 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
       )}
       {deducted && method === 'salary' && <p className="mini muted" style={{ margin: 0 }}>Из зарплаты уже удерживали — первый месяц не меняется.</p>}
 
-      {inst?.purchaseTxId ? (
+      <label className="flex" style={{ cursor: 'pointer', fontWeight: 600 }}>
+        <input type="checkbox" checked={viaBank} onChange={(e) => setViaBank(e.target.checked)} style={{ width: 'auto' }} />
+        Купили в рассрочку через банк — платим банку сами
+      </label>
+      {viaBank && (
+        <div className="fin-inst-bank">
+          <div className="field">
+            <label>Банк</label>
+            <div className="fin-inst-banks" role="radiogroup" aria-label="Банк">
+              {BANKS.map((b) => (
+                <button key={b} type="button" role="radio" aria-checked={bankPick === b} className={bankPick === b ? 'on' : ''} onClick={() => setBankPick(b)}>
+                  <AccountMark name={b} compact />{b}
+                </button>
+              ))}
+              <button type="button" role="radio" aria-checked={bankPick === 'other'} className={bankPick === 'other' ? 'on' : ''} onClick={() => setBankPick('other')}>
+                <AccountMark name="банк" compact />Другой
+              </button>
+            </div>
+            {bankPick === 'other' && (
+              <input autoFocus value={bankOther} maxLength={100} placeholder="название банка" onChange={(e) => setBankOther(e.target.value)} style={{ marginTop: 8 }} />
+            )}
+          </div>
+          <div className="field">
+            <label>День оплаты банку</label>
+            <select value={bankDay} onChange={(e) => setBankDay(Number(e.target.value))}>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}-е число</option>)}
+            </select>
+          </div>
+          {count > 0 && b <= t && bankDates.length > 0 && (
+            <div className="fin-inst-plan">
+              <div className="h">
+                <b>{pluralRu(count, 'платёж', 'платежа', 'платежей')} банку по {money(mo)}</b>
+                {lastAmount !== mo ? `, последний ${money(lastAmount)}` : ''}
+                {' · '}{bankDay}-го числа, {count > 1 ? `с ${dayLabel(bankDates[0])} по ${dayLabel(bankDates[bankDates.length - 1])}` : dayLabel(bankDates[0])}
+              </div>
+              <div className="sl">
+                {bankDates.slice(0, count > 4 ? 3 : 4).map((d, i) => <span key={d}>{dayLabel(d, true)}<b>{money(i === count - 1 ? lastAmount : mo)}</b></span>)}
+                {count > 4 && <span>… ещё {count - 3}<b>до {dayLabel(bankDates[bankDates.length - 1], true)}</b></span>}
+              </div>
+              <span className="mini muted">Каждый платёж встанет в «Планирование» на {bankDay}-е и в «Расход → Долги». «Оплачено» — расход со счёта, остаток банку уменьшится.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {viaBank ? (
+        <p className="mini muted" style={{ margin: 0 }}>С банком покупку целиком в расходы не пишем — расходом будет каждый платёж банку.</p>
+      ) : inst?.purchaseTxId ? (
         <p className="mini muted" style={{ margin: 0 }}>Покупка записана в расходы — категория «Рассрочки сотрудникам».</p>
       ) : (
         <>

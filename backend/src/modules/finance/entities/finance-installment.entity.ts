@@ -80,6 +80,18 @@ export class FinanceInstallment {
   @Column({ type: 'text', nullable: true })
   note: string | null;
 
+  /** Рассрочка через банк (30.10.2026): компания сама платит банку. Банк и
+   *  день оплаты; график банку живёт «Долгом» (debtId) с суммами как у
+   *  сотрудника — сверху банка компания не берёт. Пусто — без банка. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  bankName: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  bankDueDay: number | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  debtId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

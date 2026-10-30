@@ -49,6 +49,14 @@ export class CreateInstallmentDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
   dueDay?: number;
 
+  /** Рассрочка через банк: название банка; пусто или null — без банка. */
+  @ApiPropertyOptional({ example: 'Алиф', nullable: true }) @IsOptional() @IsString() @MaxLength(100)
+  bankName?: string | null;
+
+  /** День, когда компания платит банку. */
+  @ApiPropertyOptional({ example: 15 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  bankDueDay?: number;
+
   @ApiPropertyOptional({ type: InstallmentPurchaseDto })
   @IsOptional() @ValidateNested() @Type(() => InstallmentPurchaseDto)
   purchase?: InstallmentPurchaseDto;
@@ -78,6 +86,14 @@ export class UpdateInstallmentDto {
 
   @ApiPropertyOptional({ example: 5 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
   dueDay?: number;
+
+  /** Рассрочка через банк: название банка; пусто или null — без банка. */
+  @ApiPropertyOptional({ example: 'Алиф', nullable: true }) @IsOptional() @IsString() @MaxLength(100)
+  bankName?: string | null;
+
+  /** День, когда компания платит банку. */
+  @ApiPropertyOptional({ example: 15 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(31)
+  bankDueDay?: number;
 
   @ApiPropertyOptional({ type: InstallmentPurchaseDto })
   @IsOptional() @ValidateNested() @Type(() => InstallmentPurchaseDto)

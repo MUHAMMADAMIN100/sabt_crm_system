@@ -3048,3 +3048,16 @@
 @media (min-width: 760px) {
   .fin-root .fin-emp-month-form .fld.wide { grid-column: span 2; }
 }
+
+/* Буква вместо логотипа банка, которого в CRM нет (Эсхата). */
+.fin-root .fin-account-mark .fin-account-letter,
+.fin-overlay .fin-account-mark .fin-account-letter { font-size: 14px; font-weight: 800; line-height: 1; }
+
+/* ─── Рассрочка через банк (30.10.2026) ─────────────────────────────
+   Компания сама платит банку: банк, день оплаты, график — «Долгом». */
+.fin-root .fin-inst-bank, .fin-overlay .fin-inst-bank { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--accent); border-radius: 14px; background: var(--accent-soft); padding: 14px; }
+.fin-root .fin-inst-banks, .fin-overlay .fin-inst-banks { display: flex; flex-wrap: wrap; gap: 8px; }
+.fin-root .fin-inst-banks button, .fin-overlay .fin-inst-banks button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px 6px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.fin-root .fin-inst-banks button.on, .fin-overlay .fin-inst-banks button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.fin-root .fin-inst-bank .fin-inst-plan, .fin-overlay .fin-inst-bank .fin-inst-plan { background: var(--surface-2, var(--surface)); }
+

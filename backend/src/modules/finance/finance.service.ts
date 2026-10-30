@@ -542,6 +542,10 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "dueDates" jsonb`);
     // Отметки «удержано из зарплаты» по месяцам (27.10.2026).
     await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS marks jsonb`);
+    // Рассрочка через банк: банк, день оплаты банку и «Долг» с графиком (30.10.2026).
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "bankName" varchar(100)`);
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "bankDueDay" int`);
+    await run(`ALTER TABLE finance_installments ADD COLUMN IF NOT EXISTS "debtId" uuid`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "icon" varchar(40)`);
     await run(`ALTER TABLE finance_categories ADD COLUMN IF NOT EXISTS "color" varchar(16)`);
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "counterparty" varchar(200)`);
@@ -3729,8 +3733,10 @@ export class FinanceService implements OnModuleInit {
 
   // ─── ГРАФИК ДОЛГОВ ───────────────────────────────────────────────
   /** Авто-распределить остаток долга по месяцам от текущего месяца. Оплаченные
-   *  платежи сохраняются, ожидаемые — перегенерируются. */
-  private async regenerateDebtSchedule(debtId: string) {
+   *  платежи сохраняются, ожидаемые — перегенерируются. notBefore — платежи с
+   *  датой раньше не ставим (долг из рассрочки через банк заводят сегодня: его
+   *  15-е этого месяца, если уже прошло, — не просрочка, а платёж до CRM). */
+  private async regenerateDebtSchedule(debtId: string, notBefore?: string) {
     const debt = await this.debtRepo.findOne({ where: { id: debtId } });
     if (!debt) return;
     const monthly = Number(debt.monthlyPayment) || 0;
@@ -3751,7 +3757,7 @@ export class FinanceService implements OnModuleInit {
     let guard = 0;
     while (remaining > 0 && guard < 240) {
       guard++;
-      if (!receivedMonths.has(ym)) {
+      if (!receivedMonths.has(ym) && (!notBefore || dueDateForMonth(ym, dueDay) >= notBefore)) {
         const amount = r2(Math.min(monthly, remaining));
         news.push(this.ppRepo.create({ debtId, ym, partNo: 1, amount, status: 'expected', auto: false, dueDate: dueDateForMonth(ym, dueDay) }));
         remaining = r2(remaining - amount);
@@ -5069,6 +5075,7 @@ export class FinanceService implements OnModuleInit {
         .map(p => ({ ...p, amount: r2(p.amount) }))
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
       purchaseTxId: i.purchaseTxId ?? null, note: i.note ?? null, createdAt: i.createdAt,
+      bankName: i.bankName ?? null, bankDueDay: i.bankDueDay ?? null, debtId: i.debtId ?? null,
     };
   }
 
@@ -5249,10 +5256,41 @@ export class FinanceService implements OnModuleInit {
     return n;
   }
 
+  /** Рассрочка через банк → «Долг» с графиком банку (30.10.2026): платежи
+   *  встают в «Планирование» в день оплаты банку, «Оплачено» пишет расход.
+   *  Суммы — как у сотрудника (сверху банка компания не берёт). Банк сняли —
+   *  долг уходит. Долг ведёт карточка рассрочки: правка долга вручную
+   *  перезапишется при следующем сохранении рассрочки. */
+  private async syncInstallmentDebt(inst: FinanceInstallment, emp: FinanceEmployee | null) {
+    const existing = inst.debtId ? await this.debtRepo.findOne({ where: { id: inst.debtId } }) : null;
+    if (!inst.bankName || !inst.bankDueDay) {
+      if (existing) await this.removeDebt(existing.id);
+      inst.debtId = null;
+      return;
+    }
+    const surname = (emp?.name || '').trim().split(/\s+/)[0] || 'сотрудник';
+    const fields = {
+      name: `${inst.name} — ${surname}`.slice(0, 200),
+      counterparty: inst.bankName,
+      totalAmount: r2(inst.totalAmount),
+      monthlyPayment: r2(inst.monthlyAmount),
+      paidBefore: r2(inst.paidBefore),
+      dueDay: inst.bankDueDay,
+      note: `Рассрочка сотрудника${emp?.name ? ` — ${emp.name}` : ''}`,
+    };
+    const debt = existing
+      ? await this.debtRepo.save(Object.assign(existing, fields))
+      : await this.debtRepo.save(this.debtRepo.create({ ...fields, position: await this.debtRepo.count() }));
+    inst.debtId = debt.id;
+    const createdOn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(debt.createdAt || new Date());
+    await this.regenerateDebtSchedule(debt.id, createdOn);
+  }
+
   async createInstallment(dto: {
     employeeId: string; name: string; totalAmount: number; monthlyAmount: number;
     startYm?: string; paidBefore?: number; note?: string;
     method?: 'salary' | 'separate'; dueDay?: number;
+    bankName?: string | null; bankDueDay?: number;
     purchase?: { accountId: string; date?: string; amount?: number };
   }, userId?: string) {
     if (!this.instRepo) throw new BadRequestException('Рассрочки пока недоступны');
@@ -5272,16 +5310,21 @@ export class FinanceService implements OnModuleInit {
     const fallbackStart = method === 'separate' ? currentYm() : latestOpenYm;
     const startYm = dto.startYm && YM_RE.test(dto.startYm) ? dto.startYm : fallbackStart;
     await this.assertInstallmentStart(method, startYm);
+    const bankName = (dto.bankName || '').trim().slice(0, 100) || null;
+    const bankDueDay = bankName ? this.normInstallmentDueDay(dto.bankDueDay) : null;
     let inst = await this.instRepo.save(this.instRepo.create({
       employeeId: emp.id, name, totalAmount: total, monthlyAmount: monthly, startYm,
       paidBefore: before, overrides: null, payments: null, purchaseTxId: null,
-      method, dueDay, dueDates: null,
+      method, dueDay, dueDates: null, bankName, bankDueDay, debtId: null,
       note: (dto.note || '').trim() || null,
     }));
-    if (dto.purchase?.accountId) {
+    // Через банк покупку целиком в расходы не пишем: расходом будет каждый
+    // платёж банку, иначе деньги посчитаются дважды.
+    if (dto.purchase?.accountId && !bankName) {
       inst.purchaseTxId = await this.recordInstallmentPurchase(inst, emp, dto.purchase, userId);
-      inst = await this.instRepo.save(inst);
     }
+    if (bankName) await this.syncInstallmentDebt(inst, emp);
+    inst = await this.instRepo.save(inst);
     return this.installmentDto(inst);
   }
 
@@ -5289,6 +5332,7 @@ export class FinanceService implements OnModuleInit {
     name?: string; totalAmount?: number; monthlyAmount?: number; startYm?: string;
     paidBefore?: number; note?: string | null;
     method?: 'salary' | 'separate'; dueDay?: number;
+    bankName?: string | null; bankDueDay?: number;
     purchase?: { accountId: string; date?: string; amount?: number };
   }, userId?: string) {
     const inst = await this.findInstallment(id);
@@ -5327,13 +5371,21 @@ export class FinanceService implements OnModuleInit {
       inst.startYm = next;
     }
     if (dto.note !== undefined) inst.note = (dto.note || '').trim() || null;
+    if (dto.bankName !== undefined) inst.bankName = (dto.bankName || '').trim().slice(0, 100) || null;
+    if (inst.bankName) {
+      if (dto.bankDueDay !== undefined || !inst.bankDueDay) inst.bankDueDay = this.normInstallmentDueDay(dto.bankDueDay ?? inst.bankDueDay);
+    } else {
+      inst.bankDueDay = null;
+    }
     const sm = this.installmentSummary(inst, emp);
     if (sm.paid > r2(inst.totalAmount) + 0.005) {
       throw new BadRequestException(`Стоимость меньше уже возвращённого (${som(sm.paid)})`);
     }
-    if (dto.purchase?.accountId && !inst.purchaseTxId && emp) {
+    if (dto.purchase?.accountId && !inst.purchaseTxId && emp && !inst.bankName) {
       inst.purchaseTxId = await this.recordInstallmentPurchase(inst, emp, dto.purchase, userId);
     }
+    // Банк, сумма, стоимость или название поменялись — долг банку следом.
+    if (inst.bankName || inst.debtId) await this.syncInstallmentDebt(inst, emp);
     return this.installmentDto(await this.instRepo!.save(inst));
   }
 
@@ -5344,6 +5396,12 @@ export class FinanceService implements OnModuleInit {
     const inst = await this.findInstallment(id);
     const txIds = [inst.purchaseTxId, ...(inst.payments || []).map(p => p.txId)].filter((x): x is string => !!x);
     await this.instRepo!.delete(id);
+    // Долг банку уходит вместе с рассрочкой; уже оплаченные платежи банку
+    // остаются расходами на счетах.
+    if (inst.debtId) {
+      try { await this.removeDebt(inst.debtId); }
+      catch (e: any) { this.logger.warn(`installment debt ${inst.debtId} not removed: ${String(e?.message || e).slice(0, 120)}`); }
+    }
     let cancelled = 0;
     for (const txId of txIds) {
       try { await this.removeTransaction(txId); cancelled++; }
