@@ -110,10 +110,12 @@ export const INCOME_GROUPS: GroupMeta[] = [
   { key: 'maintenance', label: 'Обслуживание', icon: 'maintenance', color: '#47aaa4' },
 ]
 
+// Порядок — по важности (30.10.2026): зарплата, долги, аренда и подписки;
+// за ними на «Расходе» идут «Прочее» и «Рассрочки».
 export const EXPENSE_GROUPS: GroupMeta[] = [
   { key: 'salary', label: 'Зарплата', icon: 'banknote', color: '#ee980d' },
-  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#8385ff' },
   { key: 'debts', label: 'Долги', icon: 'receipt', color: '#e6535f' },
+  { key: 'rent_subs', label: 'Аренда и подписки', icon: 'building', color: '#8385ff' },
 ]
 
 export const OTHER_GROUP: GroupMeta = { key: 'other', label: 'Прочее', icon: 'box', color: '#8b909a' }
