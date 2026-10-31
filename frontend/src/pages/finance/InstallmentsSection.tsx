@@ -512,9 +512,13 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
   // Пока первый месяц не выбрали руками, подставляем ближайший подходящий.
   const [startYm, setStartYm] = useState<string | null>(inst?.startYm ?? null);
   const [note, setNote] = useState<string>(inst?.note ?? '');
-  const [buy, setBuy] = useState(false);
-  // Через банк: компания сама платит банку в свой день; суммы — как у сотрудника.
-  const [viaBank, setViaBank] = useState<boolean>(!!inst?.bankName);
+  // Как компания заплатила за покупку (31.10.2026): один выбор вместо двух
+  // галочек. «Сразу деньгами компании» — расход со счёта один раз; «Через
+  // банк» — компания сама платит банку в свой день, суммы как у сотрудника;
+  // «Не записывать» — только учёт возврата.
+  const [payKind, setPayKind] = useState<'company' | 'bank' | 'none'>(
+    inst ? (inst.bankName ? 'bank' : inst.purchaseTxId ? 'company' : 'none') : 'company');
+  const viaBank = payKind === 'bank';
   const [bankPick, setBankPick] = useState<string>(
     inst?.bankName ? (BANKS.includes(inst.bankName) ? inst.bankName : 'other') : BANKS[0]);
   const [bankOther, setBankOther] = useState<string>(inst?.bankName && !BANKS.includes(inst.bankName) ? inst.bankName : '');
@@ -545,13 +549,13 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
   const bankStart = dueDate('separate', currentYm(), bankDay) < todayISO() ? shiftYm(currentYm(), 1) : currentYm();
   const bankDates = Array.from({ length: Math.min(count, 120) }, (_, i) => dueDate('separate', shiftYm(bankStart, i), bankDay));
   const valid = !!employeeId && !!name.trim() && t > 0 && mo > 0 && b <= t
-    && (!buy || viaBank || !!accountForBuy) && (!viaBank || !!bankName);
+    && (payKind !== 'company' || !!inst?.purchaseTxId || !!accountForBuy) && (!viaBank || !!bankName);
 
   async function save() {
     if (!valid || busy) return;
     setBusy(true);
     try {
-      const purchase = buy && !viaBank && !inst?.purchaseTxId ? { accountId: accountForBuy, date: buyDate } : undefined;
+      const purchase = payKind === 'company' && !inst?.purchaseTxId ? { accountId: accountForBuy, date: buyDate } : undefined;
       const body: any = {
         name: name.trim(), totalAmount: t, monthlyAmount: mo, paidBefore: b,
         method, note: note.trim(), purchase,
@@ -665,10 +669,44 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
       )}
       {deducted && method === 'salary' && <p className="mini muted" style={{ margin: 0 }}>Из зарплаты уже удерживали — первый месяц не меняется.</p>}
 
-      <label className="flex" style={{ cursor: 'pointer', fontWeight: 600 }}>
-        <input type="checkbox" checked={viaBank} onChange={(e) => setViaBank(e.target.checked)} style={{ width: 'auto' }} />
-        Купили в рассрочку через банк — платим банку сами
-      </label>
+      <div className="field">
+        <label>Как компания заплатила за покупку</label>
+        <div className="fin-inst-method three" role="radiogroup" aria-label="Как компания заплатила за покупку">
+          <button type="button" role="radio" aria-checked={payKind === 'company'} className={payKind === 'company' ? 'on' : ''} onClick={() => setPayKind('company')}>
+            <b>Сразу деньгами компании</b><span>расход со счёта один раз, сотрудник возвращает частями</span>
+          </button>
+          <button type="button" role="radio" aria-checked={payKind === 'bank'} className={payKind === 'bank' ? 'on' : ''} onClick={() => setPayKind('bank')}>
+            <b>В рассрочку через банк</b><span>платим банку каждый месяц, сотрудник возвращает нам</span>
+          </button>
+          <button type="button" role="radio" aria-checked={payKind === 'none'} className={payKind === 'none' ? 'on' : ''} onClick={() => setPayKind('none')}>
+            <b>Не записывать</b><span>только учёт возврата, счета не меняются</span>
+          </button>
+        </div>
+      </div>
+
+      {payKind === 'company' && (
+        <div className="fin-inst-bank">
+          {inst?.purchaseTxId ? (
+            <p className="mini muted" style={{ margin: 0 }}>Покупка уже записана в расходы — категория «Рассрочки сотрудникам».</p>
+          ) : (
+            <>
+              <div className="form-grid">
+                <div className="field"><label>Со счёта</label>
+                  <select value={accountForBuy} onChange={(e) => setBuyAccount(e.target.value)}>
+                    {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div className="field"><label>Дата покупки</label><input type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} /></div>
+              </div>
+              <span className="mini">
+                {t > 0 ? <b>{money(t)}</b> : 'Стоимость'} уйдёт расходом со счёта {accounts.find((a: any) => a.id === accountForBuy)?.name ?? ''} {buyDate ? dayLabel(buyDate) : ''}.
+                {method === 'salary' ? ' Дальше сотрудник возвращает из зарплаты — к выплате меньше на сумму удержания.' : ' Дальше сотрудник возвращает частями.'}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {viaBank && (
         <div className="fin-inst-bank">
           <div className="field">
@@ -704,34 +742,15 @@ export function InstallmentFormModal({ row, openYm, onClose }: { row: any | null
                 {bankDates.slice(0, count > 4 ? 3 : 4).map((d, i) => <span key={d}>{dayLabel(d, true)}<b>{money(i === count - 1 ? lastAmount : mo)}</b></span>)}
                 {count > 4 && <span>… ещё {count - 3}<b>до {dayLabel(bankDates[bankDates.length - 1], true)}</b></span>}
               </div>
-              <span className="mini muted">Каждый платёж встанет в «Планирование» на {bankDay}-е и в «Расход → Долги». «Оплачено» — расход со счёта, остаток банку уменьшится.</span>
+              <span className="mini muted">Каждый платёж встанет в «Планирование» на {bankDay}-е. «Оплачено» — расход со счёта, остаток банку уменьшится.</span>
             </div>
+          )}
+          {inst?.purchaseTxId && (
+            <p className="mini neg" style={{ margin: 0 }}>Покупка уже записана расходом целиком — с банком деньги посчитаются дважды. Удалите операцию покупки в «Операциях».</p>
           )}
         </div>
       )}
 
-      {viaBank ? (
-        <p className="mini muted" style={{ margin: 0 }}>С банком покупку целиком в расходы не пишем — расходом будет каждый платёж банку.</p>
-      ) : inst?.purchaseTxId ? (
-        <p className="mini muted" style={{ margin: 0 }}>Покупка записана в расходы — категория «Рассрочки сотрудникам».</p>
-      ) : (
-        <>
-          <label className="flex" style={{ cursor: 'pointer' }}>
-            <input type="checkbox" checked={buy} onChange={(e) => setBuy(e.target.checked)} style={{ width: 'auto' }} />
-            Записать покупку в расходы
-          </label>
-          {buy ? (
-            <div className="form-grid">
-              <div className="field"><label>Со счёта</label>
-                <select value={accountForBuy} onChange={(e) => setBuyAccount(e.target.value)}>
-                  {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              <div className="field"><label>Дата покупки</label><input type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} /></div>
-            </div>
-          ) : <p className="mini muted" style={{ margin: 0 }}>Без галочки — только учёт возврата, счета не меняются.</p>}
-        </>
-      )}
       <div className="field"><label>Комментарий</label><input value={note} maxLength={2000} placeholder="необязательно" onChange={(e) => setNote(e.target.value)} /></div>
     </FinModal>
   );

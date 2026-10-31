@@ -3089,3 +3089,9 @@
   .fin-root .fin-inst-bankrow { grid-template-columns: 1fr; gap: 10px; }
   .fin-root .fin-inst-add-menu { width: min(340px, calc(100vw - 32px)); }
 }
+
+/* «Как компания заплатила за покупку» — три варианта в ряд (31.10.2026). */
+.fin-root .fin-inst-method.three, .fin-overlay .fin-inst-method.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 760px) {
+  .fin-root .fin-inst-method.three, .fin-overlay .fin-inst-method.three { grid-template-columns: 1fr; }
+}
