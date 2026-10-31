@@ -1,7 +1,7 @@
 // Общие формы справочников «Финансов»: Проект, Сотрудник, Аренда/подписка, Долг.
 // Раньше жили в двух расходящихся копиях (страницы направлений + Настройки).
 // Все формы: FinModal (Escape/фокус/aria), busy-guard от даблкликов, apiErr.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { apiErr, todayISO, currentYm, monthLabel, money, INCOME_GROUPS } from './finlib';
@@ -378,30 +378,80 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
   );
 }
 
-/** Долг. */
+/** Долг (31.10.2026): кому, сколько, «вернуть до» и, по желанию, транши.
+ *  Платежа в месяц нет — отдают сразу или частями, когда получается.
+ *  Кредиты и рассрочки банков заводятся в «Рассрочках». */
+type TrancheDraft = { key: string; date: string; amount: string };
+let trancheSeq = 0;
+const newTranche = (date: string, amount: string): TrancheDraft => ({ key: `t${++trancheSeq}`, date, amount });
+/** Та же дата через месяц (31-е → последний день месяца). */
+function plusMonth(iso: string): string {
+  const [y, m, d] = (iso || todayISO()).slice(0, 10).split('-').map(Number);
+  const last = new Date(y, m + 1, 0).getDate();
+  const dt = new Date(y, m, Math.min(d, last));
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
 export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () => void }) {
   const qc = useQueryClient();
   const isEdit = !!debt;
   const [name, setName] = useState(debt?.name ?? '');
-  const [counterparty, setCounterparty] = useState(debt?.counterparty ?? '');
   const [totalAmount, setTotalAmount] = useState(debt != null ? String(debt.totalAmount ?? '') : '');
-  const [monthlyPayment, setMonthlyPayment] = useState(debt?.monthlyPayment ? String(debt.monthlyPayment) : '');
-  const [paidBefore, setPaidBefore] = useState(String(debt?.paidBefore ?? 0));
-  const [dueDay, setDueDay] = useState(debt?.dueDay != null ? String(debt.dueDay) : '');
+  const [paidBefore, setPaidBefore] = useState(debt?.paidBefore ? String(debt.paidBefore) : '');
+  const [dueDate, setDueDate] = useState(debt?.dueDate ? String(debt.dueDate).slice(0, 10) : '');
+  const [note, setNote] = useState(debt?.note ?? '');
+  const [mode, setMode] = useState<'free' | 'plan'>('free');
+  const [rows, setRows] = useState<TrancheDraft[]>([]);
+  const [loaded, setLoaded] = useState(!isEdit);
   const [busy, setBusy] = useState(false);
 
+  // Уже намеченные транши — ожидаемые плановые оплаты долга.
+  const plannedQ = useQuery({
+    queryKey: ['finance', 'plannedPayments', 'debt', debt?.id],
+    queryFn: () => financeApi.plannedPayments({ debtId: debt!.id }),
+    enabled: isEdit,
+  });
+  useEffect(() => {
+    if (loaded || !plannedQ.data) return;
+    const exp = (plannedQ.data as any[])
+      .filter((p) => p.status === 'expected')
+      .map((p) => ({ date: p.dueDate ? String(p.dueDate).slice(0, 10) : `${p.ym}-10`, amount: Number(p.amount) || 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (exp.length) { setMode('plan'); setRows(exp.map((t) => newTranche(t.date, String(t.amount)))); }
+    setLoaded(true);
+  }, [plannedQ.data, loaded]);
+
+  const total = num(totalAmount);
+  const before = num(paidBefore);
+  const paid = Number(debt?.paid) || 0;
+  const toSplit = Math.max(0, Math.round((total - before - paid) * 100) / 100);
+  const parsed = rows.map((r) => ({ ...r, amt: num(r.amount), ok: /^\d{4}-\d{2}-\d{2}$/.test(r.date) && num(r.amount) > 0 }));
+  const sumT = Math.round(parsed.reduce((s, r) => s + (r.ok ? r.amt : 0), 0) * 100) / 100;
+  const overBy = Math.round((sumT - toSplit) * 100) / 100;
+  const planBad = mode === 'plan' && (parsed.some((r) => !r.ok) || overBy > 0.005);
+  const can = !!name.trim() && total > 0 && before <= total && loaded && !planBad && !busy;
+
+  function addRow() {
+    const lastDate = rows.length ? rows[rows.length - 1].date : '';
+    const rest = Math.max(0, Math.round((toSplit - sumT) * 100) / 100);
+    setRows([...rows, newTranche(plusMonth(lastDate || todayISO()), rest > 0 ? String(rest) : '')]);
+  }
+  function pickMode(m: 'free' | 'plan') {
+    setMode(m);
+    if (m === 'plan' && rows.length === 0) setRows([newTranche(plusMonth(todayISO()), toSplit > 0 ? String(toSplit) : '')]);
+  }
+  const setRow = (key: string, patch: Partial<TrancheDraft>) => setRows(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+
   async function save() {
-    if (!name.trim() || busy) return;
+    if (!can) return;
     setBusy(true);
     try {
-      const dd = parseInt(dueDay, 10);
       const p = {
-        name: name.trim(), counterparty: counterparty.trim() || null,
-        totalAmount: num(totalAmount), monthlyPayment: num(monthlyPayment) || null,
-        paidBefore: num(paidBefore),
-        dueDay: dd >= 1 && dd <= 31 ? dd : null,
+        name: name.trim(), totalAmount: total, paidBefore: before,
+        dueDate: dueDate || null, note: note.trim() || null,
+        tranches: mode === 'plan' ? parsed.filter((r) => r.ok).map((r) => ({ date: r.date, amount: r.amt })) : [],
       };
-      if (isEdit) await financeApi.updateDebt(debt.id, p);
+      if (isEdit) await financeApi.updateDebt(debt!.id, p);
       else await financeApi.createDebt(p);
       invalidateFinanceAll(qc);
       onClose();
@@ -425,26 +475,58 @@ export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () =
   }
 
   return (
-    <FinModal title={isEdit ? 'Долг' : 'Новый долг'} onClose={onClose} width={460}
+    <FinModal title={isEdit ? 'Долг' : 'Новый долг'} onClose={onClose} width={600}
       footer={<>
-        {isEdit && <DeleteButton confirmText={`Удалить долг «${debt!.name}»? График платежей будет удалён.`} busy={busy} onDelete={remove} />}
+        {isEdit && <DeleteButton confirmText={`Удалить долг «${debt!.name}»? Намеченные транши удалятся, уже отданное останется в журнале.`} busy={busy} onDelete={remove} />}
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" disabled={!name.trim() || busy} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
+        <button className="btn primary" disabled={!can} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
       </>}>
-      <div className="field"><label>Наименование</label><input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="form-grid">
-        <div className="field"><label>Контрагент</label><input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
-        <div className="field"><label>Платёж / мес</label><input inputMode="decimal" value={monthlyPayment} onChange={(e) => setMonthlyPayment(e.target.value)} /></div>
-      </div>
-      <div className="form-grid">
+        <div className="field"><label>Кому должны</label><input autoFocus={!isEdit} value={name} onChange={(e) => setName(e.target.value)} placeholder="Сабина" /></div>
         <div className="field"><label>Сумма долга</label><input inputMode="decimal" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} /></div>
-        <div className="field"><label>Погашено до старта</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} /></div>
+        <div className="field"><label>Уже отдали раньше</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} placeholder="0" /></div>
+        <div className="field"><label>Вернуть до <span className="muted" style={{ fontWeight: 400 }}>· необязательно</span></label><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
       </div>
+      <div className="field"><label>За что <span className="muted" style={{ fontWeight: 400 }}>· необязательно</span></label><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="на закупку оборудования" /></div>
+      {paid > 0 && <p className="mini muted" style={{ margin: 0 }}>Через «Отдать» уже отдали {money(paid)} — осталось {money(toSplit)}.</p>}
+
       <div className="field">
-        <label>День оплаты в месяц</label>
-        <input inputMode="numeric" value={dueDay} onChange={(e) => setDueDay(e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder="10" />
-        <p className="mini muted" style={{ margin: '5px 0 0' }}>В этот день каждый месяц платёж встаёт в календарь планирования (1–31; по умолчанию 10-е).</p>
+        <label>Как отдаём</label>
+        <div className="fin-inst-method" role="radiogroup" aria-label="Как отдаём">
+          <button type="button" role="radio" aria-checked={mode === 'free'} className={mode === 'free' ? 'on' : ''} onClick={() => pickMode('free')}>
+            <b>Когда получится</b><span>сразу всё или траншами, без дат — жмёте «Отдать», когда есть деньги</span>
+          </button>
+          <button type="button" role="radio" aria-checked={mode === 'plan'} className={mode === 'plan' ? 'on' : ''} onClick={() => pickMode('plan')}>
+            <b>Наметить транши</b><span>даты и суммы — придут напоминанием в «Планирование»</span>
+          </button>
+        </div>
       </div>
+
+      {mode === 'plan' && (
+        <div className="fin-inst-bank fin-dbt-plan">
+          <div className="fin-dbt-prow head"><span /><span>Дата</span><span>Сумма</span><span /></div>
+          {parsed.map((r, i) => {
+            const late = !!dueDate && r.date > dueDate;
+            return (
+              <div key={r.key} className={'fin-dbt-prow' + (late ? ' late' : '')}>
+                <span className="n">{i + 1}</span>
+                <input type="date" aria-label={`Дата транша ${i + 1}`} value={r.date} onChange={(e) => setRow(r.key, { date: e.target.value })} />
+                <input inputMode="decimal" aria-label={`Сумма транша ${i + 1}`} value={r.amount} onChange={(e) => setRow(r.key, { amount: e.target.value })} />
+                <button type="button" className="btn ghost sm" aria-label={`Убрать транш ${i + 1}`} onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>✕</button>
+                {late && <span className="hint">позже срока «вернуть до»</span>}
+              </div>
+            );
+          })}
+          <div className="fin-dbt-pfoot">
+            <button type="button" className="fin-inst-link" onClick={addRow}>+ ещё транш</button>
+            {overBy > 0.005
+              ? <span className="neg">больше остатка на {money(overBy)}</span>
+              : Math.abs(overBy) <= 0.005 && sumT > 0
+                ? <span className="pos">✓ распределено {money(sumT)} из {money(toSplit)}</span>
+                : <span className="muted">распределено {money(sumT)} из {money(toSplit)} · остальное — когда получится</span>}
+          </div>
+        </div>
+      )}
     </FinModal>
   );
 }

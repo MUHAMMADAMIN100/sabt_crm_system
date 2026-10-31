@@ -385,9 +385,10 @@ export default function FinanceSettingsPage() {
         onDel={async (s: any) => (await finConfirm(`Удалить «${s.name}»?`, { danger: true, confirmLabel: 'Удалить' })) && del(() => financeApi.removeSubscription(s.id))} />}
 
       {activeTab === 'debts' &&
-      <Directory title="Долги" items={debts}
-        head={['Название', 'Сумма', 'Платёж/мес']}
-        cols={(d: any) => [d.name, money(d.totalAmount), d.monthlyPayment ? money(d.monthlyPayment) : '—']}
+      // Только настоящие долги: кредиты и рассрочки банков — в «Рассрочках».
+      <Directory title="Долги" items={debts.filter((d: any) => d.kind !== 'bank')}
+        head={['Кому должны', 'Сумма', 'Осталось', 'Вернуть до']}
+        cols={(d: any) => [d.name, money(d.totalAmount), money(Number(d.remaining) || 0), d.dueDate ? String(d.dueDate).slice(0, 10).split('-').reverse().join('.') : '—']}
         onAdd={() => setModal(<DebtFormModal onClose={() => setModal(null)} />)}
         onEdit={(d: any) => setModal(<DebtFormModal debt={d} onClose={() => setModal(null)} />)}
         addLabel="Добавить долг"

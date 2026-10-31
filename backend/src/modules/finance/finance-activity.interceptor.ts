@@ -49,6 +49,8 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/accounts/, label: 'Изменил счета' },
   { re: /\/categories/, label: 'Изменил категории' },
   { re: /\/subscriptions/, label: 'Изменил подписки/аренду' },
+  { re: /\/debts\/[^/]+\/pay$/, method: 'POST', label: 'Отдал по долгу' },
+  { re: /\/debts\/[^/]+\/payments\//, method: 'DELETE', label: 'Отменил оплату долга' },
   { re: /\/debts/, label: 'Изменил долги' },
   { re: /\/installments\/[^/]+\/payments/, label: 'Рассрочка сотрудника: платёж' },
   { re: /\/installments\/[^/]+\/month$/, label: 'Рассрочка сотрудника: сумма месяца' },

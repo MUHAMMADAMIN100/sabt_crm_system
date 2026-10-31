@@ -75,6 +75,25 @@ export interface FinDebt {
   remaining?: number;
   dueDay?: number | null;
   note?: string | null;
+  /** 'bank' — кредит или рассрочка банка («Рассрочки»), иначе настоящий долг. */
+  kind?: 'debt' | 'bank';
+  /** «Вернуть до» (YYYY-MM-DD) — у настоящего долга, необязательно. */
+  dueDate?: string | null;
+  /** Уже отдали через «Отдать» / журнал (без paidBefore). */
+  paid?: number;
+}
+
+/** Карточка долга на странице «Долги» (31.10.2026). */
+export interface FinDebtRow extends FinDebt {
+  totalAmount: number;
+  paidBefore: number;
+  paid: number;
+  remaining: number;
+  closed: boolean;
+  overdue: boolean;
+  payments: Array<{ txId: string; date: string; amount: number; account: string | null }>;
+  tranches: Array<{ id: string; date: string; amount: number }>;
+  unplanned: number;
 }
 
 export interface FinAsset {

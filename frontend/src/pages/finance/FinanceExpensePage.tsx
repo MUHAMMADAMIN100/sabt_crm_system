@@ -42,16 +42,18 @@ export default function FinanceExpensePage() {
     if (!data) return 0;
     // Остаток к оплате за месяц — уменьшается с каждой оплатой, как у ЗП.
     if (key === 'rent_subs') return data.subscriptions?.toPay ?? data.subscriptions?.monthly ?? 0;
-    // Месячное обязательство по долгам: Σ min(платёж/мес, остаток) — как в эталоне.
-    if (key === 'debts') return data.debts?.monthly ?? 0;
+    // Долги отдают сразу или траншами, не помесячно (31.10.2026) — всего должны.
+    if (key === 'debts') return data.debts?.remaining ?? 0;
     return 0;
   };
 
   const subtitle = (key: string): string => {
     if (key === 'salary') return `${salCount} сотрудников · за ${monthLabel(salaryYm)}`;
     if (key === 'rent_subs') return `${data?.subscriptions?.count ?? 0} позиций`;
-    const remaining = data?.debts?.remaining ?? 0;
-    return remaining > 0 ? `остаток ${money(remaining)}` : 'нет долгов';
+    const count = data?.debts?.count ?? 0;
+    const due = data?.debts?.dueMonth ?? 0;
+    if (count <= 0) return 'нет долгов';
+    return `должны · ${pluralRu(count, 'долг', 'долга', 'долгов')}${due > 0 ? ` · в этом месяце ${money(due)}` : ''}`;
   };
 
   /** Прогресс оплат месяца для подсветки карточки: {paid, total} или null. */

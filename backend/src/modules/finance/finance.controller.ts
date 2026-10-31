@@ -34,6 +34,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
+import { PayDebtDto } from './dto/pay-debt.dto';
 import {
   CreateInstallmentDto, InstallmentDueDto, InstallmentMarkDto, InstallmentMonthDto, InstallmentPaymentDto, UpdateInstallmentDto,
 } from './dto/installment.dto';
@@ -279,6 +280,10 @@ export class FinanceController {
   @Patch('debts/:id') updateDebt(@Param('id') id: string, @Body() dto: UpdateDebtDto) { return this.service.updateDebt(id, dto); }
   @Delete('debts/:id') removeDebt(@Param('id') id: string) { return this.service.removeDebt(id); }
   @Post('debts/:id/regenerate-schedule') regenerateSchedule(@Param('id') id: string) { return this.service.regenerateDebtScheduleById(id); }
+  /** «Отдать» по долгу — сразу всё или часть (31.10.2026). */
+  @Post('debts/:id/pay') payDebt(@Param('id') id: string, @Body() dto: PayDebtDto) { return this.service.payDebt(id, dto); }
+  /** Отменить отдачу по долгу (расход отменяется). */
+  @Delete('debts/:id/payments/:txId') cancelDebtPayment(@Param('id') id: string, @Param('txId') txId: string) { return this.service.cancelDebtPayment(id, txId); }
 
   // ─── Рассрочки сотрудников ───────────────────────────────────────
   @Get('installments') installments() { return this.service.installmentsBoard(); }

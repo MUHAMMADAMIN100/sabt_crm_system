@@ -3095,3 +3095,124 @@
 @media (max-width: 760px) {
   .fin-root .fin-inst-method.three, .fin-overlay .fin-inst-method.three { grid-template-columns: 1fr; }
 }
+
+/* ─── Долги (31.10.2026, вариант Б) ─────────────────────────────────
+   Долг отдают сразу или траншами, не помесячно: плитки сверху, карточка на
+   каждый долг (осталось, отдано, намеченные транши), «Отдать». */
+.fin-root .fin-dbt-tiles {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.fin-root .fin-dbt-tiles > div { display: flex; flex-direction: column; gap: 4px; padding: 16px 20px; border-left: 1px solid var(--border); min-width: 0; }
+.fin-root .fin-dbt-tiles > div:first-child { border-left: 0; }
+.fin-root .fin-dbt-tiles .lb { font-size: 13px; color: var(--muted); }
+.fin-root .fin-dbt-tiles .vl { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fin-root .fin-dbt-tiles .vl.soon { color: var(--amber); }
+.fin-root .fin-dbt-tiles .vl.late { color: var(--red); }
+.fin-root .fin-dbt-tiles .sb { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+.fin-root .fin-dbt-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.fin-root .fin-dbt-tabs { display: flex; gap: 8px; }
+.fin-root .fin-dbt-tabs button {
+  height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); font: inherit; font-size: 13.5px; cursor: pointer;
+}
+.fin-root .fin-dbt-tabs button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.fin-root .fin-dbt-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.fin-root .fin-dbt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.fin-root .fin-dbt-card {
+  display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; min-width: 0;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.fin-root .fin-dbt-card.late { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); }
+.fin-root .fin-dbt-card.closed { opacity: .78; }
+.fin-root .fin-dbt-head { display: flex; align-items: center; gap: 12px; }
+.fin-root .fin-dbt-head .av {
+  width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 16px;
+}
+.fin-root .fin-dbt-head .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.fin-root .fin-dbt-head .who b { font-size: 16.5px; font-weight: 650; overflow-wrap: anywhere; }
+.fin-root .fin-dbt-head .who span { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.fin-root .fin-dbt-head .chip {
+  flex: none; display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 12.5px; color: var(--text); white-space: nowrap;
+}
+.fin-root .fin-dbt-head .chip.mute { color: var(--muted); }
+.fin-root .fin-dbt-head .chip.late { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); background: var(--red-soft); }
+.fin-root .fin-dbt-head .chip.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); background: var(--green-soft); }
+.fin-root .fin-dbt-rem { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fin-root .fin-dbt-rem > div { display: flex; flex-direction: column; gap: 2px; }
+.fin-root .fin-dbt-rem .lb { font-size: 13px; color: var(--muted); }
+.fin-root .fin-dbt-rem .big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.fin-root .fin-dbt-rem .of { font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fin-root .fin-dbt-progress { height: 8px; margin-top: -4px; }
+.fin-root .fin-dbt-progress i { background: var(--green); }
+
+.fin-root .fin-dbt-list { display: flex; flex-direction: column; }
+.fin-root .fin-dbt-lh { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 8px; font-size: 12px; color: var(--muted); }
+.fin-root .fin-dbt-lh span:first-child { font-weight: 600; letter-spacing: .04em; }
+.fin-root .fin-dbt-tr {
+  display: grid; grid-template-columns: 22px 84px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 40px; padding: 0; border: 0; border-top: 1px solid var(--border); background: transparent;
+  color: var(--text); font: inherit; font-size: 14px; text-align: left; font-variant-numeric: tabular-nums;
+}
+.fin-root .fin-dbt-tr > b { font-weight: 600; text-align: right; white-space: nowrap; }
+.fin-root .fin-dbt-tr .mu, .fin-root .fin-dbt-tr.mute { color: var(--muted); }
+.fin-root .fin-dbt-tr.done > span:nth-child(2), .fin-root .fin-dbt-tr.done > b { color: var(--green); }
+.fin-root .fin-dbt-tr.sub { min-height: 34px; font-size: 13.5px; border-top-style: dashed; }
+.fin-root .fin-dbt-tr.late > span:nth-child(2), .fin-root .fin-dbt-tr.late > b { color: var(--red); }
+.fin-root button.fin-dbt-tr { cursor: pointer; width: 100%; }
+.fin-root button.fin-dbt-tr:hover { background: var(--surface-hover); }
+.fin-root button.fin-dbt-tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.fin-root .fin-dbt-tr .ok { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--green-soft); color: var(--green); justify-self: center; }
+.fin-root .fin-dbt-tr .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); box-sizing: border-box; justify-self: center; }
+.fin-root .fin-dbt-tr .dot.next { border-color: var(--amber); background: var(--amber); }
+.fin-root .fin-dbt-tr .dot.late { border-color: var(--red); background: var(--red); }
+.fin-root .fin-dbt-tr .dot.dashed { border-style: dashed; }
+.fin-root .fin-dbt-tr .tag { font-style: normal; font-size: 12px; font-weight: 600; padding: 2px 7px; border-radius: 6px; color: var(--amber); background: var(--amber-soft); }
+.fin-root .fin-dbt-tr .tag.late { color: var(--red); background: var(--red-soft); }
+.fin-root .fin-dbt-link { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.fin-root .fin-dbt-link.danger { color: var(--red); }
+
+.fin-root .fin-dbt-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fin-root .fin-dbt-acts .btn { min-height: 38px; }
+.fin-root .fin-dbt-more { position: relative; margin-left: auto; }
+.fin-root .fin-dbt-menu {
+  position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 5; min-width: 170px; padding: 6px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.fin-root .fin-dbt-menu button { width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 14px; text-align: left; color: var(--text); cursor: pointer; }
+.fin-root .fin-dbt-menu button:hover, .fin-root .fin-dbt-menu button:focus-visible { background: var(--surface-hover); outline: none; }
+.fin-root .fin-dbt-menu button.danger { color: var(--red); }
+
+/* Форма долга: строки траншей; окно «Отдать». */
+.fin-root .fin-dbt-plan { gap: 10px; }
+.fin-root .fin-dbt-prow { display: grid; grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) 36px; gap: 10px; align-items: center; }
+.fin-root .fin-dbt-prow.head { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.fin-root .fin-dbt-prow .n { font-size: 13px; color: var(--muted); text-align: center; }
+.fin-root .fin-dbt-prow.late input[type="date"] { border-color: var(--amber); }
+.fin-root .fin-dbt-prow .hint { grid-column: 2 / -1; margin-top: -4px; font-size: 12px; color: var(--amber); }
+.fin-root .fin-dbt-pfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-dbt-pfoot .pos { color: var(--green); }
+.fin-root .fin-dbt-pfoot .neg { color: var(--red); }
+.fin-root .fin-dbt-will {
+  padding: 12px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.55;
+  border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); background: var(--green-soft); color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .fin-root .fin-dbt-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .fin-root .fin-dbt-tiles { grid-template-columns: 1fr 1fr; }
+  .fin-root .fin-dbt-tiles > div { padding: 12px 14px; }
+  .fin-root .fin-dbt-tiles > div:first-child { grid-column: 1 / -1; border-bottom: 1px solid var(--border); }
+  .fin-root .fin-dbt-tiles > div:nth-child(2) { border-left: 0; }
+  .fin-root .fin-dbt-tiles .vl { font-size: 19px; }
+  .fin-root .fin-dbt-card { padding: 14px; }
+  .fin-root .fin-dbt-rem .big { font-size: 24px; }
+  .fin-root .fin-dbt-tr { grid-template-columns: 20px 70px minmax(0, 1fr) auto; gap: 8px; font-size: 13.5px; }
+  .fin-root .fin-dbt-acts .btn.primary { flex: 1 1 0; min-height: 44px; }
+}

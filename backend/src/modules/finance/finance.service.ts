@@ -397,6 +397,10 @@ const DIRECTION_CATEGORY_KEY: Record<string, string> = {
 /** Справочники + индексы по id (кэш на один запрос). */
 /** Кредит или рассрочка компании в банке — живёт в «Рассрочках», не в «Долгах». */
 const isBankDebt = (d?: { kind?: string | null } | null) => d?.kind === 'bank';
+/** Дата транша: срок плановой оплаты, у старых без срока — 10-е её месяца. */
+const trancheDate = (p: { dueDate?: string | null; ym: string }) => (p.dueDate ? String(p.dueDate).slice(0, 10) : `${p.ym}-10`);
+/** «6 500 с.» — для сообщений об ошибках. */
+const fmtSom = (x: number) => `${Math.round(Number(x) || 0).toLocaleString('ru-RU')} с.`;
 
 interface FinMaps {
   accounts: FinanceAccount[];
@@ -562,6 +566,8 @@ export class FinanceService implements OnModuleInit {
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "dueDay" int`);
     // Кредиты и рассрочки банков — в «Рассрочках», не в «Долгах» (30.10.2026).
     await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS kind varchar(16) NOT NULL DEFAULT 'debt'`);
+    // «Вернуть до» настоящего долга (31.10.2026).
+    await run(`ALTER TABLE finance_debts ADD COLUMN IF NOT EXISTS "dueDate" date`);
     // Отметки «оплачено без операции» по месяцам (см. FinanceSubscription.paidMarks).
     await run(`ALTER TABLE finance_subscriptions ADD COLUMN IF NOT EXISTS "paidMarks" jsonb`);
     // День оплаты подписки/аренды — для напоминаний.
@@ -1784,7 +1790,9 @@ export class FinanceService implements OnModuleInit {
 
     // Долги — только настоящие; кредиты и рассрочки банков — отдельной строкой.
     const totalDebt = r2(m.realDebts.reduce((s, d) => s + this.debtRemaining(d, allTx), 0));
-    const debtPlan = r2(m.realDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment), this.debtRemaining(d, allTx)), 0));
+    // План по настоящим долгам — транши этого месяца (31.10.2026): платежа в
+    // месяц у них больше нет, отдают сразу или частями.
+    const debtPlan = this.debtTranchesForYm(planned, m.realDebts, ym);
     const debtFact = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'debts'));
     const bankDebts = m.debts.filter(isBankDebt);
     const bankPlan = r2(bankDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment), this.debtRemaining(d, allTx)), 0));
@@ -2284,14 +2292,6 @@ export class FinanceService implements OnModuleInit {
     return ms[0] ?? currentYm();
   }
 
-  private defaultStartDebts(debts: FinanceDebt[], planned: FinancePlannedPayment[]): string {
-    const ids = new Set(debts.map(d => d.id));
-    const ms = [
-      ...planned.filter(p => p.debtId && ids.has(p.debtId)).map(p => p.ym),
-      currentYm(),
-    ].sort();
-    return ms[0] ?? currentYm();
-  }
 
   /** Матрица «проект × месяц»: строки с ячейками и итоги по месяцам.
    *  txDates — дата операции по receivedTxId: «когда получили» в ячейке. */
@@ -2405,9 +2405,8 @@ export class FinanceService implements OnModuleInit {
     const debtsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'debts'));
     const totalRemaining = r2(m.realDebts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
     const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
-    // Месячное обязательство по долгам — как в эталоне (карточка «Долги» на
-    // странице Расход и план/факт Обзора): Σ min(платёж/мес, остаток).
-    const debtsMonthly = r2(m.realDebts.reduce((s, d) => s + Math.min(Number(d.monthlyPayment) || 0, this.debtRemaining(d, allExp)), 0));
+    // Транши долгов на этот месяц (31.10.2026) — вместо «платёж/мес».
+    const debtsMonthly = this.debtTranchesForYm(planned, m.realDebts, ym);
     const debtCount = m.realDebts.filter(d => this.debtRemaining(d, allExp) > 0).length;
     const banks = this.bankStats(await this.bankDebtsView(m.debts, allExp, planned));
 
@@ -2583,36 +2582,13 @@ export class FinanceService implements OnModuleInit {
 
     if (kind === 'debts') {
       // Только настоящие долги: кредиты и рассрочки банков — в «Рассрочках».
+      // С 31.10.2026 — карточки: сколько осталось, что уже отдали, намеченные
+      // транши. Помесячной таблицы больше нет.
       const debts = (await this.debtRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } })).filter(d => !isBankDebt(d));
       const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
       const planned = await this.ppRepo.find();
-      const winStart = start || this.defaultStartDebts(debts, planned);
-      const months = Array.from({ length: 6 }, (_, i) => shiftYm(winStart, i));
-      const ids = new Set(debts.map(d => d.id));
-      const rows = debts.map(d => {
-        const remaining = this.debtRemaining(d, allExp);
-        const total = Number(d.totalAmount);
-        const cells = months.map(mm => {
-          const cp = planned.filter(p => p.debtId === d.id && p.ym === mm);
-          return { ym: mm, plans: cp.map(p => ({ id: p.id, amount: Number(p.amount), status: p.status, txId: p.receivedTxId })) };
-        });
-        return {
-          debt: { id: d.id, name: d.name, totalAmount: total, monthlyPayment: Number(d.monthlyPayment), counterparty: d.counterparty },
-          remaining, progress: total > 0 ? r2(((total - remaining) / total) * 100) : 0, cells,
-        };
-      });
-      const totals = {
-        total: r2(debts.reduce((s, d) => s + Number(d.totalAmount), 0)),
-        perMonth: months.map(mm => ({ ym: mm, total: r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === mm).reduce((s, p) => s + Number(p.amount), 0)) })),
-      };
-      return {
-        kind: 'debts', months, rows, totals,
-        stats: {
-          totalDebt: r2(debts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0)),
-          dueMonth: r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0)),
-          count: debts.filter(d => this.debtRemaining(d, allExp) > 0).length,
-        },
-      };
+      const board = this.debtsBoard(debts, allExp, planned, ym, m);
+      return { kind: 'debts', rows: board.rows, stats: board.stats };
     }
 
     // other
@@ -2903,7 +2879,9 @@ export class FinanceService implements OnModuleInit {
           remaining = r2(Math.max(0, remaining - scheduledPaid));
           debtRemaining.set(debt.id, remaining);
         }
-        let dueThisMonth = Math.max(0, (scheduled || Number(debt.monthlyPayment) || 0) - exactPaid);
+        // Настоящий долг без транша в этом месяце — платить нечего; помесячная
+        // подстановка осталась только у банков.
+        let dueThisMonth = Math.max(0, (scheduled || (isBankDebt(debt) ? Number(debt.monthlyPayment) || 0 : 0)) - exactPaid);
         const covered = Math.min(dueThisMonth, unlinkedDebtPaid);
         dueThisMonth -= covered;
         unlinkedDebtPaid = r2(unlinkedDebtPaid - covered);
@@ -3119,6 +3097,11 @@ export class FinanceService implements OnModuleInit {
     }
     const saved = await this.txRepo.save(this.txRepo.create(base));
     await this.syncSmmPartLink(saved.id);
+    // Отдали долг через журнал — как «Отдать»: оплата видна в плане и
+    // закрывает ближайшие транши.
+    if (saved.type === FinanceTxType.EXPENSE && saved.debtId) {
+      await this.syncDebtPaymentLink(saved.id, { consume: Number(saved.amount) });
+    }
     // Выплата ЗП: если остаток месяца НАЧИСЛЕНИЯ закрыт — фиксируем снапшот
     // (месяц замораживается, будущие правки бонусов/авансов его не меняют).
     if (saved.type === FinanceTxType.EXPENSE && saved.employeeId) {
@@ -3244,6 +3227,7 @@ export class FinanceService implements OnModuleInit {
     }
     await this.txRepo.update(id, patch);
     await this.syncSmmPartLink(id);
+    if (t.debtId || patch.debtId) await this.syncDebtPaymentLink(id, { prevDebtId: t.debtId });
     // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
     // затронутых месяцев: и старого сотрудника/месяца, и нового.
     const after = await this.txRepo.findOne({ where: { id } });
@@ -3755,6 +3739,9 @@ export class FinanceService implements OnModuleInit {
   private async regenerateDebtSchedule(debtId: string, notBefore?: string) {
     const debt = await this.debtRepo.findOne({ where: { id: debtId } });
     if (!debt) return;
+    // График по месяцам — только у банков. У настоящих долгов транши ставит
+    // человек; трогать их здесь нельзя (31.10.2026).
+    if (!isBankDebt(debt)) return;
     const monthly = Number(debt.monthlyPayment) || 0;
     const plans = await this.ppRepo.find({ where: { debtId } });
     const expectedIds = plans.filter(p => p.status === 'expected').map(p => p.id);
@@ -5644,38 +5631,241 @@ export class FinanceService implements OnModuleInit {
       ...d,
       totalAmount: Number(d.totalAmount), monthlyPayment: Number(d.monthlyPayment), paidBefore: Number(d.paidBefore),
       remaining: this.debtRemaining(d, allExp),
+      paid: this.sum(allExp.filter(t => t.debtId === d.id)),
     }));
   }
   async createDebt(dto: any) {
     if (!dto.name?.trim()) throw new BadRequestException('Название обязательно');
+    const bank = dto.kind === 'bank';
+    const total = Number(dto.totalAmount) || 0;
+    const paidBefore = Number(dto.paidBefore) || 0;
+    const tranches = bank ? [] : this.cleanTranches(dto.tranches);
+    if (!bank) this.assertTranchesFit(tranches, r2(Math.max(0, total - paidBefore)));
     const position = await this.debtRepo.count();
     const d = await this.debtRepo.save(this.debtRepo.create({
-      name: dto.name.trim(), counterparty: dto.counterparty ?? null, totalAmount: Number(dto.totalAmount) || 0,
-      monthlyPayment: Number(dto.monthlyPayment) || 0, paidBefore: Number(dto.paidBefore) || 0, note: dto.note ?? null,
-      dueDay: this.normDueDay(dto.dueDay), position,
-      kind: dto.kind === 'bank' ? 'bank' : 'debt',
+      name: dto.name.trim(), counterparty: dto.counterparty ?? null, totalAmount: total,
+      // Платёж в месяц и день оплаты — только у банков; настоящий долг
+      // отдают сразу или траншами (31.10.2026).
+      monthlyPayment: bank ? Number(dto.monthlyPayment) || 0 : 0, paidBefore, note: dto.note?.trim() || null,
+      dueDay: bank ? this.normDueDay(dto.dueDay) : null, position,
+      kind: bank ? 'bank' : 'debt',
+      dueDate: bank ? null : (dto.dueDate || null),
     }));
-    await this.regenerateDebtSchedule(d.id);
+    if (bank) await this.regenerateDebtSchedule(d.id);
+    else await this.writeDebtTranches(d.id, tranches);
     return d;
   }
   async updateDebt(id: string, dto: any) {
     const d = await this.debtRepo.findOne({ where: { id } });
     if (!d) throw new NotFoundException('Долг не найден');
+    const bank = isBankDebt(d);
     if (dto.name !== undefined) d.name = String(dto.name).trim();
     if (dto.counterparty !== undefined) d.counterparty = dto.counterparty ?? null;
     if (dto.totalAmount !== undefined) d.totalAmount = Number(dto.totalAmount) || 0;
     if (dto.paidBefore !== undefined) d.paidBefore = Number(dto.paidBefore) || 0;
-    if (dto.monthlyPayment !== undefined) d.monthlyPayment = Number(dto.monthlyPayment) || 0;
-    if (dto.dueDay !== undefined) d.dueDay = this.normDueDay(dto.dueDay);
-    if (dto.note !== undefined) d.note = dto.note;
+    if (bank && dto.monthlyPayment !== undefined) d.monthlyPayment = Number(dto.monthlyPayment) || 0;
+    if (bank && dto.dueDay !== undefined) d.dueDay = this.normDueDay(dto.dueDay);
+    if (!bank && dto.dueDate !== undefined) d.dueDate = dto.dueDate || null;
+    if (dto.note !== undefined) d.note = dto.note?.trim() || null;
+    let tranches: Array<{ date: string; amount: number }> | null = null;
+    if (!bank && dto.tranches !== undefined) {
+      tranches = this.cleanTranches(dto.tranches);
+      const paid = this.sum(await this.debtPaymentsTx(id));
+      this.assertTranchesFit(tranches, r2(Math.max(0, Number(d.totalAmount) - Number(d.paidBefore) - paid)));
+    }
     const saved = await this.debtRepo.save(d);
-    await this.regenerateDebtSchedule(id);
+    if (bank) await this.regenerateDebtSchedule(id);
+    else if (tranches) await this.writeDebtTranches(id, tranches);
+    else await this.trimDebtTranches(id);
     return saved;
   }
   async removeDebt(id: string) {
     await this.ppRepo.delete({ debtId: id } as any);
     await this.debtRepo.delete(id);
     return { ok: true };
+  }
+
+  // ─── Долги: транши и «Отдать» (31.10.2026) ────────────────────────
+  // Настоящий долг отдают сразу или частями, не помесячно. Намеченные транши —
+  // ожидаемые плановые оплаты с датой (видны в «Планировании»). Каждая
+  // отдача — расход с debtId плюс отданная плановая оплата (auto) на дату.
+  // Отдали — закрываются ближайшие транши; план не бывает больше остатка.
+
+  /** Проведённые расходы по долгу (то, что уже отдали). */
+  private async debtPaymentsTx(debtId: string) {
+    return this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE, debtId } as any }));
+  }
+
+  private cleanTranches(list: any): Array<{ date: string; amount: number }> {
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((t: any) => ({ date: String(t?.date || '').slice(0, 10), amount: r2(Number(t?.amount) || 0) }))
+      .filter(t => /^\d{4}-\d{2}-\d{2}$/.test(t.date) && t.amount > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  private assertTranchesFit(tranches: Array<{ amount: number }>, remaining: number) {
+    const sum = r2(tranches.reduce((s, t) => s + t.amount, 0));
+    if (sum > remaining + 0.005) {
+      throw new BadRequestException(`Транши — ${fmtSom(sum)}, а осталось отдать ${fmtSom(remaining)}. Уменьшите транши`);
+    }
+  }
+
+  /** Заменить ещё не отданные транши списком из формы. */
+  private async writeDebtTranches(debtId: string, tranches: Array<{ date: string; amount: number }>) {
+    const expected = await this.ppRepo.find({ where: { debtId, status: 'expected' } as any });
+    if (expected.length) await this.ppRepo.delete(expected.map(p => p.id));
+    if (!tranches.length) return;
+    await this.ppRepo.save(tranches.map(t => this.ppRepo.create({
+      debtId, ym: t.date.slice(0, 7), partNo: 1, amount: t.amount, status: 'expected', auto: false, dueDate: t.date,
+    })));
+  }
+
+  /** Ожидаемые транши долга по порядку дат. */
+  private async debtTranches(debtId: string) {
+    const rows = await this.ppRepo.find({ where: { debtId, status: 'expected' } as any });
+    return rows.sort((a, b) => trancheDate(a).localeCompare(trancheDate(b))
+      || new Date(a.createdAt as any).getTime() - new Date(b.createdAt as any).getTime());
+  }
+
+  /** Отдали amount — закрываем ближайшие транши (последний — частично). */
+  private async consumeDebtTranches(debtId: string, amount: number) {
+    let left = r2(amount);
+    for (const p of await this.debtTranches(debtId)) {
+      if (left <= 0.005) break;
+      const a = Number(p.amount);
+      if (a <= left + 0.005) { await this.ppRepo.delete(p.id); left = r2(left - a); }
+      else { p.amount = r2(a - left); await this.ppRepo.save(p); left = 0; }
+    }
+  }
+
+  /** План не больше остатка: лишнее снимаем с ближайших траншей. */
+  private async trimDebtTranches(debtId: string) {
+    const debt = await this.debtRepo.findOne({ where: { id: debtId } });
+    if (!debt || isBankDebt(debt)) return;
+    const remaining = this.debtRemaining(debt, await this.debtPaymentsTx(debtId));
+    const planned = r2((await this.debtTranches(debtId)).reduce((s, p) => s + Number(p.amount), 0));
+    const excess = r2(planned - remaining);
+    if (excess > 0.005) await this.consumeDebtTranches(debtId, excess);
+  }
+
+  /** Расход по настоящему долгу из журнала: держим рядом отданную плановую
+   *  оплату (как у «Отдать») — оплата видна в «Планировании» на свою дату.
+   *  consume — новая оплата: закрывает ближайшие транши. */
+  private async syncDebtPaymentLink(txId: string, opts: { consume?: number; prevDebtId?: string | null } = {}) {
+    const tx = await this.txRepo.findOne({ where: { id: txId } });
+    const debt = tx?.debtId ? await this.debtRepo.findOne({ where: { id: tx.debtId } }) : null;
+    const existing = (await this.ppRepo.find({ where: { receivedTxId: txId } })).find(p => p.debtId) ?? null;
+    const shouldExist = !!(tx && debt && !isBankDebt(debt)
+      && isPostedFinanceTransaction(tx) && tx.type === FinanceTxType.EXPENSE);
+    if (shouldExist && tx && debt) {
+      const date = String(tx.date).slice(0, 10);
+      const data = { debtId: debt.id, ym: date.slice(0, 7), amount: r2(Number(tx.amount)), dueDate: date, status: 'received' as const, receivedTxId: txId };
+      if (existing) await this.ppRepo.update(existing.id, data);
+      else await this.ppRepo.save(this.ppRepo.create({ ...data, partNo: 1, auto: true }));
+      if (opts.consume) await this.consumeDebtTranches(debt.id, opts.consume);
+    } else if (existing?.auto) {
+      await this.ppRepo.delete(existing.id);
+    }
+    const touched = new Set([tx?.debtId, opts.prevDebtId].filter(Boolean) as string[]);
+    for (const id of touched) await this.trimDebtTranches(id);
+  }
+
+  /** «Отдать»: любая сумма, сегодня или задним числом. */
+  async payDebt(id: string, dto: any) {
+    const debt = await this.debtRepo.findOne({ where: { id } });
+    if (!debt) throw new NotFoundException('Долг не найден');
+    if (isBankDebt(debt)) throw new BadRequestException('Платёж банку отмечается в «Рассрочках»');
+    if (!dto.accountId) throw new BadRequestException('Укажите счёт');
+    const amount = r2(Number(dto.amount));
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма должна быть больше нуля');
+    const date = String(dto.date || todayISO()).slice(0, 10);
+    if (date > todayISO()) throw new BadRequestException('Будущий платёж добавьте траншем — «Отдать» записывает то, что уже отдали');
+    const remaining = this.debtRemaining(debt, await this.debtPaymentsTx(id));
+    if (amount > remaining + 0.005) throw new BadRequestException(`Это больше, чем осталось отдать (${fmtSom(remaining)})`);
+    const res = await this.ds.transaction(async (em) => {
+      const ppRepo = em.getRepository(FinancePlannedPayment);
+      // Антидубль: двойной клик или повтор сети не должен отдать дважды.
+      const dup = await ppRepo.createQueryBuilder('pp')
+        .where('pp.debtId = :id AND pp.status = :st AND pp.amount = :amt', { id, st: 'received', amt: amount })
+        .andWhere(`pp.createdAt > now() - interval '60 seconds'`)
+        .getOne();
+      if (dup) throw new BadRequestException('Такая оплата только что проведена — проверьте журнал');
+      const tx = await this.buildLinkedTx(em, { debtId: id, amount }, dto.accountId, date, dto.comment?.trim() || undefined);
+      await ppRepo.save(ppRepo.create({
+        debtId: id, ym: date.slice(0, 7), partNo: 1, amount, status: 'received', receivedTxId: tx.id, auto: true, dueDate: date,
+      }));
+      return tx;
+    });
+    await this.consumeDebtTranches(id, amount);
+    await this.trimDebtTranches(id);
+    return { ok: true, txId: res.id };
+  }
+
+  /** Отменить отдачу: расход отменяется, из плана она уходит. Закрытые ею
+   *  транши не возвращаются — план правят в форме долга. */
+  async cancelDebtPayment(id: string, txId: string) {
+    const tx = await this.txRepo.findOne({ where: { id: txId } });
+    if (!tx || tx.debtId !== id) throw new NotFoundException('Оплата не найдена');
+    // auto — отмена удаляет связанную плановую оплату, а не возвращает её траншем.
+    await this.ppRepo.update({ receivedTxId: txId } as any, { auto: true });
+    return this.removeTransaction(txId);
+  }
+
+  /** Σ траншей настоящих долгов, назначенных на месяц (и отданных, и нет). */
+  private debtTranchesForYm(planned: FinancePlannedPayment[], debts: FinanceDebt[], ym: string): number {
+    const ids = new Set(debts.map(d => d.id));
+    return r2(planned.filter(p => p.debtId && ids.has(p.debtId) && p.ym === ym).reduce((s, p) => s + Number(p.amount), 0));
+  }
+
+  /** Страница «Долги»: карточка на каждый долг + плитки сверху. */
+  private debtsBoard(debts: FinanceDebt[], allExp: FinanceTransaction[], planned: FinancePlannedPayment[], ym: string, m: FinMaps) {
+    const today = todayISO();
+    const rows = debts.map(d => {
+      const total = r2(d.totalAmount);
+      const paidBefore = r2(d.paidBefore);
+      const payTx = allExp.filter(t => t.debtId === d.id).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const paid = this.sum(payTx);
+      const remaining = this.debtRemaining(d, allExp);
+      const tranches = planned
+        .filter(p => p.debtId === d.id && p.status === 'expected')
+        .map(p => ({ id: p.id, date: trancheDate(p), amount: r2(p.amount) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const plannedSum = r2(tranches.reduce((s, t) => s + t.amount, 0));
+      return {
+        id: d.id, name: d.name, note: d.note ?? null, counterparty: d.counterparty ?? null,
+        totalAmount: total, paidBefore, paid, remaining,
+        dueDate: d.dueDate ? String(d.dueDate).slice(0, 10) : null,
+        closed: remaining <= 0.005,
+        overdue: !!d.dueDate && String(d.dueDate).slice(0, 10) < today && remaining > 0.005,
+        payments: payTx.map(t => ({
+          txId: t.id, date: String(t.date).slice(0, 10), amount: r2(t.amount),
+          account: (t.accountId && m.acc.get(t.accountId)?.name) || null,
+        })),
+        tranches,
+        // Не распределено по траншам — отдадут «когда получится».
+        unplanned: r2(Math.max(0, remaining - plannedSum)),
+      };
+    });
+    const active = rows.filter(r => !r.closed);
+    const next = active
+      .flatMap(r => r.tranches.map(t => ({ ...t, debtId: r.id, name: r.name })))
+      .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+    const monthPays = rows.flatMap(r => r.payments.filter(p => p.date.slice(0, 7) === ym).map(p => ({ ...p, name: r.name })));
+    return {
+      rows,
+      stats: {
+        totalDebt: r2(active.reduce((s, r) => s + r.remaining, 0)),
+        count: active.length,
+        closedCount: rows.length - active.length,
+        next,
+        paidMonth: {
+          amount: r2(monthPays.reduce((s, p) => s + p.amount, 0)),
+          count: monthPays.length,
+          names: [...new Set(monthPays.map(p => p.name))],
+        },
+      },
+    };
   }
 
   // ─── Инвентарь (оборудование + амортизация) ──────────────────────

@@ -745,6 +745,10 @@ export const financeApi = {
   updateDebt: (id: string, data: any) => api.patch(`/finance/debts/${id}`, data).then(r => r.data),
   removeDebt: (id: string) => api.delete(`/finance/debts/${id}`).then(r => r.data),
   regenerateDebtSchedule: (id: string) => api.post(`/finance/debts/${id}/regenerate-schedule`, {}).then(r => r.data),
+  /** «Отдать» по долгу — любая сумма, сегодня или задним числом (31.10.2026). */
+  payDebt: (id: string, data: { amount: number; accountId: string; date?: string; comment?: string }) =>
+    api.post(`/finance/debts/${id}/pay`, data).then(r => r.data),
+  cancelDebtPayment: (id: string, txId: string) => api.delete(`/finance/debts/${id}/payments/${txId}`).then(r => r.data),
   // Рассрочки сотрудников: таблица по месяцам, своя сумма месяца, платежи вручную.
   installments: () => api.get('/finance/installments').then(r => r.data),
   /** Платежи по рассрочкам на месяц — для календаря «Планирование». */

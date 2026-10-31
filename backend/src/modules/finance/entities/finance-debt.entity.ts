@@ -22,7 +22,9 @@ export class FinanceDebt {
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   paidBefore: number;
 
-  /** Планируемый платёж в месяц (для колонки «план/мес» и графика). */
+  /** Платёж в месяц — только у кредитов и рассрочек банков (kind='bank'):
+   *  по нему строится график. У настоящих долгов не используется — у них
+   *  транши (31.10.2026). */
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   monthlyPayment: number;
 
@@ -33,6 +35,11 @@ export class FinanceDebt {
 
   @Column({ type: 'text', nullable: true })
   note: string | null;
+
+  /** «Вернуть до» (31.10.2026) — необязательный срок настоящего долга.
+   *  Отдают сразу или траншами (плановые оплаты с датой), не помесячно. */
+  @Column({ type: 'date', nullable: true })
+  dueDate: string | null;
 
   /** «Что это» (30.10.2026): 'debt' — настоящий долг (заняли у человека или
    *  компании), живёт в «Долгах»; 'bank' — кредит или рассрочка компании в

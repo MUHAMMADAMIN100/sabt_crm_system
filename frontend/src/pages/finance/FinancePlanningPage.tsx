@@ -253,14 +253,20 @@ export default function FinancePlanningPage() {
         }
         // Кредит или рассрочка банка (30.10.2026) — «Рассрочка», не «Долг».
         const bank = debt?.kind === 'bank';
+        const debtName = debtNameById.get(p.debtId);
         items.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done,
-          comment: debtNameById.get(p.debtId) || (bank ? 'Платёж банку' : 'Погашение долга'),
-          details: detailList([
-            { label: bank ? 'Рассрочка' : 'Долг', value: debt?.name || debtNameById.get(p.debtId) },
-            { label: bank ? 'Банк' : 'Кому', value: debt?.counterparty },
-            { label: bank ? 'Осталось банку' : 'Остаток долга', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
+          // Настоящий долг отдают траншами, не помесячно (31.10.2026).
+          comment: bank ? (debtName || 'Платёж банку') : (debtName ? `${debtName} · транш` : 'Транш долга'),
+          details: detailList(bank ? [
+            { label: 'Рассрочка', value: debt?.name || debtName },
+            { label: 'Банк', value: debt?.counterparty },
+            { label: 'Осталось банку', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
             { label: 'Платёж/мес', value: debt?.monthlyPayment ? money(Number(debt.monthlyPayment)) : null },
             { label: 'День оплаты', value: `${Number(debt?.dueDay) || 10}-го` },
+          ] : [
+            { label: 'Долг', value: debt?.name || debtName },
+            { label: 'Осталось отдать', value: debt?.remaining != null ? money(Number(debt.remaining)) : null },
+            { label: 'Вернуть до', value: debt?.dueDate ? new Date(String(debt.dueDate).slice(0, 10) + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : 'без срока' },
           ]) });
       }
     }
