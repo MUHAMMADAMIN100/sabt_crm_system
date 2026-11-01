@@ -3314,3 +3314,31 @@
   .fin-root .fin-exp-ctrl .fin-segments button { flex: 1 1 0; }
   .fin-root .fin-exp-month { width: 100%; }
 }
+
+/* ─── «Прочее»: план на месяцы вперёд (01.11.2026) ───────────────────
+   12 клеток: пустая — среднее (подсказкой), своя цифра — «ваш план». */
+.fin-root .fin-oth-plan { display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+.fin-root .fin-oth-plan .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 24px; }
+.fin-root .fin-oth-plan .tx { display: flex; flex-direction: column; gap: 5px; max-width: 760px; }
+.fin-root .fin-oth-plan h2 { margin: 0; font-size: 17px; font-weight: 650; }
+.fin-root .fin-oth-plan .tx p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.fin-root .fin-oth-plan .tx p b { color: var(--text); }
+.fin-root .fin-oth-plan .tot { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-oth-plan .tot span { font-size: 12.5px; color: var(--muted); }
+.fin-root .fin-oth-plan .tot b { font-size: 21px; }
+.fin-root .fin-oth-plan .grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.fin-root .fin-oth-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.fin-root .fin-oth-cell.own { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.fin-root .fin-oth-cell label { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; }
+.fin-root .fin-oth-cell .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--accent); background: var(--accent-soft); }
+.fin-root .fin-oth-cell input { width: 100%; min-height: 40px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-oth-cell.own input { border-color: var(--accent); }
+.fin-root .fin-oth-cell .rst { align-self: flex-start; padding: 2px 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+.fin-root .fin-oth-cell .rst:hover { color: var(--text); text-decoration: underline; }
+.fin-root .fin-oth-plan .hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+@media (max-width: 1180px) { .fin-root .fin-oth-plan .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 720px) {
+  .fin-root .fin-oth-plan .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-root .fin-oth-plan .tot { align-items: flex-start; }
+  .fin-root .fin-oth-cell input { min-height: 44px; }
+}

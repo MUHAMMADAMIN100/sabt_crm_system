@@ -14,6 +14,7 @@ import MonthNav from './MonthNav';
 import EmployeeSalaryHistory from './EmployeeSalaryHistory';
 import { InstallmentsList, InstallmentSalaryField, INSTALLMENT_COLOR } from './InstallmentsSection';
 import { DebtsList } from './DebtsBoard';
+import { OtherPlanBlock, useOtherPlan, avgBasis } from './OtherPlanBlock';
 import './finance.css';
 
 const SALARY_ROW_CONTROL_SELECTOR = [
@@ -116,17 +117,49 @@ function OtherExpenseList({ ym }: { ym: string }) {
     queryKey: ['finance', 'expenseDetail', 'other', ym],
     queryFn: () => financeApi.expenseDetail('other', ym),
   });
+  const planQ = useOtherPlan();
   if (isLoading) return <FinLoading />;
   if (isError) return <FinLoadError onRetry={refetch} />;
 
   const rows: any[] = data?.rows ?? [];
   const total: number = data?.total ?? 0;
+  // План на месяц (01.11.2026): своя цифра или среднее по прошлым месяцам.
+  const plan = planQ.data;
+  const isPast = ym < currentYm();
+  const pm = plan?.months?.find((x) => x.ym === ym);
+  const planFor = pm ? Number(pm.estimate) || 0 : Number(plan?.avg) || 0;
+  const ownFor = pm?.amount != null;
+  const diff = total - (Number(plan?.avg) || 0);
 
   return (
     <>
       <div className="cards grid-3" style={{ marginBottom: 16 }}>
         <div className="card stat"><div className="label">Прочие расходы за месяц</div><div className="value neg">{money(total)}</div></div>
+        {plan && (isPast ? (
+          <>
+            <div className="card stat"><div className="label">Среднее в месяц</div><div className="value">≈ {money(plan.avg)}</div><div className="mini muted">{avgBasis(plan)}</div></div>
+            <div className="card stat">
+              <div className="label">Против среднего</div>
+              <div className="value">{diff >= 0 ? '+' : '−'}{money(Math.abs(diff))}</div>
+              <div className="mini muted">{diff >= 0 ? 'больше среднего' : 'меньше среднего'}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="card stat">
+              <div className="label">План на {monthLabel(ym, true).replace(/\s\d{4}$/, '')}</div>
+              <div className="value">{ownFor ? '' : '≈ '}{money(planFor)}</div>
+              <div className="mini muted">{ownFor ? 'ваш план' : 'среднее — своей цифры на месяц нет'}</div>
+            </div>
+            <div className="card stat">
+              <div className="label">Осталось по плану</div>
+              <div className="value">{money(Math.max(0, planFor - total))}</div>
+              <div className="mini muted">{total > planFor ? `потрачено ${money(total)} — больше плана на ${money(total - planFor)}` : `потрачено ${money(total)} из ${money(planFor)}`}</div>
+            </div>
+          </>
+        ))}
       </div>
+      {plan && <OtherPlanBlock data={plan} />}
       {rows.length === 0 ? (
         <div className="card empty"><div className="big"><FinIcon name="wallet" size={30} /></div>Нет прочих расходов за месяц</div>
       ) : (
