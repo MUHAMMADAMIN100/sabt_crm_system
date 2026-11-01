@@ -3283,3 +3283,34 @@
   .fin-root .fin-dbt-tr { grid-template-columns: 20px 70px minmax(0, 1fr) auto; gap: 8px; font-size: 13.5px; }
   .fin-root .fin-dbt-acts .btn.primary { flex: 1 1 0; min-height: 44px; }
 }
+
+/* ─── «Расход»: месяц и период вперёд (01.11.2026, вариант Б) ────────
+   Справа в шапке — «1 год / 6 месяцев / 3 месяца» и месяц; в периоде месяц
+   становится кнопкой «назад к одному месяцу». Под карточками — таблица
+   статья × месяц; оценки «Прочего» (среднее) — серым. */
+.fin-root .fin-exp-ctrl { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.fin-root .fin-exp-ctrl .fin-segments { margin-left: 0; }
+.fin-root .fin-exp-month {
+  min-height: 42px; padding: 6px 20px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer;
+}
+.fin-root .fin-exp-month:hover { border-color: var(--accent); }
+.fin-root .fin-exp-month:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fin-root .fin-exp-all {
+  margin-top: 10px; padding: 7px 10px; border-radius: 10px; background: var(--surface-2);
+  font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.fin-root .fin-exp-all b { color: var(--text); font-weight: 650; }
+.fin-root .fin-exp-plan { margin-top: 16px; }
+.fin-root .fin-exp-plan th, .fin-root .fin-exp-plan td { white-space: nowrap; }
+.fin-root .fin-exp-plan .cat { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; }
+.fin-root .fin-exp-plan .cat i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.fin-root .fin-exp-plan td.est { color: var(--muted); }
+.fin-root .fin-exp-plan .sum { background: color-mix(in srgb, var(--accent) 8%, transparent); font-weight: 700; }
+.fin-root .fin-exp-plan tfoot td { font-weight: 700; }
+@media (max-width: 720px) {
+  .fin-root .fin-exp-ctrl { justify-content: stretch; }
+  .fin-root .fin-exp-ctrl .fin-segments { width: 100%; }
+  .fin-root .fin-exp-ctrl .fin-segments button { flex: 1 1 0; }
+  .fin-root .fin-exp-month { width: 100%; }
+}

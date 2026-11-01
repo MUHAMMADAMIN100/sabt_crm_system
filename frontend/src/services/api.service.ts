@@ -646,6 +646,10 @@ export const financeApi = {
     api.get(`/finance/income/directions/${direction}`, { params: { ym, start } }).then(r => r.data),
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
   expenseDetail: (kind: string, ym: string, start?: string) => api.get(`/finance/expense/detail/${kind}`, { params: { ym, start } }).then(r => r.data),
+  // «3 месяца / 6 месяцев / 1 год» на «Расходе» и план «Прочего» (01.11.2026).
+  expensePlan: (months: number) => api.get('/finance/expense/plan', { params: { months } }).then(r => r.data),
+  otherPlan: () => api.get('/finance/expense/other-plan').then(r => r.data),
+  setOtherPlan: (data: { ym: string; amount: number | null }) => api.post('/finance/expense/other-plan', data).then(r => r.data),
   accountsBalances: () => api.get('/finance/accounts/balances').then(r => r.data),
   /** Остаток на счетах на конец каждого дня месяца (только факт) — кривая в «Транзакциях». */
   balanceDays: (ym: string) => api.get('/finance/accounts/balance-days', { params: { ym } }).then(r => r.data),

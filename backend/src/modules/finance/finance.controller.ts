@@ -35,6 +35,7 @@ import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { RemoveMonthExpensesDto } from './dto/remove-month-expenses.dto';
 import { PayDebtDto } from './dto/pay-debt.dto';
+import { SetOtherPlanDto } from './dto/other-plan.dto';
 import {
   CreateInstallmentDto, InstallmentDueDto, InstallmentMarkDto, InstallmentMonthDto, InstallmentPaymentDto, UpdateInstallmentDto,
 } from './dto/installment.dto';
@@ -77,6 +78,16 @@ export class FinanceController {
 
   @Get('expense/summary')
   expenseSummary(@Query('ym') ym: string) { return this.service.expenseSummary(ym || currentYm()); }
+
+  /** «3 месяца / 6 месяцев / 1 год» на «Расходе» — по месяцам вперёд (01.11.2026). */
+  @Get('expense/plan')
+  expensePlan(@Query('months') months?: string) { return this.service.expensePlan(Number(months) || 3); }
+
+  /** «Прочее»: среднее и свои цифры на месяцы вперёд. */
+  @Get('expense/other-plan')
+  otherPlan() { return this.service.otherPlan(); }
+  @Post('expense/other-plan')
+  setOtherPlan(@Body() dto: SetOtherPlanDto) { return this.service.setOtherPlan(dto); }
 
   @Get('expense/detail/:kind')
   expenseDetail(@Param('kind') kind: string, @Query('ym') ym: string, @Query('start') start?: string) {

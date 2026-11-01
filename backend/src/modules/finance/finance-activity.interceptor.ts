@@ -21,6 +21,7 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/transactions\/[^/?]+(?:\?.*)?$/, method: 'PATCH', label: 'Изменил операцию' },
   { re: /\/transactions\/[^/?]+(?:\?.*)?$/, method: 'DELETE', label: 'Отменил операцию' },
   { re: /\/operations$/, method: 'POST', label: 'Добавил операцию' },
+  { re: /\/expense\/other-plan$/, method: 'POST', label: 'Изменил план «Прочего» на месяц' },
   { re: /\/operations\/remove-month$/, method: 'POST', label: 'Откатил выплаты месяца' },
   { re: /\/employees\/[^/]+\/bonus$/, label: 'Изменил бонус сотрудника' },
   { re: /\/employees\/[^/]+\/advance$/, label: 'Изменил аванс сотрудника' },
