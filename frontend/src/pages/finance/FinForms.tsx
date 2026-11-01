@@ -482,7 +482,7 @@ export function DebtFormModal({ debt, onClose }: { debt?: FinDebt; onClose: () =
         <button className="btn primary" disabled={!can} onClick={save}>{busy ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Добавить'}</button>
       </>}>
       <div className="form-grid">
-        <div className="field"><label>Кому должны</label><input autoFocus={!isEdit} value={name} onChange={(e) => setName(e.target.value)} placeholder="Сабина" /></div>
+        <div className="field"><label>Кому должны</label><input autoFocus={!isEdit} value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя" /></div>
         <div className="field"><label>Сумма долга</label><input inputMode="decimal" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} /></div>
         <div className="field"><label>Уже отдали раньше</label><input inputMode="decimal" value={paidBefore} onChange={(e) => setPaidBefore(e.target.value)} placeholder="0" /></div>
         <div className="field"><label>Вернуть до <span className="muted" style={{ fontWeight: 400 }}>· необязательно</span></label><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
