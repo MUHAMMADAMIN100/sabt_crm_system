@@ -110,33 +110,30 @@ export default function FinanceExpensePage() {
   );
 }
 
-/** Рассрочки сотрудников: сколько ещё должны, ближайший платёж и
- *  просрочка — то же, что сверху на странице рассрочек. */
+/** Рассрочки: на карточке только то, что мы должны банкам (01.11.2026,
+ *  решение владельца) — остаток, полоса оплаченного, ближайший платёж банку.
+ *  Сколько должны сотрудники — внутри страницы «Рассрочки». */
 function InstallmentsCard({ data, onOpen }: { data?: any; onOpen: () => void }) {
-  const total = Number(data?.total) || 0;
-  const paid = Number(data?.paid) || 0;
-  const remaining = Number(data?.remaining) || 0;
-  const count = Number(data?.count) || 0;
-  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const next = data?.next;
-  const late = data?.overdue;
   const banks = data?.banks;
+  const remaining = Number(banks?.remaining) || 0;
+  const count = Number(banks?.count) || 0;
+  const closed = Number(banks?.closed) || 0;
+  const total = Number(banks?.total) || 0;
+  const paid = Number(banks?.paid) || 0;
+  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const next = banks?.next;
   const day = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   return (
     <button type="button" className="card clickable fin-inst-card-btn" onClick={onOpen}>
       <div className="summary-head"><span className="t" style={{ color: INSTALLMENT_COLOR }}><CatIcon icon="installment" color={INSTALLMENT_COLOR} size={30} /> Рассрочки</span></div>
       <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(remaining)}</div>
-      <div className="mini muted" style={{ marginTop: 6 }}>{count > 0 ? `должны · ${pluralRu(count, 'рассрочка', 'рассрочки', 'рассрочек')}` : total > 0 ? 'все закрыты' : 'рассрочек нет'}</div>
-      {total > 0 && <div className="progress" style={{ marginTop: 8 }}><i style={{ width: `${pct}%`, background: INSTALLMENT_COLOR }} /></div>}
-      {late ? (
-        <div className="mini" style={{ marginTop: 8, color: 'var(--red)' }}>просрочено {money(late.amount)}</div>
-      ) : next ? (
-        <div className="mini muted" style={{ marginTop: 8 }}>ближайший · {day(next.date)}, {money(next.amount)}</div>
-      ) : null}
-      {/* Кредиты и рассрочки банков теперь здесь, а не в «Долгах» (30.10.2026). */}
-      {banks?.count > 0 && (
-        <div className="mini muted" style={{ marginTop: 6 }}>
-          банкам осталось {money(banks.remaining)}{banks.next ? ` · ${day(banks.next.date)}, ${money(banks.next.amount)}` : ''}
+      <div className="mini muted" style={{ marginTop: 6 }}>
+        {count > 0 ? `должны банкам · ${pluralRu(count, 'рассрочка', 'рассрочки', 'рассрочек')}` : closed > 0 ? 'банкам всё выплачено' : 'кредитов в банках нет'}
+      </div>
+      {count > 0 && total > 0 && <div className="progress" style={{ marginTop: 8 }}><i style={{ width: `${pct}%`, background: 'var(--red)' }} /></div>}
+      {next && (
+        <div className="mini" style={{ marginTop: 8, color: next.overdue ? 'var(--red)' : 'var(--muted)' }}>
+          {next.overdue ? 'не оплачено' : 'ближайший'} · {day(next.date)}, {money(next.amount)}{next.bank ? ` · ${next.bank}` : ''}
         </div>
       )}
       <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>

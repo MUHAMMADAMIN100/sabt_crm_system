@@ -5188,6 +5188,10 @@ export class FinanceService implements OnModuleInit {
     const next = active.filter(b => b.next).sort((a, b) => a.next!.date.localeCompare(b.next!.date))[0];
     return {
       remaining: r2(active.reduce((s, b) => s + b.remaining, 0)),
+      // Сумма открытых кредитов и сколько из неё уже заплатили — полоса на
+      // карточке «Рассрочки» в «Расходе» (01.11.2026: там теперь только банки).
+      total: r2(active.reduce((s, b) => s + b.total, 0)),
+      paid: r2(active.reduce((s, b) => s + Math.max(0, b.total - b.remaining), 0)),
       monthly: r2(active.reduce((s, b) => s + Math.min(b.monthly, b.remaining), 0)),
       count: active.length,
       closed: list.length - active.length,
