@@ -8,7 +8,7 @@
 // не удерживаем), счёт обязателен; месяц «из зарплаты» отмечают «удержано» —
 // удержание остаётся; любой месяц открывается окном с отменой.
 // Менять может только владелец, сотрудник видит своё в профиле.
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
@@ -87,7 +87,25 @@ function allocPreview(plan: Entry[], amount: number, preferYm?: string) {
   return out;
 }
 
+/** «ЗУ» — первые буквы фамилии и имени для кружка в блоке. */
+const initials = (name?: string | null) =>
+  String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+
+/** Дней до даты: 0 — сегодня, меньше нуля — дата прошла. */
+function daysUntil(iso: string): number {
+  const at = (s: string) => new Date(`${s.slice(0, 10)}T00:00:00`).getTime();
+  return Math.round((at(String(iso)) - at(todayISO())) / 86400000);
+}
+const soonLabel = (n: number) => (n === 0 ? 'сегодня' : n === 1 ? 'завтра' : `через ${pluralRu(n, 'день', 'дня', 'дней')}`);
+
+/** Плановый платёж банку: id — для «Оплатили банку» и отмены. */
+type BankPp = { id: string; date: string; amount: number; planned?: number; paid?: boolean; overdue?: boolean };
+
+const CAP_OURS = 'Сотрудник возвращает нам';
+const CAP_BANK = 'Мы платим банку';
+
 export function InstallmentsList() {
+  const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['finance', 'installments'],
     queryFn: () => financeApi.installments(),
@@ -99,6 +117,7 @@ export function InstallmentsList() {
   // «+ Рассрочка»: компании в банке или сотруднику (30.10.2026, вариант Б).
   const [addOpen, setAddOpen] = useState(false);
   const [bankFor, setBankFor] = useState<any | 'new' | null>(null);
+  const [bankPayFor, setBankPayFor] = useState<{ bank: any; pp: BankPp } | null>(null);
 
   if (isLoading) return <FinLoading />;
   if (isError) return <FinLoadError onRetry={refetch} />;
@@ -108,14 +127,40 @@ export function InstallmentsList() {
   const banks: any[] = data?.banks ?? [];
   const bankStats = data?.bankStats ?? { remaining: 0, monthly: 0, count: 0, closed: 0, next: null };
   const openYm: string = data?.latestOpenYm ?? currentYm();
-  const active = rows.filter((r) => !r.done);
-  const closed = rows.filter((r) => r.done);
-  // Банковская часть рассрочки сотруднику — внутри её карточки; кредиты
-  // компании (без сотрудника) — своими карточками.
+  // Банковская часть рассрочки сотруднику — в его же блоке, в колонке
+  // «банку»; кредиты компании (без сотрудника) — своими блоками.
   const bankOf = (instId: string) => banks.find((b) => b.installmentId === instId) ?? null;
+  // Блок закрыт, когда сотрудник вернул всё и банку тоже всё заплатили.
+  const isClosed = (r: any) => r.done && !(bankOf(r.installment.id)?.done === false);
+  const active = rows.filter((r) => !isClosed(r));
+  const closed = rows.filter(isClosed);
   const ownBanks = banks.filter((b) => !b.installmentId);
   const ownActive = ownBanks.filter((b) => !b.done);
   const ownClosed = ownBanks.filter((b) => b.done);
+
+  async function undoBank(pp: BankPp) {
+    const ok = await finConfirm(`Отменить оплату банку ${money(pp.amount)} за ${dayLabel(pp.date)}? Расход со счёта отменится, платёж вернётся в план.`, { danger: true, confirmLabel: 'Отменить оплату' });
+    if (!ok) return;
+    try {
+      await financeApi.unreceivePlanned(pp.id);
+      invalidateFinance(qc);
+      toast.success('Оплата банку отменена');
+    } catch (e) { toast.error(apiErr(e)); }
+  }
+
+  const block = (r: any) => (
+    <InstallmentBlock key={r.installment.id} row={r} openYm={openYm} bank={bankOf(r.installment.id)}
+      onEdit={() => setFormFor(r)}
+      onEntry={(entry) => setEntryFor({ row: r, entry })}
+      onPay={(amount) => setPayFor({ row: r, amount })}
+      onBankPay={(bank, pp) => setBankPayFor({ bank, pp })} onBankUndo={undoBank} />
+  );
+  const credit = (b: any) => (
+    <BankCreditBlock key={b.id} bank={b} onEdit={() => setBankFor(b)}
+      onBankPay={(pp) => setBankPayFor({ bank: b, pp })} onBankUndo={undoBank} />
+  );
+  const bankNext = bankStats.next;
+  const bankSoon = bankNext && !bankNext.overdue ? daysUntil(bankNext.date) : null;
 
   return (
     <>
@@ -148,40 +193,71 @@ export function InstallmentsList() {
           Рассрочек нет — нажмите «＋ Рассрочка», если купили сотруднику вещь с возвратом частями
         </div>
       ) : (
-        <>
-          <section className="fin-inst-sum" aria-label="Итого по рассрочкам">
-            <div>
-              <span className="lb">Банкам осталось</span>
-              <span className="vl" style={bankStats.remaining > 0 ? { color: 'var(--red)' } : undefined}>{money(bankStats.remaining)}</span>
-              <span className="sb">
-                {bankStats.count > 0 ? pluralRu(bankStats.count, 'рассрочка', 'рассрочки', 'рассрочек') : 'рассрочек в банках нет'}
-                {bankStats.closed > 0 ? ` · ${bankStats.closed} ${bankStats.closed === 1 ? 'закрыта' : 'закрыты'}` : ''}
-              </span>
-            </div>
-            <div>
-              <span className="lb">Ближайший платёж банку</span>
-              <span className="vl" style={bankStats.next?.overdue ? { color: 'var(--red)' } : undefined}>{bankStats.next ? `${dayLabel(bankStats.next.date)} · ${money(bankStats.next.amount)}` : '—'}</span>
-              <span className="sb">{bankStats.next ? [bankStats.next.bank, bankStats.next.name].filter(Boolean).join(' · ') : 'платежей банкам впереди нет'}</span>
-            </div>
-            <div>
-              <span className="lb">Сотрудники должны нам</span>
-              <span className="vl" style={{ color: INSTALLMENT_COLOR }}>{money(stats.remaining)}</span>
-              {stats.overdue ? (
-                <span className="sb" style={{ color: 'var(--red)' }}>просрочено {money(stats.overdue.amount)} · с {dayLabel(stats.overdue.since)}</span>
-              ) : (
-                <span className="sb">{stats.next ? `ближайший возврат ${dayLabel(stats.next.date)} · ${money(stats.next.amount)}` : 'возвратов впереди нет'}</span>
-              )}
-            </div>
-          </section>
+        <div className="fin-inst-page">
+          {/* Итоги (01.11.2026, вариант А2): слева всегда «нам», справа «банкам». */}
+          <div className="fin-inst-sum2" role="group" aria-label="Итого по рассрочкам">
+            <section className="ours" aria-label="Сотрудники возвращают нам">
+              <h2><span className="fin-inst-dot ours" />Сотрудники возвращают нам</h2>
+              <div className="kvs">
+                <div className="kv">
+                  <span className="lb">Должны нам</span>
+                  <span className="vl ours">{money(stats.remaining)}</span>
+                  <span className="sb">{stats.people > 0 ? pluralRu(stats.people, 'сотрудник', 'сотрудника', 'сотрудников') : 'никто не должен'}</span>
+                </div>
+                <div className="kv">
+                  {stats.overdue ? (
+                    <>
+                      <span className="lb late">Просрочено</span>
+                      <span className="vl neg">{money(stats.overdue.amount)}</span>
+                      <span className="sb">срок был {dayLabel(stats.overdue.since)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="lb">Ближайший возврат</span>
+                      <span className="vl">{stats.next ? `${dayLabel(stats.next.date, true)} · ${money(stats.next.amount)}` : '—'}</span>
+                      <span className="sb">
+                        {stats.next
+                          ? [stats.next.method === 'separate' ? 'платит отдельно' : 'из зарплаты', String(stats.next.employeeName || '').split(/\s+/)[0]].filter(Boolean).join(' · ')
+                          : 'возвратов впереди нет'}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </section>
+            <section className="bank" aria-label="Мы платим банкам">
+              <h2><span className="fin-inst-dot bank" />Мы платим банкам</h2>
+              <div className="kvs">
+                <div className="kv">
+                  <span className="lb">Банкам осталось</span>
+                  <span className="vl bank">{money(bankStats.remaining)}</span>
+                  <span className="sb">
+                    {bankStats.count > 0 ? pluralRu(bankStats.count, 'рассрочка', 'рассрочки', 'рассрочек') : 'рассрочек в банках нет'}
+                    {bankStats.closed > 0 ? ` · ${bankStats.closed} ${bankStats.closed === 1 ? 'закрыта' : 'закрыты'}` : ''}
+                  </span>
+                </div>
+                <div className="kv">
+                  <span className={`lb${bankNext?.overdue ? ' late' : ''}`}>{bankNext?.overdue ? 'Не оплачено банку' : 'Ближайший платёж банку'}</span>
+                  <span className={`vl${bankNext?.overdue ? ' neg' : ''}`}>{bankNext ? `${dayLabel(bankNext.date, true)} · ${money(bankNext.amount)}` : '—'}</span>
+                  <span className="sb">
+                    {bankNext
+                      ? [bankNext.bank, bankNext.overdue ? 'срок прошёл' : bankSoon !== null && bankSoon <= 7 ? soonLabel(bankSoon) : bankNext.name].filter(Boolean).join(' · ')
+                      : 'платежей банкам впереди нет'}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
 
-          <div className="fin-inst-list">
-            {active.map((r) => (
-              <InstallmentCard key={r.installment.id} row={r} openYm={openYm} bank={bankOf(r.installment.id)}
-                onEdit={() => setFormFor(r)}
-                onEntry={(entry) => setEntryFor({ row: r, entry })}
-                onPay={(amount) => setPayFor({ row: r, amount })} />
-            ))}
-            {ownActive.map((b) => <BankCreditCard key={b.id} bank={b} onEdit={() => setBankFor(b)} />)}
+          <div className="fin-inst-rows">
+            <div className="fin-inst-row fin-inst-colhead" aria-hidden="true">
+              <div>Сотрудник и покупка</div>
+              <div className="ours"><span className="fin-inst-dot ours" />{CAP_OURS}</div>
+              <div className="bank"><span className="fin-inst-dot bank" />{CAP_BANK}</div>
+              <div />
+            </div>
+            {active.map(block)}
+            {ownActive.map(credit)}
           </div>
 
           {closed.length + ownClosed.length > 0 && (
@@ -190,17 +266,14 @@ export function InstallmentsList() {
                 {showClosed ? 'Скрыть закрытые' : `Закрытые · ${closed.length + ownClosed.length}`}
               </button>
               {showClosed && (
-                <div className="fin-inst-list">
-                  {closed.map((r) => (
-                    <InstallmentCard key={r.installment.id} row={r} openYm={openYm} bank={bankOf(r.installment.id)}
-                      onEdit={() => setFormFor(r)} onEntry={(entry) => setEntryFor({ row: r, entry })} onPay={() => {}} />
-                  ))}
-                  {ownClosed.map((b) => <BankCreditCard key={b.id} bank={b} onEdit={() => setBankFor(b)} />)}
+                <div className="fin-inst-rows">
+                  {closed.map(block)}
+                  {ownClosed.map(credit)}
                 </div>
               )}
             </>
           )}
-        </>
+        </div>
       )}
 
       {formFor && <InstallmentFormModal row={formFor === 'new' ? null : formFor} openYm={openYm} onClose={() => setFormFor(null)} />}
@@ -210,43 +283,139 @@ export function InstallmentsList() {
       )}
       {payFor && <InstallmentPaymentModal row={payFor.row} amount={payFor.amount} ym={payFor.ym} onClose={() => setPayFor(null)} />}
       {bankFor && <BankCreditModal bank={bankFor === 'new' ? null : bankFor} onClose={() => setBankFor(null)} />}
+      {bankPayFor && <BankPayModal bank={bankPayFor.bank} pp={bankPayFor.pp} onClose={() => setBankPayFor(null)} />}
     </>
   );
 }
 
-/** Строка «Платим банку» (30.10.2026): сколько осталось банку и ближайший
- *  платёж. В карточке рассрочки сотрудника и в карточке кредита компании. */
-function BankRow({ bank }: { bank: any }) {
+// ─── Блок сотрудника: Покупка | нам | банку (01.11.2026, вариант А2) ───
+
+/** Левая ячейка блока: кружок, кто, что купили, сумма, «изменить». */
+function WhoCell({ mark, title, item, sub, onEdit }: {
+  mark: ReactNode; title: string; item?: string; sub?: string; onEdit: () => void;
+}) {
   return (
-    <div className="fin-inst-bankrow">
-      <div className="who">
-        <AccountMark name={bank.bank || 'банк'} compact />
-        <div><b>Платим банку</b><small>{bank.bank || 'банк'}{bank.dueDay ? ` · ${bank.dueDay}-го числа` : ''}</small></div>
-      </div>
-      <div className="mid">
-        <span className="t">{bank.done ? <b>Выплачено</b> : <><b>{money(bank.remaining)}</b> осталось из {money(bank.total)}</>}</span>
-        <div className="progress"><i style={{ width: `${bank.progress ?? 0}%`, background: bank.done ? 'var(--green)' : 'var(--red)' }} /></div>
-      </div>
-      <div className={`nx${bank.next?.overdue ? ' late' : ''}`}>
-        {bank.next ? (
-          <>{bank.next.overdue ? 'не оплачено' : 'следующий'}<b>{dayLabel(bank.next.date, true)} · {money(bank.next.amount)}</b></>
-        ) : <>платежей впереди нет</>}
+    <div className="fin-inst-who2">
+      {mark}
+      <div className="tx">
+        <b className="nm">{title}</b>
+        {item && <span className="it">{item}</span>}
+        {sub && <span className="sb">{sub}</span>}
+        <button type="button" className="fin-inst-link" onClick={onEdit}>изменить</button>
       </div>
     </div>
   );
 }
 
-/** Кредит или рассрочка компании в банке — своя карточка (без сотрудника). */
-function BankCreditCard({ bank, onEdit }: { bank: any; onEdit: () => void }) {
+/** Кнопка «График платежей» — справа в блоке, на телефоне — строкой внизу. */
+function ToggleCell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <section className={`fin-inst-card${bank.done ? ' closed' : ''}`}>
-      <div className="fin-inst-bankhead">
-        <b>{bank.name}</b>
-        <span className="fin-inst-chip">кредит компании{bank.bank ? ` · ${bank.bank}` : ''}</span>
-        {bank.done && <span className="fin-inst-chip ok">✓ выплачено полностью</span>}
-        <button type="button" className="fin-inst-link" onClick={onEdit}>изменить</button>
+    <div className="fin-inst-tog">
+      <button type="button" className={`fin-inst-exp${open ? ' on' : ''}`} aria-expanded={open}
+        aria-label={open ? 'Скрыть график платежей' : 'Показать график платежей'} onClick={onToggle}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <span className="lbl">{open ? 'Скрыть график' : 'График платежей'}</span>
+      </button>
+    </div>
+  );
+}
+
+/** Пустая колонка: у кредита компании нет «нам», у покупки без банка — «банку». */
+function EmptyCell({ side, text }: { side: 'ours' | 'bank'; text: string }) {
+  return (
+    <div className={`fin-inst-cell ${side} none`}>
+      <span className="cap">{side === 'ours' ? CAP_OURS : CAP_BANK}</span>
+      <span className="dash">—</span>
+      <span className="hint">{text}</span>
+    </div>
+  );
+}
+
+/** Колонка «Мы платим банку»: остаток, ближайший платёж, «Оплатили банку». */
+function BankCell({ bank, onPay }: { bank: any; onPay: (pp: BankPp) => void }) {
+  const nx: BankPp | null = bank.next ?? null;
+  const soon = nx && !nx.overdue ? daysUntil(nx.date) : null;
+  return (
+    <div className="fin-inst-cell bank">
+      <span className="cap">{CAP_BANK}</span>
+      {bank.done ? (
+        <div className="amt"><span className="big ok">Выплачено</span><small>{money(bank.total)}</small></div>
+      ) : (
+        <div className="amt"><span className="big">{money(bank.remaining)}</span><small>осталось из {moneyBare(bank.total)}</small></div>
+      )}
+      <div className="progress"><i style={{ width: `${bank.progress ?? 0}%`, background: bank.done ? 'var(--green)' : 'var(--red)' }} /></div>
+      {nx ? (
+        <div className={`nx${nx.overdue ? ' late' : ''}`}>
+          <span className="lb">{nx.overdue ? 'Не оплачено' : 'Следующий'}</span>
+          <b>{dayLabel(nx.date, true)} · {money(nx.amount)}</b>
+          <span className="tag">{bank.bank || 'банк'}{bank.dueDay ? ` · ${bank.dueDay}-го` : ''}</span>
+          {nx.overdue ? <span className="tag late">срок прошёл</span>
+            : soon !== null && soon <= 7 ? <span className="tag soon">{soonLabel(soon)}</span> : null}
+        </div>
+      ) : !bank.done ? (
+        <span className="hint">Платежей по плану нет — поменяйте платёж в месяц в «изменить».</span>
+      ) : null}
+      {nx && (
+        <>
+          <span className="hint">платим сами — отметьте, когда оплатили</span>
+          <div className="acts"><button type="button" className="fin-inst-act bank" onClick={() => onPay(nx)}>Оплатили банку</button></div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** График платежей банку: «до CRM», два последних оплаченных, впереди. */
+function BankPills({ bank, onPay, onUndo }: { bank: any; onPay: (pp: BankPp) => void; onUndo: (pp: BankPp) => void }) {
+  const plan: BankPp[] = bank.plan ?? [];
+  const paid = plan.filter((p) => p.paid).slice(-2);
+  const open = plan.filter((p) => !p.paid);
+  const before = Number(bank.paidBefore) > 0;
+  const room = Math.max(3, 7 - paid.length - (before ? 1 : 0));
+  const shown = open.slice(0, room);
+  const hidden = open.length - shown.length;
+  const lastOpen = open[open.length - 1];
+  if (!plan.length && !before) return <span className="hint">Платежей в графике нет</span>;
+  return (
+    <div className="fin-inst-pills">
+      {before && <span className="fin-inst-p done"><em>до CRM</em><b>✓ {moneyBare(bank.paidBefore)}</b></span>}
+      {paid.map((p) => (
+        <button key={p.id} type="button" className="fin-inst-p done" title="Отменить оплату" onClick={() => onUndo(p)}>
+          <em>{dayLabel(p.date, true)}</em><b>✓ {moneyBare(p.amount)}</b><small>оплачено</small>
+        </button>
+      ))}
+      {shown.map((p) => (
+        <button key={p.id} type="button" className={`fin-inst-p${p.overdue ? ' late' : p.id === bank.next?.id ? ' now' : ''}`} onClick={() => onPay(p)}>
+          <em>{dayLabel(p.date, true)}{p.overdue ? ' · нет' : ''}</em><b>{moneyBare(p.amount)}</b>
+        </button>
+      ))}
+      {hidden > 0 && lastOpen && <span className="fin-inst-p more">ещё {hidden} · до {dayLabel(lastOpen.date, true)}</span>}
+    </div>
+  );
+}
+
+/** Кредит или рассрочка компании в банке — такой же блок, в «нам» прочерк. */
+function BankCreditBlock({ bank, onEdit, onBankPay, onBankUndo }: {
+  bank: any; onEdit: () => void; onBankPay: (pp: BankPp) => void; onBankUndo: (pp: BankPp) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className={`fin-inst-emp${open ? ' open' : ''}${bank.next?.overdue ? ' late' : ''}${bank.done ? ' closed' : ''}`} aria-label={`${bank.name} — кредит компании`}>
+      <div className="fin-inst-row">
+        <WhoCell mark={<AccountMark name={bank.bank || 'банк'} compact />} title={bank.name}
+          item={`кредит компании${bank.bank ? ` · ${bank.bank}` : ''}`} sub={money(bank.total)} onEdit={onEdit} />
+        <EmptyCell side="ours" text="сотрудник не участвует" />
+        <BankCell bank={bank} onPay={onBankPay} />
+        <ToggleCell open={open} onToggle={() => setOpen((v) => !v)} />
       </div>
-      <BankRow bank={bank} />
+      {open && (
+        <div className="fin-inst-row fin-inst-schedrow" aria-label="График платежей">
+          <div className="fin-inst-who2 sub"><div className="tx"><b>График платежей</b><span className="sb">{bank.name}</span></div></div>
+          <div className="fin-inst-cell ours none"><span className="cap">{CAP_OURS}</span><span className="dash">—</span></div>
+          <div className="fin-inst-cell bank"><span className="cap">{CAP_BANK}</span><BankPills bank={bank} onPay={onBankPay} onUndo={onBankUndo} /></div>
+          <div className="fin-inst-tog" />
+        </div>
+      )}
     </section>
   );
 }
@@ -357,12 +526,18 @@ function entryEditable(row: any, e: Entry, openYm: string): boolean {
   return isSeparate(row) || (!e.frozen && e.ym >= openYm);
 }
 
-function InstallmentCard({ row, openYm, bank, onEdit, onEntry, onPay }: {
+/** Рассрочка сотрудника — отдельный блок с рамкой: покупка | сотрудник
+ *  возвращает нам | мы платим банку; график раскрывается внутри блока,
+ *  каждая сторона под своей колонкой. */
+function InstallmentBlock({ row, openYm, bank, onEdit, onEntry, onPay, onBankPay, onBankUndo }: {
   row: any; openYm: string; bank?: any | null;
   onEdit: () => void; onEntry: (e: Entry) => void; onPay: (amount?: number) => void;
+  onBankPay: (bank: any, pp: BankPp) => void; onBankUndo: (pp: BankPp) => void;
 }) {
   const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
   const inst = row.installment;
+  const name: string = row.employee?.name ?? 'Сотрудник удалён';
   const separate = isSeparate(row);
   const plan: Entry[] = row.schedule ?? [];
   const late: Entry[] = plan.filter((e) => e.status === 'overdue');
@@ -372,11 +547,11 @@ function InstallmentCard({ row, openYm, bank, onEdit, onEntry, onPay }: {
   // Полоса графика: «до CRM», два последних оплаченных, всё неоплаченное
   // по порядку — не больше 7 плашек, остаток одной строкой «ещё N».
   const done = plan.filter((e) => e.status === 'done').slice(-2);
-  const open = plan.filter((e) => e.status !== 'done');
+  const openPlan = plan.filter((e) => e.status !== 'done');
   const room = Math.max(3, 7 - done.length - (Number(inst.paidBefore) > 0 ? 1 : 0));
-  const shown = open.slice(0, room);
-  const hidden = open.length - shown.length;
-  const lastOpen = open[open.length - 1];
+  const shown = openPlan.slice(0, room);
+  const hidden = openPlan.length - shown.length;
+  const lastOpen = openPlan[openPlan.length - 1];
 
   async function skip(e: Entry) {
     const ok = await finConfirm(`Пропустить удержание ${money(e.amount)} ${dayLabel(e.date)}? Срок рассрочки сдвинется на месяц.`, { confirmLabel: 'Пропустить' });
@@ -407,82 +582,152 @@ function InstallmentCard({ row, openYm, bank, onEdit, onEntry, onPay }: {
     );
   };
 
+  const how = inst.bankName ? 'куплено через банк' : inst.purchaseTxId ? 'оплачено со счёта' : '';
+  const methodTag = (
+    <span className={`tag ${separate ? 'self' : 'sal'}`}>{separate ? `платит отдельно · ${inst.dueDay}-го` : 'из зарплаты'}</span>
+  );
+  const lateClass = late.length > 0 || !!bank?.next?.overdue;
+  const closed = row.done && (!bank || bank.done);
+
   return (
-    <section className={`fin-inst-card${late.length ? ' late' : ''}${row.done ? ' closed' : ''}`}>
-      <div className="fin-inst-top">
-        <div className="fin-inst-who">
-          <b>{row.employee?.name ?? 'Сотрудник удалён'}</b>
-          <div className="it">{inst.name} · <button type="button" className="fin-inst-link" onClick={onEdit}>изменить</button></div>
-          <span className={`fin-inst-how ${separate ? 'self' : 'sal'}`}>
-            {separate ? `платит отдельно · ${inst.dueDay}-го числа` : `из зарплаты · ${SALARY_PAY_DAY}-го числа`}
-          </span>
-        </div>
+    <section className={`fin-inst-emp${open ? ' open' : ''}${lateClass ? ' late' : ''}${closed ? ' closed' : ''}`} aria-label={`${name} — ${inst.name}`}>
+      <div className="fin-inst-row">
+        <WhoCell mark={<span className="fin-inst-av" aria-hidden="true">{initials(name)}</span>} title={name}
+          item={inst.name} sub={`${money(inst.totalAmount)}${how ? ` · ${how}` : ''}`} onEdit={onEdit} />
 
-        <div className="fin-inst-rem">
+        <div className="fin-inst-cell ours">
+          <span className="cap">{CAP_OURS}</span>
           {row.done ? (
-            <span className="big" style={{ color: 'var(--green)' }}>Закрыта</span>
+            <div className="amt"><span className="big ok">Вернули всё</span><small>{money(inst.totalAmount)}</small></div>
           ) : (
-            <div><span className="big">{money(row.remaining)}</span><small>осталось из {money(inst.totalAmount)}</small></div>
+            <div className="amt"><span className="big">{money(row.remaining)}</span><small>осталось из {moneyBare(inst.totalAmount)}</small></div>
           )}
-          <div className="progress"><i style={{ width: `${row.progress ?? 0}%`, background: INSTALLMENT_COLOR }} /></div>
-          <span className="mini muted">
-            вернули {money(row.paid)}
-            {!row.done && row.paymentsLeft > 0 ? ` · впереди ${pluralRu(row.paymentsLeft, 'платёж', 'платежа', 'платежей')}` : ''}
-            {!row.done && row.endDate ? ` · последний ${dayLabel(row.endDate)}` : ''}
-          </span>
-        </div>
-
-        {!row.done && (
-          <div className={`fin-inst-next${firstLate ? ' late' : ''}`}>
-            {firstLate ? (
-              <>
-                <span className="lb late">Просрочено · срок был {dayLabel(firstLate.date)}</span>
-                <span className="d">{money(row.overdue?.amount ?? firstLate.outstanding)}</span>
-                {nextEntry && <span className="a">Следующий — {dayLabel(nextEntry.date)}, {money(nextEntry.outstanding)}</span>}
-              </>
-            ) : nextEntry ? (
-              <>
-                <span className="lb">Следующий платёж</span>
-                <span className="d">{dayLabel(nextEntry.date)} · {money(nextEntry.outstanding)}</span>
-                <span className="a">
-                  {separate ? 'вносит отдельно — отметьте, когда деньги придут'
-                    : nextEntry.status === 'waiting' ? `ждёт выплаты зарплаты за ${monthLabel(nextEntry.ym, true)}`
-                      : `удержится из зарплаты за ${monthLabel(nextEntry.ym, true)} — делать ничего не нужно`}
-                </span>
-              </>
-            ) : (
-              <span className="a">По плану платежей нет — поменяйте сумму в месяц или внесите остаток.</span>
-            )}
-            <div className="fin-inst-acts">
+          <div className="progress"><i style={{ width: `${row.progress ?? 0}%`, background: row.done ? 'var(--green)' : INSTALLMENT_COLOR }} /></div>
+          {!row.done && (firstLate ? (
+            <>
+              <div className="nx late">
+                <span className="lb">Просрочено · срок был {dayLabel(firstLate.date, true)}</span>
+                <b>{money(row.overdue?.amount ?? firstLate.outstanding)}</b>
+                {methodTag}
+              </div>
+              {nextEntry && <span className="hint">следующий — {dayLabel(nextEntry.date, true)}, {money(nextEntry.outstanding)}</span>}
+            </>
+          ) : nextEntry ? (
+            <>
+              <div className="nx">
+                <span className="lb">Следующий</span>
+                <b>{dayLabel(nextEntry.date, true)} · {money(nextEntry.outstanding)}</b>
+                {methodTag}
+              </div>
+              <span className="hint">
+                {separate ? 'вносит отдельно — отметьте, когда деньги придут'
+                  : nextEntry.status === 'waiting' ? `ждёт выплаты зарплаты за ${monthLabel(nextEntry.ym, true)}`
+                    : `удержится из ЗП за ${monthLabel(nextEntry.ym, true)} — ничего делать не нужно`}
+              </span>
+            </>
+          ) : (
+            <span className="hint">По плану платежей нет — поменяйте сумму в месяц или внесите остаток.</span>
+          ))}
+          {!row.done && (
+            <div className="acts">
               {separate ? (
                 <>
-                  <button className="btn sm fin-inst-ok" onClick={() => onPay((row.overdue?.amount ?? 0) || nextEntry?.outstanding)}>
+                  <button type="button" className="fin-inst-act ours" onClick={() => onPay((row.overdue?.amount ?? 0) || nextEntry?.outstanding)}>
                     Получено{(row.overdue?.amount || nextEntry?.outstanding) ? ` ${money(row.overdue?.amount || nextEntry?.outstanding)}` : ''}
                   </button>
-                  {(firstLate || nextEntry) && <button className="btn sm" onClick={() => onEntry((firstLate || nextEntry)!)}>Перенести дату</button>}
+                  {(firstLate || nextEntry) && <button type="button" className="fin-inst-act" onClick={() => onEntry((firstLate || nextEntry)!)}>Перенести дату</button>}
                 </>
               ) : (
                 <>
-                  <button className="btn sm" onClick={() => onPay(Number(inst.monthlyAmount) || undefined)}>Принять платёж</button>
-                  {nextEntry && entryEditable(row, nextEntry, openYm) && <button className="btn sm" onClick={() => skip(nextEntry)}>Пропустить месяц</button>}
+                  <button type="button" className="fin-inst-act ours" onClick={() => onPay(Number(inst.monthlyAmount) || undefined)}>Принять платёж</button>
+                  {nextEntry && entryEditable(row, nextEntry, openYm) && <button type="button" className="fin-inst-act" onClick={() => skip(nextEntry)}>Пропустить месяц</button>}
                 </>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        {bank ? <BankCell bank={bank} onPay={(pp) => onBankPay(bank, pp)} />
+          : <EmptyCell side="bank" text={inst.purchaseTxId ? 'компания заплатила сразу — банку ничего' : 'банк не участвует'} />}
+        <ToggleCell open={open} onToggle={() => setOpen((v) => !v)} />
       </div>
 
-      {(plan.length > 0 || Number(inst.paidBefore) > 0) && (
-        <div className="fin-inst-sched" aria-label="График платежей">
-          {Number(inst.paidBefore) > 0 && <span className="fin-inst-p done"><em>до CRM</em><b>✓ {moneyBare(inst.paidBefore)}</b></span>}
-          {done.map(pill)}
-          {shown.map(pill)}
-          {hidden > 0 && lastOpen && <span className="fin-inst-p more">ещё {hidden} · до {dayLabel(lastOpen.date, true)}</span>}
+      {open && (
+        <div className="fin-inst-row fin-inst-schedrow" aria-label="График платежей">
+          <div className="fin-inst-who2 sub"><div className="tx"><b>График платежей</b><span className="sb">{shortName(name)} · {inst.name}</span></div></div>
+          <div className="fin-inst-cell ours">
+            <span className="cap">{CAP_OURS}</span>
+            {plan.length > 0 || Number(inst.paidBefore) > 0 ? (
+              <div className="fin-inst-pills">
+                {Number(inst.paidBefore) > 0 && <span className="fin-inst-p done"><em>до CRM</em><b>✓ {moneyBare(inst.paidBefore)}</b></span>}
+                {done.map(pill)}
+                {shown.map(pill)}
+                {hidden > 0 && lastOpen && <span className="fin-inst-p more">ещё {hidden} · до {dayLabel(lastOpen.date, true)}</span>}
+              </div>
+            ) : <span className="hint">Платежей в графике нет</span>}
+          </div>
+          <div className={`fin-inst-cell bank${bank ? '' : ' none'}`}>
+            <span className="cap">{CAP_BANK}</span>
+            {bank ? <BankPills bank={bank} onPay={(pp) => onBankPay(bank, pp)} onUndo={onBankUndo} /> : <span className="dash">—</span>}
+          </div>
+          <div className="fin-inst-tog" />
         </div>
       )}
-      {/* Куплено через банк — та же покупка, сторона «платим банку». */}
-      {bank && <BankRow bank={bank} />}
     </section>
+  );
+}
+
+/** «Оплатили банку»: расход со счёта по плановому платежу банку — тот же,
+ *  что «Оплачено» в «Планировании». Меньше суммы — остаток остаётся в плане. */
+function BankPayModal({ bank, pp, onClose }: { bank: any; pp: BankPp; onClose: () => void }) {
+  const qc = useQueryClient();
+  const accounts = useAccounts();
+  const planned = Number(pp.planned ?? pp.amount) || 0;
+  const suggested = Math.min(planned, Number(bank.remaining) || planned);
+  const [amount, setAmount] = useState<string>(suggested > 0 ? String(suggested) : '');
+  const [date, setDate] = useState<string>(todayISO());
+  const [accountId, setAccountId] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const a = num(amount);
+  const over = a > planned + 0.005;
+  const part = a > 0 && a < planned - 0.005;
+  const future = date > todayISO();
+  const valid = a > 0 && !over && !!accountId && !!date && !future;
+
+  async function save() {
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      await financeApi.receivePlanned(pp.id, { accountId, date, ...(part ? { amount: a } : {}) });
+      invalidateFinance(qc);
+      toast.success('Платёж банку записан');
+      onClose();
+    } catch (e) { toast.error(apiErr(e)); setBusy(false); }
+  }
+
+  return (
+    <FinModal title={`Оплатили банку · ${bank.bank || 'банк'}`} onClose={onClose} width={560}
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={!valid || busy} onClick={save}>{busy ? 'Записываю…' : 'Записать оплату'}</button>
+      </>}>
+      <p style={{ margin: 0 }}>{bank.name} · платёж {dayLabel(pp.date)} — <b>{money(planned)}</b> · банку осталось {money(bank.remaining)}</p>
+      <div className="form-grid">
+        <div className="field"><label>Сумма</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+        <div className="field"><label>Когда оплатили</label><input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></div>
+      </div>
+      {over && <p className="mini neg" style={{ margin: 0 }}>Больше платежа по графику ({money(planned)}). Если платите банку больше — поменяйте платёж в месяц в «изменить».</p>}
+      {future && <p className="mini neg" style={{ margin: 0 }}>Дата ещё не наступила — отметьте оплату, когда заплатите.</p>}
+      {part && <p className="mini muted" style={{ margin: 0 }}>Остаток {money(planned - a)} останется в графике на {dayLabel(pp.date)}.</p>}
+      <div className="field">
+        <label>С какого счёта</label>
+        <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="" disabled>Выберите счёт</option>
+          {accounts.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+        </select>
+      </div>
+      <span className="mini muted">Запишется расходом со счёта, остаток банку уменьшится. В «Планировании» этот платёж станет оплаченным.</span>
+    </FinModal>
   );
 }
 

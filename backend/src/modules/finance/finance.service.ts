@@ -5156,6 +5156,16 @@ export class FinanceService implements OnModuleInit {
         .filter(p => p.debtId === d.id && p.status === 'expected')
         .sort((a, b) => String(a.dueDate || a.ym).localeCompare(String(b.dueDate || b.ym)))[0];
       const nextDate = nextPp ? (nextPp.dueDate || `${nextPp.ym}-01`) : null;
+      // График платежей банку (01.11.2026): оплаченные и предстоящие по датам —
+      // в раскрытом блоке на странице «Рассрочки».
+      const plan = plans
+        .filter(p => p.debtId === d.id)
+        .map(p => {
+          const date = p.dueDate || `${p.ym}-01`;
+          const paid = p.status === 'received';
+          return { id: p.id, date, amount: r2(p.amount), paid, overdue: !paid && date < today };
+        })
+        .sort((a, b) => a.date.localeCompare(b.date));
       return {
         id: d.id, name: d.name, bank: d.counterparty || null,
         total, paidBefore: r2(d.paidBefore), monthly: r2(d.monthlyPayment), dueDay: d.dueDay ?? null,
@@ -5163,8 +5173,9 @@ export class FinanceService implements OnModuleInit {
         progress: total > 0 ? Math.min(100, Math.round(((total - remaining) / total) * 100)) : 0,
         done: remaining <= 0.005,
         next: nextPp && nextDate && remaining > 0.005
-          ? { date: nextDate, amount: r2(Math.min(Number(nextPp.amount), remaining)), overdue: nextDate < today }
+          ? { id: nextPp.id, date: nextDate, amount: r2(Math.min(Number(nextPp.amount), remaining)), planned: r2(nextPp.amount), overdue: nextDate < today }
           : null,
+        plan,
         installmentId: insts.find(i => i.debtId === d.id)?.id ?? null,
         note: d.note ?? null,
       };
