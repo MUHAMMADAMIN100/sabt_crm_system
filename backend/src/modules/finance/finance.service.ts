@@ -2404,7 +2404,15 @@ export class FinanceService implements OnModuleInit {
     const debtIds = new Set(m.realDebts.map(d => d.id));
     const debtsSpent = this.sum(monthExp.filter(t => this.groupOf(t, m) === 'debts'));
     const totalRemaining = r2(m.realDebts.reduce((s, d) => s + this.debtRemaining(d, allExp), 0));
-    const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0));
+    // К отдаче в месяце: транши месяца + сумма вне траншей, если «вернуть до»
+    // попадает в этот месяц (01.11.2026).
+    const dueByDate = r2(m.realDebts
+      .filter(d => d.dueDate && String(d.dueDate).slice(0, 7) === ym)
+      .reduce((s, d) => {
+        const plannedSum = planned.filter(p => p.debtId === d.id && p.status === 'expected').reduce((a, p) => a + Number(p.amount), 0);
+        return s + Math.max(0, this.debtRemaining(d, allExp) - plannedSum);
+      }, 0));
+    const dueMonth = r2(planned.filter(p => p.debtId && debtIds.has(p.debtId) && p.ym === ym && p.status === 'expected').reduce((s, p) => s + Number(p.amount), 0) + dueByDate);
     // Транши долгов на этот месяц (31.10.2026) — вместо «платёж/мес».
     const debtsMonthly = this.debtTranchesForYm(planned, m.realDebts, ym);
     const debtCount = m.realDebts.filter(d => this.debtRemaining(d, allExp) > 0).length;
@@ -5863,9 +5871,17 @@ export class FinanceService implements OnModuleInit {
       };
     });
     const active = rows.filter(r => !r.closed);
+    // Ближайший срок — намеченный транш или «вернуть до» для суммы вне
+    // траншей (01.11.2026: долг без траншей со сроком 2 нояб. не попадал в
+    // плитку, показывался транш другого долга на 10-е).
     const next = active
-      .flatMap(r => r.tranches.map(t => ({ ...t, debtId: r.id, name: r.name })))
-      .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+      .flatMap(r => [
+        ...r.tranches.map(t => ({ ...t, debtId: r.id, name: r.name, kind: 'tranche' as const })),
+        ...(r.dueDate && r.unplanned > 0.005
+          ? [{ id: `due:${r.id}`, date: r.dueDate, amount: r.unplanned, debtId: r.id, name: r.name, kind: 'due' as const }]
+          : []),
+      ])
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.kind === b.kind ? 0 : a.kind === 'tranche' ? -1 : 1))[0] ?? null;
     const monthPays = rows.flatMap(r => r.payments.filter(p => p.date.slice(0, 7) === ym).map(p => ({ ...p, name: r.name })));
     return {
       rows,

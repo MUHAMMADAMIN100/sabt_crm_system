@@ -80,14 +80,19 @@ export function DebtsList({ ym }: { ym: string }) {
           <span className="sb">{active.length ? whoOwed : 'долгов нет'}</span>
         </div>
         <div>
-          <span className="lb">Ближайший транш</span>
+          {/* Транш или «вернуть до» — что раньше (01.11.2026). */}
+          <span className="lb">Ближайший срок</span>
           <span className={'vl ' + (next ? (nextLate ? 'late' : 'soon') : '')}>{next ? `${debtDay(next.date)} · ${money(next.amount)}` : '—'}</span>
-          <span className="sb">{next ? `${next.name} · ${nextLate ? 'просрочен' : 'по плану'}` : 'транши не намечены'}</span>
+          <span className="sb">
+            {next
+              ? `${next.name} · ${next.kind === 'due' ? (nextLate ? 'срок прошёл' : 'вернуть до') : (nextLate ? 'просрочен' : 'транш по плану')}`
+              : 'сроков и траншей нет'}
+          </span>
         </div>
         <div>
           <span className="lb">Отдали в {MONTHS_PREP[monthIdx] ?? 'этом месяце'}</span>
           <span className="vl">{money(stats.paidMonth.amount)}</span>
-          <span className="sb">{stats.paidMonth.count ? `${pluralRu(stats.paidMonth.count, 'платёж', 'платежа', 'платежей')} ·${stats.paidMonth.names.join(', ')}` : 'пока ничего'}</span>
+          <span className="sb">{stats.paidMonth.count ? `${pluralRu(stats.paidMonth.count, 'платёж', 'платежа', 'платежей')} · ${stats.paidMonth.names.join(', ')}` : 'пока ничего'}</span>
         </div>
       </div>
 
