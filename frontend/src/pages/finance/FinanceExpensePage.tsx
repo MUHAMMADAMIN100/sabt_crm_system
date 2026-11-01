@@ -12,6 +12,7 @@ import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import { FinLoading, FinLoadError } from './FinKit';
 import { INSTALLMENT_COLOR } from './InstallmentsSection';
+import ExpenseLineChart, { SERIES as CHART_SERIES } from './ExpenseLineChart';
 import './finance.css';
 
 const PERIODS = [{ n: 12, label: '1 год' }, { n: 6, label: '6 месяцев' }, { n: 3, label: '3 месяца' }];
@@ -114,6 +115,7 @@ function MonthView({ ym }: { ym: string }) {
   );
 
   return (
+    <>
     <div className="cards grid-5">
       <BreakdownHover className="card clickable" ym={salaryYm} kind="group" id="salary" title={salary.label} color={salary.color} icon={salary.icon}
         onClick={() => navigate(withYm('/finance/expense/salary', salaryYm))}>
@@ -151,6 +153,8 @@ function MonthView({ ym }: { ym: string }) {
         <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
       </BreakdownHover>
     </div>
+    <ExpenseLineChart ym={ym} period={0} />
+    </>
   );
 }
 
@@ -261,13 +265,9 @@ function PeriodView({ months, onOpen }: { months: number; onOpen: (path: string,
       lines: [perMonth(t.other), other.ownMonths > 0 ? `ваш план — ${other.ownMonths} мес., остальное — среднее` : `оценка по среднему ${money(other.avg ?? 0)}`],
     },
   ];
-  const tableRows: Array<{ key: keyof PlanRow; label: string; color: string; total: number }> = [
-    { key: 'salary', label: 'Зарплата', color: salary.color, total: t.salary },
-    { key: 'rent', label: 'Аренда и подписки', color: rent.color, total: t.rent },
-    { key: 'debts', label: 'Долги', color: debts.color, total: t.debts },
-    { key: 'installments', label: 'Рассрочки банкам', color: BANK_GROUP.color, total: t.installments },
-    { key: 'other', label: 'Прочее', color: OTHER_GROUP.color, total: t.other },
-  ];
+  // Точки статей — цветами линий графика под таблицей (одни и те же ряды).
+  const tableRows: Array<{ key: keyof PlanRow; label: string; color: string; total: number }> = CHART_SERIES
+    .map((sr) => ({ key: sr.key as keyof PlanRow, label: sr.label, color: sr.color, total: Number(t[sr.key]) || 0 }));
 
   return (
     <>
@@ -321,6 +321,7 @@ function PeriodView({ months, onOpen }: { months: number; onOpen: (path: string,
         {' '}«Прочее» — ваш план на месяц (страница «Прочее»), где его нет — среднее {money(other.avg ?? 0)}
         {avgRange ? ` за ${avgRange}` : ''} (≈ серым).
       </p>
+      <ExpenseLineChart ym={start} period={months} />
     </>
   );
 }

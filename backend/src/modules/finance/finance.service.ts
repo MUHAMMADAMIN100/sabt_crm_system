@@ -2540,10 +2540,7 @@ export class FinanceService implements OnModuleInit {
   private otherAverage(allExp: FinanceTransaction[], m: FinMaps) {
     const to = shiftYm(currentYm(), -1);
     const other = allExp.filter(t => this.isOtherExpense(t, m));
-    const firstYm = allExp
-      .map(t => String(t.date).slice(0, 7))
-      .filter(x => x >= NOTION_HISTORY_CUTOVER_YM)
-      .sort()[0] ?? null;
+    const firstYm = this.crmFirstYm(allExp);
     if (!firstYm || firstYm > to) return { amount: 0, from: null as string | null, to: null as string | null, count: 0 };
     let count = 0, sum = 0;
     for (let ym = firstYm; ym <= to; ym = shiftYm(ym, 1)) {
@@ -2559,37 +2556,11 @@ export class FinanceService implements OnModuleInit {
   async expensePlan(monthsRaw: number) {
     const months = [3, 6, 12].includes(Number(monthsRaw)) ? Number(monthsRaw) : 3;
     const start = currentYm();
-    const m = await this.maps();
-    const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
-    const planned = await this.ppRepo.find();
-    const instMap = await this.installmentsByEmployee();
-    const plans = await this.otherPlansMap();
-    const avg = this.otherAverage(allExp, m);
-    const bankDebts = m.debts.filter(isBankDebt);
-    const rows: Array<Record<string, any>> = [];
-    for (let i = 0; i < months; i++) {
-      const ym = shiftYm(start, i);
-      const monthExp = allExp.filter(t => String(t.date).slice(0, 7) === ym);
-      const salary = await this.salaryToPayFor(shiftYm(ym, -1), m.employees, instMap);
-      const rent = r2(m.subscriptions
-        .filter(s => s.active && Number(s.amount) > 0 && subLiveIn(s, ym))
-        .reduce((sum, s) => {
-          if ((s.paidMarks || []).some(x => x.ym === ym)) return sum;
-          return sum + remainingFinanceAmount(Number(s.amount), this.sum(monthExp.filter(t => t.subscriptionId === s.id)));
-        }, 0));
-      const debts = this.debtsDueIn(ym, m.realDebts, allExp, planned);
-      const banks = this.banksDueIn(ym, bankDebts, allExp, planned);
-      const own = plans.get(ym);
-      const estimate = own ?? avg.amount;
-      const otherSpent = i === 0 ? this.sum(monthExp.filter(t => this.isOtherExpense(t, m))) : 0;
-      const other = r2(Math.max(0, estimate - otherSpent));
-      rows.push({
-        ym, salary, rent, debts: debts.amount, installments: banks.toPay, installmentsCount: banks.count,
-        other, otherSource: own !== undefined ? 'plan' : 'avg',
-        total: r2(salary + rent + debts.amount + banks.toPay + other),
-      });
-    }
-    const sumOf = (k: string) => r2(rows.reduce((s, r) => s + Number(r[k] || 0), 0));
+    const ctx = await this.planContext();
+    const rows: Array<Awaited<ReturnType<FinanceService['planMonth']>>> = [];
+    for (let i = 0; i < months; i++) rows.push(await this.planMonth(shiftYm(start, i), ctx));
+    const sumOf = (k: 'salary' | 'rent' | 'debts' | 'installments' | 'other' | 'total') => r2(rows.reduce((s, r) => s + Number(r[k] || 0), 0));
+    const { m, avg } = ctx;
     return {
       start, months, rows,
       totals: {
@@ -2600,6 +2571,88 @@ export class FinanceService implements OnModuleInit {
       subsCount: m.subscriptions.filter(s => s.active && subLiveIn(s, start)).length,
       other: { avg: avg.amount, avgFrom: avg.from, avgTo: avg.to, avgMonths: avg.count, ownMonths: rows.filter(r => r.otherSource === 'plan').length },
     };
+  }
+
+  /** Всё, что нужно для расчёта расхода по месяцам, — одним заходом в базу. */
+  private async planContext() {
+    const m = await this.maps();
+    const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
+    const planned = await this.ppRepo.find();
+    const instMap = await this.installmentsByEmployee();
+    const plans = await this.otherPlansMap();
+    const avg = this.otherAverage(allExp, m);
+    return { m, allExp, planned, instMap, plans, avg, bankDebts: m.debts.filter(isBankDebt) };
+  }
+
+  /** Сколько осталось отдать в месяце (текущем или будущем) по статьям.
+   *  В текущем — только неоплаченное (и не оплаченное раньше). */
+  private async planMonth(ym: string, ctx: Awaited<ReturnType<FinanceService['planContext']>>) {
+    const { m, allExp, planned, instMap, plans, avg, bankDebts } = ctx;
+    const monthExp = allExp.filter(t => String(t.date).slice(0, 7) === ym);
+    const salary = await this.salaryToPayFor(shiftYm(ym, -1), m.employees, instMap);
+    const rent = r2(m.subscriptions
+      .filter(s => s.active && Number(s.amount) > 0 && subLiveIn(s, ym))
+      .reduce((sum, s) => {
+        if ((s.paidMarks || []).some(x => x.ym === ym)) return sum;
+        return sum + remainingFinanceAmount(Number(s.amount), this.sum(monthExp.filter(t => t.subscriptionId === s.id)));
+      }, 0));
+    const debts = this.debtsDueIn(ym, m.realDebts, allExp, planned);
+    const banks = this.banksDueIn(ym, bankDebts, allExp, planned);
+    const own = plans.get(ym);
+    const estimate = own ?? avg.amount;
+    const otherSpent = ym === currentYm() ? this.sum(monthExp.filter(t => this.isOtherExpense(t, m))) : 0;
+    const other = r2(Math.max(0, estimate - otherSpent));
+    return {
+      ym, salary, rent, debts: debts.amount, installments: banks.toPay, installmentsCount: banks.count,
+      other, otherSource: (own !== undefined ? 'plan' : 'avg') as 'plan' | 'avg',
+      total: r2(salary + rent + debts.amount + banks.toPay + other),
+    };
+  }
+
+  /** График «Расхода» (01.11.2026, линия на каждую статью): прошлые месяцы —
+   *  сколько ушло, текущий — ушло и сколько осталось, будущие — план.
+   *  Месяц: 12 месяцев вокруг выбранного (не раньше начала CRM); период —
+   *  его месяцы от текущего. */
+  async expenseChart(ymRaw?: string, periodRaw?: number) {
+    const ctx = await this.planContext();
+    const cur = currentYm();
+    const period = [3, 6, 12].includes(Number(periodRaw)) ? Number(periodRaw) : 0;
+    let from = cur;
+    let count = period;
+    if (!period) {
+      const ym = YM_RE.test(ymRaw || '') ? ymRaw! : cur;
+      const crmStart = this.crmFirstYm(ctx.allExp) ?? cur;
+      from = shiftYm(ym, -5);
+      if (from < crmStart) from = crmStart;
+      count = 12;
+    }
+    const zero = { salary: 0, rent: 0, debts: 0, installments: 0, other: 0 };
+    const rows: Array<Record<string, any>> = [];
+    for (let i = 0; i < count; i++) {
+      const ym = shiftYm(from, i);
+      const monthExp = ctx.allExp.filter(t => String(t.date).slice(0, 7) === ym);
+      const ofGroup = (g: string) => this.sum(monthExp.filter(t => this.groupOf(t, ctx.m) === g));
+      const fact = {
+        salary: ofGroup('salary'), rent: ofGroup('rent_subs'), debts: ofGroup('debts'),
+        installments: ofGroup('installments'), other: this.sum(monthExp.filter(t => this.isOtherExpense(t, ctx.m))),
+      };
+      const plan = ym >= cur ? await this.planMonth(ym, ctx) : null;
+      rows.push({
+        ym, kind: ym < cur ? 'fact' : ym === cur ? 'current' : 'plan',
+        fact,
+        left: plan ? { salary: plan.salary, rent: plan.rent, debts: plan.debts, installments: plan.installments, other: plan.other } : zero,
+        otherSource: plan?.otherSource ?? null,
+      });
+    }
+    return { from, months: count, current: cur, rows };
+  }
+
+  /** Первый месяц CRM с расходами (с июня 2026 — до него архив Notion). */
+  private crmFirstYm(allExp: FinanceTransaction[]): string | null {
+    return allExp
+      .map(t => String(t.date).slice(0, 7))
+      .filter(x => x >= NOTION_HISTORY_CUTOVER_YM)
+      .sort()[0] ?? null;
   }
 
   /** Страница «Прочее»: среднее и план на 12 месяцев вперёд. */

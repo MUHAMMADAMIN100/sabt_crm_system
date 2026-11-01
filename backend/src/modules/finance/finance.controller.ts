@@ -83,6 +83,12 @@ export class FinanceController {
   @Get('expense/plan')
   expensePlan(@Query('months') months?: string) { return this.service.expensePlan(Number(months) || 3); }
 
+  /** График «Расхода»: линия на каждую статью, факт и план (01.11.2026). */
+  @Get('expense/chart')
+  expenseChart(@Query('ym') ym?: string, @Query('period') period?: string) {
+    return this.service.expenseChart(ym, Number(period) || 0);
+  }
+
   /** «Прочее»: среднее и свои цифры на месяцы вперёд. */
   @Get('expense/other-plan')
   otherPlan() { return this.service.otherPlan(); }
