@@ -3344,39 +3344,66 @@
 }
 
 /* ─── «Расход»: график — линия на каждую статью (01.11.2026) ─────────
-   По образцу владельца: тонкие линии, точки на месяцах, сетка по месяцам,
-   подписи статей снизу (нажатием скрыть/показать). Текст — токенами. */
-.fin-root .fin-exp-chart { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
-.fin-root .fin-exp-chart .head h2 { margin: 0; font-size: 17px; font-weight: 650; }
-.fin-root .fin-exp-chart .head p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
-.fin-root .fin-exp-chart .plot { position: relative; min-width: 0; border-radius: 10px; }
+   По образцу владельца: линии и точки по месяцам, сетка по месяцам, подписи
+   статей снизу. Нагляднее: итог над месяцем, значения у концов линий,
+   вывод одной фразой; наведение на статью выделяет её. Текст — токенами. */
+.fin-root .fin-exp-chart { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.fin-root .fin-exp-chart .head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 20px; }
+.fin-root .fin-exp-chart .head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.fin-root .fin-exp-chart .head p { margin: 5px 0 0; max-width: 760px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.fin-root .fin-exp-chart .range {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 999px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+}
+.fin-root .fin-exp-chart .plot { position: relative; min-width: 0; border-radius: 12px; }
 .fin-root .fin-exp-chart .plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .fin-root .fin-exp-chart svg { display: block; overflow: visible; }
 .fin-root .fin-exp-chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
-.fin-root .fin-exp-chart .ax { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.fin-root .fin-exp-chart .ax.cur { fill: var(--text); font-weight: 650; }
-.fin-root .fin-exp-chart .plan-bg { fill: color-mix(in srgb, var(--accent) 6%, transparent); }
-.fin-root .fin-exp-chart .plan-tx { fill: var(--muted); font-size: 11.5px; }
+.fin-root .fin-exp-chart .ax { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fin-root .fin-exp-chart .ax.cur { fill: var(--text); font-weight: 700; }
+.fin-root .fin-exp-chart .tot { fill: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fin-root .fin-exp-chart .tot.cur { fill: var(--text); font-weight: 700; }
+.fin-root .fin-exp-chart .tot-cap { fill: var(--muted); font-size: 11px; }
+.fin-root .fin-exp-chart .plan-bg { fill: color-mix(in srgb, var(--accent) 7%, transparent); }
+.fin-root .fin-exp-chart .plan-tx { fill: var(--accent); font-size: 12px; font-weight: 600; }
+.fin-root .fin-exp-chart .now { stroke: var(--accent); stroke-width: 1.5; }
 .fin-root .fin-exp-chart .cross { stroke: var(--muted); stroke-width: 1; }
-.fin-root .fin-exp-chart .dot { stroke: var(--surface); stroke-width: 2; }
+.fin-root .fin-exp-chart .dot { stroke: var(--surface); stroke-width: 2.5; transition: r .12s; }
+.fin-root .fin-exp-chart .lead { stroke: var(--muted); stroke-width: 1; opacity: .6; }
+.fin-root .fin-exp-chart .end { fill: var(--text); font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .fin-root .fin-exp-chart .tip {
-  position: absolute; z-index: 2; width: 238px; display: flex; flex-direction: column; gap: 5px; padding: 10px 12px;
-  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-lg);
+  position: absolute; z-index: 2; width: 276px; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-lg);
   font-size: 12.5px; font-variant-numeric: tabular-nums; pointer-events: none;
 }
+.fin-root .fin-exp-chart .tip-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.fin-root .fin-exp-chart .tip-h b { font-size: 13.5px; }
+.fin-root .fin-exp-chart .tip-h span { font-size: 11.5px; color: var(--muted); }
 .fin-root .fin-exp-chart .tip .r { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.fin-root .fin-exp-chart .tip .r span { display: flex; align-items: center; gap: 7px; color: var(--muted); }
-.fin-root .fin-exp-chart .tip .r i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.fin-root .fin-exp-chart .tip .r.sum { padding-top: 5px; border-top: 1px solid var(--border); }
-.fin-root .fin-exp-chart .legend { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.fin-root .fin-exp-chart .tip .r span { display: flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; }
+.fin-root .fin-exp-chart .tip .r i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.fin-root .fin-exp-chart .tip .r b { display: flex; align-items: baseline; gap: 6px; }
+.fin-root .fin-exp-chart .tip .r em { min-width: 30px; font-style: normal; font-size: 11px; font-weight: 500; color: var(--muted); text-align: right; }
+.fin-root .fin-exp-chart .tip .r.sum { padding-top: 6px; border-top: 1px solid var(--border); }
+.fin-root .fin-exp-chart .tip .r.sum span { color: var(--text); font-weight: 600; }
+.fin-root .fin-exp-chart .legend { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .fin-root .fin-exp-chart .legend button {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 10px; border: 0; border-radius: 999px;
-  background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 2px;
+  min-height: 52px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .12s, background-color .12s;
 }
-.fin-root .fin-exp-chart .legend button:hover { background: var(--surface-2); }
+.fin-root .fin-exp-chart .legend button:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 .fin-root .fin-exp-chart .legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.fin-root .fin-exp-chart .legend i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.fin-root .fin-exp-chart .legend button.off { color: var(--muted); text-decoration: line-through; }
-.fin-root .fin-exp-chart .legend button.off i { opacity: .35; }
+.fin-root .fin-exp-chart .legend i { grid-row: 1 / span 2; width: 12px; height: 12px; border-radius: 50%; }
+.fin-root .fin-exp-chart .legend .nm { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .fin-exp-chart .legend .sm { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fin-root .fin-exp-chart .legend button.off { background: transparent; }
+.fin-root .fin-exp-chart .legend button.off .nm { color: var(--muted); text-decoration: line-through; }
+.fin-root .fin-exp-chart .legend button.off i { opacity: .3; }
 .fin-root .fin-exp-chart-empty { display: grid; place-items: center; color: var(--muted); font-size: 13.5px; }
-@media (max-width: 720px) { .fin-root .fin-exp-chart .legend button { min-height: 40px; } }
+@media (max-width: 1100px) { .fin-root .fin-exp-chart .legend { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .fin-root .fin-exp-chart .legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) {
+  .fin-root .fin-exp-chart .dot, .fin-root .fin-exp-chart .legend button { transition: none; }
+}

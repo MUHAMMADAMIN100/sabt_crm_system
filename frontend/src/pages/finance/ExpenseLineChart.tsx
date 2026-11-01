@@ -1,7 +1,9 @@
 // График «Расхода» (01.11.2026, по образцу владельца): линия на каждую статью,
-// точки на каждом месяце, сетка по месяцам, подписи статей снизу. Месяц —
-// прошлые месяцы факт, текущий — ушло + осталось, дальше — план (фон
-// подкрашен). Период «3 / 6 месяцев / 1 год» — те же цифры, что в таблице.
+// точки на месяцах, сетка по месяцам, подписи статей снизу. Нагляднее:
+// итог месяца над каждой колонкой, значение у конца каждой линии, вывод
+// одной фразой; наведение на статью выделяет её линию. Месяц — прошлые
+// месяцы факт, текущий — ушло + осталось, дальше — план (фон подкрашен).
+// «3 / 6 месяцев / 1 год» — месяцы периода, те же цифры, что в таблице.
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
@@ -21,8 +23,10 @@ export const SERIES: Array<{ key: Key; label: string; color: string }> = [
   { key: 'other', label: 'Прочее', color: '#b06fc8' },
 ];
 
-const H = 300;
-const PAD = { l: 66, r: 16, t: 18, b: 38 };
+const H = 380;
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const MONTHS_PREP = ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'];
+const prepOf = (ym: string) => MONTHS_PREP[Number(ym.slice(5, 7)) - 1] ?? 'этом месяце';
 
 function useWidth() {
   const ref = useRef<HTMLDivElement>(null);
@@ -46,6 +50,33 @@ function niceStep(max: number) {
 }
 const tickLabel = (v: number) => (v === 0 ? '0' : v >= 1000 ? `${moneyBare(v / 1000)} тыс.` : moneyBare(v));
 
+/** Плавная линия без «перелётов» (монотонная кубическая, Фрич — Карлсон). */
+function smoothPath(pts: Array<[number, number]>): string {
+  const n = pts.length;
+  if (n === 0) return '';
+  if (n === 1) return `M${pts[0][0]},${pts[0][1]}`;
+  const dx: number[] = [], m: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = pts[i + 1][0] - pts[i][0];
+    m[i] = (pts[i + 1][1] - pts[i][1]) / (dx[i] || 1);
+  }
+  const t: number[] = new Array(n);
+  t[0] = m[0];
+  t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) { t[i] = 0; t[i + 1] = 0; continue; }
+    const a = t[i] / m[i], b = t[i + 1] / m[i], s = a * a + b * b;
+    if (s > 9) { const k = 3 / Math.sqrt(s); t[i] = k * a * m[i]; t[i + 1] = k * b * m[i]; }
+  }
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += ` C${(pts[i][0] + h).toFixed(1)},${(pts[i][1] + t[i] * h).toFixed(1)} ${(pts[i + 1][0] - h).toFixed(1)},${(pts[i + 1][1] - t[i + 1] * h).toFixed(1)} ${pts[i + 1][0].toFixed(1)},${pts[i + 1][1].toFixed(1)}`;
+  }
+  return d;
+}
+
 export default function ExpenseLineChart({ ym, period }: { ym: string; period: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ['finance', 'expenseChart', period ? `p${period}` : ym],
@@ -54,26 +85,52 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
   const [ref, width] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const [hidden, setHidden] = useState<Set<Key>>(new Set());
+  const [focus, setFocus] = useState<Key | null>(null);
 
   const rows: ChartRow[] = data?.rows ?? [];
   // Месяц: факт + осталось (текущий — целиком); период — только «осталось», как в таблице.
   const valueOf = (r: ChartRow, k: Key) => (period ? r.left[k] : r.fact[k] + r.left[k]) || 0;
+  const totalOf = (r: ChartRow) => SERIES.reduce((s, x) => s + valueOf(r, x.key), 0);
   const shown = SERIES.filter((s) => !hidden.has(s.key));
   const n = rows.length;
   const curIdx = rows.findIndex((r) => r.kind === 'current');
+  const W = Math.max(320, width);
+  const wide = W >= 640;
+  const PAD = { l: wide ? 66 : 50, r: wide ? 104 : 14, t: 46, b: 40 };
   const max = Math.max(1, ...rows.flatMap((r) => shown.map((s) => valueOf(r, s.key))));
   const step = niceStep(max);
-  const top = Math.ceil(max / step) * step;
+  const top = Math.ceil((max * 1.06) / step) * step;
   const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
-  const W = Math.max(320, width);
   const band = n ? (W - PAD.l - PAD.r) / n : 0;
   const X = (i: number) => PAD.l + band * (i + 0.5);
   const Y = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - v / top);
+  const base = Y(0);
   // Узко — подпись у каждого 2-го/3-го месяца, отсчёт от текущего (он подписан всегда).
   const labelStep = band < 32 ? 3 : band < 52 ? 2 : 1;
   const anchor = Math.max(0, curIdx);
   const showLabel = (i: number) => ((i - anchor) % labelStep + labelStep) % labelStep === 0;
-  const hasData = rows.some((r) => SERIES.some((s) => valueOf(r, s.key) > 0));
+  const hasData = rows.some((r) => totalOf(r) > 0);
+
+  // Вывод одной фразой — то, ради чего смотрят график.
+  const sumAll = rows.reduce((s, r) => s + totalOf(r), 0);
+  const focusRow = curIdx >= 0 ? rows[curIdx] : rows[rows.length - 1];
+  const topCat = focusRow ? [...SERIES].sort((a, b) => valueOf(focusRow, b.key) - valueOf(focusRow, a.key))[0] : null;
+  const peak = rows.reduce<ChartRow | null>((best, r) => (!best || totalOf(r) > totalOf(best) ? r : best), null);
+  const summary = !hasData ? '' : period
+    ? `За ${n === 12 ? 'год' : `${n} мес.`} — ${money(sumAll)}, в среднем ${money(Math.round(sumAll / Math.max(1, n)))} в месяц. Больше всего уйдёт в ${peak ? prepOf(peak.ym) : ''}: ${money(peak ? totalOf(peak) : 0)}`
+    : focusRow && topCat
+      ? `В ${prepOf(focusRow.ym)} уходит ${money(totalOf(focusRow))}, больше всего — ${topCat.label.toLowerCase()} (${Math.round((100 * valueOf(focusRow, topCat.key)) / Math.max(1, totalOf(focusRow)))}%). Самый дорогой месяц — ${peak ? monthLabel(peak.ym, true) : ''}: ${money(peak ? totalOf(peak) : 0)}`
+      : '';
+  const range = n ? `${cap(monthLabel(rows[0].ym, true))} — ${monthLabel(rows[n - 1].ym, true)}` : '';
+
+  // Значения у конца линий: не налезают — раздвигаем, к точке ведёт тонкая линия.
+  const ends = wide && n ? shown
+    .map((s) => ({ s, py: Y(valueOf(rows[n - 1], s.key)), v: valueOf(rows[n - 1], s.key) }))
+    .sort((a, b) => a.py - b.py)
+    .map((e) => ({ ...e, ly: e.py })) : [];
+  for (let i = 1; i < ends.length; i++) if (ends[i].ly - ends[i - 1].ly < 20) ends[i].ly = ends[i - 1].ly + 20;
+  const overflow = ends.length ? ends[ends.length - 1].ly - (base - 4) : 0;
+  if (overflow > 0) for (const e of ends) e.ly -= overflow;
 
   const toggle = (k: Key) => setHidden((prev) => {
     const next = new Set(prev);
@@ -83,16 +140,17 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
   });
 
   const tipRow = hover != null ? rows[hover] : null;
-  // Справа от точки, у правого края — слева; не вылезает за график.
-  const tipLeft = hover != null ? Math.max(0, Math.min(W - 240, X(hover) + 260 > W ? X(hover) - 252 : X(hover) + 14)) : 0;
+  const tipLeft = hover != null ? Math.max(0, Math.min(W - 280, X(hover) + 300 > W ? X(hover) - 292 : X(hover) + 16)) : 0;
+  const dim = (k: Key) => (focus && focus !== k ? 0.14 : 1);
 
   return (
     <section className="card fin-exp-chart" aria-label="График расхода по месяцам">
       <div className="head">
-        <h2>Расход по месяцам</h2>
-        <p>{period
-          ? 'Сколько осталось отдать в каждом месяце — те же цифры, что в таблице.'
-          : 'Прошлые месяцы — сколько ушло, текущий — ушло и осталось, дальше — план.'}</p>
+        <div>
+          <h2>Расход по месяцам</h2>
+          <p>{summary || (period ? 'Сколько осталось отдать в каждом месяце.' : 'Сколько уходит в каждом месяце по статьям.')}</p>
+        </div>
+        {range && <span className="range">{range}{period ? ' · план' : ''}</span>}
       </div>
       <div ref={ref} className="plot" tabIndex={0} role="group"
         aria-label="Линии по статьям расхода; стрелки влево и вправо — месяцы"
@@ -108,11 +166,19 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
           : !hasData ? <div className="fin-exp-chart-empty" style={{ height: H }}>Расходов за эти месяцы нет</div> : (
           <>
             <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img"
-              aria-label={`Расход по статьям: ${rows.map((r) => `${monthLabel(r.ym)} — ${moneyBare(SERIES.reduce((s, x) => s + valueOf(r, x.key), 0))}`).join(', ')}`}>
-              {!period && curIdx >= 0 && (
+              aria-label={`Расход по месяцам: ${rows.map((r) => `${monthLabel(r.ym)} — ${moneyBare(totalOf(r))}`).join(', ')}`}>
+              <defs>
+                {SERIES.map((s) => (
+                  <linearGradient key={s.key} id={`fin-exp-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={s.color} stopOpacity={0.32} />
+                    <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              {!period && curIdx >= 0 && curIdx < n - 1 && (
                 <g aria-hidden="true">
-                  <rect className="plan-bg" x={X(curIdx) - band / 2} y={PAD.t} width={W - PAD.r - (X(curIdx) - band / 2)} height={H - PAD.t - PAD.b} rx={8} />
-                  {curIdx < n - 1 && <text className="plan-tx" x={X(curIdx + 1) - band / 2 + 8} y={PAD.t + 14}>план</text>}
+                  <rect className="plan-bg" x={X(curIdx) + band / 2} y={PAD.t} width={W - PAD.r - (X(curIdx) + band / 2)} height={H - PAD.t - PAD.b} rx={10} />
+                  <text className="plan-tx" x={W - PAD.r - 10} y={PAD.t + 16} textAnchor="end">план →</text>
                 </g>
               )}
               {ticks.map((v) => (
@@ -123,49 +189,86 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
               ))}
               {rows.map((r, i) => (
                 <g key={r.ym} aria-hidden="true">
-                  <line className="grid" x1={X(i)} x2={X(i)} y1={PAD.t} y2={H - PAD.b} />
+                  <line className="grid" x1={X(i)} x2={X(i)} y1={PAD.t} y2={base} />
                   {showLabel(i) && (
-                    <text className={`ax${i === curIdx ? ' cur' : ''}`} x={X(i)} y={H - PAD.b + 20} textAnchor="middle">{monthLabel(r.ym)}</text>
+                    <>
+                      {/* Итог месяца — над колонкой. */}
+                      <text className={`tot${i === curIdx || hover === i ? ' cur' : ''}`} x={X(i)} y={PAD.t - 14} textAnchor="middle">{moneyBare(totalOf(r))}</text>
+                      <text className={`ax${i === curIdx ? ' cur' : ''}`} x={X(i)} y={base + 22} textAnchor="middle">{monthLabel(r.ym)}</text>
+                    </>
                   )}
                 </g>
               ))}
-              {hover != null && <line className="cross" x1={X(hover)} x2={X(hover)} y1={PAD.t} y2={H - PAD.b} aria-hidden="true" />}
+              <text className="tot-cap" x={PAD.l - 10} y={PAD.t - 14} textAnchor="end" aria-hidden="true">всего</text>
+              {!period && curIdx >= 0 && (
+                <g aria-hidden="true">
+                  <line className="now" x1={X(curIdx)} x2={X(curIdx)} y1={PAD.t} y2={base} />
+                </g>
+              )}
+              {hover != null && <line className="cross" x1={X(hover)} x2={X(hover)} y1={PAD.t} y2={base} aria-hidden="true" />}
+              {focus && !hidden.has(focus) && (
+                <path aria-hidden="true" fill={`url(#fin-exp-grad-${focus})`}
+                  d={`${smoothPath(rows.map((r, i) => [X(i), Y(valueOf(r, focus))]))} L${X(n - 1).toFixed(1)},${base} L${X(0).toFixed(1)},${base} Z`} />
+              )}
               {shown.map((s) => (
-                <g key={s.key} aria-hidden="true">
-                  <path d={rows.map((r, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(valueOf(r, s.key)).toFixed(1)}`).join(' ')}
-                    fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                <g key={s.key} aria-hidden="true" style={{ opacity: dim(s.key), transition: 'opacity .15s' }}>
+                  <path d={smoothPath(rows.map((r, i) => [X(i), Y(valueOf(r, s.key))]))}
+                    fill="none" stroke={s.color} strokeWidth={focus === s.key ? 3.5 : 2.75} strokeLinejoin="round" strokeLinecap="round" />
                   {rows.map((r, i) => (
-                    <circle key={r.ym} className="dot" cx={X(i)} cy={Y(valueOf(r, s.key))} r={hover === i ? 5 : 4} fill={s.color} />
+                    <circle key={r.ym} className="dot" cx={X(i)} cy={Y(valueOf(r, s.key))}
+                      r={hover === i ? 6.5 : i === curIdx ? 5.5 : 4.5} fill={s.color} />
                   ))}
                 </g>
               ))}
+              {ends.map((e) => (
+                <g key={e.s.key} aria-hidden="true" style={{ opacity: dim(e.s.key) }}>
+                  {Math.abs(e.ly - e.py) > 1 && <line className="lead" x1={X(n - 1) + 8} y1={e.py} x2={W - PAD.r + 10} y2={e.ly} />}
+                  <circle cx={W - PAD.r + 16} cy={e.ly} r={4} fill={e.s.color} />
+                  <text className="end" x={W - PAD.r + 25} y={e.ly + 4}>{moneyBare(e.v)}</text>
+                </g>
+              ))}
               {rows.map((r, i) => (
-                <rect key={r.ym} x={X(i) - band / 2} y={PAD.t} width={band} height={H - PAD.t - PAD.b} fill="transparent"
+                <rect key={r.ym} x={X(i) - band / 2} y={0} width={band} height={H} fill="transparent"
                   onMouseEnter={() => setHover(i)} aria-hidden="true" />
               ))}
             </svg>
             {tipRow && (
               <div className="tip" style={{ left: tipLeft, top: PAD.t }} role="status">
-                <b>{monthLabel(tipRow.ym, true)} · {tipRow.kind === 'fact' ? 'ушло' : tipRow.kind === 'current' ? (period ? 'осталось' : 'ушло и осталось') : 'план'}</b>
-                {shown.map((s) => (
-                  <div key={s.key} className="r">
-                    <span><i style={{ background: s.color }} />{s.label}{s.key === 'other' && tipRow.kind !== 'fact' && tipRow.otherSource === 'avg' ? ' ≈' : ''}</span>
-                    <b>{moneyBare(valueOf(tipRow, s.key))}</b>
-                  </div>
-                ))}
-                <div className="r sum"><span>Всего</span><b>{money(shown.reduce((sum, s) => sum + valueOf(tipRow, s.key), 0))}</b></div>
+                <div className="tip-h">
+                  <b>{cap(monthLabel(tipRow.ym, true))}</b>
+                  <span>{tipRow.kind === 'fact' ? 'ушло' : tipRow.kind === 'current' ? (period ? 'осталось' : 'ушло и осталось') : 'план'}</span>
+                </div>
+                {[...shown].sort((a, b) => valueOf(tipRow, b.key) - valueOf(tipRow, a.key)).map((s) => {
+                  const v = valueOf(tipRow, s.key);
+                  const pct = Math.round((100 * v) / Math.max(1, totalOf(tipRow)));
+                  return (
+                    <div key={s.key} className="r">
+                      <span><i style={{ background: s.color }} />{s.label}{s.key === 'other' && tipRow.kind !== 'fact' && tipRow.otherSource === 'avg' ? ' ≈' : ''}</span>
+                      <b>{moneyBare(v)}<em>{pct}%</em></b>
+                    </div>
+                  );
+                })}
+                <div className="r sum"><span>Всего за месяц</span><b>{money(totalOf(tipRow))}</b></div>
               </div>
             )}
           </>
         )}
       </div>
-      <div className="legend" role="group" aria-label="Статьи на графике">
-        {SERIES.map((s) => (
-          <button key={s.key} type="button" aria-pressed={!hidden.has(s.key)} className={hidden.has(s.key) ? 'off' : ''} onClick={() => toggle(s.key)}
-            title={hidden.has(s.key) ? 'Показать на графике' : 'Скрыть с графика'}>
-            <i style={{ background: s.color }} />{s.label}
-          </button>
-        ))}
+      <div className="legend" role="group" aria-label="Статьи на графике: нажмите, чтобы скрыть или показать">
+        {SERIES.map((s) => {
+          const sum = rows.reduce((acc, r) => acc + valueOf(r, s.key), 0);
+          return (
+            <button key={s.key} type="button" aria-pressed={!hidden.has(s.key)} className={hidden.has(s.key) ? 'off' : ''}
+              onClick={() => toggle(s.key)}
+              onMouseEnter={() => setFocus(s.key)} onMouseLeave={() => setFocus(null)}
+              onFocus={() => setFocus(s.key)} onBlur={() => setFocus(null)}
+              title={hidden.has(s.key) ? 'Показать на графике' : 'Скрыть с графика'}>
+              <i style={{ background: s.color }} />
+              <span className="nm">{s.label}</span>
+              <span className="sm">{money(sum)}</span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );

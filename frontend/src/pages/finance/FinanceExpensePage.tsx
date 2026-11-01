@@ -282,6 +282,9 @@ function PeriodView({ months, onOpen }: { months: number; onOpen: (path: string,
         ))}
       </div>
 
+      {/* График — сразу под карточками, месяцы выбранного периода. */}
+      <ExpenseLineChart ym={start} period={months} />
+
       <div className="table-wrap fin-exp-plan">
         <table>
           <thead>
@@ -321,7 +324,6 @@ function PeriodView({ months, onOpen }: { months: number; onOpen: (path: string,
         {' '}«Прочее» — ваш план на месяц (страница «Прочее»), где его нет — среднее {money(other.avg ?? 0)}
         {avgRange ? ` за ${avgRange}` : ''} (≈ серым).
       </p>
-      <ExpenseLineChart ym={start} period={months} />
     </>
   );
 }
