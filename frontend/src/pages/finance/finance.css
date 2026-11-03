@@ -2409,215 +2409,138 @@
 .fin-root .bal-curve-read b { color: var(--text); }
 .fin-root .bal-curve-read b.neg { color: var(--red); }
 
-/* ─── Денежный календарь «Планирования» — вариант В ─────────────────────
-   Кривая остатка над тихой сеткой (решение владельца 30.09.2026). Вид строк
-   и цвета — как в «Транзакциях»: приход зелёный, расход красный. Чего там
-   нет — плана — пустой кружок: ещё не пришло или не оплачено. День в минусе
-   отмечен красной чертой слева, первый такой день — янтарной. */
-.fin-root .pcal { display: flex; flex-direction: column; gap: 14px; }
-
-.fin-root .pcal-grid {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); overflow: hidden;
-  background: var(--surface); display: flex; flex-direction: column;
-}
-.fin-root .pcal-row-head,
-.fin-root .pcal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.fin-root .pcal-row-head { border-bottom: 1px solid var(--border); }
-.fin-root .pcal-days { grid-auto-rows: 1fr; }
-.fin-root .pcal-h {
-  padding: 8px 10px; font-size: 11px; font-weight: 600; letter-spacing: .4px;
-  text-transform: uppercase; color: var(--muted);
-}
-.fin-root .pcal-h.wknd { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
-.fin-root .pcal-cell {
-  position: relative; box-sizing: border-box; min-height: 112px; padding: 6px;
-  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface);
-  display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden;
-}
-.fin-root .pcal-days > *:nth-child(7n) { border-right: none; }
-.fin-root .pcal-days > *:nth-last-child(-n+7) { border-bottom: none; }
-.fin-root .pcal-cell.wknd { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
-.fin-root .pcal-cell.off { background: var(--surface-2); }
-/* Минус — черта слева, а не заливка: провал читается полосой по сетке,
-   без тревоги в каждой клетке. */
-.fin-root .pcal-cell.neg { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--red) 55%, transparent); }
-.fin-root .pcal-cell.gap { box-shadow: inset 3px 0 0 var(--amber); }
-.fin-root .pcal-cell.today { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-/* День под курсором на кривой. */
-.fin-root .pcal-cell.hl:not(.today) { background: var(--surface-hover); }
-.fin-root .pcal-cell.over { outline: 2px dashed var(--accent); outline-offset: -3px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.fin-root .pcal-dayhead { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-/* Номер дня — пилюля, как в «Транзакциях»; сегодня — акцентная. */
-.fin-root .pcal-dayhead .n {
-  min-width: 21px; height: 21px; padding: 0 4px; display: inline-flex; align-items: center;
-  justify-content: center; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: var(--muted);
-}
-.fin-root .pcal-cell.today .pcal-dayhead .n { background: var(--accent); color: #fff; }
-.fin-root .pcal-dayhead .bal {
-  margin-left: auto; font-size: 13px; font-weight: 650;
-  font-variant-numeric: tabular-nums; color: var(--text);
-}
-.fin-root .pcal-dayhead .bal.neg { color: var(--red); }
-
-/* Строка операции — как .tx-row в «Транзакциях»: точка, название, сумма. */
-.fin-root .pcal-row {
-  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
-  border: 0; background: none; padding: 3px 5px; border-radius: 7px;
-  text-align: left; cursor: pointer;
-}
-.fin-root .pcal-row:hover { background: var(--surface-hover); }
-.fin-root .pcal-row .d {
-  width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; flex: none; background: var(--red);
-}
-.fin-root .pcal-row.inc .d { background: var(--green); }
-/* План — пустой кружок того же цвета: ещё не пришло или не оплачено. */
-.fin-root .pcal-row.plan .d { background: transparent; border: 1.5px solid var(--red); }
-.fin-root .pcal-row.plan.inc .d { border-color: var(--green); }
-.fin-root .pcal-row .t {
-  flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.25; color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.fin-root .pcal-row .a {
-  flex: none; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
-  white-space: nowrap; color: var(--red);
-}
-.fin-root .pcal-row.inc .a { color: var(--green); }
-/* Пометка: рассрочка из зарплаты — на остаток не влияет, пунктирный кружок. */
-.fin-root .pcal-row.note .d { background: transparent; border: 1.5px dashed var(--inst, #47aaa4); }
-.fin-root .pcal-row.note .a { color: var(--inst, #47aaa4); font-weight: 600; }
-.fin-root .pcal-row.movable { cursor: grab; }
-.fin-root .pcal-row.dragging { opacity: .45; }
-.fin-root .pcal-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fin-root .pcal-cell.today .pcal-row:hover { background: rgba(255, 255, 255, .75); }
-.dark .fin-root .pcal-cell.today .pcal-row:hover { background: rgba(255, 255, 255, .08); }
-.fin-root .pcal-more {
-  align-self: flex-start; border: 0; background: none; padding: 2px 5px; border-radius: 6px; cursor: pointer;
-  font-size: 11px; font-weight: 600; color: var(--accent);
-}
-.fin-root .pcal-more:hover { background: var(--surface-2); }
-
-/* ── Верхняя полоса сетки: итог месяца ──
-   Один в один полоса из «Транзакций» — там она и есть главный ориентир
-   «сколько пришло, сколько ушло, сколько осталось». */
-.fin-root .pcal-top {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
-}
-.fin-root .pcal-top .sums {
-  display: flex; align-items: baseline; gap: 14px;
-  font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums;
-}
-.fin-root .pcal-top .sums .pos { color: var(--green); }
-.fin-root .pcal-top .sums .neg { color: var(--red); }
-.fin-root .pcal-top .sums .net { padding-left: 14px; border-left: 1px solid var(--border); color: var(--text); }
-.fin-root .pcal-top .sums .net.neg { color: var(--red); }
-
-.fin-root .pcal-legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; color: var(--muted); }
-.fin-root .pcal-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.fin-root .pcal-legend .sw { display: inline-block; box-sizing: border-box; }
-.fin-root .pcal-legend .sw.inc, .fin-root .pcal-legend .sw.out, .fin-root .pcal-legend .sw.plan {
-  width: 7px; height: 7px; border-radius: 50%;
-}
-.fin-root .pcal-legend .sw.inc { background: var(--green); }
-.fin-root .pcal-legend .sw.out { background: var(--red); }
-.fin-root .pcal-legend .sw.plan { border: 1.5px solid var(--muted); }
-.fin-root .pcal-legend .sw.neg { width: 3px; height: 12px; border-radius: 2px; background: color-mix(in srgb, var(--red) 55%, transparent); }
-.fin-root .pcal-legend .sw.gap { width: 3px; height: 12px; border-radius: 2px; background: var(--amber); }
-.fin-root .pcal-legend .pcal-legend-note { margin-left: auto; }
-
-/* Кривая над календарём «Транзакций» — тем же столбиком, что в «Планировании». */
+/* Кривая над календарём «Транзакций». */
 .fin-root .fin-cal-stack { display: flex; flex-direction: column; gap: 14px; }
 .fin-root .tx-cal-cell.hl:not(.today) { background: var(--surface-hover); }
 
+/* ─── Денежный календарь «Планирования» — вариант А (03.11.2026) ──────
+   Итоги месяца, фильтры, подписанные значки статуса; в клетке — число дня
+   и до трёх операций. Остатка по дням и кривой нет (решение владельца). */
+.fin-root .pln { display: flex; flex-direction: column; gap: 14px; }
+.fin-root .pln-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.fin-root .pln-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fin-root .pln-tile .lb { font-size: 13px; color: var(--muted); }
+.fin-root .pln-tile .vl { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.fin-root .pln-tile .sb { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fin-root .pln-tile .progress { margin-top: 4px; }
+.fin-root .pln-tile.late { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+.fin-root .pln-tile .late-list { display: flex; flex-direction: column; gap: 2px; }
+.fin-root .pln-tile .late-list button {
+  display: flex; align-items: baseline; gap: 6px; padding: 2px 0; border: 0; background: none;
+  font: inherit; font-size: 12.5px; color: var(--text); text-align: left; cursor: pointer;
+}
+.fin-root .pln-tile .late-list button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.fin-root .pln-tile .late-list .a { font-weight: 650; }
+
+.fin-root .pln-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.fin-root .pln-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fin-root .pln-chips button {
+  min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.fin-root .pln-chips button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.fin-root .pln-chips button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fin-root .pln-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.fin-root .pln-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Значок статуса: ✓ прошло, пустой круг — ждём, ! — просрочено, пунктир — пометка. */
+.fin-root .pln-st, .fin-overlay .pln-st {
+  display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%;
+  box-sizing: border-box; font-style: normal; font-size: 10px; font-weight: 800; line-height: 1;
+}
+.fin-root .pln-st.done, .fin-overlay .pln-st.done { background: var(--green-soft); color: var(--green); }
+.fin-root .pln-st.wait, .fin-overlay .pln-st.wait { border: 1.5px solid var(--muted); }
+.fin-root .pln-st.late, .fin-overlay .pln-st.late { background: var(--red); color: var(--surface); }
+.fin-root .pln-st.note, .fin-overlay .pln-st.note { border: 1.5px dashed var(--muted); }
+.fin-root :is(.pln, .pln-sheet) .a.inc { color: var(--green); }
+.fin-root :is(.pln, .pln-sheet) .a.exp { color: var(--red); }
+.fin-root :is(.pln, .pln-sheet) .a.note { color: var(--muted); }
+
+.fin-root .pln-cal { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.fin-root .pln-wd, .fin-root .pln-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.fin-root .pln-wd { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.fin-root .pln-wd > div { padding: 9px 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.fin-root .pln-wd > div.wknd { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+.fin-root .pln-cell {
+  min-height: 112px; min-width: 0; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px;
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.fin-root .pln-days > :nth-child(7n) { border-right: 0; }
+.fin-root .pln-cell.off { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.fin-root .pln-cell.past { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.fin-root .pln-cell.today { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); box-shadow: inset 0 0 0 2px var(--accent); }
+.fin-root .pln-cell.over { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.fin-root .pln-dayhead { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.fin-root .pln-dayhead .n { font-size: 13px; font-weight: 650; color: var(--text); }
+.fin-root .pln-cell.past .pln-dayhead .n { color: var(--muted); }
+.fin-root .pln-dayhead .tag { font-size: 11px; font-weight: 650; color: var(--accent); }
+.fin-root .pln-row {
+  display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 4px; margin: 0 -4px; border-radius: 7px;
+  font-size: 12.5px; cursor: pointer;
+}
+.fin-root .pln-row:hover { background: var(--surface-hover); }
+.fin-root .pln-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.fin-root .pln-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .pln-row .a { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-root .pln-row.done { opacity: .55; }
+.fin-root .pln-row.movable { cursor: grab; }
+.fin-root .pln-row.dragging { opacity: .35; }
+.fin-root .pln-more { align-self: flex-start; padding: 2px 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; }
+
 /* ── Телефон ── */
-.fin-root .pcal-narrow { gap: 12px; }
-.fin-root .pcal-hero {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 13px 15px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+.fin-root .pln-narrow .pln-sum { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.fin-root .pln-narrow .pln-tile .vl { font-size: 22px; }
+.fin-root .pln-narrow .pln-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+.fin-root .pln-narrow .pln-chips button { flex: none; min-height: 40px; }
+.fin-root .pln-mini { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 10px; }
+.fin-root .pln-mini-head, .fin-root .pln-mini-body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.fin-root .pln-mini-head span { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+.fin-root .pln-mini-cell {
+  min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  border: 0; border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer;
 }
-.fin-root .pcal-hero strong { font-size: 30px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.fin-root .pcal-hero strong.neg { color: var(--red); }
-.fin-root .pcal-hero .pos { color: var(--green); }
-.fin-root .pcal-hero .neg { color: var(--red); }
-.fin-root .pcal-warn {
-  display: flex; align-items: stretch; gap: 9px; padding: 10px 13px;
-  border: 1px solid var(--amber); border-radius: var(--radius-sm); background: var(--amber-soft);
-  font-size: 12.5px; line-height: 1.4;
+.fin-root .pln-mini-cell.off { background: transparent; }
+.fin-root .pln-mini-cell.past { color: var(--muted); }
+.fin-root .pln-mini-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.fin-root .pln-mini-cell.late { box-shadow: inset 0 0 0 2px var(--red); }
+.fin-root .pln-mini-cell .n { font-size: 13px; font-weight: 600; }
+.fin-root .pln-mini-cell .dots { display: flex; gap: 3px; min-height: 5px; }
+.fin-root .pln-mini-cell .dots i { width: 5px; height: 5px; border-radius: 50%; }
+.fin-root .pln-mini-cell .dots i.inc { background: var(--green); }
+.fin-root .pln-mini-cell .dots i.exp { background: var(--red); }
+.fin-root .pln-next { display: flex; flex-direction: column; gap: 8px; }
+.fin-root .pln-next-day {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
-.fin-root .pcal-warn > i { width: 3px; border-radius: 2px; background: var(--amber); flex-shrink: 0; }
-.fin-root .pcal-warn .neg { color: var(--red); }
-
-.fin-root .pcal-mini { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
-.fin-root .pcal-mini-head, .fin-root .pcal-mini-body { display: grid; grid-template-columns: repeat(7, 1fr); }
-.fin-root .pcal-mini-head span {
-  padding: 6px 0 4px; text-align: center; font-size: 10px; font-weight: 700;
-  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
-}
-.fin-root .pcal-mini-head .wknd { opacity: .7; }
-.fin-root .pcal-mini-cell {
-  box-sizing: border-box; min-height: 46px; padding: 5px 5px 7px; border: 0; background: var(--surface);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; cursor: pointer;
-}
-.fin-root .pcal-mini-cell.wknd { background: var(--surface-2); }
-.fin-root .pcal-mini-cell.neg { background: var(--surface-hover); }
-.fin-root .pcal-mini-cell.today { background: var(--accent-soft); }
-.fin-root .pcal-mini-cell.off { background: var(--surface-2); opacity: .5; cursor: default; }
-.fin-root .pcal-mini-cell .n { font-size: 12.5px; font-weight: 600; color: var(--text); min-width: 22px; text-align: center; }
-.fin-root .pcal-mini-cell.gap .n { color: var(--amber); font-weight: 700; }
-.fin-root .pcal-mini-cell.today .n { background: var(--accent); color: #fff; border-radius: 6px; padding: 1px 5px; }
-.fin-root .pcal-mini-cell .lvl { width: 100%; height: 3px; border-radius: 2px; background: var(--surface-2); display: flex; justify-content: flex-start; }
-.fin-root .pcal-mini-cell.neg .lvl { justify-content: flex-end; background: var(--surface-2); }
-.fin-root .pcal-mini-cell .lvl i { display: block; height: 3px; border-radius: 2px; background: var(--green-plan); }
-.fin-root .pcal-mini-cell .lvl i.neg { background: var(--red-plan); }
-
-.fin-root .pcal-next { display: flex; flex-direction: column; gap: 7px; }
-.fin-root .pcal-next-row {
-  display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 10px;
-  padding: 10px 12px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); cursor: pointer; text-align: left;
-}
-.fin-root .pcal-next-row .d { font-size: 12.5px; font-weight: 700; color: var(--text); }
-.fin-root .pcal-next-row .t { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fin-root .pcal-next-row .a { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
-.fin-root .pcal-next-row .a.pos { color: var(--green); }
+.fin-root .pln-next-day .d { font-size: 13px; font-weight: 700; }
+.fin-root .pln-next-day .rows { display: flex; flex-direction: column; gap: 4px; }
+.fin-root .pln-next-day .r { display: flex; align-items: center; gap: 7px; font-size: 13px; min-width: 0; }
+.fin-root .pln-next-day .r .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-root .pln-next-day .r .a { font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-root .pln-next-day .r.done { opacity: .55; }
 
 /* ── Шторка дня ── */
-.fin-root .pcal-sheet { display: flex; flex-direction: column; gap: 12px; }
-.fin-root .pcal-sheet-bal { display: flex; align-items: baseline; gap: 10px; }
-.fin-root .pcal-sheet-bal strong { margin-left: auto; font-size: 26px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.fin-root .pcal-sheet-bal strong.neg { color: var(--red); }
-.fin-root .pcal-sheet-tot { display: flex; gap: 9px; }
-.fin-root .pcal-sheet-tot > div {
-  flex: 1 1 0; display: flex; flex-direction: column; gap: 2px;
-  padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
-}
-.fin-root .pcal-sheet-tot b { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
-.fin-root .pcal-sheet-tot b.pos { color: var(--green); }
-.fin-root .pcal-sheet-list { display: flex; flex-direction: column; gap: 7px; }
-.fin-root .pcal-sheet-row {
-  display: grid; grid-template-columns: 3px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
-  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
-}
-.fin-root .pcal-sheet-row .bar { align-self: stretch; border-radius: 2px; background: var(--border); }
-.fin-root .pcal-sheet-row.inc .bar { background: var(--green); }
-.fin-root .pcal-sheet-row .body {
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-  border: 0; background: none; padding: 0; text-align: left; cursor: pointer; min-height: 44px; justify-content: center;
-}
-.fin-root .pcal-sheet-row .t { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fin-root .pcal-sheet-row .a { font-size: 14.5px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
-.fin-root .pcal-sheet-row.inc .a { color: var(--green); }
-.fin-root .pcal-sheet-row.note .bar { background: var(--inst, #47aaa4); }
-.fin-root .pcal-sheet-row.note .a { color: var(--inst, #47aaa4); }
-.fin-root .pcal-sheet-row.done .t, .fin-root .pcal-sheet-row.done .a { color: var(--muted); }
-.fin-root .pcal-sheet-row.done .a { text-decoration: line-through; }
-.fin-root .pcal-sheet-row .move input {
+.fin-overlay .pln-sheet { display: flex; flex-direction: column; gap: 8px; }
+.fin-overlay .pln-sheet-tot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 4px; }
+.fin-overlay .pln-sheet-tot > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.fin-overlay .pln-sheet-tot b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.fin-overlay .pln-sheet-row { display: flex; align-items: center; gap: 10px; min-height: 52px; border-top: 1px solid var(--border); }
+.fin-overlay .pln-sheet-row .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border: 0; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.fin-overlay .pln-sheet-row .t { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.fin-overlay .pln-sheet-row .s { font-size: 12px; color: var(--muted); }
+.fin-overlay .pln-sheet-row.late .s { color: var(--red); }
+.fin-overlay .pln-sheet-row .a { font-weight: 650; font-variant-numeric: tabular-nums; }
+.fin-overlay .pln-sheet-row.done { opacity: .6; }
+.fin-overlay .pln-sheet-row .move input {
   width: 40px; height: 44px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--surface); color: var(--muted); font-size: 14px; padding: 0 4px; cursor: pointer;
 }
 
+@media (max-width: 1100px) {
+  .fin-root .pln-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-root .pln-sum > :last-child { grid-column: 1 / -1; }
+}
 
 /* ─── Матрицы на телефоне: карточка вместо «строка × месяцы» ────────────
    Общий блок для долгов и обслуживания сайтов.

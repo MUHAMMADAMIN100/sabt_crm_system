@@ -1,21 +1,19 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { createPortal } from 'react-dom';
+// «Планирование» (/finance/planning) — денежный календарь месяца, вариант А
+// (выбор владельца 03.11.2026): итоги месяца, фильтры, значки статуса,
+// просроченное красным. Режим «К прогнозу» и корректировки убраны — месяцы
+// вперёд теперь в «Расходе» → «3 месяца / 6 месяцев / 1 год».
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, todayISO } from './finlib';
-import { FinLoadError, FinLoading, FinModal, invalidateFinanceAll } from './FinKit';
+import { FinLoadError, FinLoading, invalidateFinanceAll } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import PlanCalendar from './PlanCalendar';
-import ImportedArchiveBadge, { isImportedArchive } from './ImportedArchiveBadge';
-import { floatingPosition, scrollableAncestors, type FloatingPosition } from './floatingPosition';
+import TransactionModal from './TransactionModal';
 import './finance.css';
-import { PlanningCashFlowChart } from './FinanceCharts';
-import { AccountMark } from './AccountIdentity';
-
-const scenarios: Record<string, string> = { conservative: 'Осторожный', base: 'Базовый', optimistic: 'Оптимистичный' };
 
 // Проект «зарабатывает» — как на бэкенде (isEarningFinanceProject): не архивный
 // и статус не в [lead, paused, done, archived]. Плановые доходы проектов на
@@ -56,6 +54,15 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
       <div className="cal-item-rows">
         <div className="cal-item-row"><span>Статус</span><b>{label}</b></div>
         <Link to="/finance/expense/installments" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть рассрочки</Link>
+      </div>
+    );
+  }
+  if (id.startsWith('due-')) {
+    // Долг со сроком «вернуть до»: отдают на странице «Долги» (сразу или траншем).
+    return (
+      <div className="cal-item-rows">
+        <div className="cal-item-row"><span>Статус</span><b>{item.date < todayISO() ? 'Срок прошёл' : 'Вернуть до этого дня'}</b></div>
+        <Link to="/finance/expense/debts" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть долги</Link>
       </div>
     );
   }
@@ -109,62 +116,27 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
 
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
-  const currentYear = Number(currentYm().slice(0, 4));
-  const [year, setYear] = useState(currentYear);
-  const start = `${year}-01`;
-  const months = 12;
-  const [scenario, setScenario] = useState('base');
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  // Денежный календарь открыт по умолчанию; кнопкой можно переключиться на прогноз.
-  const [showCalendar, setShowCalendar] = useState(true);
   const [calYm, setCalYm] = useState(currentYm());
-  const query = useQuery({
-    queryKey: ['finance', 'forecast', start, months, scenario],
-    queryFn: () => financeApi.forecast({ start, months, scenario }),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => financeApi.removeForecastAdjustment(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }),
-    onError: (e) => toast.error(apiErr(e)),
-  });
   // ── Данные календаря: всё движение денег по датам ──────────────────
   const calYear = calYm.slice(0, 4);
   // Зарплата выдаётся 10-го числа за ПРЕДЫДУЩИЙ месяц (работали в августе —
   // платим 10 сентября). Значит в месяце calYm платим ЗП за salaryYm = calYm − 1.
   const salaryYm = shiftYm(calYm, -1);
-  const plannedQ = useQuery({
-    queryKey: ['finance', 'planned-payments'],
-    queryFn: () => financeApi.plannedPayments(),
-    enabled: showCalendar,
-  });
-  const projectsQ = useQuery({
-    queryKey: ['finance', 'projects'],
-    queryFn: () => financeApi.projects(),
-    enabled: showCalendar,
-  });
+  const plannedQ = useQuery({ queryKey: ['finance', 'planned-payments'], queryFn: () => financeApi.plannedPayments() });
+  const projectsQ = useQuery({ queryKey: ['finance', 'projects'], queryFn: () => financeApi.projects() });
   // Рассрочки сотрудников (27.10.2026): дата каждого платежа — в календаре.
   const instQ = useQuery({
     queryKey: ['finance', 'installments', 'calendar', calYm],
     queryFn: () => financeApi.installmentsCalendar(calYm),
-    enabled: showCalendar,
   });
-  const debtsQ = useQuery({
-    queryKey: ['finance', 'debts'],
-    queryFn: () => financeApi.debts(),
-    enabled: showCalendar,
-  });
-  const subsQ = useQuery({
-    queryKey: ['finance', 'subscriptions'],
-    queryFn: () => financeApi.subscriptions(),
-    enabled: showCalendar,
-  });
+  const debtsQ = useQuery({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
+  const subsQ = useQuery({ queryKey: ['finance', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
   // Зарплата для календаря — тот же источник, что страница «Зарплата»:
   // expenseDetail('salary') → «К выплате» (toPay) за месяц. Совпадает с экраном.
   const salaryQ = useQuery({
     queryKey: ['finance', 'expenseDetail', 'salary', salaryYm],
     queryFn: () => financeApi.expenseDetail('salary', salaryYm),
-    enabled: showCalendar,
   });
   // Операции журнала за месяц — берём только будущие разовые (не привязанные к
   // зарплате/подписке/долгу, чтобы не задваивать эти источники).
@@ -172,8 +144,7 @@ export default function FinancePlanningPage() {
     queryKey: ['finance', 'transactions', 'month-plan', calYm],
     queryFn: () => {
       // Последний день месяца считаем, а не пишем «31»: в сентябре такой даты
-      // нет, Postgres отвергал ВЕСЬ запрос — и календарь терял и разовые
-      // операции, и отметки об оплате подписок.
+      // нет, Postgres отвергал ВЕСЬ запрос.
       const [y, m] = calYm.split('-').map(Number);
       const last = new Date(y, m, 0).getDate();
       return financeApi.transactions({
@@ -182,7 +153,6 @@ export default function FinancePlanningPage() {
         status: 'all', pageSize: 1000,
       });
     },
-    enabled: showCalendar,
   });
   const projById = useMemo(() => {
     const m = new Map<string, any>();
@@ -269,6 +239,25 @@ export default function FinancePlanningPage() {
             { label: 'Вернуть до', value: debt?.dueDate ? new Date(String(debt.dueDate).slice(0, 10) + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : 'без срока' },
           ]) });
       }
+    }
+    // 1б. Долг со сроком «вернуть до» (03.11.2026): сумма вне траншей — в день
+    // срока. Раньше такой долг в календаре не появлялся вовсе.
+    for (const d of (debtsQ.data || [])) {
+      if (d.kind === 'bank' || !d.dueDate) continue;
+      const due = String(d.dueDate).slice(0, 10);
+      if (due.slice(0, 7) !== calYm) continue;
+      const planned = (plannedQ.data || [])
+        .filter((p: any) => p.debtId === d.id && p.status === 'expected')
+        .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+      const left = Math.round((Number(d.remaining) - planned) * 100) / 100;
+      if (!(left > 0.005)) continue;
+      items.push({ id: `due-${d.id}`, date: due, amount: left, type: 'expense', status: 'completed', done: false,
+        comment: `${d.name} · вернуть долг`,
+        details: detailList([
+          { label: 'Долг', value: d.name },
+          { label: 'Осталось отдать', value: money(Number(d.remaining)) },
+          { label: 'Вернуть до', value: formatDate(due) },
+        ]) });
     }
     // 2. Аренда и подписки: активные, каждый месяц в день начала — с даты
     // начала (dueDate) до даты окончания (endDate). Оплаченный месяц — на
@@ -448,38 +437,6 @@ export default function FinancePlanningPage() {
     return out;
   }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, instQ.data, txById, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
 
-  // Остаток денег на конец каждого дня. Считаем только для ТЕКУЩЕГО месяца:
-  // «Текущий баланс» — это деньги на сейчас, от него можно честно пойти вперёд
-  // (прибавляя то, что ещё не сделано) и назад (вычитая то, что уже прошло).
-  // Для других месяцев точки отсчёта нет — и цифру не выдумываем.
-  const dayBalance = useMemo(() => {
-    if (calYm !== currentYm()) return undefined;
-    const open = Number(query.data?.openingBalance);
-    if (!Number.isFinite(open)) return undefined;
-    const lastDay = new Date(Number(calYear), Number(calYm.slice(5, 7)), 0).getDate();
-    const days: string[] = [];
-    for (let d = 1; d <= lastDay; d++) days.push(`${calYm}-${String(d).padStart(2, '0')}`);
-    const net = new Map<string, { done: number; plan: number }>();
-    for (const it of calTxns) {
-      // Пометки (рассрочка из зарплаты, уже полученное) на остаток не влияют.
-      if (it.type !== 'income' && it.type !== 'expense') continue;
-      const d = String(it.date || '').slice(0, 10);
-      if (!net.has(d)) net.set(d, { done: 0, plan: 0 });
-      const v = (it.type === 'income' ? 1 : -1) * (Number(it.amount) || 0);
-      const cur = net.get(d)!;
-      if (it.done) cur.done += v; else cur.plan += v;
-    }
-    const today = todayISO();
-    let idx = days.indexOf(today);
-    if (idx < 0) idx = days.length - 1;
-    const out = new Map<string, number>();
-    let run = open;
-    for (let i = idx; i < days.length; i++) { run += (net.get(days[i])?.plan || 0); out.set(days[i], Math.round(run * 100) / 100); }
-    let back = open;
-    for (let i = idx - 1; i >= 0; i--) { back -= (net.get(days[i + 1])?.done || 0); out.set(days[i], Math.round(back * 100) / 100); }
-    return out;
-  }, [calTxns, query.data, calYm, calYear]);
-
   // Перетаскивание операции на другой день сохраняет дату в записи:
   // разовая → дата операции, план-платёж → срок оплаты, подписка → день оплаты.
   const canMovePlanItem = (item: any) => {
@@ -502,299 +459,25 @@ export default function FinancePlanningPage() {
     } catch (e) { toast.error(apiErr(e)); throw e; }
   }
 
-  if (query.isLoading) return <div className="fin-root"><FinLoading cards={4} /></div>;
-  if (query.isError) return <div className="fin-root"><FinLoadError onRetry={() => query.refetch()} /></div>;
-  const data = query.data;
-  const availableYear = Number(String(data.availableFrom || start).slice(0, 4)) || year;
-  const firstYear = Math.min(availableYear, currentYear);
-  const lastYear = Math.max(currentYear + 5, year);
-  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
-  const visibleRows = data.rows.filter((row: any) => !data.availableFrom || row.ym >= data.availableFrom);
-  const periodStart = data.availableFrom?.startsWith(`${year}-`) ? data.availableFrom : `${year}-01`;
+  const all = [plannedQ, projectsQ, instQ, debtsQ, subsQ, salaryQ, txMonthQ];
+  const loading = all.some((q) => q.isLoading);
+  const failed = all.find((q) => q.isError);
   return (
     <div className="fin-root">
       <div className="page-head">
-        <div><h1 className="flex"><FinIcon name="chart" size={22} /> Планирование</h1><p>Прогноз движения денег по уже известным доходам и обязательствам</p></div>
+        <div><h1 className="flex"><FinIcon name="chart" size={22} /> Планирование</h1><p>Сколько придёт и уйдёт в месяце и когда</p></div>
         <div className="flex" style={{ gap: 8 }}>
-          <button className="btn" onClick={() => setShowCalendar(v => !v)}>
-            <FinIcon name="overview" size={15} /> {showCalendar ? 'К прогнозу' : 'Денежный календарь'}
-          </button>
-          <button className="btn primary" onClick={() => setAdding(true)}>+ Корректировка</button>
+          <MonthNav ym={calYm} onChange={setCalYm} />
+          <button className="btn primary" onClick={() => setAdding(true)}><FinIcon name="plus" size={16} /> Платёж</button>
         </div>
       </div>
-      {showCalendar ? (
-      <div className="fin-plan-payments-cal" style={{ marginTop: 16 }}>
-        <div className="page-head" style={{ marginBottom: 8 }}>
-          <p className="muted mini" style={{ margin: 0 }}>Всё движение денег по датам: приходы от клиентов (+) и расходы — долги, аренда/подписки, зарплаты, разовые платежи (−). Суммы на дне.</p>
-          <MonthNav ym={calYm} onChange={setCalYm} />
-        </div>
-        {(plannedQ.isLoading || subsQ.isLoading || txMonthQ.isLoading || salaryQ.isLoading) ? <FinLoading /> : (
-          <PlanCalendar ym={calYm} txns={calTxns} dayBalance={dayBalance}
+      {failed ? <FinLoadError onRetry={() => all.forEach((q) => q.isError && q.refetch())} />
+        : loading ? <FinLoading cards={3} /> : (
+          <PlanCalendar ym={calYm} txns={calTxns}
             renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />}
             onMoveItem={movePlanItem} canMoveItem={canMovePlanItem} />
         )}
-      </div>
-      ) : (<>
-      <div className="fin-plan-controls">
-        <div className="field fin-plan-period-field">
-          <label>Период планирования</label>
-          <strong>{monthLabel(periodStart, true)} — {monthLabel(`${year}-12`, true)}</strong>
-        </div>
-        <div className="fin-segments" role="group" aria-label="Сценарий прогноза">
-          {Object.entries(scenarios).map(([key, label]) => (
-            <button key={key} className={scenario === key ? 'active' : ''}
-              aria-pressed={scenario === key} onClick={() => setScenario(key)}>{label}</button>
-          ))}
-        </div>
-      </div>
-      {data.summary.cashGapYm && <div className="fin-plan-warning">Внимание: при этом сценарии возможен кассовый разрыв в {monthLabel(data.summary.cashGapYm, true)}.</div>}
-      <div className="cards grid-4">
-        <div className="card"><span className="muted mini">Текущий баланс</span><div className="value">{money(data.openingBalance)}</div></div>
-        <div className="card"><span className="muted mini">Доход за период · факт + план</span><div className="value pos">{money(data.summary.expectedIncome)}</div></div>
-        <div className="card"><span className="muted mini">Расход за период · факт + план</span><div className="value neg">{money(data.summary.expectedExpense)}</div></div>
-        <div className="card"><span className="muted mini">Баланс в конце</span><div className={`value ${data.summary.endingBalance < 0 ? 'neg' : ''}`}>{money(data.summary.endingBalance)}</div></div>
-      </div>
-      <PlanningCashFlowChart rows={visibleRows} scenarioLabel={scenarios[scenario]} cashGapYm={data.summary.cashGapYm} dataTableId="fin-planning-data" />
-      <div className="table-wrap"><table id="fin-planning-data"><caption className="sr-only">Подробные значения прогноза движения денег по месяцам</caption><thead><tr><th>Месяц</th><th>Доход · факт / осталось</th><th>Расход · факт / осталось</th><th>Результат</th><th>Баланс сейчас / после плана</th></tr></thead><tbody>
-        {visibleRows.map((r: any) => {
-          const toggle = () => setExpanded(expanded === r.ym ? null : r.ym);
-          const isCurrentMonth = r.ym === currentYm();
-          return <Fragment key={r.ym}><tr className={`clickable${isCurrentMonth ? ' fin-current-month-row' : ''}`} aria-expanded={expanded === r.ym}
-            tabIndex={0} onClick={toggle}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                toggle();
-              }
-            }}>
-          <td>
-            <strong>{monthLabel(r.ym, true)}</strong>
-            {isCurrentMonth && <small className="fin-current-month-badge">текущий месяц</small>}
-            {r.balanceReset && (
-              <small className="fin-plan-balance-reset"
-                title="С этого месяца остаток считается по счетам CRM, а не по архиву Notion">
-                переход на остатки CRM
-              </small>
-            )}
-          </td>
-          <td><FlowCell tone="income" actual={r.actualIncome} planned={r.plannedIncome} total={r.income} /></td>
-          <td><FlowCell tone="expense" actual={r.actualExpense} planned={r.plannedExpense} total={r.expense} /></td>
-          <td><FlowCell actual={r.actualIncome - r.actualExpense} planned={r.plannedIncome - r.plannedExpense} total={r.net} signed /></td>
-          <td><BalanceCell current={r.balanceNow} forecast={r.closingBalance} /></td>
-        </tr>{expanded === r.ym && <tr className="fin-plan-detail-row"><td colSpan={5}><div className="fin-plan-detail">
-          <SourceList title="Доходы" tone="income" rows={r.incomeSources} remove={(id) => remove.mutate(id)} />
-          <SourceList title="Расходы" tone="expense" rows={r.expenseSources} remove={(id) => remove.mutate(id)} />
-        </div></td></tr>}</Fragment>;
-        })}
-      </tbody></table></div>
-      <div className="fin-plan-year-nav" role="group" aria-label="Выбор года планирования">
-        <button type="button" className="btn ghost" disabled={year <= firstYear} onClick={() => setYear(year - 1)}>‹</button>
-        <label>
-          <span>Другой год</span>
-          <select aria-label="Другой год" value={year} onChange={event => setYear(Number(event.target.value))}>
-            {years.map(option => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </label>
-        <button type="button" className="btn ghost" onClick={() => setYear(year + 1)}>›</button>
-      </div>
-      </>)}
-      {adding && <AdjustmentModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['finance', 'forecast'] }); }} />}
+      {adding && <TransactionModal onClose={() => setAdding(false)} />}
     </div>
   );
-}
-
-function SourceList({ title, tone, rows, remove }: { title: string; tone: 'income' | 'expense'; rows: any[]; remove: (id: string) => void }) {
-  const salaryRows = rows.filter(x => x.salary || String(x.kind).startsWith('Зарплата'));
-  const salaryMap = new Map<string, any>();
-  for (const row of salaryRows) {
-    const prev = salaryMap.get(row.label);
-    salaryMap.set(row.label, prev
-      ? {
-          ...prev,
-          amount: Number(prev.amount) + Number(row.amount),
-          imported: isImportedArchive(prev) || isImportedArchive(row),
-        }
-      : { ...row });
-  }
-  const salaries = [...salaryMap.values()];
-  const visible = rows.filter(x => !(x.salary || String(x.kind).startsWith('Зарплата')));
-  if (salaries.length) visible.unshift({
-    key: 'salary-group',
-    label: 'Зарплата',
-    kind: `${salaries.length} сотрудников`,
-    amount: salaries.reduce((s, x) => s + Number(x.amount), 0),
-    salaries,
-    imported: salaries.some(isImportedArchive),
-  });
-  return <div className={`fin-plan-column ${tone}`}>
-    <div className="fin-plan-column-title"><strong>{title}</strong><span>{money(rows.reduce((s, x) => s + Number(x.amount), 0))}</span></div>
-    {visible.length ? visible.map(x => x.salaries
-      ? <SalaryGroup key={x.key} group={x} />
-      : <PlanSource key={x.key} source={x} remove={remove} />
-    ) : <p className="muted">Нет ожидаемых операций</p>}
-  </div>;
-}
-
-function sourceMeta(source: any): string[] {
-  return [
-    source.date ? (String(source.date).length >= 10 ? formatDate(source.date) : String(source.date)) : null,
-    source.categoryName ? `категория: ${source.categoryName}` : null,
-    source.accountName ? `счёт: ${source.accountName}` : null,
-  ].filter(Boolean) as string[];
-}
-
-function PlanSource({ source, remove }: { source: any; remove: (id: string) => void }) {
-  const meta = sourceMeta(source);
-  return (
-    <div className={`fin-plan-source${isImportedArchive(source) ? ' imported' : ''}`}>
-      <span>
-        <span className="fin-plan-source-label">
-          {source.label}
-          {isImportedArchive(source) && <ImportedArchiveBadge />}
-        </span>
-        <small>{source.kind}</small>
-        {meta.length > 0 && <span className="fin-plan-source-meta-row">
-          {source.accountName && <AccountMark name={source.accountName} compact />}
-          <small className="fin-plan-source-meta">{meta.join(' · ')}</small>
-        </span>}
-      </span>
-      <b>{money(source.amount)}</b>
-      {source.adjustmentId && (
-        <button onClick={() => remove(source.adjustmentId)} title="Удалить"
-          aria-label={`Удалить корректировку «${source.label}»`}>×</button>
-      )}
-    </div>
-  );
-}
-
-function SalaryGroup({ group }: { group: any }) {
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const popoverId = useId();
-  const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const [pos, setPos] = useState<FloatingPosition | null>(null);
-  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const updatePosition = useCallback(() => {
-    const rect = anchorRef.current?.getBoundingClientRect();
-    if (rect) setPos(floatingPosition(rect, 410, Math.min(390, window.innerHeight * .7)));
-  }, []);
-  useEffect(() => {
-    if (!open || pinned) return;
-    pinTimer.current = setTimeout(() => setPinned(true), 5_500);
-    return () => { if (pinTimer.current) clearTimeout(pinTimer.current); };
-  }, [open, pinned]);
-  useEffect(() => () => {
-    if (pinTimer.current) clearTimeout(pinTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-  useEffect(() => {
-    if (!open) return;
-    const ancestors = scrollableAncestors(anchorRef.current);
-    window.addEventListener('resize', updatePosition);
-    ancestors.forEach((el) => el.addEventListener('scroll', updatePosition, { passive: true }));
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      ancestors.forEach((el) => el.removeEventListener('scroll', updatePosition));
-    };
-  }, [open, updatePosition]);
-  const enter = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    updatePosition();
-    setOpen(true);
-  };
-  const leave = () => {
-    if (pinned) return;
-    closeTimer.current = setTimeout(() => setOpen(false), 120);
-  };
-  const close = (e: MouseEvent) => { e.stopPropagation(); setPinned(false); setOpen(false); };
-  const togglePinned = () => {
-    updatePosition();
-    setOpen((wasOpen) => {
-      const nextOpen = !wasOpen || !pinned;
-      setPinned(nextOpen);
-      return nextOpen;
-    });
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      togglePinned();
-    } else if (e.key === 'Escape' && open) {
-      e.preventDefault();
-      setPinned(false);
-      setOpen(false);
-    }
-  };
-  return <div ref={anchorRef} className="fin-plan-source has-popover"
-    role="button" tabIndex={0} aria-expanded={open} aria-controls={open ? popoverId : undefined}
-    aria-label={`Показать зарплаты ${group.kind}`}
-    onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave}
-    onClick={togglePinned} onKeyDown={onKeyDown}>
-    <span>
-      <span className="fin-plan-source-label">
-        {group.label}
-        {isImportedArchive(group) && <ImportedArchiveBadge />}
-      </span>
-      <small>{group.kind}</small>
-    </span>
-    <b>{money(group.amount)}</b>
-    {open && pos && createPortal(<div id={popoverId} className={`fin-salary-popover open${pinned ? ' pinned' : ''}`}
-      role="dialog" aria-label="Зарплата сотрудников" tabIndex={-1}
-      style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
-      onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onMouseLeave={leave}
-      onFocus={() => { if (closeTimer.current) clearTimeout(closeTimer.current); }} onBlur={leave}
-      onClick={e => e.stopPropagation()}>
-      <div className="fin-salary-popover-head"><strong>Зарплата сотрудников</strong><b>{money(group.amount)}</b>
-        {pinned && <button className="fin-payout-close" type="button" aria-label="Закрыть" onClick={close}><FinIcon name="close" size={14} /></button>}
-      </div>
-      <div className="fin-salary-popover-body">{group.salaries.map((person: any) => {
-        const meta = sourceMeta(person);
-        return <div key={person.key}>
-          <span>
-            {person.label}
-            {meta.length > 0 && <small className="fin-salary-person-meta">{meta.join(' · ')}</small>}
-          </span>
-          <b>{money(person.amount)}</b>
-        </div>;
-      })}</div>
-      <div className={'fin-payout-pin-hint' + (pinned ? ' pinned' : '')}>{pinned ? 'Окно закреплено — можно прокручивать' : 'Задержите курсор, чтобы закрепить окно'}</div>
-    </div>, document.body)}
-  </div>;
-}
-
-function FlowCell({ actual, planned, total, tone, signed = false }: {
-  actual: number; planned: number; total: number; tone?: 'income' | 'expense'; signed?: boolean;
-}) {
-  const hasFact = Math.abs(Number(actual) || 0) > .004;
-  const hasPlan = Math.abs(Number(planned) || 0) > .004;
-  const shown = hasFact ? actual : total;
-  const cls = tone === 'income' ? 'pos' : tone === 'expense' ? 'neg' : Number(shown) < 0 ? 'neg' : '';
-  const remainderLabel = tone === 'income' ? 'осталось получить' : tone === 'expense' ? 'осталось оплатить' : 'ожидаемое изменение';
-  return <div className={`fin-plan-flow-cell ${cls}`}>
-    <strong>{money(shown, signed)}</strong>
-    <small>{hasFact ? 'факт' : remainderLabel}{hasFact && hasPlan ? ` · ${remainderLabel} ${money(planned, signed)}` : ''}</small>
-  </div>;
-}
-
-function BalanceCell({ current, forecast }: { current?: number | null; forecast: number }) {
-  const now = current == null ? null : Number(current);
-  const shown = now ?? Number(forecast);
-  return <div className={`fin-plan-flow-cell ${shown < 0 ? 'neg' : ''}`}>
-    <strong>{money(shown)}</strong>
-    <small>{now == null ? 'прогноз' : `сейчас · после планов ${money(forecast)}`}</small>
-  </div>;
-}
-
-function AdjustmentModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: '', type: 'expense', amount: '', startYm: currentYm(), endYm: '', recurrence: 'once', scenario: 'all', note: '' });
-  const [busy, setBusy] = useState(false);
-  const save = async () => { setBusy(true); try { await financeApi.createForecastAdjustment({ ...form, amount: Number(form.amount) }); onSaved(); } catch (e) { toast.error(apiErr(e)); setBusy(false); } };
-  return <FinModal title="Корректировка прогноза" onClose={onClose} width={520} footer={<><button className="btn ghost" onClick={onClose}>Отмена</button><button className="btn primary" disabled={busy || !form.name || !form.amount} onClick={save}>Добавить</button></>}>
-    <div className="field"><label>Название</label><input autoFocus value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Налог, новая услуга, покупка…" /></div>
-    <div className="form-grid"><div className="field"><label>Тип</label><select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option value="income">Доход</option><option value="expense">Расход</option></select></div><div className="field"><label>Сумма</label><input inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div></div>
-    <div className="form-grid"><div className="field"><label>С месяца</label><input type="month" value={form.startYm} onChange={e => setForm({ ...form, startYm: e.target.value })} /></div><div className="field"><label>Повторение</label><select value={form.recurrence} onChange={e => setForm({ ...form, recurrence: e.target.value })}><option value="once">Один раз</option><option value="monthly">Каждый месяц</option></select></div></div>
-    {form.recurrence === 'monthly' && <div className="field"><label>До месяца (необязательно)</label><input type="month" value={form.endYm} onChange={e => setForm({ ...form, endYm: e.target.value })} /></div>}
-    <div className="field"><label>Сценарий</label><select value={form.scenario} onChange={e => setForm({ ...form, scenario: e.target.value })}><option value="all">Все сценарии</option><option value="base">Базовый</option><option value="conservative">Осторожный</option><option value="optimistic">Оптимистичный</option></select></div>
-  </FinModal>;
 }
