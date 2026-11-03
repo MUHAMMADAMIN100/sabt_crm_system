@@ -308,7 +308,7 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
 
         {sheetIso && !detail && (
           <DaySheet iso={sheetIso} monthNo={monthNo} list={byDay.get(sheetIso) ?? []}
-            tot={dayTot.map.get(sheetIso)} bal={dayBalance?.get(sheetIso)}
+            tot={dayTot.map.get(sheetIso)}
             isGap={sheetIso === gapIso}
             backDay={facts && facts.lastNeg >= 0 && facts.lastNeg + 2 <= daysIn ? facts.lastNeg + 2 : null}
             canMove={canMove} onMove={moveTo} onOpen={(t) => setDetail(t)}
@@ -356,12 +356,10 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
                   + (i % 7 >= 5 ? ' wknd' : '') + (hoverIso === iso ? ' hl' : '') + (overIso === iso && dragId ? ' over' : '')}
                 onDragOver={(e) => { if (dragId) { e.preventDefault(); if (overIso !== iso) setOverIso(iso); } }}
                 onDrop={drop(iso)}>
+                {/* Остаток на конец дня в клетке убран (03.11.2026, владелец:
+                    «смысла в нём нет») — в клетке только число и операции. */}
                 <div className="pcal-dayhead">
                   <span className="n">{Number(iso.slice(8))}</span>
-                  {typeof v.bal === 'number' && (
-                    <span className={'bal' + (v.neg ? ' neg' : '')}
-                      title={`Остаток на конец дня · ${money(v.bal)}`}>{signed(v.bal)}</span>
-                  )}
                 </div>
                 {visible.map((t: any) => rowNode(t, t.id))}
                 {collapsible && (
@@ -392,9 +390,9 @@ export default function PlanCalendar({ ym, txns, dayBalance, renderStatusControl
 }
 
 // ── Шторка дня (телефон) ───────────────────────────────────────────────
-function DaySheet({ iso, monthNo, list, tot, bal, isGap, backDay, canMove, onMove, onOpen, onClose }: {
+function DaySheet({ iso, monthNo, list, tot, isGap, backDay, canMove, onMove, onOpen, onClose }: {
   iso: string; monthNo: number; list: any[]; tot?: { inc: number; exp: number };
-  bal?: number; isGap: boolean; backDay: number | null;
+  isGap: boolean; backDay: number | null;
   canMove: (t: any) => boolean; onMove: (t: any, iso: string) => void;
   onOpen: (t: any) => void; onClose: () => void;
 }) {
@@ -404,13 +402,6 @@ function DaySheet({ iso, monthNo, list, tot, bal, isGap, backDay, canMove, onMov
     <FinModal title={`${wd}, ${d} ${MON_GEN[monthNo - 1]}`} onClose={onClose} width={420}
       footer={<button className="btn ghost" onClick={onClose}>Закрыть</button>}>
       <div className="pcal-sheet">
-        {typeof bal === 'number' && (
-          <div className="pcal-sheet-bal">
-            <span className="muted mini">остаток на конец дня</span>
-            <strong className={bal < 0 ? 'neg' : ''}>{signed(bal)}</strong>
-          </div>
-        )}
-
         {isGap && (
           <div className="pcal-warn">
             <i />
