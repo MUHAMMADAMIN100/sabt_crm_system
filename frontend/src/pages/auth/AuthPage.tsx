@@ -160,18 +160,19 @@ export default function AuthPage() {
       <div className="w-full max-w-md auth-card-enter">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-end gap-0 leading-none select-none">
+          {/* Цвет логотипа — от темы: почти чёрный на тёмном фоне не был виден. */}
+          <div className="flex items-end gap-0 leading-none select-none text-surface-900 dark:text-surface-50">
             <span
               className="font-black tracking-tight"
-              style={{ fontSize: 42, color: '#18181b', fontFamily: "'Arial Black', Arial, sans-serif" }}
+              style={{ fontSize: 42, fontFamily: "'Arial Black', Arial, sans-serif" }}
             >
               sabt
             </span>
-            <svg width="18" height="20" viewBox="0 0 12 14" fill="none" className="ml-1 mb-1.5">
+            <svg width="18" height="20" viewBox="0 0 12 14" fill="none" className="ml-1 mb-1.5" aria-hidden="true">
               <path
                 d="M1 1L1 11L3.8 8.2L5.6 12.5L7 11.9L5.2 7.6L9 7.6L1 1Z"
-                fill="#18181b"
-                stroke="#18181b"
+                fill="currentColor"
+                stroke="currentColor"
                 strokeWidth="0.5"
                 strokeLinejoin="round"
               />
@@ -311,7 +312,7 @@ export default function AuthPage() {
 
             {/* Email */}
             <div className="auth-field" style={{ animationDelay: mode === 'register' ? '250ms' : '0ms' }}>
-              <label className="label">{t('auth.email')} *</label>
+              <label className="label">Логин или email *</label>
               <div className="relative">
                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                 <input
@@ -345,12 +346,14 @@ export default function AuthPage() {
                   })}
                   type={showPass ? 'text' : 'password'}
                   placeholder="••••••••"
-                  className={`input pl-9 pr-10 ${errors.password ? 'border-red-400 focus:ring-red-400' : ''}`}
+                  className={`input pl-9 pr-12 ${errors.password ? 'border-red-400 focus:ring-red-400' : ''}`}
                 />
+                {/* Кнопка 40×40 — на телефоне по глазу размером 16 px было не попасть. */}
                 <button
                   type="button"
                   onClick={() => setShowPass(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
+                  aria-label={showPass ? 'Скрыть пароль' : 'Показать пароль'}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 grid place-items-center rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>

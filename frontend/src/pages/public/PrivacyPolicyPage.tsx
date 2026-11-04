@@ -82,17 +82,17 @@ export default function PrivacyPolicyPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 pb-16 pt-8 sm:pt-12">
-        <article className="rounded-3xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-6 sm:p-10 shadow-modal">
+        <article className="rounded-3xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-4 min-[400px]:p-6 sm:p-10 shadow-modal">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-surface-500">
             <ShieldCheck size={14} />
             Документы
           </div>
 
-          <h1 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-surface-900 dark:text-surface-50">
+          <h1 className="mt-3 text-[22px] min-[360px]:text-2xl sm:text-3xl font-bold tracking-tight text-surface-900 dark:text-surface-50 break-words">
             Политика конфиденциальности
           </h1>
           <p className="mt-2 text-sm text-surface-500">
-            Sabt CRM — веб-версия и мобильное приложение. Редакция от {UPDATED_AT}.
+            Sabt CRM — веб-версия и мобильное приложение. Редакция от {UPDATED_AT}
           </p>
 
           <div className="mt-6 rounded-2xl border border-surface-200 dark:border-surface-700 bg-surface-100/70 dark:bg-surface-900/60 p-4 sm:p-5">
@@ -191,14 +191,14 @@ export default function PrivacyPolicyPage() {
                 безопасности. Мы не запрашиваем геолокацию.
               </p>
 
-              <p className="font-medium text-surface-800 dark:text-surface-100">2.6. Telegram-бот</p>
+              <p className="font-medium text-surface-800 dark:text-surface-100">2.7. Telegram-бот</p>
               <p>
                 Если вы пользуетесь ботом: идентификатор чата, текст сообщений и голосовых,
                 которые вы отправляете. Голосовые сообщения распознаются, чтобы поставить
                 задачу по вашей команде.
               </p>
 
-              <p className="font-medium text-surface-800 dark:text-surface-100">2.7. ИИ-помощник</p>
+              <p className="font-medium text-surface-800 dark:text-surface-100">2.8. ИИ-помощник</p>
               <p>
                 Текст ваших запросов, ответы помощника и те рабочие данные, которые вы сами
                 включаете в запрос.
