@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { AlertCircle, Check, CheckCheck, Clock, ExternalLink, FileText, RotateCcw, StickyNote, Trash2 } from 'lucide-react'
+import { AlertCircle, Check, CheckCheck, Clock, ExternalLink, FileText, RotateCcw, StickyNote, Trash2, X } from 'lucide-react'
 import { apiUrl, FAILURE_TEXT, type DirectAttachment, type DirectMessage } from '@/services/direct.api'
 import { clockTime } from './directTime'
 
@@ -66,14 +66,35 @@ function StatusIcon({ m }: { m: DirectMessage }) {
   return null
 }
 
-export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDeleteNote, retrying }: {
+export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDismiss, onDeleteNote, retrying }: {
   m: DirectMessage
   meId?: string
   canDeleteNote: boolean
   onRetry: (id: string) => void
+  /** Только у временного пузыря, который не дошёл до сервера: убрать его. */
+  onDismiss?: () => void
   onDeleteNote: (id: string) => void
   retrying: boolean
 }) {
+  const failedRow = (text: string, canRetry: boolean) => (
+    <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-[12px] text-red-600 dark:text-red-400">
+      <AlertCircle size={13} className="shrink-0" />
+      <span>{text}</span>
+      {canRetry && (
+        <button type="button" onClick={() => onRetry(m.id)} disabled={retrying}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-surface-700 hover:bg-surface-100 disabled:opacity-50 dark:text-surface-200 dark:hover:bg-surface-700">
+          <RotateCcw size={12} /> Повторить
+        </button>
+      )}
+      {onDismiss && (
+        <button type="button" onClick={onDismiss} aria-label="Убрать сообщение" title="Убрать"
+          className="inline-flex items-center rounded-md p-0.5 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700">
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  )
+
   if (m.direction === 'note') {
     return (
       <div className="mx-auto my-1 w-full max-w-[560px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-surface-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-surface-100">
@@ -86,6 +107,7 @@ export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDeleteN
           )}
         </div>
         <p className="whitespace-pre-wrap break-words text-[13.5px] leading-snug">{m.text}</p>
+        {m.errorText && failedRow(`Не сохранилось: ${m.errorText}`, true)}
       </div>
     )
   }
@@ -124,17 +146,9 @@ export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDeleteN
             {m.reaction}
           </span>
         )}
-        {failed && (
-          <div className="mt-1 flex items-center justify-end gap-2 text-[12px] text-red-600 dark:text-red-400">
-            <AlertCircle size={13} className="shrink-0" />
-            <span>Не доставлено: {FAILURE_TEXT[m.error || ''] || FAILURE_TEXT.REJECTED}</span>
-            {m.error !== 'WINDOW_CLOSED' && m.error !== 'UNAVAILABLE' && (
-              <button type="button" onClick={() => onRetry(m.id)} disabled={retrying}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-surface-700 hover:bg-surface-100 disabled:opacity-50 dark:text-surface-200 dark:hover:bg-surface-700">
-                <RotateCcw size={12} /> Повторить
-              </button>
-            )}
-          </div>
+        {failed && failedRow(
+          `Не доставлено: ${m.errorText || FAILURE_TEXT[m.error || ''] || FAILURE_TEXT.REJECTED}`,
+          m.error !== 'WINDOW_CLOSED' && m.error !== 'UNAVAILABLE',
         )}
       </div>
     </div>

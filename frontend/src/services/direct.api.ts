@@ -46,6 +46,10 @@ export interface DirectAttachment {
 
 export interface DirectMessage {
   id: string
+  /** Метка временного пузыря отправителя: приходит в живом событии и в ответе на отправку. */
+  clientId?: string | null
+  /** Только у временного пузыря: почему отправка не дошла до сервера. */
+  errorText?: string
   direction: 'in' | 'out' | 'note'
   text: string | null
   status: DirectStatus | null
@@ -81,7 +85,8 @@ export interface DirectStats {
 /** Полный адрес файла API: фронт и сервер на разных доменах (Vercel / Railway). */
 export function apiUrl(path: string | null | undefined): string | null {
   if (!path) return null
-  if (/^https?:\/\//.test(path)) return path
+  // http(s) — уже полный адрес; blob:/data: — файл, ещё не ушедший на сервер.
+  if (/^(https?:\/\/|blob:|data:)/.test(path)) return path
   return `${import.meta.env.VITE_API_URL || ''}${path}`
 }
 
@@ -98,23 +103,26 @@ export const directApi = {
   read: (id: string) => api.post(`/direct/conversations/${id}/read`),
   viewing: (id: string) => api.post(`/direct/conversations/${id}/viewing`),
   leave: (id: string) => api.post(`/direct/conversations/${id}/leave`),
-  send: (id: string, text: string) =>
-    api.post<DirectMessage[]>(`/direct/conversations/${id}/messages`, { text }).then(r => r.data),
-  sendFile: (id: string, file: File, text?: string) => {
+  send: (id: string, text: string, clientId?: string) =>
+    api.post<DirectMessage[]>(`/direct/conversations/${id}/messages`, { text, clientId }).then(r => r.data),
+  sendFile: (id: string, file: File, text?: string, clientId?: string) => {
     const form = new FormData()
     form.append('file', file)
     if (text?.trim()) form.append('text', text)
+    if (clientId) form.append('clientId', clientId)
     return api.post<DirectMessage[]>(`/direct/conversations/${id}/files`, form, { timeout: 120000 }).then(r => r.data)
   },
-  sendVoice: (id: string, blob: Blob) => {
+  sendVoice: (id: string, blob: Blob, clientId?: string) => {
     const type = blob.type || 'audio/webm'
     const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'
     const form = new FormData()
     form.append('file', blob, `voice.${ext}`)
+    if (clientId) form.append('clientId', clientId)
     return api.post<DirectMessage>(`/direct/conversations/${id}/voice`, form, { timeout: 120000 }).then(r => r.data)
   },
   retry: (messageId: string) => api.post<DirectMessage>(`/direct/messages/${messageId}/retry`).then(r => r.data),
-  addNote: (id: string, text: string) => api.post<DirectMessage>(`/direct/conversations/${id}/notes`, { text }).then(r => r.data),
+  addNote: (id: string, text: string, clientId?: string) =>
+    api.post<DirectMessage>(`/direct/conversations/${id}/notes`, { text, clientId }).then(r => r.data),
   deleteNote: (noteId: string) => api.delete(`/direct/notes/${noteId}`),
   createLead: (id: string, data: any) => api.post<{ leadId: string }>(`/direct/conversations/${id}/lead`, data).then(r => r.data),
   stats: (params: { from?: string; to?: string }) => api.get<DirectStats>('/direct/stats', { params }).then(r => r.data),

@@ -14,16 +14,16 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
   /** Почему писать клиенту сейчас нельзя (окно 24 часов, нет подключения). Заметки можно всегда. */
   blockedReason: string | null
   igLink: string
-  onSendText: (text: string) => Promise<unknown>
-  onSendFile: (file: File, text: string) => Promise<unknown>
-  onSendVoice: (blob: Blob) => Promise<unknown>
-  onAddNote: (text: string) => Promise<unknown>
+  /** Отправка мгновенная: пузырь сразу в ленте, ответ сервера — потом. */
+  onSendText: (text: string) => void
+  onSendFile: (file: File, text: string) => void
+  onSendVoice: (blob: Blob) => void
+  onAddNote: (text: string) => void
   conversationId: string
 }) {
   const [mode, setMode] = useState<Mode>('message')
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [busy, setBusy] = useState(false)
   const [recording, setRecording] = useState<{ started: number } | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const area = useRef<HTMLTextAreaElement>(null)
@@ -60,29 +60,23 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
   const bytes = encoder.encode(text).length
   const parts = Math.max(1, Math.ceil(bytes / 1000))
 
-  async function submit() {
-    if (busy) return
+  // Поле очищается сразу, сообщение тут же появляется в ленте; если сервер
+  // его не примет, пузырь покажет «не доставлено» и «Повторить».
+  function submit() {
     const value = text.trim()
     if (mode === 'note') {
       if (!value) return
-      setBusy(true); setText('')
-      try { await onAddNote(value) } catch (e: any) { setText(value); toast.error(e?.response?.data?.message || 'Заметка не сохранилась') }
-      finally { setBusy(false); area.current?.focus() }
+      setText('')
+      onAddNote(value)
+      area.current?.focus()
       return
     }
     if (blocked || (!value && !file)) return
     const sending = file
-    setBusy(true); setText(''); setFile(null)
-    try {
-      if (sending) await onSendFile(sending, value)
-      else await onSendText(value)
-    } catch (e: any) {
-      setText(value); setFile(sending)
-      toast.error(e?.response?.data?.message || 'Сообщение не отправилось')
-    } finally {
-      setBusy(false)
-      area.current?.focus()
-    }
+    setText(''); setFile(null)
+    if (sending) onSendFile(sending, value)
+    else onSendText(value)
+    area.current?.focus()
   }
 
   function pick(f: File | undefined) {
@@ -96,7 +90,7 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
   }
 
   async function startRecording() {
-    if (blocked || busy || recording) return
+    if (blocked || recording) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       toast.error('Этот браузер не умеет записывать голос'); return
     }
@@ -107,14 +101,12 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       const state = { rec, stream, chunks: [] as Blob[], cancel: false }
       rec.ondataavailable = e => { if (e.data.size) state.chunks.push(e.data) }
-      rec.onstop = async () => {
+      rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
         if (state.cancel) return
         const blob = new Blob(state.chunks, { type: rec.mimeType || mime || 'audio/webm' })
         if (blob.size < 1200) { toast.error('Запись слишком короткая'); return }
-        setBusy(true)
-        try { await onSendVoice(blob) } catch (e: any) { toast.error(e?.response?.data?.message || 'Голосовое не отправилось') }
-        finally { setBusy(false) }
+        onSendVoice(blob)
       }
       recorder.current = state
       rec.start(250)
@@ -186,7 +178,7 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
               <>
                 <input ref={picker} type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" className="hidden"
                   onChange={e => { pick(e.target.files?.[0]); e.target.value = '' }} />
-                <button type="button" onClick={() => picker.current?.click()} disabled={busy}
+                <button type="button" onClick={() => picker.current?.click()}
                   className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 disabled:opacity-50 dark:hover:bg-surface-700" aria-label="Прикрепить фото или PDF" title="Фото (JPG, PNG) или PDF">
                   <Paperclip size={18} />
                 </button>
@@ -199,19 +191,19 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
               maxLength={MAX_CHARS}
               onChange={e => setText(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit() }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
               }}
               placeholder={mode === 'note' ? 'Заметка видна только команде' : file ? 'Подпись к файлу (необязательно)' : 'Сообщение клиенту…'}
               className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug outline-none placeholder:text-surface-400"
               aria-label={mode === 'note' ? 'Заметка для команды' : 'Сообщение клиенту'}
             />
             {mode === 'message' && !text.trim() && !file ? (
-              <button type="button" onClick={startRecording} disabled={busy}
+              <button type="button" onClick={startRecording}
                 className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 disabled:opacity-50 dark:hover:bg-surface-700" aria-label="Записать голосовое" title="Записать голосовое">
                 <Mic size={18} />
               </button>
             ) : (
-              <button type="button" onClick={() => void submit()} disabled={busy || (!text.trim() && !file)}
+              <button type="button" onClick={submit} disabled={!text.trim() && !file}
                 className="rounded-lg bg-primary-600 p-2 text-white hover:bg-primary-700 disabled:opacity-50" aria-label={mode === 'note' ? 'Сохранить заметку' : 'Отправить'}>
                 <Send size={18} />
               </button>

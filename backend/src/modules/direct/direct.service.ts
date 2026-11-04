@@ -159,14 +159,14 @@ export class DirectService implements OnApplicationBootstrap {
       if (unread === 1) await this.announce(conversation.id, preview, created);
       await this.fetchFiles(conversation.id, files);
     })());
-    this.changed(conversation.id, true);
+    await this.pushMessage(conversation.id, message.id);
   }
 
   /** Что написало агентство: эхо сообщения из CRM или написанное прямо в приложении Instagram. */
   private async applyEcho(event: Extract<DirectEvent, { kind: 'message' }>): Promise<void> {
     if (await this.messagesRepo.findOne({ where: { externalId: event.externalId }, select: ['id'] })) return;
 
-    let result: { conversationId: string; files: DirectAttachment[] };
+    let result: { conversationId: string; messageId: string; files: DirectAttachment[] };
     try {
       result = await this.conversations.manager.transaction(async (em) => {
         const { conversation } = await this.openConversation(event.accountId, event.contactId, event.sentAt, em);
@@ -193,7 +193,7 @@ export class DirectService implements OnApplicationBootstrap {
           );
           // Прерванное не дошло до «ответил» в transmit — отмечаем здесь.
           if (match.status === 'failed') await this.answered(conversation.id, match.authorId, new Date(match.sentAt), em);
-          return { conversationId: conversation.id, files: [] };
+          return { conversationId: conversation.id, messageId: match.id, files: [] };
         }
 
         const messages = em.getRepository(DirectMessage);
@@ -213,14 +213,14 @@ export class DirectService implements OnApplicationBootstrap {
         );
         // Ответ из приложения Instagram — тоже ответ: ожидание клиента закончилось.
         await this.answered(conversation.id, null, event.sentAt, em);
-        return { conversationId: conversation.id, files };
+        return { conversationId: conversation.id, messageId: message.id, files };
       });
     } catch (error) {
       if (isUniqueViolation(error)) return;
       throw error;
     }
     if (result.files.length) this.background(this.fetchFiles(result.conversationId, result.files));
-    this.changed(result.conversationId);
+    await this.pushMessage(result.conversationId, result.messageId);
   }
 
   /** Клиент удалил сообщение: текст и файлы уходят. */
@@ -416,12 +416,46 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   /** Говорит открытым страницам CRM, что чат изменился. */
-  private changed(conversationId: string, incoming = false): void {
+  private changed(conversationId: string): void {
     this.audience()
       .then(({ all }) => {
-        for (const userId of all) this.gateway.notifyUser(userId, 'direct:changed', { conversationId, incoming });
+        for (const userId of all) this.gateway.notifyUser(userId, 'direct:changed', { conversationId });
       })
       .catch(() => { /* живое обновление — не главное, данные уже в базе */ });
+  }
+
+  /** Шлёт открытым страницам само сообщение: лента и список обновляются
+   *  сразу, без повторного запроса к серверу. clientId — метка временного
+   *  пузыря на странице отправителя: по ней он заменяется настоящим. */
+  private async pushMessage(conversationId: string, messageId: string, clientId?: string): Promise<void> {
+    try {
+      const message = await this.messagesRepo.findOne({ where: { id: messageId }, relations: ['author'] });
+      if (message) {
+        const files = await this.attachments.find({ where: { messageId }, order: { createdAt: 'ASC' } });
+        const dto = this.messageDto(message, files, clientId);
+        const { all } = await this.audience();
+        for (const userId of all) this.gateway.notifyUser(userId, 'direct:message', { conversationId, message: dto });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Живое обновление сообщения не ушло: ${e?.message || e}`);
+    }
+    await this.pushConversation(conversationId);
+  }
+
+  /** Шлёт обновлённую строку чата: превью, непрочитанные, «ждёт ответа»,
+   *  кто ответил последним. Кто сейчас в чате — все, страница уберёт себя сама. */
+  private async pushConversation(conversationId: string): Promise<void> {
+    try {
+      const row = await this.conversations.findOne({ where: { id: conversationId }, relations: ['lead', 'lastReplyBy'] });
+      if (!row) return;
+      const last = await this.lastMessages([row.id]);
+      const names = await this.namesOf(this.uniq([...this.viewerIds(row.id), ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[]]));
+      const conversation = this.summary(row, last.get(row.id) ?? null, names, '');
+      const { all } = await this.audience();
+      for (const userId of all) this.gateway.notifyUser(userId, 'direct:conversation', { conversationId, conversation });
+    } catch (e: any) {
+      this.logger.warn(`Живое обновление чата не ушло: ${e?.message || e}`);
+    }
   }
 
   private async announce(conversationId: string, preview: string, isNew: boolean): Promise<void> {
@@ -480,11 +514,11 @@ export class DirectService implements OnApplicationBootstrap {
     const fresh = !map.has(userId) || Date.now() - (map.get(userId) ?? 0) > VIEWER_TTL_MS;
     map.set(userId, Date.now());
     this.viewers.set(conversationId, map);
-    if (fresh) this.changed(conversationId);
+    if (fresh) void this.pushConversation(conversationId);
   }
 
   leave(userId: string, conversationId: string): void {
-    if (this.viewers.get(conversationId)?.delete(userId)) this.changed(conversationId);
+    if (this.viewers.get(conversationId)?.delete(userId)) void this.pushConversation(conversationId);
   }
 
   // ─── Что читает CRM ─────────────────────────────────────────────────
@@ -557,28 +591,28 @@ export class DirectService implements OnApplicationBootstrap {
     this.ping(user.id, id);
     if (conversation.unreadCount > 0) {
       await this.conversations.update(id, { unreadCount: 0 });
-      this.changed(id);
+      await this.pushConversation(id);
     }
     await this.notifications.markReadByLink(user.id, `/direct?c=${id}`).catch(() => 0);
   }
 
   // ─── Что пишет CRM ──────────────────────────────────────────────────
 
-  async sendText(user: User, id: string, text: string, publicBase: string) {
+  async sendText(user: User, id: string, text: string, publicBase: string, clientId?: string) {
     const conversation = await this.writable(id);
-    return this.sendTexts(user, conversation, text, publicBase);
+    return this.sendTexts(user, conversation, text, publicBase, clientId);
   }
 
-  async sendFile(user: User, id: string, upload: UploadedFile | undefined, text: string | undefined, publicBase: string) {
+  async sendFile(user: User, id: string, upload: UploadedFile | undefined, text: string | undefined, publicBase: string, clientId?: string) {
     const conversation = await this.writable(id);
     const file = this.files.checkOutgoing(upload);
     const stored = await this.files.saveOutgoing(file);
-    const first = await this.deliver(user, conversation, { file: { ...file, ...stored } }, publicBase);
-    const rest = text?.trim() && first.status !== 'failed' ? await this.sendTexts(user, conversation, text, publicBase) : [];
+    const first = await this.deliver(user, conversation, { file: { ...file, ...stored } }, publicBase, clientId);
+    const rest = text?.trim() && first.status !== 'failed' ? await this.sendTexts(user, conversation, text, publicBase, clientId) : [];
     return [first, ...rest];
   }
 
-  async sendVoice(user: User, id: string, upload: UploadedFile | undefined, publicBase: string) {
+  async sendVoice(user: User, id: string, upload: UploadedFile | undefined, publicBase: string, clientId?: string) {
     const conversation = await this.writable(id);
     const recorded = this.files.checkVoice(upload);
     let sound: Buffer;
@@ -589,7 +623,7 @@ export class DirectService implements OnApplicationBootstrap {
       throw new BadRequestException('Не удалось обработать запись — запишите ещё раз');
     }
     const stored = await this.files.saveSound(sound);
-    return this.deliver(user, conversation, { voice: stored }, publicBase);
+    return this.deliver(user, conversation, { voice: stored }, publicBase, clientId);
   }
 
   /** Повтор неотправленного: сообщение переезжает в конец переписки. */
@@ -610,13 +644,13 @@ export class DirectService implements OnApplicationBootstrap {
     return this.transmit(conversation, message.id, publicBase);
   }
 
-  async addNote(user: User, id: string, text: string) {
+  async addNote(user: User, id: string, text: string, clientId?: string) {
     await this.conversation(id);
     const note = await this.messagesRepo.save(this.messagesRepo.create({
       conversationId: id, direction: 'note', text: text.trim(), authorId: user.id, sentAt: new Date(),
     }));
-    this.changed(id);
-    return this.messageDto({ ...note, author: user } as DirectMessage, []);
+    await this.pushMessage(id, note.id, clientId);
+    return this.messageDto({ ...note, author: user } as DirectMessage, [], clientId);
   }
 
   async deleteNote(user: User, noteId: string): Promise<void> {
@@ -636,14 +670,14 @@ export class DirectService implements OnApplicationBootstrap {
     const direction = (getSalesSegment(user.role)?.leadDirection as ClientLeadDirection | undefined) ?? dto.direction;
     const lead = await this.clients.create({ ...dto, direction }, user.id, { id: user.id, name: user.name });
     await this.conversations.update(id, { leadId: lead.id });
-    this.changed(id);
+    await this.pushConversation(id);
     return { leadId: lead.id };
   }
 
-  private async sendTexts(user: User, conversation: DirectConversation, text: string, publicBase: string) {
+  private async sendTexts(user: User, conversation: DirectConversation, text: string, publicBase: string, clientId?: string) {
     const sent: any[] = [];
     for (const part of splitText(text)) {
-      const message = await this.deliver(user, conversation, { text: part }, publicBase);
+      const message = await this.deliver(user, conversation, { text: part }, publicBase, clientId);
       sent.push(message);
       if (message.status === 'failed') break;
     }
@@ -651,7 +685,7 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   /** Сначала пишем сообщение в переписку, потом отдаём Instagram: эхо найдёт его ждущим. */
-  private async deliver(user: User, conversation: DirectConversation, content: Content, publicBase: string) {
+  private async deliver(user: User, conversation: DirectConversation, content: Content, publicBase: string, clientId?: string) {
     const sentAt = new Date();
     const message = await this.messagesRepo.save(this.messagesRepo.create({
       conversationId: conversation.id,
@@ -674,11 +708,12 @@ export class DirectService implements OnApplicationBootstrap {
       }));
     }
     await this.touchLastMessage(conversation.id, sentAt);
-    this.changed(conversation.id);
-    return this.transmit(conversation, message.id, publicBase);
+    // «Отправляется» видно всем сразу — ещё до ответа Instagram.
+    await this.pushMessage(conversation.id, message.id, clientId);
+    return this.transmit(conversation, message.id, publicBase, clientId);
   }
 
-  private async transmit(conversation: DirectConversation, messageId: string, publicBase: string) {
+  private async transmit(conversation: DirectConversation, messageId: string, publicBase: string, clientId?: string) {
     const message = await this.messagesRepo.findOneOrFail({ where: { id: messageId } });
     const [file] = await this.attachments.find({ where: { messageId } });
     try {
@@ -702,16 +737,15 @@ export class DirectService implements OnApplicationBootstrap {
       );
       await this.answered(conversation.id, message.authorId, new Date());
       await this.markToken(false);
-      this.changed(conversation.id);
     } catch (error) {
       const failure = failureOf(error);
       this.logger.warn(`Сообщение в Instagram не ушло (${failure}): ${String(error)}`);
       if (failure === 'TOKEN_INVALID') await this.markToken(true);
       await this.messagesRepo.update(message.id, { status: 'failed', error: failure });
-      this.changed(conversation.id);
     }
+    await this.pushMessage(conversation.id, messageId, clientId);
     const fresh = await this.messagesRepo.findOneOrFail({ where: { id: messageId }, relations: ['author'] });
-    return this.messageDto(fresh, await this.attachments.find({ where: { messageId } }));
+    return this.messageDto(fresh, await this.attachments.find({ where: { messageId } }), clientId);
   }
 
   private async markToken(invalid: boolean): Promise<void> {
@@ -939,9 +973,11 @@ export class DirectService implements OnApplicationBootstrap {
     };
   }
 
-  private messageDto(m: DirectMessage, files: DirectAttachment[]) {
+  private messageDto(m: DirectMessage, files: DirectAttachment[], clientId?: string) {
     return {
       id: m.id,
+      /** Метка временного пузыря отправителя (не хранится в базе). */
+      clientId: clientId ?? null,
       direction: m.direction,
       text: m.text,
       status: m.status,

@@ -70,6 +70,11 @@ export default function Layout() {
   const authenticated = useAuthStore(s => s.authenticated)
   const location = useLocation()
   const financeRoute = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
+  // «Директ» — рабочее окно чата на весь экран: без полей и ограничения ширины.
+  // На телефоне открытый чат ещё и без нижней панели (как в Instagram).
+  const directRoute = location.pathname === '/direct'
+  const directParams = new URLSearchParams(location.search)
+  const directChatOpen = directRoute && directParams.has('c') && directParams.get('tab') !== 'speed'
 
   // fetchMe нужен только если пришли по F5 (user пуст). После свежего login()
   // user уже загружен — повторный вызов плодит гонку с interceptor'ом
@@ -101,7 +106,7 @@ export default function Layout() {
   return (
     // app-shell — якорь для эффектов на весь интерфейс (например, встряска
     // при «печати успеха» в index.css). Фон у всех один — цвет темы.
-    <div className="app-shell flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden">
+    <div className={clsx('app-shell flex h-screen bg-surface-100 dark:bg-surface-900 overflow-hidden', directRoute && 'direct-shell')}>
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -121,12 +126,21 @@ export default function Layout() {
       >
         {/* На телефоне навигация снизу: три раздела, «Ещё» и кнопка создания.
             Кнопка-гамбургер в углу больше не нужна. */}
-        <BottomNav />
-        <main className={clsx('flex-1 overflow-y-auto p-4 lg:p-6 pb-24 lg:pb-6', financeRoute && 'finance-workspace min-w-0 overflow-x-hidden')}>
+        {!directChatOpen && <BottomNav />}
+        <main className={clsx(
+          'flex-1',
+          directRoute
+            ? clsx('min-h-0 overflow-hidden', !directChatOpen && 'pb-24 lg:pb-0')
+            : 'overflow-y-auto p-4 lg:p-6 pb-24 lg:pb-6',
+          financeRoute && 'finance-workspace min-w-0 overflow-x-hidden',
+        )}>
           {/* key on pathname so each navigation re-triggers the animation */}
           <div
             key={location.pathname}
-            className={clsx('max-w-screen-2xl mx-auto animate-page-in', financeRoute && 'finance-workspace-inner w-full min-w-0')}
+            className={clsx(
+              directRoute ? 'h-full' : 'max-w-screen-2xl mx-auto animate-page-in',
+              financeRoute && 'finance-workspace-inner w-full min-w-0',
+            )}
           >
             {/* Внутренний Suspense ловит lazy-чанки страниц, не давая
                 верхнему Suspense вышибить весь Layout (sidebar+header) до

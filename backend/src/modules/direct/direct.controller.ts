@@ -11,7 +11,7 @@ import { DirectService } from './direct.service';
 import { MAX_DOCUMENT_SIZE, MAX_VOICE_SIZE } from './direct-files';
 import {
   DirectCountsQueryDto, DirectListQueryDto, DirectMessagesQueryDto, DirectNoteDto, DirectSendFileDto,
-  DirectSendTextDto, DirectStatsQueryDto,
+  DirectSendTextDto, DirectSendVoiceDto, DirectStatsQueryDto,
 } from './direct.dto';
 
 /** Адрес, по которому Instagram скачивает наши файлы: из переменной
@@ -101,7 +101,7 @@ export class DirectController {
   @Post('conversations/:id/messages')
   @RequirePerm('clients.view')
   send(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() body: DirectSendTextDto) {
-    return this.direct.sendText(req.user, id, body.text, publicBase(req));
+    return this.direct.sendText(req.user, id, body.text, publicBase(req), body.clientId);
   }
 
   @Post('conversations/:id/files')
@@ -113,14 +113,19 @@ export class DirectController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: DirectSendFileDto,
   ) {
-    return this.direct.sendFile(req.user, id, file, body?.text, publicBase(req));
+    return this.direct.sendFile(req.user, id, file, body?.text, publicBase(req), body?.clientId);
   }
 
   @Post('conversations/:id/voice')
   @RequirePerm('clients.view')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_VOICE_SIZE, files: 1 } }))
-  sendVoice(@Request() req, @Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File | undefined) {
-    return this.direct.sendVoice(req.user, id, file, publicBase(req));
+  sendVoice(
+    @Request() req,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: DirectSendVoiceDto,
+  ) {
+    return this.direct.sendVoice(req.user, id, file, publicBase(req), body?.clientId);
   }
 
   @Post('messages/:id/retry')
@@ -132,7 +137,7 @@ export class DirectController {
   @Post('conversations/:id/notes')
   @RequirePerm('clients.view')
   addNote(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() body: DirectNoteDto) {
-    return this.direct.addNote(req.user, id, body.text);
+    return this.direct.addNote(req.user, id, body.text, body.clientId);
   }
 
   @Delete('notes/:id')

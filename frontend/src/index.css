@@ -1156,3 +1156,9 @@ aside {
   border-color: theme('colors.surface.700');
 }
 .rdp-move .rdp-chevron { fill: currentColor; }
+
+/* «Директ» на весь экран: 100dvh, а не 100vh — на телефоне поле ответа не
+   уходит под панель браузера. Браузеры без dvh остаются на 100vh (h-screen). */
+.app-shell.direct-shell {
+  height: 100dvh;
+}

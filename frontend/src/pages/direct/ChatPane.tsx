@@ -4,24 +4,46 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { ArrowLeft, Eye, ExternalLink, UserPlus, Contact } from 'lucide-react'
-import { directApi, type DirectMessage } from '@/services/direct.api'
+import { directApi, type DirectAttachment, type DirectMessage } from '@/services/direct.api'
 import { Spinner } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
+import { isSocketConnected, useSocketConnected } from '@/lib/socketState'
 import { ClientForm } from '@/pages/clients/ClientsPage'
 import ContactAvatar from './ContactAvatar'
 import MessageItem from './MessageItem'
 import Composer from './Composer'
 import { dayKey, dayLabel, duration } from './directTime'
+import { upsertDirectMessage } from './directCache'
 
 const LEAD_STATUS: Record<string, string> = {
   new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах', proposal: 'КП отправлено',
   won: 'Клиент', lost: 'Отказ', on_hold: 'На паузе', unknown: 'Неизвестно',
 }
 
+/** Сообщение, которое уже видно в ленте, но сервер его ещё не подтвердил. */
+type Pending = {
+  clientId: string
+  kind: 'text' | 'file' | 'voice' | 'note'
+  text: string
+  file?: File
+  blob?: Blob
+  /** Локальная ссылка на фото или запись — показываем, пока файл летит на сервер. */
+  previewUrl?: string
+  status: 'sending' | 'failed'
+  errorText?: string
+  sentAt: string
+}
+
+const newClientId = () =>
+  (typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+
 /** Открытая переписка: шапка с лидом и окном ответа, лента, поле ответа. */
 export default function ChatPane({ id, connected, onBack }: { id: string; connected: boolean; onBack: () => void }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
+  const live = useSocketConnected()
   const isTop = user?.role === 'admin' || user?.role === 'founder'
   // Кто заводит лиды — как на сервере (clients.create): руководство и
   // менеджеры продаж по роли, остальные — по личному доступу; запрет сильнее.
@@ -30,12 +52,15 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     LEAD_ROLES.includes(user.role || '') || LEAD_ROLES.includes(user.secondaryRole || '')
     || (user.extraPermissions || []).includes('clients.create'))
   const [showLead, setShowLead] = useState(false)
+  const [pending, setPending] = useState<Pending[]>([])
   const [, tick] = useState(0)
   useEffect(() => { const t = setInterval(() => tick(x => x + 1), 30_000); return () => clearInterval(t) }, [])
 
+  // Пока вебсокет на связи, всё приходит событиями; без него — опрос раз в 10 секунд.
   const conversation = useQuery({
     queryKey: ['direct', 'conversation', id],
     queryFn: () => directApi.get(id),
+    refetchInterval: live ? false : 10_000,
   })
 
   const feed = useInfiniteQuery({
@@ -44,8 +69,25 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     initialPageParam: undefined as string | undefined,
     // «Следующая» страница — более ранние сообщения.
     getNextPageParam: last => (last.hasMore && last.items.length ? last.items[0].id : undefined),
+    refetchInterval: live ? false : 10_000,
   })
   const messages: DirectMessage[] = feed.data ? feed.data.pages.slice().reverse().flatMap(p => p.items) : []
+
+  // Сервер подтвердил временный пузырь (пришло сообщение с его меткой) — убираем дубль.
+  useEffect(() => {
+    if (!pending.length) return
+    const confirmed = new Set(messages.map(m => m.clientId).filter(Boolean) as string[])
+    if (!pending.some(p => confirmed.has(p.clientId))) return
+    setPending(list => {
+      list.filter(p => confirmed.has(p.clientId)).forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl))
+      return list.filter(p => !confirmed.has(p.clientId))
+    })
+  }, [messages, pending])
+
+  // Локальные ссылки на файлы освобождаем, когда чат закрыли.
+  const pendingRef = useRef(pending)
+  pendingRef.current = pending
+  useEffect(() => () => { pendingRef.current.forEach(p => p.previewUrl && URL.revokeObjectURL(p.previewUrl)) }, [])
 
   // Прочитано: при открытии и когда, пока чат на экране, пришло новое.
   const unread = conversation.data?.unreadCount ?? 0
@@ -70,15 +112,16 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     return () => { clearInterval(t); directApi.leave(id).catch(() => {}) }
   }, [id])
 
-  // Прокрутка: вниз при открытии и когда сотрудник уже внизу; ранние
-  // сообщения подгружаются без прыжка ленты.
+  // Прокрутка: вниз при открытии, после своей отправки и когда сотрудник уже
+  // внизу; ранние сообщения подгружаются без прыжка ленты.
   const scroller = useRef<HTMLDivElement>(null)
   const nearBottom = useRef(true)
   const prevHeight = useRef<number | null>(null)
   const opened = useRef<string | null>(null)
+  const lastId = messages[messages.length - 1]?.id
   useLayoutEffect(() => {
     const el = scroller.current
-    if (!el || !messages.length) return
+    if (!el || (!messages.length && !pending.length)) return
     if (opened.current !== id) {
       opened.current = id
       el.scrollTop = el.scrollHeight
@@ -88,7 +131,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     } else if (nearBottom.current) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages.length, messages[messages.length - 1]?.id, id])
+  }, [messages.length, lastId, pending.length, id])
 
   const loadOlder = () => {
     if (scroller.current) prevHeight.current = scroller.current.scrollHeight
@@ -101,15 +144,63 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     qc.invalidateQueries({ queryKey: ['direct', 'list'] })
     qc.invalidateQueries({ queryKey: ['direct', 'counts'] })
   }
-  const afterSend = (sent: DirectMessage | DirectMessage[]) => {
-    nearBottom.current = true
-    refresh()
-    const list = Array.isArray(sent) ? sent : [sent]
-    const failed = list.find(m => m.status === 'failed')
-    if (failed?.error === 'TOKEN_INVALID') toast.error('Ключ Instagram больше не действует — сообщите администратору')
+
+  // Отправки идут строго по очереди: иначе два быстрых сообщения могли бы
+  // прийти клиенту в обратном порядке. На экране каждое — сразу.
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const runPending = (p: Pending) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        const sent = p.kind === 'note'
+          ? await directApi.addNote(id, p.text, p.clientId)
+          : p.kind === 'file'
+            ? await directApi.sendFile(id, p.file!, p.text, p.clientId)
+            : p.kind === 'voice'
+              ? await directApi.sendVoice(id, p.blob!, p.clientId)
+              : await directApi.send(id, p.text, p.clientId)
+        const list = Array.isArray(sent) ? sent : [sent]
+        for (const m of list) upsertDirectMessage(qc, id, { ...m, clientId: p.clientId })
+        setPending(items => items.filter(x => x.clientId !== p.clientId))
+        if (p.previewUrl) URL.revokeObjectURL(p.previewUrl)
+        if (list.some(m => m.status === 'failed' && m.error === 'TOKEN_INVALID')) {
+          toast.error('Ключ Instagram больше не действует — сообщите администратору')
+        }
+        // Без вебсокета шапка и список сами не узнают о новом сообщении.
+        if (!isSocketConnected()) refresh()
+      } catch (e: any) {
+        const errorText = e?.response?.data?.message || (e?.code === 'ERR_NETWORK' ? 'Нет связи с сервером' : 'Не отправилось')
+        setPending(items => items.map(x => (x.clientId === p.clientId ? { ...x, status: 'failed', errorText: String(errorText) } : x)))
+      }
+    })
   }
 
-  const retry = useMutation({ mutationFn: directApi.retry, onSuccess: afterSend, onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось') })
+  const enqueue = (p: Omit<Pending, 'clientId' | 'status' | 'sentAt'>) => {
+    const item: Pending = { ...p, clientId: newClientId(), status: 'sending', sentAt: new Date().toISOString() }
+    nearBottom.current = true
+    setPending(list => [...list, item])
+    runPending(item)
+  }
+
+  const retryPending = (clientId: string) => {
+    const p = pending.find(x => x.clientId === clientId)
+    if (!p) return
+    const again: Pending = { ...p, status: 'sending', errorText: undefined, sentAt: new Date().toISOString() }
+    setPending(list => list.map(x => (x.clientId === clientId ? again : x)))
+    runPending(again)
+  }
+
+  const dismissPending = (clientId: string) => {
+    setPending(list => {
+      list.filter(x => x.clientId === clientId).forEach(x => x.previewUrl && URL.revokeObjectURL(x.previewUrl))
+      return list.filter(x => x.clientId !== clientId)
+    })
+  }
+
+  const retry = useMutation({
+    mutationFn: directApi.retry,
+    onSuccess: (m: DirectMessage) => { upsertDirectMessage(qc, id, m); if (!isSocketConnected()) refresh() },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось'),
+  })
   const removeNote = useMutation({ mutationFn: directApi.deleteNote, onSuccess: refresh, onError: (e: any) => toast.error(e?.response?.data?.message || 'Не получилось') })
   const createLead = useMutation({
     mutationFn: (data: any) => directApi.createLead(id, data),
@@ -136,6 +227,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     )
   }
 
+  const viewers = c.viewers.filter(v => v.id !== user?.id)
   const igLink = c.contact.username ? `https://ig.me/m/${c.contact.username}` : 'https://www.instagram.com/direct/inbox/'
   const left = c.replyUntil ? new Date(c.replyUntil).getTime() - Date.now() : null
   const blockedReason = !connected
@@ -154,6 +246,31 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     channel: 'Instagram',
     problem: messages.filter(m => m.direction === 'in' && m.text).slice(-3).map(m => m.text).join('\n').slice(0, 1500),
   }
+
+  // Временные пузыри — в конце ленты, в том же виде, что настоящие.
+  const pendingMessages: DirectMessage[] = pending.map(p => {
+    const attachments: DirectAttachment[] = p.kind === 'file' && p.file
+      ? [{ id: `pf-${p.clientId}`, kind: isPdf(p.file) ? 'file' : 'image', name: p.file.name, mimeType: p.file.type || (isPdf(p.file) ? 'application/pdf' : 'image/jpeg'), size: p.file.size, url: p.previewUrl ?? null, link: null }]
+      : p.kind === 'voice' && p.blob
+        ? [{ id: `pv-${p.clientId}`, kind: 'audio', name: null, mimeType: p.blob.type || 'audio/webm', size: p.blob.size, url: p.previewUrl ?? null, link: null }]
+        : []
+    return {
+      id: `pending:${p.clientId}`,
+      clientId: p.clientId,
+      direction: p.kind === 'note' ? 'note' : 'out',
+      text: p.text || null,
+      status: p.kind === 'note' ? null : p.status,
+      error: p.status === 'failed' ? 'CLIENT' : null,
+      errorText: p.status === 'failed' ? p.errorText : undefined,
+      author: user ? { id: user.id, name: user.name } : null,
+      fromApp: false,
+      sentAt: p.sentAt,
+      deleted: false,
+      reaction: null,
+      attachments,
+    }
+  })
+  const feedItems = [...messages, ...pendingMessages]
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -176,8 +293,8 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
                 ответить из CRM можно ещё {duration(left)}
               </span>
             )}
-            {c.viewers.length > 0 && (
-              <span className="inline-flex items-center gap-1"><Eye size={12} /> сейчас в чате: {c.viewers.map(v => v.name.split(' ')[0]).join(', ')}</span>
+            {viewers.length > 0 && (
+              <span className="inline-flex items-center gap-1"><Eye size={12} /> сейчас в чате: {viewers.map(v => v.name.split(' ')[0]).join(', ')}</span>
             )}
           </div>
         </div>
@@ -221,10 +338,10 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
           </div>
         )}
         {feed.isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
-        {!feed.isLoading && !messages.length && <p className="py-10 text-center text-sm text-surface-400">Сообщений пока нет</p>}
-        {messages.map((m, i) => (
+        {!feed.isLoading && !feedItems.length && <p className="py-10 text-center text-sm text-surface-400">Сообщений пока нет</p>}
+        {feedItems.map((m, i) => (
           <Fragment key={m.id}>
-            {(i === 0 || dayKey(messages[i - 1].sentAt) !== dayKey(m.sentAt)) && (
+            {(i === 0 || dayKey(feedItems[i - 1].sentAt) !== dayKey(m.sentAt)) && (
               <div className="flex justify-center py-1">
                 <span className="rounded-full bg-surface-100 px-3 py-0.5 text-[11px] font-medium text-surface-500 dark:bg-surface-800">{dayLabel(m.sentAt)}</span>
               </div>
@@ -232,8 +349,9 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
             <MessageItem
               m={m}
               meId={user?.id}
-              canDeleteNote={m.direction === 'note' && (m.author?.id === user?.id || isTop)}
-              onRetry={mid => retry.mutate(mid)}
+              canDeleteNote={m.direction === 'note' && !m.id.startsWith('pending:') && (m.author?.id === user?.id || isTop)}
+              onRetry={mid => (mid.startsWith('pending:') ? retryPending(mid.slice(8)) : retry.mutate(mid))}
+              onDismiss={m.id.startsWith('pending:') ? () => dismissPending(m.id.slice(8)) : undefined}
               onDeleteNote={nid => removeNote.mutate(nid)}
               retrying={retry.isPending}
             />
@@ -245,10 +363,10 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
         conversationId={id}
         blockedReason={blockedReason}
         igLink={igLink}
-        onSendText={text => directApi.send(id, text).then(afterSend)}
-        onSendFile={(file, text) => directApi.sendFile(id, file, text).then(afterSend)}
-        onSendVoice={blob => directApi.sendVoice(id, blob).then(afterSend)}
-        onAddNote={text => directApi.addNote(id, text).then(() => { nearBottom.current = true; refresh() })}
+        onSendText={text => enqueue({ kind: 'text', text })}
+        onSendFile={(file, text) => enqueue({ kind: 'file', text, file, previewUrl: isPdf(file) ? undefined : URL.createObjectURL(file) })}
+        onSendVoice={blob => enqueue({ kind: 'voice', text: '', blob, previewUrl: URL.createObjectURL(blob) })}
+        onAddNote={text => enqueue({ kind: 'note', text })}
       />
 
       {showLead && (

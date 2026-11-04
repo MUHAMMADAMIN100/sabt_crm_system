@@ -5,6 +5,8 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
 import { tokenStore } from '@/lib/api'
 import { playDirectChime } from '@/lib/directSound'
+import { setSocketConnected } from '@/lib/socketState'
+import { applyDirectConversation, upsertDirectMessage } from '@/pages/direct/directCache'
 
 /**
  * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
@@ -39,6 +41,7 @@ export function useSocket(authMarker: string | null) {
     })
 
     socket.on('connect', () => {
+      setSocketConnected(true)
       // On (re)connect refetch everything that might have been missed
       qc.refetchQueries({ type: 'active' })
     })
@@ -257,8 +260,22 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
     })
 
-    // «Директ»: чат изменился (новое сообщение, ответ, статус, кто в чате).
-    // Сервер шлёт это только тем, у кого есть доступ к переписке.
+    // «Директ». Сервер шлёт события только тем, у кого есть доступ к переписке.
+    // direct:message — само сообщение (новое или со сменой статуса): лента
+    // обновляется сразу, без запроса к серверу.
+    socket.on('direct:message', (payload: any) => {
+      const id = payload?.conversationId
+      const message = payload?.message
+      if (!id || !message?.id) return
+      upsertDirectMessage(qc, id, message)
+      if (message.direction === 'in' && !message.deleted) playDirectChime(id)
+    })
+    // direct:conversation — строка чата: превью, непрочитанные, «ждёт ответа».
+    socket.on('direct:conversation', (payload: any) => {
+      if (payload?.conversation?.id) applyDirectConversation(qc, payload.conversation)
+    })
+    // direct:changed — всё остальное (фото профиля, файлы, реакции,
+    // «прочитано», удаление): перечитываем затронутое.
     socket.on('direct:changed', (payload: any) => {
       const id = payload?.conversationId
       qc.invalidateQueries({ queryKey: ['direct', 'list'] })
@@ -268,7 +285,6 @@ export function useSocket(authMarker: string | null) {
         qc.invalidateQueries({ queryKey: ['direct', 'conversation', id] })
         qc.invalidateQueries({ queryKey: ['direct', 'messages', id] })
       }
-      if (payload?.incoming) playDirectChime(id)
     })
 
     // Доска разработки: любое изменение (карточку двинули, задачу создали,
@@ -283,13 +299,14 @@ export function useSocket(authMarker: string | null) {
     // disconnect') — в этом случае socket.io НЕ переподключается сам, и
     // реалтайм умирал до перезагрузки страницы. Пробуем вернуться сами.
     socket.on('disconnect', (reason: string) => {
+      setSocketConnected(false)
       if (reason === 'io server disconnect') {
         setTimeout(() => { try { socket.connect() } catch { /* уже закрыт */ } }, 2000)
       }
     })
 
     socketRef.current = socket
-    return () => { socket.disconnect() }
+    return () => { setSocketConnected(false); socket.disconnect() }
   }, [authMarker, qc])
 
   return socketRef

@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui'
 import ContactAvatar from './ContactAvatar'
 import { duration, listTime } from './directTime'
 import { useAuthStore } from '@/store/auth.store'
+import { useSocketConnected } from '@/lib/socketState'
 
 const VIEWS: { key: DirectView; label: string }[] = [
   { key: 'all', label: 'Все' },
@@ -32,6 +33,7 @@ export default function ConversationList({ selectedId, onSelect }: { selectedId:
     const t = setInterval(() => tick(x => x + 1), 30_000)
     return () => clearInterval(t)
   }, [])
+  const live = useSocketConnected()
 
   const { data: counts } = useQuery({
     queryKey: ['direct', 'counts', debounced],
@@ -48,7 +50,8 @@ export default function ConversationList({ selectedId, onSelect }: { selectedId:
       return loaded < last.total ? loaded : undefined
     },
     placeholderData: keepPreviousData,
-    refetchInterval: 60_000,
+    // Пока вебсокет на связи, список обновляется событиями; без него — опрос.
+    refetchInterval: live ? 60_000 : 10_000,
   })
   const items = list.data?.pages.flatMap(p => p.items) ?? []
 
@@ -122,6 +125,7 @@ function Row({ c, active, onSelect }: { c: DirectConversation; active: boolean; 
       ? (last.author.id === me ? 'Вы: ' : `${last.author.name.split(' ')[0]}: `)
       : 'Instagram: '
   const waitingMs = c.waitingSince ? Date.now() - new Date(c.waitingSince).getTime() : 0
+  const viewers = c.viewers.filter(v => v.id !== me)
   return (
     <li>
       <button
@@ -157,16 +161,16 @@ function Row({ c, active, onSelect }: { c: DirectConversation; active: boolean; 
               </span>
             )}
           </span>
-          {(c.waitingSince || c.viewers.length > 0) && (
+          {(c.waitingSince || viewers.length > 0) && (
             <span className="mt-1 flex flex-wrap items-center gap-1.5">
               {c.waitingSince && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                   ждёт ответа {duration(waitingMs)}
                 </span>
               )}
-              {c.viewers.length > 0 && (
+              {viewers.length > 0 && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-surface-500">
-                  <Eye size={12} /> {c.viewers.map(v => v.name.split(' ')[0]).join(', ')}
+                  <Eye size={12} /> {viewers.map(v => v.name.split(' ')[0]).join(', ')}
                 </span>
               )}
             </span>

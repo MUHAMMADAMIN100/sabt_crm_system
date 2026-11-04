@@ -39,17 +39,35 @@ export class DirectMessagesQueryDto extends CacheBustQuery {
 export class DirectSendTextDto {
   @IsString() @MinLength(1) @MaxLength(MAX_COMPOSE_CHARS)
   text: string;
+
+  /** Метка временного пузыря на странице: им ответ заменит «отправляется». */
+  @IsOptional() @IsString() @MaxLength(64)
+  clientId?: string;
 }
 
 /** Подпись к файлу — необязательна. */
 export class DirectSendFileDto {
   @IsOptional() @IsString() @MaxLength(MAX_COMPOSE_CHARS)
   text?: string;
+
+  /** Метка временного пузыря на странице: им ответ заменит «отправляется». */
+  @IsOptional() @IsString() @MaxLength(64)
+  clientId?: string;
+}
+
+export class DirectSendVoiceDto {
+  /** Метка временного пузыря на странице: им ответ заменит «отправляется». */
+  @IsOptional() @IsString() @MaxLength(64)
+  clientId?: string;
 }
 
 export class DirectNoteDto {
   @IsString() @MinLength(1) @MaxLength(2000)
   text: string;
+
+  /** Метка временного пузыря на странице: им ответ заменит «отправляется». */
+  @IsOptional() @IsString() @MaxLength(64)
+  clientId?: string;
 }
 
 export class DirectStatsQueryDto extends CacheBustQuery {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -16,7 +16,8 @@ type Tab = 'chats' | 'speed'
 /**
  * «Директ» — переписка Instagram аккаунта агентства (04.11.2026).
  * Чат общий: видят все с доступом к Базе клиентов, отвечает любой.
- * Адрес чата — /direct?c=<id>: по нему ведут уведомления.
+ * Окно на весь экран (Layout снимает поля); на телефоне открытый чат — без
+ * нижней панели и без шапки страницы. Адрес чата — /direct?c=<id>.
  */
 export default function DirectPage() {
   const [params, setParams] = useSearchParams()
@@ -26,9 +27,18 @@ export default function DirectPage() {
   const isTop = role === 'admin' || role === 'founder'
   const [sound, setSound] = useState(directSoundEnabled())
   const [showConnection, setShowConnection] = useState(false)
+  const panel = useRef<HTMLDivElement>(null)
 
   const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, refetchInterval: 120_000 })
   const connected = status?.connected ?? true
+
+  // Панель подключения закрывается кликом мимо неё.
+  useEffect(() => {
+    if (!showConnection) return
+    const onDown = (e: MouseEvent) => { if (panel.current && !panel.current.contains(e.target as Node)) setShowConnection(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showConnection])
 
   const go = (next: { c?: string | null; tab?: Tab }) => {
     const p = new URLSearchParams(params)
@@ -44,74 +54,88 @@ export default function DirectPage() {
     if (next) playDirectChime()
   }
 
+  // На телефоне открытый чат занимает весь экран — шапка страницы прячется.
+  const hideOnPhone = selected && tab === 'chats' ? 'hidden lg:flex' : 'flex'
+
   return (
-    <div className="flex h-[calc(100dvh-56px-7rem)] min-h-[480px] flex-col gap-3 lg:h-[calc(100dvh-56px-3rem)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Директ</h1>
-          <p className="mt-0.5 text-sm text-surface-500 dark:text-surface-400">
-            {status?.account ? <>Instagram <b className="font-medium text-surface-700 dark:text-surface-200">@{status.account}</b> · общий чат команды продаж</> : 'Переписка Instagram в CRM'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-surface-900">
+      {/* Тонкая шапка: название, вкладки, звук, подключение */}
+      <div ref={panel} className={clsx('relative z-20 items-center gap-2 border-b border-surface-200 px-3 py-1.5 dark:border-surface-700 sm:px-4', hideOnPhone)}>
+        <MessageCircle size={17} className="shrink-0 text-surface-500" aria-hidden />
+        <h1 className="text-[15px] font-semibold text-surface-900 dark:text-white">Директ</h1>
+        {status?.account && (
+          <span className="hidden min-w-0 truncate text-xs text-surface-500 sm:inline">
+            Instagram <b className="font-medium text-surface-700 dark:text-surface-200">@{status.account}</b> · общий чат команды продаж
+          </span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700" role="tablist">
             {([['chats', 'Чаты'], ['speed', 'Скорость ответа']] as [Tab, string][]).map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => go({ tab: key })}
-                className={clsx('px-3 py-1.5 text-sm font-medium transition-colors',
+                className={clsx('px-2.5 py-1 text-xs font-medium transition-colors',
                   tab === key ? 'bg-primary-600 text-white' : 'bg-surface-50 text-surface-600 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-300')}>
                 {label}
               </button>
             ))}
           </div>
-          <button type="button" onClick={toggleSound} className="btn-ghost !p-2" aria-pressed={sound}
+          <button type="button" onClick={toggleSound} className="btn-ghost !p-1.5" aria-pressed={sound}
             title={sound ? 'Звук новых сообщений включён' : 'Звук новых сообщений выключен'} aria-label="Звук новых сообщений">
-            {sound ? <Bell size={18} /> : <BellOff size={18} />}
+            {sound ? <Bell size={17} /> : <BellOff size={17} />}
           </button>
           {isTop && status && (
-            <button type="button" onClick={() => setShowConnection(v => !v)} className={clsx('btn-ghost !p-2', showConnection && 'bg-surface-100 dark:bg-surface-700')}
-              aria-pressed={showConnection} title="Подключение Instagram" aria-label="Подключение Instagram">
-              <Settings2 size={18} />
+            <button type="button" onClick={() => setShowConnection(v => !v)} className={clsx('btn-ghost !p-1.5', showConnection && 'bg-surface-100 dark:bg-surface-700')}
+              aria-pressed={showConnection} aria-expanded={showConnection} title="Подключение Instagram" aria-label="Подключение Instagram">
+              <Settings2 size={17} />
             </button>
           )}
         </div>
+        {isTop && showConnection && status && (
+          <div className="absolute right-2 top-full mt-1 max-h-[75vh] w-[min(600px,calc(100vw-1rem))] overflow-y-auto rounded-xl shadow-modal">
+            <ConnectionPanel status={status} />
+          </div>
+        )}
       </div>
 
-      {status?.tokenInvalid && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-          Instagram не принимает ключ доступа — сообщения из CRM не уходят. {isTop ? 'Сгенерируйте новый маркер в кабинете Meta и замените INSTAGRAM_ACCESS_TOKEN в Railway.' : 'Сообщите администратору.'}
-        </div>
-      )}
-      {status && !status.connected && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-          Instagram ещё не подключён к CRM. {isTop ? 'Нажмите на шестерёнку справа — там видно, чего не хватает.' : 'Как только администратор его подключит, сюда начнут приходить сообщения клиентов.'}
-        </div>
-      )}
-      {isTop && status && status.connected && status.storagePersistent === false && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-          Файлы переписки хранятся временно и пропадут при следующей выкладке — подключите том Railway на /app/uploads.
-        </div>
-      )}
-      {isTop && showConnection && status && <ConnectionPanel status={status} />}
+      {/* Предупреждения — тонкими полосами, чтобы не съедать место чата */}
+      <div className={clsx('flex-col', hideOnPhone)}>
+        {status?.tokenInvalid && (
+          <div className="border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            Instagram не принимает ключ доступа — сообщения из CRM не уходят. {isTop ? 'Сгенерируйте новый маркер в кабинете Meta и замените INSTAGRAM_ACCESS_TOKEN в Railway.' : 'Сообщите администратору.'}
+          </div>
+        )}
+        {status && !status.connected && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+            Instagram ещё не подключён к CRM. {isTop ? 'Нажмите на шестерёнку справа — там видно, чего не хватает.' : 'Как только администратор его подключит, сюда начнут приходить сообщения клиентов.'}
+          </div>
+        )}
+        {isTop && status && status.connected && status.storagePersistent === false && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+            Файлы переписки хранятся временно и пропадут при следующей выкладке — подключите том Railway на /app/uploads.
+          </div>
+        )}
+      </div>
 
-      {tab === 'speed' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto"><SpeedView /></div>
-      ) : (
-        <div className="card grid min-h-0 flex-1 overflow-hidden p-0 lg:grid-cols-[340px_1fr]">
-          <div className={clsx('min-h-0 border-surface-200 dark:border-surface-700 lg:border-r', selected ? 'hidden lg:block' : 'block')}>
-            <ConversationList selectedId={selected} onSelect={id => go({ c: id })} />
+      <div className="min-h-0 flex-1">
+        {tab === 'speed' ? (
+          <div className="h-full overflow-y-auto p-4 lg:p-6"><SpeedView /></div>
+        ) : (
+          <div className="grid h-full min-h-0 lg:grid-cols-[minmax(300px,360px)_1fr]">
+            <div className={clsx('min-h-0 border-surface-200 dark:border-surface-700 lg:border-r', selected ? 'hidden lg:block' : 'block')}>
+              <ConversationList selectedId={selected} onSelect={id => go({ c: id })} />
+            </div>
+            <div className={clsx('min-h-0', selected ? 'block' : 'hidden lg:block')}>
+              {selected ? (
+                <ChatPane key={selected} id={selected} connected={connected} onBack={() => go({ c: null })} />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-surface-500">
+                  <MessageCircle size={32} className="text-surface-300" />
+                  Выберите чат слева
+                </div>
+              )}
+            </div>
           </div>
-          <div className={clsx('min-h-0', selected ? 'block' : 'hidden lg:block')}>
-            {selected ? (
-              <ChatPane key={selected} id={selected} connected={connected} onBack={() => go({ c: null })} />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-surface-500">
-                <MessageCircle size={32} className="text-surface-300" />
-                Выберите чат слева
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
