@@ -169,6 +169,13 @@ export class NotificationsService implements OnModuleInit {
     return { message: 'All marked as read' };
   }
 
+  /** Прочитаны все уведомления сотрудника с этой ссылкой — например, он
+   *  открыл чат «Директа», о котором ему сообщали. Возвращает, сколько было. */
+  async markReadByLink(userId: string, link: string): Promise<number> {
+    const res = await this.repo.update({ userId, link, isRead: false }, { isRead: true });
+    return res.affected ?? 0;
+  }
+
   async remove(id: string, userId: string) {
     await this.repo.delete({ id, userId });
     return { message: 'Deleted' };

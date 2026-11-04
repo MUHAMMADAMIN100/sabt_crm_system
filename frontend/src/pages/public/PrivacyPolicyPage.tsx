@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Mail, MapPin, Phone, ShieldCheck } from 'lucide-react'
 
-const UPDATED_AT = '28 октября 2026 г.'
+const UPDATED_AT = '4 ноября 2026 г.'
 
 const SECTIONS = [
   { id: 'operator',    title: 'Кто мы и на что распространяется политика' },
@@ -172,7 +172,19 @@ export default function PrivacyPolicyPage() {
                 те данные клиента, которые действительно нужны для работы.
               </p>
 
-              <p className="font-medium text-surface-800 dark:text-surface-100">2.5. Технические данные</p>
+              <p className="font-medium text-surface-800 dark:text-surface-100">2.5. Переписка в Instagram (раздел «Директ»)</p>
+              <p>
+                Если человек пишет в Instagram-аккаунт агентства, сообщение через официальный
+                API Meta попадает в CRM, чтобы сотрудники отдела продаж могли ответить.
+                Мы получаем и храним: идентификатор собеседника в Instagram, его имя, @username
+                и фото профиля, текст сообщений, присланные фото, видео, голосовые и файлы,
+                время сообщений, реакции и отметки о прочтении, а также ответы сотрудников.
+                Эти данные видят только сотрудники с доступом к разделу и используются только
+                для ответа на обращение и ведения клиента. Мы не используем их для рекламы
+                и не продаём.
+              </p>
+
+              <p className="font-medium text-surface-800 dark:text-surface-100">2.6. Технические данные</p>
               <p>
                 IP-адрес, тип устройства, браузера и операционной системы (User-Agent),
                 дата и время входа, действия в системе, идентификаторы сессий и журналы
@@ -334,6 +346,16 @@ export default function PrivacyPolicyPage() {
               <p>
                 После удаления аккаунта доступ к системе прекращается. Резервные копии
                 перезаписываются в течение 30 дней.
+              </p>
+              <p id="data-deletion" className="scroll-mt-24 font-medium text-surface-800 dark:text-surface-100">
+                Удаление переписки Instagram
+              </p>
+              <p>
+                Если вы писали нам в Instagram и хотите, чтобы ваша переписка, имя, фото профиля
+                и присланные файлы были удалены из CRM, напишите на info@webrand.tj или в Директ
+                аккаунта @webrand.tj с просьбой «Удалить мои данные» и укажите свой @username.
+                Мы удалим данные в течение 30 дней и подтвердим удаление ответом. Сообщение,
+                удалённое вами в Instagram, удаляется из CRM автоматически.
               </p>
             </Section>
 

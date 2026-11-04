@@ -211,6 +211,11 @@ export default function BottomNav() {
           {isActive && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
           <span className="relative">
             <i.icon size={20} />
+            {!!i.badge && (
+              <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-white text-surface-900 text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
+                {i.badge > 9 ? '9+' : i.badge}
+              </span>
+            )}
             {i.to === '/tasks' && overdue > 0 && (
               <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
                 {overdue > 9 ? '9+' : overdue}

@@ -11,7 +11,8 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # su-exec — сбросить привилегии до node после фикса прав на смонтированный volume
-RUN apk add --no-cache su-exec
+# ffmpeg — переводит голосовые из браузера в AAC для Instagram («Директ»)
+RUN apk add --no-cache su-exec ffmpeg
 
 # Install only production deps
 COPY package*.json ./

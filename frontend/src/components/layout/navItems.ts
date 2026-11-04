@@ -7,8 +7,9 @@ import {
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
   Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Sparkles, Code2, UserCheck,
-  FileText, User as UserIcon,
+  FileText, User as UserIcon, MessageCircle,
 } from 'lucide-react'
+import { useDirectUnread } from '@/hooks/useDirectUnread'
 
 export interface NavItem {
   to: string
@@ -16,6 +17,8 @@ export interface NavItem {
   label: string
   permission: Permission
   exact?: boolean
+  /** Число в кружке у пункта (непрочитанные чаты «Директа»). */
+  badge?: number
 }
 
 /** Пункты меню и правила видимости — ОДИН источник для бокового меню и для
@@ -27,6 +30,8 @@ export function useNavItems(): NavItem[] {
 
   const role = user?.role
   const secondaryRole = user?.secondaryRole
+  // Хук — до раннего выхода: порядок хуков не должен зависеть от отпуска.
+  const directUnread = useDirectUnread()
   // В отпуске открыт только профиль (27.10.2026).
   if (user?.vacation) return [{ to: '/profile', icon: UserIcon, label: 'Профиль', permission: 'dashboard' }]
   const isTopExec = role === 'founder'
@@ -37,6 +42,8 @@ export function useNavItems(): NavItem[] {
   // и снятием запрета в canAccessRoute.
   const items: NavItem[] = [
     { to: '/',                icon: LayoutDashboard, label: t('nav.dashboard'), permission: 'dashboard', exact: true },
+    // «Директ» — переписка Instagram (04.11.2026). Доступ как у Базы клиентов.
+    { to: '/direct',          icon: MessageCircle,   label: 'Директ',            permission: 'clients.view', badge: directUnread },
     { to: '/finance',         icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
     { to: '/smm',             icon: Megaphone,       label: 'СММ',               permission: 'dashboard' },
     { to: '/dev',             icon: Code2,           label: 'Разработка',        permission: 'dashboard' },

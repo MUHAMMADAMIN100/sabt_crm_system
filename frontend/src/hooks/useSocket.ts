@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth.store'
 import { tokenStore } from '@/lib/api'
+import { playDirectChime } from '@/lib/directSound'
 
 /**
  * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
@@ -254,6 +255,20 @@ export function useSocket(authMarker: string | null) {
       qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
       qc.refetchQueries({ queryKey: ['clients'], type: 'active' })
       qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
+    })
+
+    // «Директ»: чат изменился (новое сообщение, ответ, статус, кто в чате).
+    // Сервер шлёт это только тем, у кого есть доступ к переписке.
+    socket.on('direct:changed', (payload: any) => {
+      const id = payload?.conversationId
+      qc.invalidateQueries({ queryKey: ['direct', 'list'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'counts'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'unread'] })
+      if (id) {
+        qc.invalidateQueries({ queryKey: ['direct', 'conversation', id] })
+        qc.invalidateQueries({ queryKey: ['direct', 'messages', id] })
+      }
+      if (payload?.incoming) playDirectChime(id)
     })
 
     // Доска разработки: любое изменение (карточку двинули, задачу создали,

@@ -491,6 +491,8 @@ export function canAccessRoute(
   if (route === '/team-activity') return role === 'founder' || role === 'admin'
   // «Тест новый» — черновой раздел: основатель и админ.
   if (route === '/test-new') return role === 'founder' || role === 'admin'
+  // «Директ» (переписка Instagram) — как База клиентов: по гранту clients.view.
+  if (route === '/direct' || route.startsWith('/direct/')) return userCan(u, 'clients.view')
   // Финансы и все подстраницы — по гранту finance.manage.
   if (route === '/finance' || route.startsWith('/finance/')) return userCan(u, 'finance.manage')
   // Справочники организатора съёмок (клиенты/модели/места).

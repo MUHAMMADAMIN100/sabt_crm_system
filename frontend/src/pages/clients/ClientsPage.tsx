@@ -833,7 +833,10 @@ export default function ClientsPage() {
   )
 }
 
-function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
+export function ClientForm({ initial: editing, prefill, title: customTitle, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
+  // prefill — заготовка НОВОГО клиента (например, из чата «Директа»): поля
+  // заполнены, но это не редактирование — заголовок и кнопка как у нового.
+  const initial = editing || prefill
   // Роль — для скрытия статуса «Неизвестно» у МП по СММ (статус dev-направления).
   const formRole = useAuthStore(s => s.user?.role)
   // Старые лиды могли иметь contactInfo одной строкой — раскладываем
@@ -916,7 +919,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     >
       <Plus size={14} /> В онбординг
     </button>
-  ) : (!initial && onSubmitWithOnboarding) ? (
+  ) : (!editing && onSubmitWithOnboarding) ? (
     <button
       type="button"
       onClick={handleSubmit(submitWithOnb)}
@@ -931,7 +934,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
     <Modal
       open
       onClose={onClose}
-      title={initial ? 'Редактировать клиента' : 'Новый клиент'}
+      title={customTitle || (editing ? 'Редактировать клиента' : 'Новый клиент')}
       size="xl"
       titleAction={onboardingAction}
     >
@@ -1111,7 +1114,7 @@ function ClientForm({ initial, onClose, onSubmit, onSubmitWithOnboarding, loadin
         <div className="flex flex-wrap gap-2 justify-end pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">Отмена</button>
           <button type="submit" disabled={loading} className="btn-primary">
-            {loading ? 'Сохранение...' : (initial ? 'Сохранить' : 'Добавить')}
+            {loading ? 'Сохранение...' : (editing ? 'Сохранить' : 'Добавить')}
           </button>
         </div>
       </form>

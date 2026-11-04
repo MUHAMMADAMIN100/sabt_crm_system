@@ -171,6 +171,9 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: bootstrapLogger,
+    // Сырое тело запроса нужно вебхуку Instagram: Meta подписывает именно
+    // байты тела, а разобранный JSON подпись уже не сойдётся.
+    rawBody: true,
   });
 
   // Railway/Vercel ставят reverse proxy перед приложением. Один доверенный
@@ -231,6 +234,10 @@ async function bootstrap() {
   //  - X-Content-Type-Options: nosniff — браузер не угадает MIME
   //  - Content-Disposition: attachment для всего, что НЕ картинка/видео
   //    (защита от stored-XSS через .html / .svg / .js)
+  // Файлы «Директа» лежат в uploads/direct, но отдаются только своими
+  // ручками (подписанная ссылка или файл, отправленный в Instagram).
+  // Статикой их не раздаём: иначе знающий имя открыл бы фото клиента.
+  app.use('/uploads/direct', (_req, res) => { res.status(404).end(); });
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads',
     setHeaders: (res, filePath) => {

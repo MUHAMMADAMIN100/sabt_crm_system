@@ -34,6 +34,10 @@ export enum NotificationType {
   TOO_MANY_PM_REVIEWS     = 'too_many_pm_reviews',
   /** Напоминание о дне рождения сотрудника. */
   BIRTHDAY                = 'birthday',
+  /** «Директ»: написал новый человек (миграция 1822000000000). */
+  DIRECT_NEW_CHAT         = 'direct_new_chat',
+  /** «Директ»: новое сообщение в чате, который уже прочитали. */
+  DIRECT_MESSAGE          = 'direct_message',
 }
 
 @Entity('notifications')

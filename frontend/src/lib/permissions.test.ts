@@ -102,3 +102,19 @@ describe('раздел «СММ» — менеджеры по продажам',
     }
   })
 })
+
+// «Директ» — переписка Instagram (04.11.2026): доступ как у Базы клиентов.
+describe('раздел «Директ»', () => {
+  it('менеджеры продаж и руководство — да, остальные — нет', () => {
+    for (const role of ['sales_manager_smm', 'sales_manager_dev', 'admin', 'founder'] as UserRole[]) {
+      expect(canAccessRoute(role, '/direct')).toBe(true)
+    }
+    for (const role of ['designer', 'developer', 'smm_specialist', 'producer'] as UserRole[]) {
+      expect(canAccessRoute(role, '/direct')).toBe(false)
+    }
+  })
+  it('личный доступ к клиентам открывает, запрет — закрывает', () => {
+    expect(canAccessRoute('designer', '/direct', null, ['clients.view'], [])).toBe(true)
+    expect(canAccessRoute('sales_manager_smm', '/direct', null, [], ['clients.view'])).toBe(false)
+  })
+})

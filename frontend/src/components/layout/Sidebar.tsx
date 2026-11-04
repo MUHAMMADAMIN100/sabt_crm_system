@@ -129,7 +129,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   const FOUNDER_CORE = new Set<string>([
-    '/', '/finance', '/smm', '/dev', '/calendar',
+    '/', '/direct', '/finance', '/smm', '/dev', '/calendar',
     '/employees', '/clients', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
@@ -364,13 +364,24 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                 }
                 title={!open ? item.label : undefined}
               >
-                <item.icon size={18} className="shrink-0" />
+                <span className="relative shrink-0 flex">
+                  <item.icon size={18} className="shrink-0" />
+                  {/* Свёрнутое меню: число не помещается — точка на значке. */}
+                  {!open && !!item.badge && (
+                    <span className="hidden lg:block absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[rgb(var(--sidebar-fg))] border-2 border-[rgb(var(--sidebar-bg))]" />
+                  )}
+                </span>
                 <span className={clsx(
                   'truncate transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden whitespace-nowrap',
                   open ? 'max-w-[200px] opacity-100' : 'max-w-0 opacity-0',
                 )}>
                   {item.label}
                 </span>
+                {open && !!item.badge && (
+                  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-[rgb(var(--sidebar-fg))] text-[rgb(var(--sidebar-bg))] text-[11px] font-bold flex items-center justify-center">
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </span>
+                )}
               </NavLink>
             </li>
           )})}

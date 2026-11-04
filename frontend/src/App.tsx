@@ -106,6 +106,7 @@ const ArchivePage       = lazy(() => import('@/pages/archive/ArchivePage'))
 const FilesPage         = lazy(() => import('@/pages/files/FilesPage'))
 const AiChatPage        = lazy(() => import('@/pages/ai/AiChatPage'))
 const ClientsPage       = lazy(() => import('@/pages/clients/ClientsPage'))
+const DirectPage        = lazy(() => import('@/pages/direct/DirectPage'))
 const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const TestNewPage       = lazy(() => import('@/pages/test-new/TestNewPage'))
@@ -252,6 +253,7 @@ export default function App() {
           <Route path="files" element={<RoleGuard><FilesPage /></RoleGuard>} />
           <Route path="ai" element={<RoleGuard><AiChatPage /></RoleGuard>} />
           <Route path="clients" element={<RoleGuard><ClientsPage /></RoleGuard>} />
+          <Route path="direct" element={<RoleGuard><DirectPage /></RoleGuard>} />
           <Route path="onboarding" element={<RoleGuard><OnboardingPage /></RoleGuard>} />
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="test-new" element={<RoleGuard><TestNewPage /></RoleGuard>} />
