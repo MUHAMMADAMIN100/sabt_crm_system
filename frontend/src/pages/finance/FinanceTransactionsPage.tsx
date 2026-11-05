@@ -349,6 +349,8 @@ export default function FinanceTransactionsPage() {
  *  Клик по строке — подробности, «+» в дне — новая операция этой датой,
  *  длинные дни сворачиваются до 5 строк («ещё N»). */
 const CAL_DAY_LIMIT = 5;
+const WD_LOW = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+const MON_GEN_TX = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, renderStatusControl, onMoveItem, canMoveItem, dayBalance, highlightIso }: {
   ym: string; txns: any[]; onAdd: (iso: string) => void;
   /** Скрыть кнопку «＋ добавить операцию» в дне — для read-only календарей
@@ -403,6 +405,9 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   // Развёрнутость длинных дней; ключ — полная дата, месяцы не пересекаются.
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
   const toggleDay = (iso: string) => setOpenDays((s) => ({ ...s, [iso]: !s[iso] }));
+  // Телефон: выбранный день компактной сетки (по умолчанию — сегодня).
+  const narrow = useNarrow();
+  const [selIso, setSelIso] = useState<string | null>(null);
 
   const byDay = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -450,6 +455,82 @@ export function TxCalendar({ ym, txns, onAdd, hideAdd, planMode, onEditItem, ren
   const net = planMode
     ? (totals.inc + totals.plannedInc) - (totals.exp + totals.plannedExp)
     : totals.inc - totals.exp;
+
+  // ── Телефон (вариант А, 05.11.2026) ─────────────────────────────────
+  // Сетка месяца с точками, как в «Планировании», ниже — операции
+  // выбранного дня. Широкий календарь (760 px) показывал три дня из семи.
+  if (narrow) {
+    const firstWithOps = cells.find((c) => c && (byDay.get(c) ?? []).length) ?? `${ym}-01`;
+    const sel = selIso && selIso.slice(0, 7) === ym ? selIso : (today.slice(0, 7) === ym ? today : firstWithOps);
+    const list = byDay.get(sel) ?? [];
+    const dt = totals.day.get(sel);
+    const dd = Number(sel.slice(8));
+    const wd = WD_LOW[(new Date(y, m - 1, dd).getDay() + 6) % 7];
+    return (
+      <>
+        <div className="tx-mcal">
+          <div className="tx-mcal-sums">
+            <span className="pos">+{moneyBare(totals.inc)}</span>
+            <span className="neg">−{moneyBare(totals.exp)}</span>
+            <span className="muted">итог {money(net, true)}</span>
+          </div>
+          <div className="pln-mini">
+            <div className="pln-mini-head">{WD_LOW.map((d) => <span key={d}>{d}</span>)}</div>
+            <div className="pln-mini-body">
+              {cells.map((iso, i) => {
+                if (!iso) return <span key={i} className="pln-mini-cell off" />;
+                const l = (byDay.get(iso) ?? []).filter((t) => t.status !== 'cancelled');
+                const hasInc = l.some((t) => t.type === 'income');
+                const hasExp = l.some((t) => t.type === 'expense');
+                const hasMove = l.some((t) => t.type === 'transfer' || t.type === 'saving');
+                return (
+                  <button key={iso} type="button" aria-pressed={iso === sel}
+                    className={'pln-mini-cell' + (iso === today ? ' today' : '') + (iso < today ? ' past' : '') + (iso === sel ? ' sel' : '')}
+                    onClick={() => setSelIso(iso)}
+                    aria-label={`${Number(iso.slice(8))} ${MON_GEN_TX[m - 1]}${l.length ? `, ${pluralRu(l.length, 'операция', 'операции', 'операций')}` : ''}`}>
+                    <span className="n">{Number(iso.slice(8))}</span>
+                    <span className="dots">{hasInc && <i className="inc" />}{hasExp && <i className="exp" />}{hasMove && <i className="mov" />}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="tx-mday-head">
+            <b>{dd} {MON_GEN_TX[m - 1]}, {wd}</b>
+            {dt && (dt.inc > 0 || dt.exp > 0) && (
+              <span>
+                {dt.inc > 0 && <span className="pos">+{moneyBare(dt.inc)}</span>}
+                {dt.inc > 0 && dt.exp > 0 && ' · '}
+                {dt.exp > 0 && <span className="neg">−{moneyBare(dt.exp)}</span>}
+              </span>
+            )}
+          </div>
+          {list.length === 0 && <p className="mini muted tx-mday-empty">В этот день операций нет.</p>}
+          {list.map((t) => (
+            <button key={t.id} type="button" aria-haspopup="dialog"
+              className={'tx-mday-op ' + t.type + (t.status === 'cancelled' ? ' cancelled' : '')}
+              style={t.done ? { opacity: 0.45 } : undefined}
+              onClick={() => setDetail(t)}>
+              <i className="d" />
+              <span className="t">{t.comment || t.categoryName || TYPE_LABEL[t.type]}</span>
+              {isImportedArchive(t) && <ImportedArchiveBadge compact />}
+              {String(t.date || '').slice(0, 10) > today && <span className="plan">план</span>}
+              <span className={'a ' + (t.type === 'income' ? 'pos' : t.type === 'expense' ? 'neg' : 'muted')}>
+                {t.type === 'expense' ? '−' : t.type === 'income' ? '+' : ''}{moneyBare(t.amount)}
+              </span>
+            </button>
+          ))}
+          {!hideAdd && (
+            <button type="button" className="tx-mday-add" onClick={() => onAdd(sel)}>
+              + Операция на {dd} {MON_GEN_TX[m - 1]}
+            </button>
+          )}
+        </div>
+        {detail && <CalendarItemModal item={detail} planMode={planMode} onEdit={onEditItem}
+          renderStatusControl={renderStatusControl} onClose={() => setDetail(null)} />}
+      </>
+    );
+  }
 
   return (
     <>
