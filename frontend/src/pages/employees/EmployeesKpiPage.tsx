@@ -59,7 +59,8 @@ export default function EmployeesKpiPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="page-title mr-auto">KPI сотрудников</h1>
-        <div className="flex flex-wrap gap-1.5">
+        {/* На телефоне — сетка 2×2: в строку «Прошлый месяц» уходила одна вниз. */}
+        <div className="flex flex-wrap gap-1.5 max-sm:grid max-sm:w-full max-sm:grid-cols-2">
           {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
             <button key={p} type="button" onClick={() => setPeriod(p)}
               className={clsx('h-9 lg:h-[30px] px-3 rounded-lg text-[12.5px] font-semibold transition-colors',
@@ -74,17 +75,17 @@ export default function EmployeesKpiPage() {
       {isLoading ? <PageLoader /> : !rows.length ? <EmptyState title="KPI пока не считается ни у кого" /> : (
         <>
           <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
-            <div className="card !px-4 !py-3">
+            <div className="card !px-3 sm:!px-4 !py-3">
               <div className="text-xl sm:text-[22px] font-extrabold tabular-nums text-surface-900 dark:text-surface-100">{avg === null ? '—' : `${avg} %`}</div>
-              <div className="text-xs text-surface-400 dark:text-surface-500">средний KPI команды</div>
+              <div className="text-[11px] sm:text-xs leading-snug text-surface-400 dark:text-surface-500">средний KPI команды</div>
             </div>
-            <div className="card !px-4 !py-3 !border-green-500/35">
+            <div className="card !px-3 sm:!px-4 !py-3 !border-green-500/35">
               <div className="text-xl sm:text-[22px] font-extrabold tabular-nums text-green-600 dark:text-green-400">{full}</div>
-              <div className="text-xs text-surface-400 dark:text-surface-500">выполнили план (100 %)</div>
+              <div className="text-[11px] sm:text-xs leading-snug text-surface-400 dark:text-surface-500">выполнили план (100&nbsp;%)</div>
             </div>
-            <div className="card !px-4 !py-3 !border-red-500/35">
+            <div className="card !px-3 sm:!px-4 !py-3 !border-red-500/35">
               <div className="text-xl sm:text-[22px] font-extrabold tabular-nums text-red-500 dark:text-red-400">{low}</div>
-              <div className="text-xs text-surface-400 dark:text-surface-500">ниже 50 %</div>
+              <div className="text-[11px] sm:text-xs leading-snug text-surface-400 dark:text-surface-500">ниже 50&nbsp;%</div>
             </div>
           </div>
 
@@ -102,7 +103,7 @@ export default function EmployeesKpiPage() {
                   <span className="flex items-center gap-2.5 min-w-0">
                     <Avatar name={r.name} src={r.avatar} size={32} />
                     <span className="flex flex-col min-w-0">
-                      <b className={clsx('text-sm font-semibold truncate', r.percent === null ? 'text-surface-500 dark:text-surface-400' : 'text-surface-900 dark:text-surface-100')}>{r.name}</b>
+                      <b className={clsx('text-sm font-semibold break-words max-lg:line-clamp-2 lg:truncate', r.percent === null ? 'text-surface-500 dark:text-surface-400' : 'text-surface-900 dark:text-surface-100')}>{r.name}</b>
                       <span className="lg:hidden text-xs text-surface-400 dark:text-surface-500 truncate">{r.position}</span>
                     </span>
                   </span>
@@ -119,7 +120,8 @@ export default function EmployeesKpiPage() {
                   </b>
                 </>
               )
-              const cls = 'grid grid-cols-[32px_minmax(0,1fr)_56px] lg:grid-cols-[44px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.6fr)_64px] items-center gap-x-4 gap-y-2 px-4 lg:px-[18px] py-3 lg:py-2.5 border-t border-surface-100 dark:border-surface-700/60'
+              // На телефоне колонки уже, а имя — в две строки: иначе «Бобоев Аз…».
+              const cls = 'grid grid-cols-[22px_minmax(0,1fr)_48px] sm:grid-cols-[32px_minmax(0,1fr)_56px] lg:grid-cols-[44px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.6fr)_64px] items-center gap-x-3 sm:gap-x-4 gap-y-2 px-3 sm:px-4 lg:px-[18px] py-3 lg:py-2.5 border-t border-surface-100 dark:border-surface-700/60'
               return r.empId
                 ? <Link key={r.userId} to={`/employees/${r.empId}`} className={clsx(cls, 'hover:bg-surface-100/60 dark:hover:bg-surface-700/40 transition-colors')}>{body}</Link>
                 : <div key={r.userId} className={cls}>{body}</div>

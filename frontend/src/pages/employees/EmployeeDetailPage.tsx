@@ -151,11 +151,16 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="space-y-5">
+      {/* В шапке — имя сотрудника: на телефоне карточка с фото ниже KPI,
+          и без имени сверху было непонятно, чья это страница. */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+        <button type="button" onClick={() => navigate(-1)} aria-label="Назад" className="p-2.5 -ml-1 shrink-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
           <ArrowLeft size={18} />
         </button>
-        <h1 className="page-title">{t('employees.title')}</h1>
+        <div className="min-w-0">
+          {emp?.fullName && <p className="text-xs text-surface-500 dark:text-surface-400">{t('employees.title')}</p>}
+          <h1 className="page-title truncate">{emp?.fullName || t('employees.title')}</h1>
+        </div>
       </div>
 
       {/* Wave 15: tab strip — обзор оставляем как было, остальные дают глубокую аналитику */}
@@ -365,8 +370,9 @@ export default function EmployeeDetailPage() {
                       </p>
                       <button
                         onClick={() => { setSalaryInput(String(emp.salary || 0)); setEditingSalary(true) }}
-                        className="p-1 hover:bg-surface-100 dark:hover:bg-surface-600 rounded text-surface-400 hover:text-primary-600"
-                        title="Изменить зарплату"
+                        type="button"
+                        className="p-2.5 -m-1.5 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-600 rounded text-surface-400 hover:text-primary-600"
+                        title="Изменить зарплату" aria-label="Изменить зарплату"
                       >
                         <Edit2 size={12} />
                       </button>
@@ -396,8 +402,8 @@ export default function EmployeeDetailPage() {
               <h3 className="font-semibold mb-2 text-surface-700 dark:text-surface-300 text-sm flex items-center gap-2">
                 <Clock size={15} className="text-primary-500" /> Сейчас работает над
               </h3>
-              <Link to={`/tasks/${currentTask.id}`} className="flex items-center gap-3 p-3 rounded-xl hover:bg-primary-100/50 dark:hover:bg-primary-900/20 transition-colors">
-                <div className="flex-1 min-w-0">
+              <Link to={`/tasks/${currentTask.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-3 rounded-xl hover:bg-primary-100/50 dark:hover:bg-primary-900/20 transition-colors">
+                <div className="min-w-0 flex-1 max-sm:basis-full">
                   <p className="text-sm font-medium text-surface-900 dark:text-surface-100">{currentTask.title}</p>
                   <p className="text-xs text-surface-400 dark:text-surface-500">{currentTask.project?.name}</p>
                 </div>
@@ -419,8 +425,8 @@ export default function EmployeeDetailPage() {
               </h3>
               <div className="space-y-1.5">
                 {overdueTasks.map((task: any) => (
-                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors">
-                    <div className="flex-1 min-w-0">
+                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-2.5 rounded-xl hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors">
+                    <div className="min-w-0 flex-1 max-sm:basis-full">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                         {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
@@ -447,8 +453,8 @@ export default function EmployeeDetailPage() {
               </h3>
               <div className="space-y-1.5">
                 {reviewTasks.map((task: any) => (
-                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-100/50 dark:hover:bg-surface-900/20 transition-colors">
-                    <div className="flex-1 min-w-0">
+                  <Link key={task.id} to={`/tasks/${task.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-2.5 rounded-xl hover:bg-surface-100/50 dark:hover:bg-surface-900/20 transition-colors">
+                    <div className="min-w-0 flex-1 max-sm:basis-full">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                         {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (
@@ -477,8 +483,8 @@ export default function EmployeeDetailPage() {
               ) : (
                 <div className="space-y-2">
                   {tasks.map((task: any) => (
-                    <Link key={task.id} to={`/tasks/${task.id}`} className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors">
-                      <div className="flex-1 min-w-0">
+                    <Link key={task.id} to={`/tasks/${task.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-3 rounded-xl hover:bg-surface-50 dark:hover:bg-surface-700/50 transition-colors">
+                      <div className="min-w-0 flex-1 max-sm:basis-full">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{task.title}</p>
                           {task.createdById && task.assigneeId && (task.createdById === task.assigneeId || task.createdBy?.name?.trim()) && (

@@ -389,26 +389,30 @@ export default function WeekTasks() {
     ? `${start.getDate()} — ${end.getDate()} ${MON[end.getMonth()]}`
     : `${start.getDate()} ${MON[start.getMonth()]} — ${end.getDate()} ${MON[end.getMonth()]}`
 
+  // На телефоне неделя со стрелками — первой строкой во всю ширину, кнопки
+  // переносятся ниже: в одну строку на 320 px «Повторить…» уезжала за край.
   const nav = (
-    <div className="flex items-center gap-2">
-      <button onClick={() => setOffset(o => o - 1)} aria-label="Прошлая неделя"
-        className="w-11 h-11 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
-        <ChevronLeft size={18} />
-      </button>
-      <span className="min-w-[164px] px-1 text-center text-[15px] font-bold whitespace-nowrap">{label}</span>
-      <button onClick={() => setOffset(o => o + 1)} aria-label="Следующая неделя"
-        className="w-11 h-11 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
-        <ChevronRight size={18} />
-      </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-2 max-sm:w-full">
+        <button type="button" onClick={() => setOffset(o => o - 1)} aria-label="Прошлая неделя"
+          className="w-11 h-11 shrink-0 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
+          <ChevronLeft size={18} />
+        </button>
+        <span className="min-w-[164px] max-sm:min-w-0 max-sm:flex-1 px-1 text-center text-[15px] font-bold whitespace-nowrap">{label}</span>
+        <button type="button" onClick={() => setOffset(o => o + 1)} aria-label="Следующая неделя"
+          className="w-11 h-11 shrink-0 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
+          <ChevronRight size={18} />
+        </button>
+      </div>
       {offset !== 0 && (
-        <button onClick={() => setOffset(0)}
-          className="min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-[13px] font-semibold text-surface-600 dark:text-surface-300">
+        <button type="button" onClick={() => setOffset(0)}
+          className="min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-[13px] font-semibold text-surface-600 dark:text-surface-300 max-sm:flex-1">
           Эта неделя
         </button>
       )}
-      <button onClick={repeatLastWeek} disabled={repeating}
+      <button type="button" onClick={repeatLastWeek} disabled={repeating}
         title="Скопировать задачи прошлой недели на эту"
-        className="min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-[13px] font-semibold text-surface-600 dark:text-surface-300 inline-flex items-center gap-2 disabled:opacity-50">
+        className="min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-[13px] font-semibold text-surface-600 dark:text-surface-300 inline-flex items-center justify-center gap-2 disabled:opacity-50 max-sm:flex-1">
         <RotateCcw size={15} />
         {repeating ? 'Копирую…' : 'Повторить прошлую неделю'}
       </button>
@@ -418,14 +422,16 @@ export default function WeekTasks() {
   const filters = (
     <div className={clsx('flex flex-wrap items-center gap-2', !narrow && 'ml-auto')}>
       <div role="group" aria-label="Кого показать"
-        className="inline-flex gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700">
+        className="inline-flex gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700 max-sm:grid max-sm:w-full max-sm:grid-cols-3">
         {([['all', 'Все', counts.all], ['late', 'С просрочкой', counts.late], ['free', 'Свободны', counts.free]] as const).map(([k, l, n]) => (
           <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
-            className={clsx('min-h-[36px] px-3 rounded-lg text-[12.5px] font-semibold whitespace-nowrap',
+            className={clsx('min-h-[36px] px-3 rounded-lg text-[12.5px] font-semibold whitespace-nowrap max-sm:px-1 max-sm:py-1 max-sm:text-[11.5px] max-sm:leading-tight',
               filter === k ? 'bg-surface-200 dark:bg-surface-700 text-surface-900 dark:text-white'
                 : k === 'late' ? 'text-red-600 dark:text-red-400'
                   : k === 'free' ? 'text-green-600 dark:text-green-400' : 'text-surface-500')}>
-            {l} · {n}
+            {/* На телефоне три кнопки в ряд по ~90 px: число — второй строкой. */}
+            <span className="max-sm:block">{l}</span><span className="max-sm:hidden"> · </span>
+            <span className="max-sm:block max-sm:text-[14px] max-sm:font-bold tabular-nums">{n}</span>
           </button>
         ))}
       </div>

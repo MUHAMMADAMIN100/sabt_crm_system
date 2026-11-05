@@ -216,14 +216,15 @@ export default function EmployeeKpiCard({
   // Переключатель периода нужен и когда данных нет — иначе из состояния
   // «нет данных» не выбраться на странице сотрудника.
   const periodSwitch = showPeriodSelector && (
-    <div className="flex gap-1">
+    // На телефоне — сетка 2×2: в строку «Прошлый месяц» сжималось в два этажа.
+    <div className="flex gap-1 max-sm:grid max-sm:w-full max-sm:grid-cols-2">
       {(['today', 'week', 'month', 'prev_month'] as KpiPeriod[]).map(p => (
         <button
           key={p}
           type="button"
           onClick={() => setInternalPeriod(p)}
           className={clsx(
-            'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+            'px-2.5 py-1 max-sm:py-2 rounded-md text-xs font-medium transition-colors',
             (externalPeriod ?? internalPeriod) === p
               ? 'bg-primary-600 text-white'
               : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',

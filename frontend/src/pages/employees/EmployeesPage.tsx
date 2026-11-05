@@ -373,7 +373,7 @@ export default function EmployeesPage() {
                       href={`mailto:${emp.email}`}
                       title={emp.email}
                       aria-label={`Написать на ${emp.email}`}
-                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                      className="-my-1 p-2 sm:my-0 sm:p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                     >
                       <Mail size={14} />
                     </a>
@@ -383,7 +383,7 @@ export default function EmployeesPage() {
                       href={`tel:${String(emp.phone).replace(/[^\d+]/g, '')}`}
                       title={emp.phone}
                       aria-label={`Позвонить ${emp.phone}`}
-                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                      className="-my-1 p-2 sm:my-0 sm:p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                     >
                       <Phone size={14} />
                     </a>
@@ -395,7 +395,7 @@ export default function EmployeesPage() {
                       rel="noreferrer"
                       title={emp.telegram}
                       aria-label={`Telegram ${emp.telegram}`}
-                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                      className="-my-1 p-2 sm:my-0 sm:p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                     >
                       <Send size={14} />
                     </a>
@@ -407,7 +407,7 @@ export default function EmployeesPage() {
                       rel="noreferrer"
                       title={emp.instagram}
                       aria-label={`Instagram ${emp.instagram}`}
-                      className="p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+                      className="-my-1 p-2 sm:my-0 sm:p-1.5 rounded-md text-surface-400 hover:text-primary-600 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                     >
                       <AtSignIcon />
                     </a>

@@ -307,13 +307,13 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
             Истории
           </h3>
           <div className="flex items-center gap-1">
-            <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
+            <button type="button" aria-label="Прошлый месяц" onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))} className="p-2.5 -m-1 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
               <ChevronLeft size={15} />
             </button>
             <span className="text-xs font-medium text-surface-600 dark:text-surface-300 min-w-[90px] text-center capitalize">
               {format(current, 'LLL yyyy', { locale: ru })}
             </span>
-            <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
+            <button type="button" aria-label="Следующий месяц" onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))} className="p-2.5 -m-1 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
               <ChevronRight size={15} />
             </button>
           </div>
@@ -472,7 +472,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   return (
     <div className={clsx('card', compact && 'p-3')}>
       <div className="flex items-center gap-2 mb-3">
-        <button onClick={() => setSelectedProject(null)} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
+        <button onClick={() => setSelectedProject(null)} className="p-2.5 -m-1 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
           <ArrowLeft size={15} />
         </button>
         <div className="flex-1 min-w-0">
@@ -485,13 +485,13 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
+          <button type="button" aria-label="Прошлый месяц" onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))} className="p-2.5 -m-1 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
             <ChevronLeft size={14} />
           </button>
           <span className="text-xs font-medium text-surface-600 dark:text-surface-300 capitalize">
             {format(current, 'LLL', { locale: ru })}
           </span>
-          <button onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))} className="p-1 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
+          <button type="button" aria-label="Следующий месяц" onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))} className="p-2.5 -m-1 sm:p-1 sm:m-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-400">
             <ChevronRight size={14} />
           </button>
         </div>

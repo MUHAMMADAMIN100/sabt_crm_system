@@ -86,13 +86,15 @@ export default function OrgChart({ employees }: { employees: any[] }) {
   const visibleDepts = depts.filter(d => d.heads.length || d.members.length)
 
   return (
-    <div className="card p-6 overflow-x-auto">
-      <div className="min-w-[300px]">
+    // На телефоне — меньше полей и без минимальной ширины: на 320 px схема
+    // была шире экрана и карточки обрезались справа.
+    <div className="card p-3 sm:p-6 overflow-x-auto">
+      <div className="min-w-0 sm:min-w-[300px]">
         {/* Уровень 1 — владельцы */}
         {owners.length > 0 && (
           <div className="flex flex-wrap justify-center gap-3">
             {owners.map(e => (
-              <div key={e.id} className="w-60"><PersonCard emp={e} variant="owner" onClick={() => go(e.id)} /></div>
+              <div key={e.id} className="w-full max-w-[240px]"><PersonCard emp={e} variant="owner" onClick={() => go(e.id)} /></div>
             ))}
           </div>
         )}
@@ -103,7 +105,7 @@ export default function OrgChart({ employees }: { employees: any[] }) {
             {owners.length > 0 && <Connector />}
             <div className="flex flex-wrap justify-center gap-3">
               {admins.map(e => (
-                <div key={e.id} className="w-60"><PersonCard emp={e} variant="head" onClick={() => go(e.id)} /></div>
+                <div key={e.id} className="w-full max-w-[240px]"><PersonCard emp={e} variant="head" onClick={() => go(e.id)} /></div>
               ))}
             </div>
           </>
