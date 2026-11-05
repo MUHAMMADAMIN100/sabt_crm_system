@@ -24,7 +24,7 @@
 // «Не распределено» закреплено сверху; выходные уже; отделы сворачиваются.
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import {
@@ -149,6 +149,16 @@ export default function WeekTasks() {
   const from = days[0]
   const to = days[6]
   const today = iso(new Date())
+
+  // «+» → «Новая задача» на нижней панели ведёт сюда с ?issue=1: сразу
+  // открываем «Выдать задачу» на сегодня, человека выбирают в окне.
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    if (params.get('issue') !== '1') return
+    setIssue({ userId: '', date: today })
+    const next = new URLSearchParams(params); next.delete('issue')
+    setParams(next, { replace: true })
+  }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: employees = [] } = useQuery<any[]>({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
   const { data: tasks = [] } = useQuery<any[]>({
@@ -808,7 +818,7 @@ function IssueTask({ who, days, employees, onClose, onDone }: {
 }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(who.date)
-  const [ids, setIds] = useState<string[]>([who.userId])
+  const [ids, setIds] = useState<string[]>(who.userId ? [who.userId] : [])
   const [repeat, setRepeat] = useState(false)
   const [busy, setBusy] = useState(false)
 

@@ -7,7 +7,7 @@ import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, Fold
   Building2, Package, Activity, Settings, Car, Network, Target } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, canSeeDevSection, isSmmViewOnly, userCan } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead } from '@/lib/permissions'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
@@ -74,12 +74,19 @@ export default function BottomNav() {
   // Действия веера — только те, что реально есть в системе и разрешены роли.
   const actions = useMemo(() => {
     const list: { key: string; label: string; icon: any; run: () => void }[] = []
-    // Сторис отмечает СММ-команда; менеджер по продажам раздел только смотрит.
-    if (canSeeSmmSection(user?.role) && !isSmmViewOnly(user?.role)) {
+    // Окно «отметить сторис» (/?day=today) есть только в кабинете
+    // СММ-специалиста — у остальных панель другая, и пункт никуда не вёл.
+    if (user?.role === 'smm_specialist') {
       list.push({ key: 'story', label: 'Отметить сторис', icon: ImageIcon, run: () => navigate('/?day=today') })
     }
+    // Форма создания есть не на всех страницах «Задач»: у руководителя
+    // разработки — список с «+ Задача», у основателя и админа — «Выдать
+    // задачу» в «Задачах недели». Остальным пункт не показываем: раньше он
+    // вёл на страницу без формы, и кнопка будто не работала.
     if (userCan(user, 'tasks.create')) {
-      list.push({ key: 'task', label: 'Новая задача', icon: ClipboardCheck, run: () => navigate('/tasks?new=1') })
+      const taskHref = isDevLead(user) ? '/tasks?new=1'
+        : (user?.role === 'founder' || user?.role === 'admin') ? '/employees/week?issue=1' : null
+      if (taskHref) list.push({ key: 'task', label: 'Новая задача', icon: ClipboardCheck, run: () => navigate(taskHref) })
     }
     if (canSeeSmmSection(user?.role) && userCan(user, 'projects.create')) {
       list.push({ key: 'project', label: 'Добавить проект', icon: FolderKanban, run: () => navigate('/smm/projects?new=1') })
