@@ -26,11 +26,13 @@ function KpiStat({ title, value, sub, icon: Icon, color }: {
   color: string
 }) {
   return (
-    <div className="card !p-3 sm:!p-4 flex items-start gap-2.5 min-w-0">
-      <span aria-hidden="true" className={clsx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-white', color)}>
+    // На узком телефоне значок над текстом: сбоку он оставлял подписи ~70 px,
+    // и «ПРОСРОЧЕНО» рвалось на «ПРОСРОЧЕ / НО».
+    <div className="card !p-3 sm:!p-4 flex items-start gap-2.5 min-w-0 max-[399px]:flex-col max-[399px]:gap-2">
+      <span aria-hidden="true" className={clsx('w-9 h-9 max-[399px]:w-8 max-[399px]:h-8 rounded-lg flex items-center justify-center shrink-0 text-white', color)}>
         <Icon size={17} />
       </span>
-      <span className="min-w-0 flex-1">
+      <span className="min-w-0 flex-1 max-[399px]:w-full">
         <span className="block text-[11px] font-semibold uppercase tracking-wide leading-tight text-surface-500 dark:text-surface-400 break-words">
           {title}
         </span>
@@ -430,7 +432,7 @@ export default function DevBoardKpiPage() {
               value={num(team.inProgress)}
               icon={Loader2}
               color="bg-sky-500"
-              sub="только in_progress"
+              sub="только колонка «В работе»"
             />
             <KpiStat
               title="Просрочено"

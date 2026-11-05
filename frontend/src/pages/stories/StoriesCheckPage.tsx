@@ -192,7 +192,7 @@ function DayView({ data, loading, isToday, narrow }: { data?: DayData; loading: 
       </div>
 
       {data.people.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-2 items-start">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
           {data.people.map(person => (
             <PersonCard key={person.id} person={person} narrow={narrow}
               projects={person.projectIds.map(id => byId.get(id)).filter(Boolean) as DayProject[]} />

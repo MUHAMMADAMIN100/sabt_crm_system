@@ -183,7 +183,7 @@ function PersonCard({ person, daysInMonth, monthLabel, onClose }: {
             className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 flex items-center justify-center"><X size={15} /></button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
           <div>
             <div className="grid grid-cols-7 gap-1">
               {WEEK.map(w => <div key={w} className="text-center text-[8.5px] font-bold uppercase text-gray-400 pb-1">{w}</div>)}

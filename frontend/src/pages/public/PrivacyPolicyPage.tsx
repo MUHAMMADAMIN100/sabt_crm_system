@@ -107,7 +107,7 @@ export default function PrivacyPolicyPage() {
 
           <nav aria-label="Содержание" className="mt-7 rounded-2xl border border-surface-200 dark:border-surface-700 p-4 sm:p-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-surface-500">Содержание</p>
-            <ol className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            <ol className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               {SECTIONS.map((section, i) => (
                 <li key={section.id} className="flex items-baseline gap-2 text-sm">
                   <span className="w-4 shrink-0 text-right font-mono text-[11px] text-surface-400">{i + 1}.</span>

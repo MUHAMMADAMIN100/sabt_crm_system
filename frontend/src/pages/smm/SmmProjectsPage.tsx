@@ -116,23 +116,26 @@ export default function SmmProjectsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="page-title">Проекты</h1>
-        <div className="flex items-center gap-2">
+        {/* На телефоне вид страницы — строкой из трёх кнопок во всю ширину,
+            «Добавить проект» под ней: столбиком рядом с кнопкой было тесно. */}
+        <div className="flex items-center gap-2 max-sm:w-full max-sm:flex-col max-sm:items-stretch">
           {canSeeLoad && (
-            <div role="group" aria-label="Вид страницы" className="inline-flex flex-wrap gap-0.5 p-1 rounded-xl border border-gray-200 dark:border-gray-700">
-              {([['grid', 'Проекты', LayoutGrid], ['schema', 'Схема SMM', Network], ['managers', 'Схема менеджеров', Briefcase]] as const).map(([k, label, Ic]) => (
+            <div role="group" aria-label="Вид страницы" className="inline-flex flex-wrap gap-0.5 p-1 rounded-xl border border-gray-200 dark:border-gray-700 max-sm:grid max-sm:grid-cols-3">
+              {([['grid', 'Проекты', LayoutGrid, 'Проекты'], ['schema', 'Схема SMM', Network, 'Схема SMM'], ['managers', 'Схема менеджеров', Briefcase, 'Менеджеры']] as const).map(([k, label, Ic, short]) => (
                 <button key={k} type="button" aria-pressed={view === k} onClick={() => pickView(k)}
-                  className={clsx('inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition',
+                  className={clsx('inline-flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition max-sm:min-h-[40px] max-sm:px-1 max-sm:text-[13px]',
                     view === k
                       ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
                       : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300')}>
-                  <Ic size={15} /> {label}
+                  <Ic size={15} className="max-sm:hidden" />
+                  <span className="max-sm:hidden">{label}</span><span className="sm:hidden">{short}</span>
                 </button>
               ))}
             </div>
           )}
           {canCreate && (
             <button onClick={() => setShowCreate(true)}
-              className="btn-primary inline-flex items-center gap-1.5">
+              className="btn-primary inline-flex items-center justify-center gap-1.5">
               <Plus size={16} /> Добавить проект
             </button>
           )}

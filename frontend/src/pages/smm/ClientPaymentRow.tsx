@@ -77,8 +77,10 @@ export default function ClientPaymentRow({ projectId }: { projectId: string }) {
             <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">Не найден в «Финансах»</span>
           )}
         </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs text-gray-400 truncate">
+        {/* max-w-full: колонка выровнена по правому краю, и без него строка
+            росла по тексту и вылезала за левый край карточки. */}
+        <div className="flex items-center gap-2 min-w-0 max-w-full">
+          <span className="min-w-0 text-xs text-gray-400 truncate">
             {client
               ? <>из «Финансов» · клиент «{client.name}»{client.by === 'manual' ? ' · выбран вручную' : ''}</>
               : 'клиента с таким названием в «Финансах» нет'}
@@ -86,13 +88,14 @@ export default function ClientPaymentRow({ projectId }: { projectId: string }) {
           {canLink && (
             <div className="relative shrink-0">
               <button type="button" onClick={() => setOpen(o => !o)}
-                className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-                <Pencil size={11} /> {client ? 'Сменить клиента' : 'Выбрать клиента'}
+                aria-label={client ? 'Сменить клиента' : 'Выбрать клиента'}
+                className="inline-flex items-center justify-center gap-1 text-[11.5px] font-semibold px-2 py-1 max-[399px]:min-h-[32px] max-[399px]:min-w-[32px] rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                <Pencil size={11} /> <span className={client ? 'max-[399px]:sr-only' : undefined}>{client ? 'Сменить клиента' : 'Выбрать клиента'}</span>
               </button>
               {open && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                  <div className="absolute right-0 mt-1 z-50 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
+                  <div className="absolute right-0 mt-1 z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl py-1.5 max-h-72 overflow-y-auto">
                     <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Клиенты SMM в «Финансах»</div>
                     {!clients ? (
                       <p className="px-3 py-3 text-sm text-gray-400">Загрузка…</p>

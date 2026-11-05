@@ -4,6 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
+import clsx from 'clsx'
 import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Avatar, Modal } from '@/components/ui'
@@ -546,7 +547,7 @@ export default function SmmProjectPage() {
 
       {/* ОБЗОР — цикл/норма + выполнение плана */}
       {tab === 'overview' && (
-      <div className="grid gap-4 lg:grid-cols-2 items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className={secLabel}>Цикл и норма</h2>
@@ -585,9 +586,10 @@ export default function SmmProjectPage() {
                   <div className="relative shrink-0">
                     <button
                       onClick={() => setSpecOpen(o => !o)}
-                      className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 max-[399px]:min-h-[36px] max-[399px]:min-w-[36px] max-[399px]:justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
-                      <Pencil size={12} /> {assignedSpecs.length ? 'Изменить' : 'Назначить'}
+                      {/* На узком телефоне «Изменить» — значком: иначе имя резалось до «С…». */}
+                      <Pencil size={12} /> <span className={clsx(assignedSpecs.length > 0 && 'max-[399px]:sr-only')}>{assignedSpecs.length ? 'Изменить' : 'Назначить'}</span>
                     </button>
                     {specOpen && (
                       <>
@@ -636,8 +638,8 @@ export default function SmmProjectPage() {
                 )}
                 {canAssignManager && (
                   <div className="relative shrink-0">
-                    <button onClick={() => setMgrOpen(o => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-                      <Pencil size={12} /> {salesManager ? 'Изменить' : 'Назначить'}
+                    <button onClick={() => setMgrOpen(o => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 max-[399px]:min-h-[36px] max-[399px]:min-w-[36px] max-[399px]:justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <Pencil size={12} /> <span className={clsx(salesManager && 'max-[399px]:sr-only')}>{salesManager ? 'Изменить' : 'Назначить'}</span>
                     </button>
                     {mgrOpen && (
                       <>
@@ -1038,9 +1040,9 @@ function CrewRow({ label, assigned, fallback, candidates, canAssign, onToggle, r
           <div className="relative shrink-0">
             <button
               onClick={() => setOpen(o => !o)}
-              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1.5 max-[399px]:min-h-[36px] max-[399px]:min-w-[36px] max-[399px]:justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
-              <Pencil size={12} /> {assigned.length || fallback ? 'Изменить' : 'Назначить'}
+              <Pencil size={12} /> <span className={clsx((assigned.length > 0 || !!fallback) && 'max-[399px]:sr-only')}>{assigned.length || fallback ? 'Изменить' : 'Назначить'}</span>
             </button>
             {open && (
               <>

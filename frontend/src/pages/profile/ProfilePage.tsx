@@ -424,7 +424,7 @@ export default function ProfilePage() {
       {/* Деньги — только на телефоне (решение владельца, 23.09.2026): за
           компьютером экран видят соседи по кабинету, зарплата на нём не место.
           На компьютере остаётся одна узкая колонка со сменами. */}
-      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,420px)]">
+      <div className="grid grid-cols-1 gap-4 items-start lg:grid-cols-[minmax(0,420px)]">
 
         <div className="space-y-4 min-w-0 lg:hidden">
 

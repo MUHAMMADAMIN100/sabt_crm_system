@@ -40,7 +40,7 @@ export default function SpeedView() {
         ))}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="card p-4">
           <div className="text-xs text-surface-500">Сейчас ждут ответа</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-surface-900 dark:text-white">{data?.waiting.count ?? '—'}</div>

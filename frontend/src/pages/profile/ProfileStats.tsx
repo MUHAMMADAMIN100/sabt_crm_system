@@ -79,11 +79,11 @@ export default function ProfileStatsBody({ stats }: { stats: Stats }) {
   return (
     <div className="space-y-3 sm:space-y-4">
       <Tiles stats={stats} />
-      <div className="grid gap-3 sm:gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-12">
         <Efficiency stats={stats} />
         <Bonus stats={stats} />
       </div>
-      <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
         <Goals goals={stats.goals} />
         <Achievements list={stats.achievements} />
       </div>

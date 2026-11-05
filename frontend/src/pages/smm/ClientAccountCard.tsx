@@ -108,7 +108,8 @@ export default function ClientAccountCard({ projectId, pageUrl, canSeeAccess }: 
           {canSeeAccess && data?.password && (
             <div className={row}>
               <span className="text-sm text-gray-500 w-20 shrink-0">Пароль</span>
-              <span className="flex-1 min-w-0 text-right text-sm font-semibold font-mono break-all">
+              {/* Точки — одной строкой: на 320 px «••••••» ломалось на две. */}
+              <span className={'flex-1 min-w-0 text-right text-sm font-semibold font-mono ' + (shown ? 'break-all' : 'whitespace-nowrap overflow-hidden')}>
                 {shown ? data.password : '•'.repeat(Math.min(10, data.password.length))}
               </span>
               <button type="button" onClick={() => setShown(v => !v)} aria-label={shown ? 'Скрыть пароль' : 'Показать пароль'} className={iconBtn}>

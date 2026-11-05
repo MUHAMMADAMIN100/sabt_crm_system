@@ -292,7 +292,7 @@ export default function DevProjectPage() {
             {stage && <p className="text-[13.5px] leading-relaxed text-surface-600 dark:text-surface-300">Сейчас: {stage.hint}</p>}
           </section>
 
-          <div className="grid gap-4 lg:grid-cols-2 items-start">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
             {/* Сроки */}
             <section className="card space-y-3">
               <div className="flex items-center justify-between gap-2">
@@ -343,7 +343,7 @@ export default function DevProjectPage() {
           </div>
 
           {seesBoard && (
-            <div className="grid gap-4 lg:grid-cols-2 items-start">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 items-start">
               {/* Задачи на доске */}
               <section className="card space-y-3">
                 <h2 className={titleCls}>Задачи на доске</h2>
