@@ -68,7 +68,7 @@ export default function ConversationList({ selectedId, onSelect }: { selectedId:
             aria-label="Поиск по чатам"
           />
         </label>
-        <div className="flex gap-1.5 overflow-x-auto" role="tablist">
+        <div className="hide-scrollbar flex gap-1.5 overflow-x-auto" role="tablist">
           {VIEWS.map(v => (
             <button
               key={v.key}
@@ -77,7 +77,7 @@ export default function ConversationList({ selectedId, onSelect }: { selectedId:
               aria-selected={view === v.key}
               onClick={() => setView(v.key)}
               className={clsx(
-                'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                'inline-flex min-h-[34px] shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors sm:min-h-0',
                 view === v.key
                   ? 'bg-primary-600 text-white'
                   : 'border border-surface-200 bg-surface-50 text-surface-600 hover:bg-surface-100 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300',

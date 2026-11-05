@@ -261,7 +261,8 @@ export default function BottomNav() {
               <div className="w-9 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto my-2.5" />
               <div className="flex items-center px-4 pb-2">
                 <b className="text-[13px] font-bold text-surface-900 dark:text-surface-100">Ещё</b>
-                <button onClick={() => setMore(false)} className="ml-auto w-7 h-7 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={14} /></button>
+                <button type="button" onClick={() => setMore(false)} aria-label="Закрыть"
+                  className="ml-auto -mr-1 w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={17} /></button>
               </div>
               <div className="px-2 pb-1">
                 {/* Поиск: разделов с подразделами больше двадцати. */}
@@ -349,7 +350,7 @@ export default function BottomNav() {
           }} />
         {left.map(renderTab)}
 
-        <button onClick={() => { setMore(false); setFan(v => !v) }} title="Создать"
+        <button type="button" onClick={() => { setMore(false); setFan(v => !v) }} title="Создать" aria-label="Создать" aria-expanded={fan}
           className={clsx('relative justify-self-center w-[52px] h-[52px] -mt-7 rounded-full bg-primary-600 text-white',
             'flex items-center justify-center shadow-lg shadow-primary-600/40 transition-transform',
             fan && 'rotate-45')}>
@@ -358,7 +359,7 @@ export default function BottomNav() {
 
         {right.map(renderTab)}
 
-        <button onClick={() => { setFan(false); setMore(v => !v) }}
+        <button type="button" onClick={() => { setFan(false); setMore(v => !v) }} aria-expanded={more}
           className={clsx(tabCls, more ? 'text-white' : 'text-white/45')}>
           {more && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
           <span className="relative"><MoreHorizontal size={20} /></span>

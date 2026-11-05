@@ -276,7 +276,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
     <div className="flex h-full min-h-0 flex-col">
       {/* Шапка */}
       <div className="flex items-center gap-3 border-b border-surface-200 px-3 py-2.5 dark:border-surface-700">
-        <button type="button" onClick={onBack} className="rounded-lg p-1.5 text-surface-500 hover:bg-surface-100 lg:hidden dark:hover:bg-surface-700" aria-label="К списку чатов">
+        <button type="button" onClick={onBack} className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 lg:hidden dark:hover:bg-surface-700" aria-label="К списку чатов">
           <ArrowLeft size={18} />
         </button>
         <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={40} />
@@ -303,8 +303,10 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
             <Contact size={14} /> <span className="hidden sm:inline">Лид:</span> {LEAD_STATUS[c.lead.status] || c.lead.status}
           </Link>
         ) : canCreateLead ? (
-          <button type="button" onClick={() => setShowLead(true)} className="btn-secondary !py-1.5 shrink-0 text-xs">
-            <UserPlus size={14} /> Создать лид
+          // На узком телефоне — только значок: имя собеседника важнее подписи.
+          <button type="button" onClick={() => setShowLead(true)} className="btn-secondary !py-1.5 shrink-0 text-xs max-[399px]:!px-2.5"
+            aria-label="Создать лид" title="Создать лид">
+            <UserPlus size={14} /> <span className="max-[399px]:hidden">Создать лид</span>
           </button>
         ) : null}
       </div>

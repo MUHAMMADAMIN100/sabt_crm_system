@@ -60,7 +60,7 @@ export default function DirectPage() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-surface-900">
       {/* Тонкая шапка: название, вкладки, звук, подключение */}
-      <div ref={panel} className={clsx('relative z-20 items-center gap-2 border-b border-surface-200 px-3 py-1.5 dark:border-surface-700 sm:px-4', hideOnPhone)}>
+      <div ref={panel} className={clsx('relative z-20 flex-wrap items-center gap-x-2 gap-y-1 border-b border-surface-200 px-3 py-1.5 dark:border-surface-700 sm:px-4', hideOnPhone)}>
         <MessageCircle size={17} className="shrink-0 text-surface-500" aria-hidden />
         <h1 className="text-[15px] font-semibold text-surface-900 dark:text-white">Директ</h1>
         {status?.account && (
@@ -72,18 +72,19 @@ export default function DirectPage() {
           <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700" role="tablist">
             {([['chats', 'Чаты'], ['speed', 'Скорость ответа']] as [Tab, string][]).map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => go({ tab: key })}
-                className={clsx('px-2.5 py-1 text-xs font-medium transition-colors',
+                className={clsx('px-2.5 py-2 text-xs font-medium transition-colors sm:py-1',
                   tab === key ? 'bg-primary-600 text-white' : 'bg-surface-50 text-surface-600 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-300')}>
-                {label}
+                {/* На узком телефоне «Скорость ответа» не влезала рядом с кнопками — короче. */}
+                {key === 'speed' ? <>Скорость<span className="hidden min-[400px]:inline"> ответа</span></> : label}
               </button>
             ))}
           </div>
-          <button type="button" onClick={toggleSound} className="btn-ghost !p-1.5" aria-pressed={sound}
+          <button type="button" onClick={toggleSound} className="btn-ghost !p-2 sm:!p-1.5" aria-pressed={sound}
             title={sound ? 'Звук новых сообщений включён' : 'Звук новых сообщений выключен'} aria-label="Звук новых сообщений">
             {sound ? <Bell size={17} /> : <BellOff size={17} />}
           </button>
           {isTop && status && (
-            <button type="button" onClick={() => setShowConnection(v => !v)} className={clsx('btn-ghost !p-1.5', showConnection && 'bg-surface-100 dark:bg-surface-700')}
+            <button type="button" onClick={() => setShowConnection(v => !v)} className={clsx('btn-ghost !p-2 sm:!p-1.5', showConnection && 'bg-surface-100 dark:bg-surface-700')}
               aria-pressed={showConnection} aria-expanded={showConnection} title="Подключение Instagram" aria-label="Подключение Instagram">
               <Settings2 size={17} />
             </button>
@@ -119,7 +120,9 @@ export default function DirectPage() {
         {tab === 'speed' ? (
           <div className="h-full overflow-y-auto p-4 lg:p-6"><SpeedView /></div>
         ) : (
-          <div className="grid h-full min-h-0 lg:grid-cols-[minmax(300px,360px)_1fr]">
+          <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(300px,360px)_1fr]">
+            {/* grid-cols-1 = minmax(0, 1fr): без него колонка на телефоне растягивалась
+                по самому широкому элементу чата (375 px на экране 320). */}
             <div className={clsx('min-h-0 border-surface-200 dark:border-surface-700 lg:border-r', selected ? 'hidden lg:block' : 'block')}>
               <ConversationList selectedId={selected} onSelect={id => go({ c: id })} />
             </div>

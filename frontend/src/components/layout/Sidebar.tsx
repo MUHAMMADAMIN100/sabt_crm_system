@@ -157,6 +157,9 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
         'border-r border-black/40',
         'overflow-hidden',
         open ? 'w-[260px]' : 'w-0 lg:w-[72px]',
+        // На телефоне закрытое меню шириной 0, но его кнопки оставались
+        // доступны с клавиатуры и экранному диктору — прячем целиком.
+        !open && 'max-lg:invisible',
       )}
     >
       {/* Логотип. Открытое состояние — wordmark, свёрнутое — крупная S */}
@@ -179,7 +182,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
             </div>
           )}
         </div>
-        <button onClick={onClose} className="lg:hidden p-1 rounded-lg hover:bg-surface-50/10 transition-colors shrink-0">
+        <button type="button" onClick={onClose} aria-label="Закрыть меню" className="lg:hidden p-2 rounded-lg hover:bg-surface-50/10 transition-colors shrink-0">
           <X size={18} className="text-white/70" />
         </button>
       </div>

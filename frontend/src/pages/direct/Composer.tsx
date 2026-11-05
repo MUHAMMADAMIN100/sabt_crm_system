@@ -135,7 +135,7 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
       <div className="mb-2 flex items-center gap-1">
         {(['message', 'note'] as Mode[]).map(m => (
           <button key={m} type="button" onClick={() => setMode(m)}
-            className={clsx('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            className={clsx('inline-flex min-h-[34px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors sm:min-h-0',
               mode === m
                 ? m === 'note' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200' : 'bg-primary-600 text-white'
                 : 'text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700')}>
@@ -146,8 +146,10 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
 
       {blocked ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-          <span className="min-w-0 flex-1">{blockedReason}</span>
-          <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 text-xs">
+          {/* basis 220px: на телефоне текст во всю ширину, кнопка — под ним,
+              а не узкий столбик текста рядом с кнопкой. */}
+          <span className="min-w-0 flex-1 basis-[220px]">{blockedReason}</span>
+          <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 text-xs max-sm:w-full max-sm:justify-center max-sm:!py-2.5">
             <ExternalLink size={13} /> Открыть в Instagram
           </a>
         </div>
