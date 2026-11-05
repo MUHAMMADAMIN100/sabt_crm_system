@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
-import { MoreHorizontal, Plus, X, LogOut, User as UserIcon, ClipboardCheck, FolderKanban, Image as ImageIcon,
+import { MoreHorizontal, Plus, X, ClipboardCheck, FolderKanban, Image as ImageIcon,
   KanbanSquare, BarChart3, FileText, CalendarRange, Search, Wallet, TrendingUp, TrendingDown, Users,
-  Building2, Package, Activity, Settings, Car, Network, Target } from 'lucide-react'
+  Building2, Package, Activity, Settings, Car, Network, Target, Megaphone, Code2, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead, getRoleLabel } from '@/lib/permissions'
+import { Avatar } from '@/components/ui'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
@@ -167,13 +168,35 @@ export default function BottomNav() {
     const s = q.trim().toLowerCase()
     return !s || label.toLowerCase().includes(s)
   }
-  // «Сотрудники» стоят своей группой ниже — в «Разделах» их не дублируем.
-  const restF = rest.filter(i => match(i.label) && !(employeeLinks.length && i.to === '/employees'))
-  const employeeF = employeeLinks.filter(l => match(l.label))
-  const financeF = financeLinks.filter(l => match(l.label))
-  const devF = devLinks.filter(l => match(l.label))
-  const smmF = smmLinks.filter(l => match(l.label))
-  const nothingFound = !!q.trim() && !restF.length && !financeF.length && !devF.length && !smmF.length && !employeeF.length
+  // Шторка «Ещё» (вариант А, 05.11.2026): разделы с подразделами — группами,
+  // которые раскрываются по нажатию; группа текущей страницы открыта сразу.
+  // Раньше всё было раскрыто — 36 строк на пять экранов, а «СММ» и
+  // «Разработка» стояли дважды: в «Разделах» и своей группой.
+  const isDevRoute =
+    location.pathname === '/dev' || location.pathname.startsWith('/dev/') ||
+    location.pathname === '/dev-board' || location.pathname.startsWith('/dev-board/')
+  const isOn = (root: string) => location.pathname === root || location.pathname.startsWith(root + '/')
+  const groups = [
+    { key: 'finance', title: 'Финансы', icon: Wallet, root: '/finance', links: financeLinks, end: true, on: isOn('/finance') },
+    { key: 'employees', title: 'Сотрудники', icon: Users, root: '/employees', links: employeeLinks, end: true, on: isOn('/employees') },
+    { key: 'smm', title: 'СММ', icon: Megaphone, root: '/smm', links: smmLinks, end: true, on: isOn('/smm') },
+    { key: 'dev', title: 'Разработка', icon: Code2, root: '/dev', links: devLinks, end: false, on: isDevRoute },
+  ].filter(g => g.links.length > 0)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!more) return
+    const cur = groups.find(g => g.on)
+    setOpenGroups(cur ? { [cur.key]: true } : {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [more])
+  const searching = !!q.trim()
+  const groupsF = groups
+    .map(g => ({ ...g, shown: g.links.filter(l => match(l.label) || match(g.title)) }))
+    .filter(g => g.shown.length > 0)
+  // Корень раздела с группой в «Разделах» не повторяем.
+  const groupRoots = new Set(groups.map(g => g.root))
+  const restF = rest.filter(i => match(i.label) && !groupRoots.has(i.to))
+  const nothingFound = searching && !restF.length && !groupsF.length
 
   // Кнопка создания стоит в средней колонке, поэтому разделы делятся на две
   // части: два слева от неё, остальное справа.
@@ -183,9 +206,6 @@ export default function BottomNav() {
   // Таб «Разработка» ведёт не только на /dev: запоминаем последний открытый
   // подраздел (доска/KPI/проекты/отчёты) и возвращаем туда; повторный тап
   // внутри раздела открывает шторку «Ещё» со всеми подразделами.
-  const isDevRoute =
-    location.pathname === '/dev' || location.pathname.startsWith('/dev/') ||
-    location.pathname === '/dev-board' || location.pathname.startsWith('/dev-board/')
   useEffect(() => {
     if (isDevRoute) {
       try { localStorage.setItem('last-dev-route', location.pathname + location.search) } catch {}
@@ -272,6 +292,22 @@ export default function BottomNav() {
                   className="ml-auto -mr-1 w-10 h-10 rounded-xl bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={17} /></button>
               </div>
               <div className="px-2 pb-1">
+                {/* Профиль и «Выйти» — сверху: раньше они стояли после 36 строк. */}
+                {!searching && (
+                  <div className="mx-1 mb-2 flex items-center gap-3 rounded-2xl border border-surface-200 bg-surface-50 p-2 dark:border-surface-700 dark:bg-surface-800">
+                    <NavLink to="/profile" onClick={() => setMore(false)} className="flex min-w-0 flex-1 items-center gap-3">
+                      <Avatar name={user?.name || ''} src={(user as any)?.avatar} size={36} />
+                      <span className="min-w-0">
+                        <b className="block truncate text-[14px] font-semibold text-surface-900 dark:text-surface-100">{user?.name || 'Профиль'}</b>
+                        <span className="block truncate text-[11.5px] text-surface-500 dark:text-surface-400">{getRoleLabel(user?.role)}</span>
+                      </span>
+                    </NavLink>
+                    <button type="button" onClick={() => { setMore(false); logout() }}
+                      className="min-h-[40px] shrink-0 rounded-xl px-3 text-[13px] font-semibold text-red-600 dark:text-red-400">
+                      Выйти
+                    </button>
+                  </div>
+                )}
                 {/* Поиск: разделов с подразделами больше двадцати. */}
                 <div className="px-1 pb-2">
                   <label className="flex items-center gap-2.5 h-12 px-3 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">
@@ -288,8 +324,8 @@ export default function BottomNav() {
                   </label>
                 </div>
                 {/* Рабочая смена — крупной кнопкой: начало и конец дня
-                    попадаются пальцем не глядя. В поиске её не прячем. */}
-                {!q.trim() && (
+                    попадаются пальцем не глядя. */}
+                {!searching && (
                   <div className="px-1 pb-2">
                     <ShiftButton variant="sheet" />
                   </div>
@@ -299,41 +335,36 @@ export default function BottomNav() {
                     Ничего не нашлось. Попробуйте короче — например, «зар» или «план».
                   </p>
                 )}
+                {/* Группы: при поиске раскрыты те, где нашлось совпадение. */}
+                <div className="px-1">
+                  {groupsF.map(g => {
+                    const open = searching || !!openGroups[g.key]
+                    return (
+                      <div key={g.key}>
+                        <button type="button" aria-expanded={open}
+                          onClick={() => setOpenGroups(v => ({ ...v, [g.key]: !v[g.key] }))}
+                          className={clsx('mb-1.5 flex min-h-[48px] w-full items-center gap-3 rounded-xl border bg-surface-50 px-3 text-surface-800 dark:bg-surface-800 dark:text-surface-200',
+                            open ? 'border-surface-300 dark:border-surface-600' : 'border-surface-200 dark:border-surface-700')}>
+                          <g.icon size={18} className={clsx('shrink-0', g.on ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400')} />
+                          <b className="flex-1 text-left text-[14px] font-semibold">{g.title}</b>
+                          <span className="text-[12px] font-medium text-surface-400">{g.links.length}</span>
+                          <ChevronDown size={16} className={clsx('shrink-0 text-surface-400 transition-transform', open && 'rotate-180')} />
+                        </button>
+                        {open && (
+                          <div className="mb-2 ml-4 border-l border-surface-200 pl-2.5 dark:border-surface-700">
+                            {g.shown.map(l => (
+                              <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end={g.end} compact />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
                 {restF.length > 0 && <SheetGroup title="Разделы" />}
                 {restF.map(i => (
                   <SheetLink key={i.to} to={i.to} icon={i.icon} label={i.label} onGo={() => setMore(false)} />
                 ))}
-                {employeeF.length > 0 && <SheetGroup title="Сотрудники" />}
-                {employeeF.map(l => (
-                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
-                ))}
-                {financeF.length > 0 && <SheetGroup title="Финансы" />}
-                {financeF.map(l => (
-                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
-                ))}
-                {smmF.length > 0 && <SheetGroup title="СММ" />}
-                {smmF.map(l => (
-                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end />
-                ))}
-                {devF.length > 0 && <SheetGroup title="Разработка" />}
-                {devF.map(l => (
-                  <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} />
-                ))}
-                {!q.trim() && (
-                  <>
-                    <NavLink to="/profile" onClick={() => setMore(false)}
-                      className="flex items-center gap-3 px-3 min-h-[48px] rounded-xl text-surface-800 dark:text-surface-200 border-t border-surface-100 dark:border-surface-800 mt-1 pt-3">
-                      <UserIcon size={18} className="text-surface-400 shrink-0" />
-                      <b className="text-[14px] font-semibold flex-1">{user?.name || 'Профиль'}</b>
-                      <span className="text-surface-300 dark:text-surface-600">›</span>
-                    </NavLink>
-                    <button onClick={() => { setMore(false); logout() }}
-                      className="w-full flex items-center gap-3 px-3 min-h-[48px] rounded-xl text-red-600 dark:text-red-400">
-                      <LogOut size={18} className="shrink-0" />
-                      <b className="text-[14px] font-semibold flex-1 text-left">Выйти</b>
-                    </button>
-                  </>
-                )}
               </div>
             </div>
           )}
@@ -389,22 +420,24 @@ function SheetGroup({ title }: { title: string }) {
 /** Строка-ссылка в шторке. Высота 48 — по ней попадают пальцем не целясь;
  *  текущий раздел подсвечен, иначе в списке из двадцати пунктов не понять,
  *  где ты находишься. */
-function SheetLink({ to, icon: Icon, label, onGo, end }: {
+function SheetLink({ to, icon: Icon, label, onGo, end, compact }: {
   to: string; icon: any; label: string; onGo: () => void; end?: boolean
+  /** Подпункт раскрытой группы — строка ниже и без стрелки. */
+  compact?: boolean
 }) {
   return (
     <NavLink to={to} end={end} onClick={onGo}
       className={({ isActive }) => clsx(
-        'flex items-center gap-3 px-3 min-h-[48px] rounded-xl',
+        'flex items-center gap-3 px-3 rounded-xl', compact ? 'min-h-[42px]' : 'min-h-[48px]',
         isActive
           ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300'
           : 'text-surface-800 dark:text-surface-200',
       )}>
       {({ isActive }) => (
         <>
-          <Icon size={18} className={clsx('shrink-0', isActive ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400')} />
-          <b className="text-[14px] font-semibold flex-1">{label}</b>
-          <span className="text-surface-300 dark:text-surface-600">›</span>
+          <Icon size={compact ? 16 : 18} className={clsx('shrink-0', isActive ? 'text-primary-600 dark:text-primary-400' : 'text-surface-400')} />
+          <b className={clsx('flex-1', compact ? 'text-[13.5px] font-medium' : 'text-[14px] font-semibold')}>{label}</b>
+          {!compact && <span className="text-surface-300 dark:text-surface-600">›</span>}
         </>
       )}
     </NavLink>
