@@ -98,7 +98,16 @@ export default function SecurityLogPage() {
         </div>
       </div>
 
-      <div className="bg-surface-50 dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 overflow-hidden">
+      {/* Телефон (вариант А, 05.11.2026): карточки — событие и время сверху,
+          кто и IP ниже, технические детали по «Подробнее». В таблице на
+          телефоне были видны только «Время» и «Событие». */}
+      <div className="space-y-2 sm:hidden">
+        {isLoading && <p className="py-10 text-center text-sm text-surface-400">Загрузка...</p>}
+        {!isLoading && (!data || data.length === 0) && <p className="py-10 text-center text-sm text-surface-400">Событий нет</p>}
+        {!isLoading && data?.map((ev) => <EventCard key={ev.id} ev={ev} />)}
+      </div>
+
+      <div className="max-sm:hidden bg-surface-50 dark:bg-surface-800 rounded-2xl border border-surface-200 dark:border-surface-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -157,6 +166,44 @@ export default function SecurityLogPage() {
           </table>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Событие журнала карточкой для телефона. */
+function EventCard({ ev }: { ev: SecurityEvent }) {
+  const [open, setOpen] = useState(false)
+  const meta = TYPE_META[ev.type] || { label: ev.type, tone: 'info' as const, icon: Shield }
+  const Icon = meta.icon
+  const who = ev.email || (ev.userId ? `${ev.userId.slice(0, 8)}…` : 'пользователь не определён')
+  return (
+    <div className="rounded-xl border border-surface-200 bg-surface-50 px-3 py-2.5 dark:border-surface-700 dark:bg-surface-800">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`inline-flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${TONE_CLASS[meta.tone]}`}>
+          <Icon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{meta.label}</span>
+        </span>
+        <span className="shrink-0 text-[11.5px] text-surface-500 dark:text-surface-400">
+          {format(new Date(ev.createdAt), 'dd MMM HH:mm', { locale: ru })}
+        </span>
+      </div>
+      <div className="mt-1.5 flex items-baseline justify-between gap-3 text-xs">
+        <span className={`min-w-0 truncate ${ev.email || ev.userId ? 'font-mono text-surface-700 dark:text-surface-300' : 'text-surface-400'}`}>{who}</span>
+        <span className="shrink-0 font-mono text-surface-500">{ev.ip ? `IP ${ev.ip}` : 'IP —'}</span>
+      </div>
+      {ev.details && (
+        <>
+          <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+            className="-mb-1 mt-1 min-h-[32px] text-xs font-semibold text-primary-600 dark:text-primary-400">
+            {open ? 'Скрыть' : 'Подробнее ⌄'}
+          </button>
+          {open && (
+            <code className="mt-1 block overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-surface-100 p-2 text-[10.5px] text-surface-600 dark:bg-surface-900 dark:text-surface-300">
+              {JSON.stringify(ev.details, null, 2)}
+            </code>
+          )}
+        </>
+      )}
     </div>
   )
 }
