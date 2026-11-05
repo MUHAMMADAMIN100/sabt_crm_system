@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, lazy, Suspense } from 'react'
+import { useState, useMemo, useEffect, useRef, lazy, Suspense, type RefObject } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
@@ -119,6 +119,25 @@ function bumpKpiValue(kpi: any, key: string, delta: number) {
   return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
 }
 
+/** Строка чипов-фильтров: на компьютере переносится, на телефоне — одна
+ *  строка с прокруткой вбок от края до края экрана. py-1 — запас под рамку
+ *  выбранного чипа, иначе её срезает прокрутка. */
+const CHIP_ROW = 'flex flex-wrap gap-2 items-center max-sm:flex-nowrap max-sm:overflow-x-auto hide-scrollbar max-sm:-mx-4 max-sm:px-4 max-sm:py-1'
+/** Короткие подписи статусов для строки на телефоне. */
+const SHORT_STATUS: Record<string, string> = { 'Ожидание ответа': 'Ожидание', 'В переговорах': 'Переговоры' }
+
+/** Выбранный чип — в начало строки (только когда строка листается). */
+function useScrollActiveChip(ref: RefObject<HTMLDivElement>, key: unknown) {
+  useEffect(() => {
+    const row = ref.current
+    if (!row || row.scrollWidth <= row.clientWidth + 1) return
+    const chip = row.querySelector<HTMLElement>('[data-active="true"]')
+    if (!chip) return
+    const left = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - 16
+    row.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
+  }, [ref, key])
+}
+
 export default function ClientsPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -159,6 +178,10 @@ export default function ClientsPage() {
   // менеджеру-владельцу СРАЗУ (без отдельной кнопки), плюс фильтр
   // «только отмеченные к звонку».
   const [onlyCallRequested, setOnlyCallRequested] = useState(false)
+  const statusRow = useRef<HTMLDivElement>(null)
+  const interestRow = useRef<HTMLDivElement>(null)
+  useScrollActiveChip(statusRow, status)
+  useScrollActiveChip(interestRow, `${interest}|${onlyCallRequested}`)
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', debouncedSearch, status, interest, sphere],
@@ -487,13 +510,16 @@ export default function ClientsPage() {
 
       {viewMode === 'list' && (
       <>
-      {/* Status chips — always visible, same style as interest row */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Статус:</span>
+      {/* Фильтры. На телефоне (вариант А, 05.11.2026) каждая группа — одна
+          строка, листается вбок; выбранный чип прокручивается в начало строки.
+          Раньше 14 чипов занимали 8 строк, и список начинался на втором экране. */}
+      <div ref={statusRow} className={CHIP_ROW}>
+        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Статус:</span>
         <button
           onClick={() => setStatus('')}
+          data-active={!status}
           className={clsx(
-            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+            'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
             !status
               ? 'bg-primary-600 text-white'
               : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
@@ -509,12 +535,15 @@ export default function ClientsPage() {
             <button
               key={s.value}
               onClick={() => setStatus(active ? '' : s.value)}
+              data-active={active}
               className={clsx(
-                'px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-all',
                 active ? 'ring-2 ring-primary-500 ' + s.color : s.color,
               )}
             >
-              {s.label}{n !== undefined && <> · {n}</>}
+              <span className="sm:hidden">{SHORT_STATUS[s.label] ?? s.label}</span>
+              <span className="max-sm:hidden">{s.label}</span>
+              {n !== undefined && <> · {n}</>}
             </button>
           )
         })}
@@ -522,21 +551,26 @@ export default function ClientsPage() {
 
       {/* Interest chips — always visible. Counts come from backend stats
           if available (byInterest field), otherwise omitted gracefully. */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1">Интерес:</span>
+      <div ref={interestRow} className={CHIP_ROW}>
+        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Интерес:</span>
         <button
           onClick={() => setInterest('')}
+          data-active={!interest}
           className={clsx(
-            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+            'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
             !interest
               ? 'bg-primary-600 text-white'
               : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
           )}
         >
-          <Circle size={12} /> Все
-          {stats?.byInterest && (
-            <> · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}</>
-          )}
+          {/* На телефоне строки без подписей — «Любой интерес» отличает эту строку от статусов. */}
+          <span className="sm:hidden">Любой интерес</span>
+          <span className="max-sm:hidden inline-flex items-center gap-1.5">
+            <Circle size={12} /> Все
+            {stats?.byInterest && (
+              <> · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}</>
+            )}
+          </span>
         </button>
         {INTEREST_CHIPS.map(c => {
           const n = stats?.byInterest?.[c.value]
@@ -546,8 +580,9 @@ export default function ClientsPage() {
             <button
               key={c.value}
               onClick={() => setInterest(active ? '' : c.value)}
+              data-active={active}
               className={clsx(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
                 active ? c.bgActive + ' shadow-sm' : c.bg,
               )}
             >
@@ -559,8 +594,9 @@ export default function ClientsPage() {
         {callRequestedCount > 0 && (
           <button
             onClick={() => setOnlyCallRequested(v => !v)}
+            data-active={onlyCallRequested}
             className={clsx(
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+              'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
               onlyCallRequested
                 ? 'bg-amber-500 text-white shadow-sm'
                 : 'bg-amber-200 text-amber-900 dark:bg-amber-800/40 dark:text-amber-200',
