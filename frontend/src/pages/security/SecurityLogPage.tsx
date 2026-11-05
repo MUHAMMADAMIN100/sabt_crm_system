@@ -60,20 +60,22 @@ export default function SecurityLogPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Shield className="w-7 h-7 text-surface-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">Журнал безопасности</h1>
+        <div className="flex min-w-0 items-start gap-3">
+          <Shield className="mt-0.5 w-7 h-7 shrink-0 text-surface-600" />
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-surface-900 dark:text-surface-100">Журнал безопасности</h1>
             <p className="text-sm text-surface-500 dark:text-surface-400">
               Логин/выход, попытки доступа выше роли, кража refresh-токенов, действия админов
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        {/* На телефоне фильтры занимают всю строку: в ширину 56+32 они вылезали за экран. */}
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
-            className="input w-56"
+            className="input min-w-0 flex-1 sm:w-56 sm:flex-none"
+            aria-label="Тип события"
           >
             <option value="">Все события</option>
             {Object.entries(TYPE_META).map(([k, v]) => (
@@ -83,13 +85,14 @@ export default function SecurityLogPage() {
           <select
             value={limit}
             onChange={(e) => setLimit(Number(e.target.value))}
-            className="input w-32"
+            className="input w-[84px] shrink-0 sm:w-32"
+            aria-label="Сколько событий показать"
           >
             <option value={100}>100</option>
             <option value={200}>200</option>
             <option value={500}>500</option>
           </select>
-          <button onClick={() => refetch()} className="btn-secondary" title="Обновить">
+          <button type="button" onClick={() => refetch()} className="btn-secondary shrink-0" title="Обновить" aria-label="Обновить">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>

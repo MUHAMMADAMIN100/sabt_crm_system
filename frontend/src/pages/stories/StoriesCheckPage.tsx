@@ -239,17 +239,23 @@ function PersonCard({ person, projects, narrow }: {
     return ''
   }
 
+  const statusText = allDone ? 'Всё выложено' : 'Не всё выложено'
+  const statusTone = allDone ? 'bg-green-500/15 text-green-700 dark:text-green-400' : 'bg-red-500/15 text-red-700 dark:text-red-400'
+
   return (
     <div className="card p-0 overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3.5 border-b border-surface-100 dark:border-surface-700">
         <span className="w-10 h-10 rounded-xl bg-surface-200 dark:bg-surface-700 flex items-center justify-center text-[13px] font-bold shrink-0">{initials(person.name)}</span>
-        <span className="min-w-0">
+        {/* На узком телефоне значок статуса — под именем: справа он съедал имя до «Навру…». */}
+        <span className="min-w-0 flex-1">
           <b className="block text-[15px] font-semibold truncate">{person.name}</b>
-          <span className="block text-[12px] text-surface-500">SMM-специалист</span>
+          <span className="block text-[12px] text-surface-500 max-[399px]:hidden">SMM-специалист</span>
+          <span className={clsx('min-[400px]:hidden mt-1 inline-flex px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold', statusTone)}>
+            {statusText}
+          </span>
         </span>
-        <span className={clsx('ml-auto shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold',
-          allDone ? 'bg-green-500/15 text-green-700 dark:text-green-400' : 'bg-red-500/15 text-red-700 dark:text-red-400')}>
-          {allDone ? 'Всё выложено' : 'Не всё выложено'}
+        <span className={clsx('max-[399px]:hidden ml-auto shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold', statusTone)}>
+          {statusText}
         </span>
       </div>
       <div className="flex flex-col p-2">

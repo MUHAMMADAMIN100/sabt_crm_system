@@ -79,7 +79,7 @@ export default function ArchivePage() {
               key={pt.value}
               onClick={() => setProjectType(pt.value)}
               className={clsx(
-                'px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                'px-3 py-1.5 sm:py-1 rounded-full text-xs font-medium transition-colors',
                 projectType === pt.value
                   ? 'bg-primary-600 text-white'
                   : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
@@ -100,13 +100,13 @@ export default function ArchivePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((p: any) => (
             <div key={p.id} className="card opacity-80 hover:opacity-100 transition-opacity">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <div className="w-8 h-8 shrink-0 rounded-xl bg-surface-100 dark:bg-surface-700 flex items-center justify-center">
                     <FolderKanban size={16} className="text-surface-400 dark:text-surface-500" />
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Link to={`/projects/${p.id}`} className="font-semibold text-surface-700 dark:text-surface-300 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</Link>
+                  <div className="flex min-w-0 items-center gap-1.5 flex-wrap">
+                    <Link to={`/projects/${p.id}`} className="min-w-0 break-words font-semibold text-surface-700 dark:text-surface-300 hover:text-primary-600 dark:hover:text-primary-400 text-sm">{p.name}</Link>
                     {p.projectType && (
                       <button
                         type="button"
@@ -117,8 +117,10 @@ export default function ArchivePage() {
                     )}
                   </div>
                 </div>
-                <button onClick={() => restoreMut.mutate(p.id)} className="btn-secondary text-xs py-1">
-                  <RotateCcw size={12} /> {t('common.restore')}
+                {/* На экране 320 подпись не помещалась рядом с названием — там только значок. */}
+                <button type="button" onClick={() => restoreMut.mutate(p.id)} aria-label={t('common.restore')} title={t('common.restore')}
+                  className="btn-secondary shrink-0 text-xs py-1 max-[359px]:!px-2.5 max-[359px]:!py-2">
+                  <RotateCcw size={12} /> <span className="max-[359px]:hidden">{t('common.restore')}</span>
                 </button>
               </div>
               {p.description && <p className="text-xs text-surface-400 dark:text-surface-500 mb-2 line-clamp-2">{p.description}</p>}
@@ -130,7 +132,7 @@ export default function ArchivePage() {
                 <ProgressBar value={p.progress} />
               </div>
               <p className="text-xs text-surface-400 dark:text-surface-500">
-                {p.endDate ? `${format(new Date(p.endDate), 'dd.MM.yyyy')}` : `${format(new Date(p.createdAt), 'dd.MM.yyyy')}`}
+                {p.endDate ? `Срок: ${format(new Date(p.endDate), 'dd.MM.yyyy')}` : `Создан: ${format(new Date(p.createdAt), 'dd.MM.yyyy')}`}
               </p>
             </div>
           ))}

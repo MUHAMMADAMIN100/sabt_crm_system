@@ -9,6 +9,14 @@ import {
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
+/** «1 задача закрыта», «3 задачи закрыто», «5 задач закрыто». */
+function closedTasksLabel(n: number): string {
+  const m10 = n % 10, m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return `${n} задача закрыта`
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return `${n} задачи закрыто`
+  return `${n} задач закрыто`
+}
+
 /**
  * Панель основателя — только лаконичная ВЫЖИМКА. Подробности (финансы, KPI
  * всех сотрудников, истории, графики) живут на своих страницах: Финансы,
@@ -56,7 +64,7 @@ export default function FounderDashboard() {
           value={avgCompletion ? `${avgCompletion.avgDays}д` : '—'}
           icon={Clock}
           color="bg-surface-500"
-          sub={avgCompletion ? `${avgCompletion.totalDone} задач закрыто` : 'нет данных'}
+          sub={avgCompletion ? closedTasksLabel(avgCompletion.totalDone) : 'нет данных'}
         />
       </div>
 

@@ -100,7 +100,7 @@ export default function FilesPage() {
       </div>
 
       {!projectId ? (
-        <EmptyState title={t('tasks.project')} description={t('common.selectOption')} />
+        <EmptyState title="Выберите проект" description="Файлы хранятся по проектам — выберите проект в списке выше." />
       ) : isLoading ? (
         <PageLoader />
       ) : !files?.length ? (

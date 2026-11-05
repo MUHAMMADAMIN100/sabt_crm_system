@@ -40,9 +40,9 @@ export default function EmployeeAccessPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <ShieldCheck size={20} className="text-primary-600" />
-        <div>
+      <div className="flex items-start gap-2">
+        <ShieldCheck size={20} className="mt-1 shrink-0 text-primary-600" />
+        <div className="min-w-0">
           <h1 className="page-title">Доступы сотрудников</h1>
           <p className="text-surface-500 dark:text-surface-400 mt-0.5 text-sm">
             Выдавайте персональные возможности поверх роли. Доступ открывается сотруднику сразу.
@@ -138,9 +138,11 @@ function RolesAudit({ users }: { users: AccessUser[] }) {
       <button type="button" onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 w-full text-left">
         <Users size={16} className="text-primary-600 shrink-0" />
-        <span className="text-sm font-semibold text-surface-900 dark:text-surface-100">Роли: кто на них сидит</span>
-        <span className="text-xs text-surface-500 dark:text-surface-400">
-          занято {busy.length} · пустых {empty.length}
+        <span className="min-w-0 flex-1 sm:flex sm:flex-none sm:items-baseline sm:gap-2">
+          <span className="block text-sm font-semibold text-surface-900 dark:text-surface-100">Роли: кто на них сидит</span>
+          <span className="block text-xs text-surface-500 dark:text-surface-400">
+            занято {busy.length} · пустых {empty.length}
+          </span>
         </span>
         <ChevronDown size={16} className={clsx('ml-auto text-surface-400 transition-transform', open && 'rotate-180')} />
       </button>
@@ -148,10 +150,11 @@ function RolesAudit({ users }: { users: AccessUser[] }) {
       {open && (
         <div className="mt-3 space-y-1">
           {busy.map(r => (
-            <div key={r.role} className="flex items-start gap-2 py-1.5 border-t border-surface-100 dark:border-surface-700">
-              <span className="text-sm text-surface-700 dark:text-surface-200 w-48 shrink-0">{getRoleLabel(r.role)}</span>
-              <span className="text-xs font-semibold text-surface-500 dark:text-surface-400 w-6 shrink-0 tabular-nums">{r.total}</span>
-              <span className="text-xs text-surface-600 dark:text-surface-300 min-w-0 flex-1">
+            // На телефоне имена — строкой под ролью: в три колонки им оставалось 16 px.
+            <div key={r.role} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 py-1.5 border-t border-surface-100 dark:border-surface-700 sm:flex sm:items-start">
+              <span className="text-sm text-surface-700 dark:text-surface-200 sm:w-48 sm:shrink-0">{getRoleLabel(r.role)}</span>
+              <span className="text-xs font-semibold text-surface-500 dark:text-surface-400 text-right sm:text-left sm:w-6 sm:shrink-0 tabular-nums">{r.total}</span>
+              <span className="col-span-2 text-xs text-surface-600 dark:text-surface-300 min-w-0 sm:flex-1">
                 {[...r.main, ...r.second.map(n => `${n} (2-я)`)].join(', ')}
               </span>
             </div>

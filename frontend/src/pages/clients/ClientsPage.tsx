@@ -604,12 +604,12 @@ export default function ClientsPage() {
                 <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Название / Сфера</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">ЛПР / Контакт</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Статус</th>
+                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Статус</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Интерес</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right hidden lg:table-cell">Потенциал</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Следующий контакт</th>
                 <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Последняя активность</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">
+                <th className="px-2 md:px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">
                   <div className="flex items-center justify-end gap-2">
                     {isBoss && (() => {
                       const rows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -624,7 +624,8 @@ export default function ClientsPage() {
                             if (ids.length) callRequestMut.mutate({ ids, flag: !allChecked })
                           }}
                           className={clsx(
-                            'inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 disabled:opacity-50',
+                            'relative inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 disabled:opacity-50',
+                            "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden",
                             allChecked
                               ? 'bg-amber-500 border-amber-500 text-white'
                               : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 text-transparent',
@@ -634,7 +635,7 @@ export default function ClientsPage() {
                         </button>
                       )
                     })()}
-                    <span>Действия</span>
+                    <span className="hidden md:inline">Действия</span>
                   </div>
                 </th>
               </tr>
@@ -658,7 +659,7 @@ export default function ClientsPage() {
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <div className="font-medium text-surface-900 dark:text-surface-100 flex items-center gap-1.5">
+                      <div className="font-medium text-surface-900 dark:text-surface-100 flex flex-wrap items-center gap-1.5 break-words">
                         {l.name}
                         {l.direction && (
                           <span className={clsx(
@@ -683,6 +684,12 @@ export default function ClientsPage() {
                             📞 Позвонить
                           </span>
                         )}
+                      </div>
+                      {/* На телефоне колонки «Статус» нет — статус под названием. */}
+                      <div className="md:hidden mt-1">
+                        <span className={clsx('inline-flex text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap', statusOpt?.color)}>
+                          {statusOpt?.label || l.status}
+                        </span>
                       </div>
                       {l.contactPhone && (
                         <a href={`tel:${String(l.contactPhone).replace(/[^+\d]/g, '')}`}
@@ -709,7 +716,7 @@ export default function ClientsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3 align-top hidden md:table-cell">
                       <span className={clsx('inline-flex text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap', statusOpt?.color)}>
                         {statusOpt?.label || l.status}
                       </span>
@@ -744,8 +751,9 @@ export default function ClientsPage() {
                           : <span className="text-surface-400">—</span>
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1.5 justify-end items-center">
+                    <td className="px-2 md:px-4 py-3 text-right whitespace-nowrap align-top md:align-middle" onClick={e => e.stopPropagation()}>
+                      {/* На телефоне кнопки столбиком: в ряд они уезжали за край экрана. */}
+                      <div className="flex flex-col items-end gap-2 md:flex-row md:gap-1.5 md:justify-end md:items-center">
                         {isBoss && (
                           <button
                             type="button"
@@ -754,7 +762,8 @@ export default function ClientsPage() {
                             aria-pressed={!!l.callRequested}
                             title={l.callRequested ? 'Снять отметку «Позвонить»' : 'Назначить звонок менеджеру'}
                             className={clsx(
-                              'inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 mr-1 disabled:opacity-50',
+                              'relative inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 m-2.5 md:m-0 md:mr-1 disabled:opacity-50',
+                              "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden",
                               l.callRequested
                                 ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/30'
                                 : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-transparent',
@@ -766,14 +775,15 @@ export default function ClientsPage() {
                         {l.callRequested && (
                           <button
                             onClick={() => callRequestMut.mutate({ ids: [l.id], flag: false })}
-                            className="px-2 py-1 rounded-lg text-[11px] font-medium text-green-700 bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
+                            className="px-2 py-2 md:py-1 rounded-lg text-[11px] font-medium text-green-700 bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
                             title="Снять отметку «Позвонить»"
                           >
                             ✓ Позвонил
                           </button>
                         )}
-                        <button onClick={() => setEditLead(l)} className="p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"><Edit size={14} /></button>
-                        <button onClick={() => setDeleteId(l.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 size={14} /></button>
+                        {/* На телефоне карточку открывает нажатие на строку — отдельный карандаш не нужен. */}
+                        <button type="button" onClick={() => setEditLead(l)} aria-label="Изменить" title="Изменить" className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"><Edit size={14} /></button>
+                        <button type="button" onClick={() => setDeleteId(l.id)} aria-label="Удалить" title="Удалить" className="p-2.5 md:p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>

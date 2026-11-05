@@ -127,18 +127,18 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="page-title">{t('notifications.title')}</h1>
           {isFounder && (
             <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 flex items-center gap-1">
-              <AlertTriangle size={11} className="text-surface-400" />
+              <AlertTriangle size={11} className="shrink-0 text-surface-400" />
               Показаны только критические уведомления
             </p>
           )}
         </div>
         {filtered.some((n: any) => !n.isRead) && (
-          <button onClick={() => markAll.mutate(undefined)} className="btn-secondary text-xs">
+          <button type="button" onClick={() => markAll.mutate(undefined)} className="btn-secondary shrink-0 whitespace-nowrap text-xs">
             <CheckCheck size={14} /> {t('notifications.markAllRead')}
           </button>
         )}
@@ -159,7 +159,7 @@ export default function NotificationsPage() {
               <div
                 key={n.id}
                 className={clsx(
-                  'card flex items-start gap-4 transition-colors',
+                  'card flex items-start gap-3 sm:gap-4 transition-colors',
                   !n.isRead && isNegative
                     ? 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10'
                     : !n.isRead
@@ -167,7 +167,7 @@ export default function NotificationsPage() {
                     : '',
                 )}
               >
-                <div className={clsx('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', colorClass)}>
+                <div className={clsx('w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0', colorClass)}>
                   <IconComp size={16} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -175,22 +175,28 @@ export default function NotificationsPage() {
                     {n.title}
                   </p>
                   <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{n.message}</p>
-                  {n.link && (
-                    <Link to={n.link} className="text-xs text-primary-600 dark:text-primary-400 hover:underline mt-1 inline-block">
-                      Перейти →
-                    </Link>
-                  )}
-                  <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">
-                    {format(new Date(n.createdAt), 'dd.MM.yyyy HH:mm')}
-                  </p>
+                  {/* «Перейти» и дата — одной строкой: на телефоне так меньше переносов. */}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    {n.link && (
+                      <Link to={n.link} className="-my-1.5 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                        Перейти →
+                      </Link>
+                    )}
+                    <span className="text-xs text-surface-400 dark:text-surface-500">
+                      {format(new Date(n.createdAt), 'dd.MM.yyyy HH:mm')}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
+                {/* На телефоне кнопки столбиком — тексту остаётся больше места. */}
+                <div className="-my-1 -mr-1 flex flex-col gap-1 shrink-0 sm:my-0 sm:mr-0 sm:flex-row">
                   {!n.isRead && (
-                    <button onClick={() => markRead.mutate(n.id)} className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg">
+                    <button type="button" onClick={() => markRead.mutate(n.id)} aria-label="Отметить прочитанным" title="Отметить прочитанным"
+                      className="p-2.5 sm:p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg">
                       <CheckCheck size={14} className="text-primary-600 dark:text-primary-400" />
                     </button>
                   )}
-                  <button onClick={() => remove.mutate(n.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400">
+                  <button type="button" onClick={() => remove.mutate(n.id)} aria-label="Удалить" title="Удалить"
+                    className="p-2.5 sm:p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400">
                     <Trash2 size={14} />
                   </button>
                 </div>
