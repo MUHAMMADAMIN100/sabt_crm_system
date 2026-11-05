@@ -362,7 +362,8 @@
 .fin-root .progress > i { display: block; height: 100%; border-radius: 99px; background: var(--green); }
 
 /* ─── Доход · список частей по датам (Development / Design) ─── */
-.fin-root .fin-parts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; align-items: start; }
+/* min(310px, 100%): на 320 px колонка в 310 была шире экрана — правый край карточек обрезался. */
+.fin-root .fin-parts-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(310px, 100%), 1fr)); gap: 12px; align-items: start; }
 .fin-root .fin-project-parts { padding: 14px 15px; display: flex; flex-direction: column; }
 .fin-root .fin-pp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fin-root .fin-pp-name { font-size: 15px; font-weight: 700; letter-spacing: -.2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -624,7 +625,11 @@
   .fin-root .page-head h1 { font-size: 19px; }
   .fin-root .page-head .flex { flex-wrap: wrap; }
   .fin-root .month-nav { justify-content: space-between; flex: 1; }
-  .fin-root .month-nav .label { min-width: 0; flex: 1; }
+  /* «Ноябрь 2026» в две строки внутри кнопки смотрелось сломанным —
+     пусть лучше соседняя кнопка уйдёт на следующую строку. */
+  .fin-root .month-nav .label { min-width: 0; flex: 1; white-space: nowrap; }
+  /* «‹ Назад» — палец должен попадать, а не целиться в 15 px. */
+  .fin-root .back { min-height: 40px; margin-top: -8px; margin-bottom: 4px; padding-right: 10px; }
 
   /* Карточки и таблицы компактнее; таблица скроллится, страница — нет. */
   .fin-root .card { padding: 14px; }
@@ -639,7 +644,7 @@
   .fin-root .fin-tx-compact-summary { grid-column: 1; }
   .fin-root .fin-tx-details-panel-head > .flex { grid-column: 2; grid-row: 1 / span 2; flex-direction: column; align-items: stretch; gap: 3px; }
   .fin-root .fin-tx-details-panel-head > .flex .btn { justify-content: center; padding: 6px 8px; }
-  .fin-root .fin-tx-compact-grid { grid-template-columns: repeat(2, minmax(135px, 1fr)); }
+  .fin-root .fin-tx-compact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* Модалка почти во весь экран, кнопки — в столбик, если не влезают. */
   .fin-root .overlay, .fin-overlay {
@@ -753,7 +758,7 @@
 @keyframes finHistorySpin { to { transform: rotate(360deg); } }
 
 .fin-employee-history-head {
-  display: grid; grid-template-columns: minmax(220px, 1fr) auto;
+  display: grid; grid-template-columns: minmax(min(220px, 100%), 1fr) auto;
   align-items: center; gap: 16px;
 }
 .fin-employee-history-head h3 { margin: 0; font-size: 17px; }
@@ -2223,6 +2228,40 @@
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Кратко"] { grid-column: 1 / -1; }
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Описание"] > span,
   .fin-root .fin-mobile-cards tbody > tr > td[data-label="Кратко"] { overflow-wrap: anywhere; }
+  /* «Кратко» в журнале — подпись сверху, детали строками «ключ … значение»:
+     в один ряд на 320 px «Сумма» рвалась по буквам. */
+  .fin-root .fin-mobile-cards tbody > tr > td.fin-activity-details {
+    flex-direction: column; align-items: stretch; gap: 2px; text-align: left; overflow-wrap: normal;
+  }
+  .fin-root .fin-mobile-cards td.fin-activity-details .fin-activity-detail {
+    display: flex; justify-content: space-between; gap: 10px; margin-right: 0;
+  }
+  .fin-root .fin-mobile-cards td.fin-activity-details .fin-activity-detail > span { flex: none; }
+  .fin-root .fin-mobile-cards td.fin-activity-details .fin-activity-detail b { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+  /* Длинное действие («Изменил план «Прочего»») не помещалось в половинку. */
+  .fin-root .fin-mobile-cards tbody > tr > td[data-label="Действие"] { grid-column: 1 / -1; }
+  .fin-root .fin-mobile-cards .fin-activity-action { white-space: normal; text-align: left; }
+  /* Подписки: кнопки «Оплатить / ✓ / ✎» и день оплаты — во всю ширину.
+     В половинке карточки кнопки уезжали за левый край. */
+  .fin-root .fin-subs-table tbody > tr > td[data-label=""],
+  .fin-root .fin-subs-table tbody > tr > td[data-label="День оплаты"] { grid-column: 1 / -1; }
+  /* Страховка: длинное значение переносится, а не наезжает на соседнюю
+     подпись («РазработчикЗП» в ведомости на 320 px). */
+  .fin-root .fin-mobile-cards tbody > tr > td { overflow-wrap: anywhere; }
+  .fin-root .fin-salary-table tbody > tr > td[data-label="Должность"] { grid-column: 1 / -1; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-name-cell { justify-content: flex-start; text-align: left; }
+  .fin-root .fin-salary-table tbody > tr > td.fin-name-cell::before { display: none; }
+  /* Инвентарь: у вещи длинные значения (гарантия, ответственный, остаток) —
+     карточка в одну колонку, строка «подпись … значение». */
+  .fin-root .fin-inventory-table tbody > tr:not(.fin-tx-details-row):not(.fin-activity-details-row) { grid-template-columns: minmax(0, 1fr); }
+}
+/* На узком телефоне половинка карточки — около 125 px: имена и суммы рвались
+   по слогам («Руководител / ь»). До 420 px — одна колонка; в ведомости
+   остаются две: там короткие суммы, и так она компактнее. */
+@media (max-width: 420px) {
+  .fin-root .fin-mobile-cards:not(.fin-salary-table) tbody > tr:not(.fin-tx-details-row):not(.fin-activity-details-row) { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
   .fin-root .fin-mobile-cards .fin-tx-details-row,
   .fin-root .fin-mobile-cards .fin-activity-details-row { display: block; width: 100%; }
   .fin-root .fin-mobile-cards .fin-tx-details-row > td,

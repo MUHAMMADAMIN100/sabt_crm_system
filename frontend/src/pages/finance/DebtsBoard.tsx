@@ -85,7 +85,7 @@ export function DebtsList({ ym }: { ym: string }) {
           <span className={'vl ' + (next ? (nextLate ? 'late' : 'soon') : '')}>{next ? `${debtDay(next.date)} · ${money(next.amount)}` : '—'}</span>
           <span className="sb">
             {next
-              ? `${next.name} · ${next.kind === 'due' ? (nextLate ? 'срок прошёл' : 'вернуть до') : (nextLate ? 'просрочен' : 'транш по плану')}`
+              ? `${next.name} · ${next.kind === 'due' ? (nextLate ? 'срок прошёл' : 'срок возврата') : (nextLate ? 'просрочен' : 'транш по плану')}`
               : 'сроков и траншей нет'}
           </span>
         </div>
