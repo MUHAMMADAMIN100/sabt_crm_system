@@ -189,13 +189,15 @@ export default function SalesManagerDashboard() {
 
       {/* Мини-месяц */}
       <div className="card">
-        <div className="relative flex items-center justify-center gap-4 mb-3">
-          <button onClick={() => goMonth(-1)} title="Прошлый месяц" className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
-          <b className="text-sm font-bold capitalize min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
-          <button onClick={() => goMonth(1)} title="Следующий месяц" className="w-8 h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
+        {/* На телефоне месяц со стрелками — слева: по центру правая стрелка
+            уходила под кнопку «+» (320 px). */}
+        <div className="relative flex items-center justify-start sm:justify-center gap-2 sm:gap-4 mb-3">
+          <button type="button" onClick={() => goMonth(-1)} title="Прошлый месяц" aria-label="Прошлый месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
+          <b className="text-sm font-bold capitalize min-w-[110px] sm:min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
+          <button type="button" onClick={() => goMonth(1)} title="Следующий месяц" aria-label="Следующий месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
           {/* Своя задача на сегодня — в одно нажатие, не открывая день вручную. */}
-          <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня"
-            className="absolute right-0 top-0 h-8 px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
+          <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня" aria-label="Своя задача на сегодня"
+            className="absolute right-0 top-0 h-9 sm:h-8 min-w-[36px] justify-center px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
