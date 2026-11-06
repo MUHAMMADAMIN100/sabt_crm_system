@@ -990,10 +990,12 @@ export class DirectService implements OnApplicationBootstrap {
     };
   }
 
-  /** «Аналитика» за период: по каждому менеджеру продаж — сколько клиентов
+  /** «Аналитика» за период (только руководству): по каждому менеджеру продаж — сколько клиентов
    *  ведёт, сколько ответов и как быстро, сколько лидов и сделок; плюс все,
    *  кто отвечал (руководство, ответы из приложения Instagram). */
-  async stats(fromIso?: string, toIso?: string) {
+  async stats(user: User, fromIso?: string, toIso?: string) {
+    // Цифры по каждому менеджеру видит только руководство (решение владельца).
+    if (!isTop(user)) throw new ForbiddenException('«Аналитика» Директа доступна только руководству');
     const to = toIso ? new Date(toIso) : new Date();
     const from = fromIso ? new Date(fromIso) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) throw new BadRequestException('Неверный период');

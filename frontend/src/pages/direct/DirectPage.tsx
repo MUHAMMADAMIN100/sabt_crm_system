@@ -21,23 +21,34 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * продаж, который первым ответил (06.11.2026), — чужой закреплённый чат
  * менеджер только читает. Окно на весь экран (Layout снимает поля); на
  * телефоне открытый чат — без нижней панели и без шапки страницы.
- * Адрес: /direct?c=<чат>&m=<менеджер>&tab=analytics.
+ * Адрес: /direct?c=<чат>&m=<менеджер>&tab=analytics. «Аналитика» — только
+ * руководству (решение владельца 06.11.2026).
  */
 export default function DirectPage() {
   const [params, setParams] = useSearchParams()
   const selected = params.get('c')
-  // tab=speed — старый адрес «Скорости ответа», теперь это «Аналитика».
-  const tab: Tab = params.get('tab') === 'analytics' || params.get('tab') === 'speed' ? 'analytics' : 'chats'
-  const managerParam = params.get('m')
-  const assigneeId = managerParam && UUID.test(managerParam) ? managerParam : null
   const role = useAuthStore(s => s.user?.role)
   const isTop = role === 'admin' || role === 'founder'
+  // tab=speed — старый адрес «Скорости ответа», теперь это «Аналитика».
+  const wantsAnalytics = params.get('tab') === 'analytics' || params.get('tab') === 'speed'
+  const tab: Tab = isTop && wantsAnalytics ? 'analytics' : 'chats'
+  const managerParam = params.get('m')
+  const assigneeId = managerParam && UUID.test(managerParam) ? managerParam : null
   const [sound, setSound] = useState(directSoundEnabled())
   const [showConnection, setShowConnection] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
 
   const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, refetchInterval: 120_000 })
   const connected = status?.connected ?? true
+
+  // Менеджер открыл старую ссылку на аналитику — убираем её из адреса, чтобы
+  // и нижнее меню (Layout смотрит на tab) вело себя как в обычных чатах.
+  useEffect(() => {
+    if (isTop || !params.has('tab')) return
+    const p = new URLSearchParams(params)
+    p.delete('tab')
+    setParams(p, { replace: true })
+  }, [isTop, params, setParams])
 
   // Панель подключения закрывается кликом мимо неё.
   useEffect(() => {
@@ -78,15 +89,18 @@ export default function DirectPage() {
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700" role="tablist">
-            {([['chats', 'Чаты'], ['analytics', 'Аналитика']] as [Tab, string][]).map(([key, label]) => (
-              <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => go({ tab: key })}
-                className={clsx('px-2.5 py-2 text-xs font-medium transition-colors sm:py-1',
-                  tab === key ? 'bg-primary-600 text-white' : 'bg-surface-50 text-surface-600 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-300')}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Чаты видят все с доступом; «Аналитику» по менеджерам — только руководство. */}
+          {isTop && (
+            <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700" role="tablist">
+              {([['chats', 'Чаты'], ['analytics', 'Аналитика']] as [Tab, string][]).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => go({ tab: key })}
+                  className={clsx('px-2.5 py-2 text-xs font-medium transition-colors sm:py-1',
+                    tab === key ? 'bg-primary-600 text-white' : 'bg-surface-50 text-surface-600 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-300')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <button type="button" onClick={toggleSound} className="btn-ghost !p-2 sm:!p-1.5" aria-pressed={sound}
             title={sound ? 'Звук новых сообщений включён' : 'Звук новых сообщений выключен'} aria-label="Звук новых сообщений">
             {sound ? <Bell size={17} /> : <BellOff size={17} />}

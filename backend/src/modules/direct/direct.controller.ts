@@ -47,10 +47,11 @@ export class DirectController {
     return this.direct.unreadTotal(req.user);
   }
 
+  /** «Аналитика» по менеджерам — только руководству (решение владельца 06.11.2026). */
   @Get('stats')
   @RequirePerm('clients.view')
-  stats(@Query() query: DirectStatsQueryDto) {
-    return this.direct.stats(query.from, query.to);
+  stats(@Request() req, @Query() query: DirectStatsQueryDto) {
+    return this.direct.stats(req.user, query.from, query.to);
   }
 
   @Get('conversations')
