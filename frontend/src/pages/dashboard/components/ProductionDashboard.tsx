@@ -343,7 +343,8 @@ export default function ProductionDashboard() {
                 : todayTotal > 0 ? 'Всё на сегодня сделано' : 'На сегодня задач нет'}
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          {/* На телефоне три плитки в ряд — в два ряда третья стояла одна. */}
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
             <Tile value={String(overdueOpen.length)}
               label={overdueOpen.length > 0 ? 'просрочено' : 'просрочено · всё в срок'}
               tone={overdueOpen.length > 0 ? 'bad' : 'ok'} />
@@ -587,7 +588,7 @@ export default function ProductionDashboard() {
 
 function Tile({ value, label, tone }: { value: string; label: string; tone?: 'ok' | 'bad' }) {
   return (
-    <div className="rounded-xl bg-surface-50 dark:bg-surface-800/40 border border-surface-100 dark:border-surface-700/60 px-3 py-2 min-w-[92px]">
+    <div className="rounded-xl bg-surface-50 dark:bg-surface-800/40 border border-surface-100 dark:border-surface-700/60 px-2.5 sm:px-3 py-2 min-w-0 sm:min-w-[92px]">
       <b className={clsx('block text-[17px] font-bold tabular-nums leading-none',
         tone === 'bad' ? 'text-red-500 dark:text-red-400' : tone === 'ok' ? 'text-emerald-500 dark:text-emerald-400' : '')}>{value}</b>
       <span className="block text-[10px] text-surface-500 dark:text-surface-400 mt-1">{label}</span>

@@ -96,7 +96,11 @@ function Tile({ icon, tone, value, label }: { icon: React.ReactNode; tone: strin
     <div className="card !p-2.5 sm:!px-[18px] sm:!py-3 flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 min-w-0">
       <span className={clsx('w-[30px] h-[30px] sm:w-[38px] sm:h-[38px] rounded-[9px] sm:rounded-[10px] flex items-center justify-center shrink-0', tone)}>{icon}</span>
       <div className="flex flex-col min-w-0">
-        <b className="text-base sm:text-[19px] font-bold leading-tight text-surface-900 dark:text-surface-100 tabular-nums">{value}</b>
+        {/* Число крупно, слово мельче: на 320 px «карточек» упиралось в край плитки. */}
+        <b className="text-base sm:text-[19px] font-bold leading-tight text-surface-900 dark:text-surface-100 tabular-nums">
+          {value.split(' ')[0]}
+          {value.includes(' ') && <span className="max-[399px]:text-[13px]"> {value.split(' ').slice(1).join(' ')}</span>}
+        </b>
         <span className="text-xs sm:text-[12.5px] leading-tight text-surface-400 dark:text-surface-500">{label}</span>
       </div>
     </div>

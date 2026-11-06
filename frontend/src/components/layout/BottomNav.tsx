@@ -95,6 +95,7 @@ export default function BottomNav() {
     return list
   }, [user, navigate])
 
+  const hasFan = actions.length > 0
   const tabCls = 'relative flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
 
   // Подразделы «Разработки» для шторки «Ещё»: top-level пункта доски в меню
@@ -308,8 +309,9 @@ export default function BottomNav() {
                     </button>
                   </div>
                 )}
-                {/* Поиск: разделов с подразделами больше двадцати. */}
-                <div className="px-1 pb-2">
+                {/* Поиск: разделов с подразделами больше двадцати. Когда искать
+                    нечего (у видеографа все разделы уже на панели) — не показываем. */}
+                {(groups.length > 0 || rest.length > 0) && <div className="px-1 pb-2">
                   <label className="flex items-center gap-2.5 h-12 px-3 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">
                     <Search size={17} className="text-surface-400 shrink-0" />
                     <span className="sr-only">Поиск по разделам</span>
@@ -322,7 +324,7 @@ export default function BottomNav() {
                       </button>
                     )}
                   </label>
-                </div>
+                </div>}
                 {/* Рабочая смена — крупной кнопкой: начало и конец дня
                     попадаются пальцем не глядя. */}
                 {!searching && (
@@ -373,7 +375,8 @@ export default function BottomNav() {
       )}
 
       <nav className={clsx(
-        'lg:hidden fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-end',
+        'lg:hidden fixed inset-x-0 bottom-0 z-30 grid items-end',
+        hasFan ? 'grid-cols-5' : 'grid-cols-4',
         'px-2 pt-2 pb-[max(10px,env(safe-area-inset-bottom))]',
         'transition-transform duration-200',
         hidden && !more && !fan && 'translate-y-full',
@@ -382,18 +385,22 @@ export default function BottomNav() {
             панели обрезала бы и кнопку, и подписи. Вырез прозрачный, поэтому
             подкрашивать его под фон страницы не нужно. */}
         <span aria-hidden className="absolute inset-0 bg-[rgb(var(--sidebar-bg))] border-t border-white/[.07]"
-          style={{
+          style={hasFan ? {
             WebkitMaskImage: 'radial-gradient(circle 32px at 50% 0, transparent 31px, #000 32px)',
             maskImage: 'radial-gradient(circle 32px at 50% 0, transparent 31px, #000 32px)',
-          }} />
+          } : undefined} />
         {left.map(renderTab)}
 
-        <button type="button" onClick={() => { setMore(false); setFan(v => !v) }} title="Создать" aria-label="Создать" aria-expanded={fan}
-          className={clsx('relative justify-self-center w-[52px] h-[52px] -mt-7 rounded-full bg-primary-600 text-white',
-            'flex items-center justify-center shadow-lg shadow-primary-600/40 transition-transform',
-            fan && 'rotate-45')}>
-          <Plus size={24} strokeWidth={2.2} />
-        </button>
+        {/* Создавать нечего (видеограф, дизайнер и т. п.) — «+» не показываем:
+            раньше он открывал только «Доступных действий нет». */}
+        {hasFan && (
+          <button type="button" onClick={() => { setMore(false); setFan(v => !v) }} title="Создать" aria-label="Создать" aria-expanded={fan}
+            className={clsx('relative justify-self-center w-[52px] h-[52px] -mt-7 rounded-full bg-primary-600 text-white',
+              'flex items-center justify-center shadow-lg shadow-primary-600/40 transition-transform',
+              fan && 'rotate-45')}>
+            <Plus size={24} strokeWidth={2.2} />
+          </button>
+        )}
 
         {right.map(renderTab)}
 
