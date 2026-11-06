@@ -31,6 +31,11 @@ import {
 } from './vacation-pay.logic';
 import { WEBRAND_BACKUP } from './webrand-backup.data';
 import { FinanceScheduler } from './finance.scheduler';
+import {
+  buildFinanceReport, describeReportFields, reportMoney, REPORT_TYPE_LABEL,
+  ReportTx, ReportTxStatus, ReportPlan, ReportPayrollRow, ReportEmployee, ReportDebt,
+  ReportBank, ReportInstallment, ReportSubscription, ReportAsset, ReportActivity,
+} from './finance-report';
 import { TelegramService } from '../telegram/telegram.service';
 import { paymentItems as smmPaymentItems } from '../smm-control/smm-payments.logic';
 import {
@@ -6226,6 +6231,237 @@ export class FinanceService implements OnModuleInit {
   }
 
   async removeAsset(id: string) { await this.assetRepo.delete(id); return { ok: true }; }
+
+  // ─── Финансовый отчёт (Excel) ────────────────────────────────────
+  /** Вся история финансов одним файлом Excel, 13 листов (06.11.2026, макет
+   *  утверждён владельцем). Считается теми же правилами, что и экраны
+   *  «Финансов»: статьи расхода — groupOf, направления — directionOf,
+   *  зарплата — та же ведомость expenseDetail('salary') за каждый месяц. */
+  async financeReport(userId?: string): Promise<{ buffer: Buffer; filename: string }> {
+    const today = todayISO();
+    const curYm = currentYm();
+    const exportedAt = new Date();
+    const [m, txAll, plans, assets, users, board, actRows] = await Promise.all([
+      this.maps(),
+      this.txRepo.find(),
+      this.ppRepo.find(),
+      this.listAssets(),
+      this.ds.query(`SELECT id, name FROM users`).catch(() => [] as any[]),
+      // Отчёт не должен падать целиком из-за одного блока: без рассрочек
+      // файл всё равно полезен (и это видно — лист будет пустым).
+      this.installmentsBoard().catch((e: any) => {
+        this.logger.warn(`finance report: installments skipped: ${e?.message || e}`);
+        return { rows: [], banks: [] } as any;
+      }),
+      this.ds.query(
+        `SELECT a.action, a.route, a.details, a."createdAt", a."userId", u.name AS "userName"
+         FROM finance_activity a LEFT JOIN users u ON u.id = a."userId"
+         ORDER BY a."createdAt" DESC`,
+      ).catch(() => [] as any[]),
+    ]);
+    const userName = new Map<string, string>((users as any[]).map(u => [String(u.id), String(u.name || '')]));
+    const accName = (id?: string | null) => (id ? m.acc.get(id)?.name ?? null : null);
+    const DIR_LABEL: Record<string, string> = { smm: 'SMM', development: 'Development', design: 'Design', maintenance: 'Обслуживание' };
+    const GROUP_LABEL: Record<string, string> = {
+      salary: 'Зарплата', rent_subs: 'Аренда и подписки', debts: 'Долги', installments: 'Кредиты банкам', transport: 'Транспорт', other: 'Прочее',
+    };
+    const PROJECT_STATUS: Record<string, string> = { active: 'Активный', paused: 'На паузе', lead: 'Лид', done: 'Завершён', archived: 'В архиве' };
+
+    // ── Операции: по дате, затем по времени внесения. Номер = строка листа.
+    const sorted = [...txAll].sort((a, b) => String(a.date).localeCompare(String(b.date))
+      || new Date(a.createdAt as any).getTime() - new Date(b.createdAt as any).getTime());
+    const txs: ReportTx[] = sorted.map((t, i) => {
+      const date = String(t.date).slice(0, 10);
+      const status: ReportTxStatus = t.status === FinanceTxStatus.CANCELLED ? 'cancelled'
+        : t.status === FinanceTxStatus.PENDING ? 'pending'
+          : date > today ? 'future' : 'posted';
+      const direction = t.type === FinanceTxType.INCOME ? this.directionOf(t, m) : null;
+      let expenseGroup: string | null = null;
+      if (t.type === FinanceTxType.EXPENSE) {
+        expenseGroup = this.groupOf(t, m);
+        if (!expenseGroup) {
+          const catName = (t.categoryId ? m.cat.get(t.categoryId)?.name : null) ?? t.category ?? '';
+          expenseGroup = t.recipientId || /транспорт/i.test(catName) ? 'transport' : 'other';
+        }
+      }
+      return {
+        id: t.id, no: i + 1, date, type: t.type, status, amount: r2(Number(t.amount) || 0),
+        accountId: t.accountId ?? null, fromAccountId: t.fromAccountId ?? null, toAccountId: t.toAccountId ?? null,
+        legacySaving: isLegacySaving(t), affectsBalance: t.affectsBalance !== false,
+        accountName: accName(t.accountId) ?? (t.account || null),
+        fromName: accName(t.fromAccountId), toName: accName(t.toAccountId),
+        categoryId: t.categoryId ?? null,
+        category: (t.categoryId ? m.cat.get(t.categoryId)?.name : null) ?? t.category ?? null,
+        groupKey: t.type === FinanceTxType.INCOME ? direction : expenseGroup,
+        groupLabel: t.type === FinanceTxType.INCOME
+          ? (direction ? DIR_LABEL[direction] ?? direction : null)
+          : expenseGroup ? GROUP_LABEL[expenseGroup] : null,
+        directionLabel: direction ? DIR_LABEL[direction] ?? direction : null,
+        projectId: t.projectId ?? null,
+        project: (t.projectId ? m.proj.get(t.projectId)?.name : null) ?? t.project ?? null,
+        employeeId: t.employeeId ?? null,
+        employee: t.employeeId ? m.emp.get(t.employeeId)?.name ?? null : null,
+        recipient: t.recipientId ? userName.get(t.recipientId) ?? null : null,
+        salaryYm: t.employeeId ? (t.salaryYm || null) : null,
+        debtId: t.debtId ?? null, debt: t.debtId ? m.debt.get(t.debtId)?.name ?? null : null,
+        subscriptionId: t.subscriptionId ?? null,
+        subscription: t.subscriptionId ? m.sub.get(t.subscriptionId)?.name ?? null : null,
+        counterparty: t.counterparty ?? null, comment: t.comment ?? null, description: t.description ?? null,
+        paymentMethod: t.paymentMethod ?? null, source: t.source ?? null,
+        createdBy: t.createdById ? userName.get(t.createdById) ?? null : null,
+        createdAt: t.createdAt ? new Date(t.createdAt as any) : null,
+        updatedAt: t.updatedAt ? new Date(t.updatedAt as any) : null,
+      };
+    });
+    const txById = new Map(txs.map(t => [t.id, t]));
+
+    // ── Ожидаемые оплаты клиентов.
+    const reportPlans: ReportPlan[] = plans.filter(p => p.projectId).map(p => {
+      const proj = m.proj.get(p.projectId!);
+      const rtx = p.receivedTxId ? txById.get(p.receivedTxId) : null;
+      const live = rtx && rtx.status !== 'cancelled' ? rtx : null;
+      const st = proj ? (proj.archived ? 'archived' : proj.status || 'active') : 'archived';
+      return {
+        id: p.id,
+        project: proj?.name ?? 'Проект удалён',
+        direction: proj?.direction ? DIR_LABEL[proj.direction] ?? proj.direction : null,
+        manager: proj?.salesManagerId ? userName.get(proj.salesManagerId) ?? null : null,
+        tariff: proj ? r2(Number(proj.tariff) || 0) : null,
+        projectStatus: PROJECT_STATUS[st] || st,
+        earning: proj ? isEarning(proj) : false,
+        ym: p.ym, partNo: Number(p.partNo) || 1, amount: r2(Number(p.amount) || 0),
+        dueDate: p.dueDate ? String(p.dueDate).slice(0, 10) : null,
+        status: p.status,
+        // Ссылка на отменённую или удалённую операцию — то же, что её нет.
+        receivedTxId: live ? p.receivedTxId : null,
+        receivedTx: live ? { no: live.no, date: live.date, amount: live.amount, account: live.accountName } : null,
+        auto: !!p.auto,
+      };
+    });
+
+    // ── Зарплата: ведомость каждого месяца с первой зарплатной операции.
+    const payMonths = txs.filter(t => t.employeeId && t.status !== 'cancelled').map(t => t.salaryYm || t.date.slice(0, 7)).sort();
+    const payroll: ReportPayrollRow[] = [];
+    if (payMonths.length) {
+      let guard = 0;
+      for (let ym = payMonths[0]; ym <= curYm && guard < 120; ym = shiftYm(ym, 1), guard++) {
+        let d: any = null;
+        try { d = await this.expenseDetail('salary', ym); }
+        catch (e: any) { this.logger.warn(`finance report: payroll ${ym} skipped: ${e?.message || e}`); continue; }
+        const period = d?.period || {};
+        for (const row of d?.rows || []) {
+          payroll.push({
+            ym, employee: row.name, role: row.role ?? null,
+            salary: r2(row.salary), bonus: r2(row.bonus), fine: r2(row.fine), vacation: r2(row.vacation || 0),
+            installment: r2(row.installment || 0), advance: r2(row.advance), paid: r2(row.paid), toPay: r2(row.toPay),
+            frozen: !!row.frozen, periodStatus: period.status ?? null,
+            closedAt: period.closedAt ? new Date(period.closedAt) : null, paidAt: row.paidAt ?? null,
+          });
+        }
+      }
+    }
+
+    const employees: ReportEmployee[] = m.employees.map(e => ({
+      name: e.name, role: e.role ?? null, status: e.status ?? null,
+      hireDate: e.hireDate ?? null, terminationDate: e.terminationDate ?? null,
+      salaryNow: r2(salaryForMonth(e, curYm)), salaryHistory: (e.salaryHistory || {}) as Record<string, number>,
+      hasCrmUser: !!e.userId, category: e.category ?? null,
+    }));
+
+    // ── Долги (без банков), кредиты банкам и рассрочки сотрудникам.
+    const postedExp = txAll.filter(t => t.type === FinanceTxType.EXPENSE && isPostedFinanceTransactionAsOf(t, today));
+    const debts: ReportDebt[] = m.realDebts.map(d => ({
+      id: d.id, name: d.name, counterparty: d.counterparty ?? null,
+      total: r2(d.totalAmount), paidBefore: r2(d.paidBefore),
+      paidInCrm: this.sum(postedExp.filter(t => t.debtId === d.id)),
+      remaining: this.debtRemaining(d, postedExp),
+      dueDate: d.dueDate ? String(d.dueDate).slice(0, 10) : null, note: d.note ?? null,
+      createdAt: d.createdAt ? new Date(d.createdAt as any) : null,
+      tranches: plans.filter(p => p.debtId === d.id).map(p => ({
+        date: p.dueDate ? String(p.dueDate).slice(0, 10) : `${p.ym}-01`, amount: r2(p.amount), received: p.status === 'received',
+      })),
+    }));
+    const banks: ReportBank[] = (board.banks || []).map((b: any) => ({
+      name: b.name, bank: b.bank ?? null, total: r2(b.total), paidBefore: r2(b.paidBefore), monthly: r2(b.monthly),
+      dueDay: b.dueDay ?? null, paid: r2(b.paid), remaining: r2(b.remaining), done: !!b.done,
+      next: b.next ? { date: b.next.date, amount: r2(b.next.amount), overdue: !!b.next.overdue } : null,
+      plan: (b.plan || []).map((p: any) => ({ date: p.date, amount: r2(p.amount), paid: !!p.paid, overdue: !!p.overdue })),
+      note: b.note ?? null,
+    }));
+    const installments: ReportInstallment[] = (board.rows || []).map((x: any) => ({
+      employee: x.employee?.name ?? '—', name: x.installment?.name ?? '', method: x.installment?.method ?? 'salary',
+      total: r2(x.installment?.totalAmount), monthly: r2(x.installment?.monthlyAmount), startYm: x.installment?.startYm ?? null,
+      paid: r2(x.paid), remaining: r2(x.remaining), done: !!x.done,
+      next: x.next ? { date: x.next.date, amount: r2(x.next.amount) } : null,
+      overdue: x.overdue ? { amount: r2(x.overdue.amount), count: Number(x.overdue.count) || 0, since: x.overdue.since } : null,
+      schedule: (x.schedule || []).map((e: any) => ({
+        ym: e.ym, date: e.date, amount: r2(e.amount), outstanding: r2(e.outstanding), status: String(e.status || ''),
+      })),
+    }));
+
+    const subscriptions: ReportSubscription[] = m.subscriptions.map(s => ({
+      id: s.id, name: s.name, kind: s.kind ?? null, amount: r2(s.amount), dueDay: s.dueDay ?? null, active: s.active !== false,
+      start: s.dueDate ? String(s.dueDate).slice(0, 10) : null, end: s.endDate ? String(s.endDate).slice(0, 10) : null,
+      marks: (s.paidMarks || []).map(x => ({ ym: x.ym, date: x.date ?? null })),
+    }));
+
+    const reportAssets: ReportAsset[] = (assets as any[]).map(a => ({
+      name: a.name, category: a.category ?? null, purchaseDate: a.purchaseDate ? String(a.purchaseDate).slice(0, 10) : null,
+      price: r2(a.price), serviceMonths: Number(a.serviceMonths) || 0, monthlyDep: r2(a.monthlyDep),
+      depreciated: r2(a.depreciated), residual: r2(a.residual), status: a.status ?? null, assignee: a.assignee ?? null,
+      serial: a.serial ?? null, warrantyUntil: a.warrantyUntil ? String(a.warrantyUntil).slice(0, 10) : null,
+      note: a.note ?? null, wornOut: !!a.wornOut,
+    }));
+
+    // ── Журнал: поля и id — человеческими словами, как на странице «Активность».
+    const refs: Record<string, Map<string, string>> = {
+      accountId: new Map(m.accounts.map(x => [x.id, x.name])), fromAccountId: new Map(m.accounts.map(x => [x.id, x.name])),
+      toAccountId: new Map(m.accounts.map(x => [x.id, x.name])), categoryId: new Map(m.categories.map(x => [x.id, x.name])),
+      projectId: new Map(m.projects.map(x => [x.id, x.name])), employeeId: new Map(m.employees.map(x => [x.id, x.name])),
+      debtId: new Map(m.debts.map(x => [x.id, x.name])), subscriptionId: new Map(m.subscriptions.map(x => [x.id, x.name])),
+      assetId: new Map((assets as any[]).map(x => [x.id, x.name])),
+    };
+    const activity: ReportActivity[] = (actRows as any[]).map(row => {
+      const det = row.details || {};
+      const before = det.before && typeof det.before === 'object' ? det.before : null;
+      const after = det.after && typeof det.after === 'object' ? det.after : null;
+      const subject = after || before || (det.input && typeof det.input === 'object' ? det.input : null) || det;
+      const objName = subject?.name
+        || (subject?.amount != null ? `${REPORT_TYPE_LABEL[subject.type] || ''} ${reportMoney(subject.amount)}`.trim() : null)
+        || (subject?.projectId && refs.projectId.get(subject.projectId))
+        || (subject?.employeeId && refs.employeeId.get(subject.employeeId))
+        || null;
+      return {
+        at: new Date(row.createdAt), user: row.userName ?? null, action: String(row.action || ''), route: row.route ?? null,
+        object: objName ? String(objName) : null,
+        before: describeReportFields(before, refs), after: describeReportFields(after, refs),
+        input: describeReportFields(det.input && typeof det.input === 'object' ? det.input : (before || after ? null : det), refs),
+      };
+    });
+
+    const exportedBy = userId ? userName.get(userId) ?? null : null;
+    const buffer = await buildFinanceReport({
+      exportedAt, exportedBy, today, thresholds: { lateDays: 3, bigExpense: 500 },
+      accounts: m.accounts.map(a => ({
+        id: a.id, name: a.name, kind: a.kind ?? (a.key === 'cash' ? 'cash' : 'bank'), startBalance: r2(a.startBalance), archived: !!a.archived,
+      })),
+      txs, plans: reportPlans, payroll, employees, debts, banks, installments, subscriptions,
+      assets: reportAssets, activity,
+    });
+
+    // Кто и когда скачал всю историю финансов — тоже в журнал.
+    try {
+      const repo = this.ds.getRepository(FinanceActivity);
+      await repo.save(repo.create({
+        userId: userId ?? null, action: 'Скачал финансовый отчёт (Excel)', route: 'GET /api/finance/export/report',
+        details: { input: { operations: txs.length, months: payMonths.length ? payroll.length : 0 } } as any,
+      }));
+    } catch (e: any) {
+      this.logger.warn(`finance report activity log failed: ${e?.message || e}`);
+    }
+    const d = today.split('-');
+    return { buffer, filename: `SABT — финансы — вся история — ${d[2]}.${d[1]}.${d[0]}.xlsx` };
+  }
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
   private async exportAllWithManager(em: EntityManager) {

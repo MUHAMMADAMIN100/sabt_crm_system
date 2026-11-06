@@ -779,6 +779,9 @@ export const financeApi = {
 
   // Резервная копия / сброс
   exportAll: () => api.get('/finance/backup/export').then(r => r.data),
+  /** Финансовый отчёт в Excel: вся история, 13 листов (06.11.2026). */
+  downloadReport: (): Promise<Blob> =>
+    api.get('/finance/export/report', { responseType: 'blob', timeout: 180_000 }).then(r => r.data as Blob),
   importAll: (data: any) => api.post('/finance/backup/import', data).then(r => r.data),
   resetAll: () => api.post('/finance/reset', {}).then(r => r.data),
 

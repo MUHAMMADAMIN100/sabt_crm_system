@@ -1,6 +1,7 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, Request,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, Request, Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FinanceService } from './finance.service';
@@ -324,6 +325,20 @@ export class FinanceController {
   @Post('assets') createAsset(@Body() dto: CreateAssetDto) { return this.service.createAsset(dto); }
   @Patch('assets/:id') updateAsset(@Param('id') id: string, @Body() dto: UpdateAssetDto) { return this.service.updateAsset(id, dto); }
   @Delete('assets/:id') removeAsset(@Param('id') id: string) { return this.service.removeAsset(id); }
+
+  // ─── Финансовый отчёт: вся история одним файлом Excel ────────────
+  /** 13 листов: проверки, итоги по месяцам, счета, операции, клиенты,
+   *  зарплата, долги, рассрочки, подписки, инвентарь, журнал (06.11.2026). */
+  @Throttle({ default: { ttl: 60_000, limit: 4 } })
+  @Get('export/report')
+  async exportReport(@Request() req, @Res() res: Response) {
+    const { buffer, filename } = await this.service.financeReport(req.user?.id);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="sabt-finance.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', String(buffer.length));
+    res.end(buffer);
+  }
 
   // ─── Резервная копия / сброс ─────────────────────────────────────
   @Get('backup/export') exportAll() { return this.service.exportAll(); }
