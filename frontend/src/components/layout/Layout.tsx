@@ -74,7 +74,8 @@ export default function Layout() {
   // На телефоне открытый чат ещё и без нижней панели (как в Instagram).
   const directRoute = location.pathname === '/direct'
   const directParams = new URLSearchParams(location.search)
-  const directChatOpen = directRoute && directParams.has('c') && directParams.get('tab') !== 'speed'
+  const directTab = directParams.get('tab')
+  const directChatOpen = directRoute && directParams.has('c') && directTab !== 'analytics' && directTab !== 'speed'
 
   // fetchMe нужен только если пришли по F5 (user пуст). После свежего login()
   // user уже загружен — повторный вызов плодит гонку с interceptor'ом

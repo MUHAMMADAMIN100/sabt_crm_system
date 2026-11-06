@@ -14,6 +14,8 @@ import MessageItem from './MessageItem'
 import Composer from './Composer'
 import { dayKey, dayLabel, duration } from './directTime'
 import { upsertDirectMessage } from './directCache'
+import { canReplyIn } from './directAccess'
+import AssigneeControl from './AssigneeControl'
 
 const LEAD_STATUS: Record<string, string> = {
   new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах', proposal: 'КП отправлено',
@@ -228,6 +230,12 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
   }
 
   const viewers = c.viewers.filter(v => v.id !== user?.id)
+  // Чат ведёт другой менеджер — клиенту не пишем и лид не заводим, только
+  // заметки для команды. Руководство пишет всегда (как и сервер).
+  const canReplyHere = canReplyIn(user, c.assignee?.id)
+  const readOnlyReason = canReplyHere
+    ? null
+    : `Чат ведёт ${c.assignee?.name || 'другой менеджер'} — клиенту отвечает закреплённый менеджер или руководство. Вы можете оставить заметку для команды.`
   const igLink = c.contact.username ? `https://ig.me/m/${c.contact.username}` : 'https://www.instagram.com/direct/inbox/'
   const left = c.replyUntil ? new Date(c.replyUntil).getTime() - Date.now() : null
   const blockedReason = !connected
@@ -302,7 +310,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
           <Link to={`/clients?id=${c.lead.id}`} className="btn-secondary !py-1.5 shrink-0 text-xs" title="Открыть карточку в Базе клиентов">
             <Contact size={14} /> <span className="hidden sm:inline">Лид:</span> {LEAD_STATUS[c.lead.status] || c.lead.status}
           </Link>
-        ) : canCreateLead ? (
+        ) : canCreateLead && canReplyHere ? (
           // На узком телефоне — только значок: имя собеседника важнее подписи.
           <button type="button" onClick={() => setShowLead(true)} className="btn-secondary !py-1.5 shrink-0 text-xs max-[399px]:!px-2.5"
             aria-label="Создать лид" title="Создать лид">
@@ -311,17 +319,17 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
         ) : null}
       </div>
 
-      {/* Кто ответил последним и сколько ждёт клиент */}
-      {(c.waitingSince || c.lastReply) && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-100 bg-surface-50 px-4 py-1.5 text-[12px] text-surface-500 dark:border-surface-700/60 dark:bg-surface-800/60">
-          {c.waitingSince && (
-            <span className="font-medium text-amber-700 dark:text-amber-300">Клиент ждёт ответа {duration(Date.now() - new Date(c.waitingSince).getTime())}</span>
-          )}
-          {c.lastReply && (
-            <span>Последним ответил{c.lastReply.by ? `: ${c.lastReply.by.id === user?.id ? 'вы' : c.lastReply.by.name}` : ' из приложения Instagram'}</span>
-          )}
-        </div>
-      )}
+      {/* Кто ведёт клиента, сколько он ждёт, кто ответил последним */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-100 bg-surface-50 px-4 py-1.5 text-[12px] text-surface-500 dark:border-surface-700/60 dark:bg-surface-800/60">
+        <AssigneeControl c={c} me={user} onChanged={refresh} />
+        {c.waitingSince && (
+          <span className="font-medium text-amber-700 dark:text-amber-300">Клиент ждёт ответа {duration(Date.now() - new Date(c.waitingSince).getTime())}</span>
+        )}
+        {/* «Последним ответил» — только если это не тот, кто ведёт: иначе повтор. */}
+        {c.lastReply && (!c.lastReply.by || c.lastReply.by.id !== c.assignee?.id) && (
+          <span>Последним ответил{c.lastReply.by ? `: ${c.lastReply.by.id === user?.id ? 'вы' : c.lastReply.by.name}` : ' из приложения Instagram'}</span>
+        )}
+      </div>
 
       {/* Лента */}
       <div
@@ -352,6 +360,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
               m={m}
               meId={user?.id}
               canDeleteNote={m.direction === 'note' && !m.id.startsWith('pending:') && (m.author?.id === user?.id || isTop)}
+              canRetry={canReplyHere || m.direction === 'note'}
               onRetry={mid => (mid.startsWith('pending:') ? retryPending(mid.slice(8)) : retry.mutate(mid))}
               onDismiss={m.id.startsWith('pending:') ? () => dismissPending(m.id.slice(8)) : undefined}
               onDeleteNote={nid => removeNote.mutate(nid)}
@@ -364,6 +373,7 @@ export default function ChatPane({ id, connected, onBack }: { id: string; connec
       <Composer
         conversationId={id}
         blockedReason={blockedReason}
+        readOnlyReason={readOnlyReason}
         igLink={igLink}
         onSendText={text => enqueue({ kind: 'text', text })}
         onSendFile={(file, text) => enqueue({ kind: 'file', text, file, previewUrl: isPdf(file) ? undefined : URL.createObjectURL(file) })}

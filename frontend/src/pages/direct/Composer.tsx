@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { ExternalLink, FileText, Image as ImageIcon, Mic, Paperclip, Send, Square, StickyNote, Trash2, X } from 'lucide-react'
+import { ExternalLink, FileText, Image as ImageIcon, Lock, Mic, Paperclip, Send, Square, StickyNote, Trash2, X } from 'lucide-react'
 
 const MAX_CHARS = 4000
 const MAX_VOICE_S = 300
@@ -10,9 +10,12 @@ const encoder = new TextEncoder()
 type Mode = 'message' | 'note'
 
 /** Поле ответа: текст, фото/PDF, голосовое; режим «Заметка для команды». */
-export default function Composer({ blockedReason, igLink, onSendText, onSendFile, onSendVoice, onAddNote, conversationId }: {
+export default function Composer({ blockedReason, readOnlyReason, igLink, onSendText, onSendFile, onSendVoice, onAddNote, conversationId }: {
   /** Почему писать клиенту сейчас нельзя (окно 24 часов, нет подключения). Заметки можно всегда. */
   blockedReason: string | null
+  /** Чат ведёт другой менеджер: клиенту не пишем вовсе (и в Instagram не
+   *  отправляем), остаются только заметки для команды. */
+  readOnlyReason?: string | null
   igLink: string
   /** Отправка мгновенная: пузырь сразу в ленте, ответ сервера — потом. */
   onSendText: (text: string) => void
@@ -21,7 +24,9 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
   onAddNote: (text: string) => void
   conversationId: string
 }) {
-  const [mode, setMode] = useState<Mode>('message')
+  const [chosen, setMode] = useState<Mode>('message')
+  // Чужой закреплённый чат — только заметки.
+  const mode: Mode = readOnlyReason ? 'note' : chosen
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [recording, setRecording] = useState<{ started: number } | null>(null)
@@ -36,6 +41,13 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
     return () => stopRecording(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId])
+
+  // Чат стал чужим (передали, закрепили за коллегой) посреди записи — запись
+  // отменяем: отправить её клиенту уже нельзя.
+  useEffect(() => {
+    if (readOnlyReason) stopRecording(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnlyReason])
 
   // Поле растёт вместе с текстом, до шести строк.
   useEffect(() => {
@@ -90,7 +102,7 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
   }
 
   async function startRecording() {
-    if (blocked || recording) return
+    if (blocked || recording || mode !== 'message') return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       toast.error('Этот браузер не умеет записывать голос'); return
     }
@@ -132,17 +144,24 @@ export default function Composer({ blockedReason, igLink, onSendText, onSendFile
 
   return (
     <div className="border-t border-surface-200 bg-surface-50 p-2.5 dark:border-surface-700 dark:bg-surface-800">
-      <div className="mb-2 flex items-center gap-1">
-        {(['message', 'note'] as Mode[]).map(m => (
-          <button key={m} type="button" onClick={() => setMode(m)}
-            className={clsx('inline-flex min-h-[34px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors sm:min-h-0',
-              mode === m
-                ? m === 'note' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200' : 'bg-primary-600 text-white'
-                : 'text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700')}>
-            {m === 'note' ? <><StickyNote size={12} /> Заметка для команды</> : 'Ответ клиенту'}
-          </button>
-        ))}
-      </div>
+      {readOnlyReason ? (
+        <div className="mb-2 flex items-start gap-1.5 px-1 text-[12.5px] leading-snug text-surface-600 dark:text-surface-300">
+          <Lock size={13} className="mt-0.5 shrink-0 text-surface-400" />
+          <span>{readOnlyReason}</span>
+        </div>
+      ) : (
+        <div className="mb-2 flex items-center gap-1">
+          {(['message', 'note'] as Mode[]).map(m => (
+            <button key={m} type="button" onClick={() => setMode(m)}
+              className={clsx('inline-flex min-h-[34px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors sm:min-h-0',
+                mode === m
+                  ? m === 'note' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200' : 'bg-primary-600 text-white'
+                  : 'text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700')}>
+              {m === 'note' ? <><StickyNote size={12} /> Заметка для команды</> : 'Ответ клиенту'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {blocked ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">

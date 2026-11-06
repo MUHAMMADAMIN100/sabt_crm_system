@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { AlertCircle, Check, CheckCheck, Clock, ExternalLink, FileText, RotateCcw, StickyNote, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, CheckCheck, Clock, ExternalLink, FileText, RotateCcw, StickyNote, Trash2, User as UserIcon, X } from 'lucide-react'
 import { apiUrl, FAILURE_TEXT, type DirectAttachment, type DirectMessage } from '@/services/direct.api'
 import { clockTime } from './directTime'
 
@@ -66,21 +66,23 @@ function StatusIcon({ m }: { m: DirectMessage }) {
   return null
 }
 
-export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDismiss, onDeleteNote, retrying }: {
+export default function MessageItem({ m, meId, canDeleteNote, canRetry = true, onRetry, onDismiss, onDeleteNote, retrying }: {
   m: DirectMessage
   meId?: string
   canDeleteNote: boolean
+  /** Писать клиенту можно (свой или свободный чат) — тогда и «Повторить». */
+  canRetry?: boolean
   onRetry: (id: string) => void
   /** Только у временного пузыря, который не дошёл до сервера: убрать его. */
   onDismiss?: () => void
   onDeleteNote: (id: string) => void
   retrying: boolean
 }) {
-  const failedRow = (text: string, canRetry: boolean) => (
+  const failedRow = (text: string, retryable: boolean) => (
     <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-[12px] text-red-600 dark:text-red-400">
       <AlertCircle size={13} className="shrink-0" />
       <span>{text}</span>
-      {canRetry && (
+      {retryable && canRetry && (
         <button type="button" onClick={() => onRetry(m.id)} disabled={retrying}
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-surface-700 hover:bg-surface-100 disabled:opacity-50 dark:text-surface-200 dark:hover:bg-surface-700">
           <RotateCcw size={12} /> Повторить
@@ -94,6 +96,23 @@ export default function MessageItem({ m, meId, canDeleteNote, onRetry, onDismiss
       )}
     </div>
   )
+
+  // Отметка «чат закреплён / передан / освобождён» — серой строкой по центру.
+  // Кто это сделал — если его имени нет в самой отметке (передал админ).
+  if (m.direction === 'event') {
+    const actor = m.author && !(m.text || '').includes(m.author.name) ? (m.author.id === meId ? 'вы' : m.author.name) : null
+    return (
+      <div className="flex justify-center py-0.5">
+        <span className="inline-flex max-w-full items-start gap-1.5 rounded-2xl bg-surface-100 px-3 py-1 text-[11.5px] leading-snug text-surface-600 dark:bg-surface-800 dark:text-surface-300">
+          <UserIcon size={12} className="mt-px shrink-0" aria-hidden />
+          <span className="min-w-0">
+            {m.text}
+            <span className="text-surface-400">{actor ? ` · ${actor}` : ''} · {clockTime(m.sentAt)}</span>
+          </span>
+        </span>
+      </div>
+    )
+  }
 
   if (m.direction === 'note') {
     return (

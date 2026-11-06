@@ -8,21 +8,22 @@ import { ClientLead } from '../clients/client-lead.entity';
 /**
  * «Директ» — переписка Instagram аккаунта агентства в CRM (04.11.2026).
  *
- * Чат общий: его видят все, у кого есть доступ к Базе клиентов, отвечает любой.
- * Закрепления за менеджером нет (решение владельца), поэтому вместо
- * «ответственного» храним, кто ответил последним и с какого момента клиент
- * ждёт ответа.
+ * Чат видят все, у кого есть доступ к Базе клиентов. С 06.11.2026 клиент
+ * закрепляется за менеджером продаж, который первым ответил ему из CRM
+ * (правила — в direct-access.ts): чужой закреплённый чат менеджер только
+ * читает. Ещё храним, кто ответил последним и с какого момента клиент ждёт.
  *
- * На проде таблицы создаёт миграция 1822000000000-AddDirectInstagram, локально —
- * synchronize. Поля здесь и там должны совпадать.
+ * На проде таблицы создают миграции 1822000000000-AddDirectInstagram и
+ * 1823000000000-DirectAssignee, локально — synchronize. Поля должны совпадать.
  */
 
 /** Мессенджер переписки. Пока только Instagram; WhatsApp добавится позже. */
 export type DirectChannel = 'instagram';
 
 /** in — написал клиент; out — агентство (из CRM или из приложения Instagram);
- *  note — заметка для команды, клиенту не уходит. */
-export type DirectDirection = 'in' | 'out' | 'note';
+ *  note — заметка для команды, клиенту не уходит; event — отметка в ленте
+ *  о том, кто ведёт чат («закреплён за…», «передан…»). */
+export type DirectDirection = 'in' | 'out' | 'note' | 'event';
 
 /** Судьба исходящего: sending — ушло в Instagram, ответа ещё нет;
  *  sent — Instagram принял; read — клиент прочитал; failed — не ушло. */
@@ -91,6 +92,20 @@ export class DirectConversation {
 
   @Column({ type: 'timestamptz', nullable: true })
   lastReplyAt: Date | null;
+
+  /** Менеджер продаж, который ведёт клиента: первым ответил ему из CRM или
+   *  получил чат от руководства/коллеги. NULL — чат свободный. */
+  @Index('IDX_direct_conversations_assignee')
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assigneeId' })
+  assignee: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  assigneeId: string | null;
+
+  /** Когда клиент закрепился за нынешним менеджером. */
+  @Column({ type: 'timestamptz', nullable: true })
+  assignedAt: Date | null;
 
   /** Лид, созданный из чата кнопкой «Создать лид». */
   @ManyToOne(() => ClientLead, { nullable: true, onDelete: 'SET NULL' })

@@ -3,6 +3,7 @@ import { describeWebhook, parseInstagramWebhook } from './instagram-events';
 import { isMediaLink, signedByMeta, MessengerError } from './meta-http';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { DirectFiles } from './direct-files';
+import { bindsOnReply, canLead, canReply, canTransfer, isSalesManager, isTop } from './direct-access';
 
 const ACCOUNT = '17841400000000001';
 const CLIENT = '987654321';
@@ -192,5 +193,65 @@ describe('DirectFiles — проверка файлов и подписанны�
     const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000;
     expect(files.signedPath('avatar', 'x', hour + 1_000)).toBe(files.signedPath('avatar', 'x', hour + 3_500_000));
     expect(files.signedPath('avatar', 'x', hour + 1_000)).not.toBe(files.signedPath('avatar', 'x', hour + 3_700_000));
+  });
+});
+
+describe('кто ведёт чат — правила закрепления (решение владельца 06.11.2026)', () => {
+  const smm = { id: 'smm', role: 'sales_manager_smm' };
+  const dev = { id: 'dev', role: 'sales_manager_dev' };
+  const designerSales = { id: 'ds', role: 'designer', secondaryRole: 'sales_manager_dev' };
+  const admin = { id: 'adm', role: 'admin' };
+  const founder = { id: 'fnd', role: 'founder' };
+  const adminAlsoSales = { id: 'adm2', role: 'admin', secondaryRole: 'sales_manager_smm' };
+  const designer = { id: 'des', role: 'designer' };
+
+  it('менеджер продаж — по основной или второй роли; руководство им не считается', () => {
+    expect(isSalesManager(smm)).toBe(true);
+    expect(isSalesManager(dev)).toBe(true);
+    expect(isSalesManager(designerSales)).toBe(true);
+    expect(isSalesManager(designer)).toBe(false);
+    expect(isSalesManager(admin)).toBe(false);
+    expect(isSalesManager(adminAlsoSales)).toBe(false);
+    expect(isTop(founder)).toBe(true);
+    expect(isTop(smm)).toBe(false);
+  });
+
+  it('первый ответ менеджера продаж в свободном чате закрепляет; руководство — нет', () => {
+    expect(bindsOnReply(smm, null)).toBe(true);
+    expect(bindsOnReply(designerSales, null)).toBe(true);
+    expect(bindsOnReply(admin, null)).toBe(false);
+    expect(bindsOnReply(founder, null)).toBe(false);
+    expect(bindsOnReply(adminAlsoSales, null)).toBe(false);
+    // уже закреплён — второй ответ ничего не меняет
+    expect(bindsOnReply(dev, 'smm')).toBe(false);
+  });
+
+  it('закреплённый чат пишет только его менеджер и руководство; свободный — любой', () => {
+    expect(canReply(smm, null)).toBe(true);
+    expect(canReply(dev, null)).toBe(true);
+    expect(canReply(smm, 'smm')).toBe(true);
+    expect(canReply(dev, 'smm')).toBe(false);
+    expect(canReply(designerSales, 'smm')).toBe(false);
+    expect(canReply(admin, 'smm')).toBe(true);
+    expect(canReply(founder, 'smm')).toBe(true);
+  });
+
+  it('передать чат: руководство — любой, менеджер — только свой', () => {
+    expect(canTransfer(admin, 'smm')).toBe(true);
+    expect(canTransfer(founder, null)).toBe(true);
+    expect(canTransfer(smm, 'smm')).toBe(true);
+    expect(canTransfer(dev, 'smm')).toBe(false);
+    // свободный чат менеджер не «передаёт» — он закрепляется ответом
+    expect(canTransfer(smm, null)).toBe(false);
+  });
+
+  it('вести клиентов может только работающий менеджер продаж с доступом к «Директу»', () => {
+    expect(canLead({ ...smm, isActive: true, isBlocked: false })).toBe(true);
+    expect(canLead(designerSales)).toBe(true);
+    expect(canLead({ ...smm, isActive: false })).toBe(false); // уволен
+    expect(canLead({ ...smm, isBlocked: true })).toBe(false); // заблокирован
+    expect(canLead({ ...smm, deniedPermissions: ['clients.view'] })).toBe(false); // доступ к Базе клиентов отняли
+    expect(canLead(designer)).toBe(false);
+    expect(canLead(admin)).toBe(false);
   });
 });

@@ -21,6 +21,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { ClientsService } from '../clients/clients.service';
 import { ClientLeadDirection } from '../clients/client-lead.entity';
 import { getSalesSegment } from '../../common/sales-segment';
+import { bindsOnReply, canLead, canReply, canTransfer, isTop } from './direct-access';
 
 /** Имя и фото человека спрашиваем заново раз в неделю — их меняют. */
 const PROFILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -155,8 +156,10 @@ export class DirectService implements OnApplicationBootstrap {
     this.background((async () => {
       const stale = !conversation.profileCheckedAt || Date.now() - new Date(conversation.profileCheckedAt).getTime() > PROFILE_TTL_MS;
       if (created || stale) await this.refreshProfile(conversation.id);
+      // Клиент ждёт, а тот, кто ведёт, больше не может ответить — чат открывается.
+      const opened = await this.releaseStranded(conversation.id);
       // Сообщаем о первом непрочитанном: следующие ждут, пока чат откроют.
-      if (unread === 1) await this.announce(conversation.id, preview, created);
+      if (unread === 1 || opened) await this.announce(conversation.id, preview, created);
       await this.fetchFiles(conversation.id, files);
     })());
     await this.pushMessage(conversation.id, message.id);
@@ -166,7 +169,7 @@ export class DirectService implements OnApplicationBootstrap {
   private async applyEcho(event: Extract<DirectEvent, { kind: 'message' }>): Promise<void> {
     if (await this.messagesRepo.findOne({ where: { externalId: event.externalId }, select: ['id'] })) return;
 
-    let result: { conversationId: string; messageId: string; files: DirectAttachment[] };
+    let result: { conversationId: string; messageId: string; files: DirectAttachment[]; authorId?: string };
     try {
       result = await this.conversations.manager.transaction(async (em) => {
         const { conversation } = await this.openConversation(event.accountId, event.contactId, event.sentAt, em);
@@ -193,7 +196,7 @@ export class DirectService implements OnApplicationBootstrap {
           );
           // Прерванное не дошло до «ответил» в transmit — отмечаем здесь.
           if (match.status === 'failed') await this.answered(conversation.id, match.authorId, new Date(match.sentAt), em);
-          return { conversationId: conversation.id, messageId: match.id, files: [] };
+          return { conversationId: conversation.id, messageId: match.id, files: [], authorId: match.authorId };
         }
 
         const messages = em.getRepository(DirectMessage);
@@ -220,6 +223,12 @@ export class DirectService implements OnApplicationBootstrap {
       throw error;
     }
     if (result.files.length) this.background(this.fetchFiles(result.conversationId, result.files));
+    // Сообщение из CRM дошло — а ответ API мог потеряться (сбой, перезапуск):
+    // закрепление по первому ответу не должно от этого зависеть.
+    if (result.authorId) {
+      const author = await this.users.findOne({ where: { id: result.authorId } });
+      if (author) await this.bindOnReplySafe(result.conversationId, author);
+    }
     await this.pushMessage(result.conversationId, result.messageId);
   }
 
@@ -434,7 +443,11 @@ export class DirectService implements OnApplicationBootstrap {
         const files = await this.attachments.find({ where: { messageId }, order: { createdAt: 'ASC' } });
         const dto = this.messageDto(message, files, clientId);
         const { all } = await this.audience();
-        for (const userId of all) this.gateway.notifyUser(userId, 'direct:message', { conversationId, message: dto });
+        // Кто ведёт чат — страница по нему решает, звенеть ли: менеджеру
+        // звенят только его чаты и свободные.
+        const [owner] = await this.conversations.query(`SELECT "assigneeId" FROM direct_conversations WHERE id = $1`, [conversationId]);
+        const assigneeId: string | null = owner?.assigneeId ?? null;
+        for (const userId of all) this.gateway.notifyUser(userId, 'direct:message', { conversationId, message: dto, assigneeId });
       }
     } catch (e: any) {
       this.logger.warn(`Живое обновление сообщения не ушло: ${e?.message || e}`);
@@ -446,7 +459,7 @@ export class DirectService implements OnApplicationBootstrap {
    *  кто ответил последним. Кто сейчас в чате — все, страница уберёт себя сама. */
   private async pushConversation(conversationId: string): Promise<void> {
     try {
-      const row = await this.conversations.findOne({ where: { id: conversationId }, relations: ['lead', 'lastReplyBy'] });
+      const row = await this.conversations.findOne({ where: { id: conversationId }, relations: ['lead', 'lastReplyBy', 'assignee'] });
       if (!row) return;
       const last = await this.lastMessages([row.id]);
       const names = await this.namesOf(this.uniq([...this.viewerIds(row.id), ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[]]));
@@ -459,12 +472,15 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   private async announce(conversationId: string, preview: string, isNew: boolean): Promise<void> {
-    const conversation = await this.conversations.findOne({ where: { id: conversationId } });
+    const conversation = await this.conversations.findOne({ where: { id: conversationId }, relations: ['assignee'] });
     if (!conversation) return;
+    // Закреплённый чат — только его менеджеру; свободный — всем менеджерам продаж.
     const { push } = await this.audience();
+    const owner = conversation.assignee && canLead(conversation.assignee) ? conversation.assignee.id : null;
+    const recipients = owner ? [owner] : push;
     const watching = this.viewerIds(conversationId);
     const name = contactLabel(conversation);
-    for (const userId of push) {
+    for (const userId of recipients) {
       if (watching.includes(userId)) continue; // чат и так открыт у него на экране
       await this.notifications.create({
         userId,
@@ -523,12 +539,13 @@ export class DirectService implements OnApplicationBootstrap {
 
   // ─── Что читает CRM ─────────────────────────────────────────────────
 
-  async list(user: User, query: { view?: string; search?: string; limit?: number; offset?: number }) {
+  async list(user: User, query: { view?: string; search?: string; assigneeId?: string; limit?: number; offset?: number }) {
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 100);
     const offset = Math.max(Number(query.offset) || 0, 0);
-    const qb = this.filtered(query.view, query.search)
+    const qb = this.filtered(query.view, query.search, user, query.assigneeId)
       .leftJoinAndSelect('c.lead', 'lead')
       .leftJoinAndSelect('c.lastReplyBy', 'replier')
+      .leftJoinAndSelect('c.assignee', 'assignee')
       .orderBy('c.lastMessageAt', 'DESC')
       .addOrderBy('c.id', 'DESC')
       .take(limit)
@@ -542,23 +559,98 @@ export class DirectService implements OnApplicationBootstrap {
     return { items: rows.map(r => this.summary(r, last.get(r.id) ?? null, names, user.id)), total };
   }
 
-  async counts(search?: string) {
-    const [all, unread, waiting] = await Promise.all([
-      this.filtered('all', search).getCount(),
-      this.filtered('unread', search).getCount(),
-      this.filtered('waiting', search).getCount(),
-    ]);
-    return { all, unread, waiting };
+  async counts(user: User, search?: string, assigneeId?: string) {
+    const [all, mine, free, unread, waiting] = await Promise.all(
+      ['all', 'mine', 'free', 'unread', 'waiting'].map(view => this.filtered(view, search, user, assigneeId).getCount()),
+    );
+    return { all, mine, free, unread, waiting };
+  }
+
+  /** Менеджеры продаж — кому можно передать чат и по кому фильтровать список. */
+  async managers() {
+    const rows: any[] = await this.users.query(
+      `SELECT id, name, role, "secondaryRole", "extraPermissions", "deniedPermissions", "isActive", "isBlocked" FROM users
+        WHERE "isActive" = true AND COALESCE("isBlocked", false) = false
+        ORDER BY name`,
+    );
+    // role — именно роль продаж: у дизайнера с второй ролью МП это вторая роль.
+    return rows.filter(u => canLead(u))
+      .map(u => ({ id: u.id as string, name: u.name as string, role: (SALES_ROLES.has(u.role) ? u.role : u.secondaryRole) as string }));
+  }
+
+  /**
+   * Передать чат другому менеджеру продаж или освободить (userId = null).
+   * Руководство — любой чат, менеджер — только свой. В ленте остаётся отметка.
+   */
+  async assign(user: User, id: string, targetId: string | null) {
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['assignee'] });
+    if (!conversation) throw new NotFoundException('Чат не найден');
+    if (!canTransfer(user, conversation.assigneeId)) {
+      throw new ForbiddenException('Передать чат может только тот, кто его ведёт, или руководство');
+    }
+    let target: User | null = null;
+    if (targetId) {
+      target = await this.users.findOne({ where: { id: targetId } });
+      if (!target || !canLead(target)) throw new BadRequestException('Чат можно передать только менеджеру продаж');
+    }
+    const prev = conversation.assigneeId ?? null;
+    if (prev === (target?.id ?? null)) return this.get(user, id);
+
+    // Права проверены по прочитанному «кто ведёт»; если за это время чат
+    // передали или закрепили, запись не пройдёт — иначе менеджер мог бы
+    // распорядиться чатом, который ему уже не принадлежит.
+    const res = await this.conversations.query(
+      `UPDATE direct_conversations SET "assigneeId" = $2, "assignedAt" = $3, "updatedAt" = now()
+        WHERE id = $1 AND "assigneeId" IS NOT DISTINCT FROM $4`,
+      [id, target?.id ?? null, target ? new Date() : null, prev],
+    );
+    if (Number(Array.isArray(res) ? res[1] : 0) !== 1) {
+      throw new ConflictException('Пока вы выбирали, чат уже передали — посмотрите, кто его ведёт сейчас');
+    }
+    // Новый менеджер мог получить доступ минуту назад — живые события ему нужны сразу.
+    if (target) this.audienceCache = null;
+    const before = conversation.assignee?.name;
+    const text = target
+      ? (before ? `Чат передан: ${before} → ${target.name}` : `Чат закреплён за: ${target.name}`)
+      : `Чат освобождён${before ? `: ${before} больше не ведёт клиента` : ''}`;
+    await this.addEvent(id, user.id, text);
+    // Новый менеджер узнаёт сразу — пушем и колокольчиком.
+    if (target && target.id !== user.id) {
+      await this.notifications.create({
+        userId: target.id,
+        type: NotificationType.DIRECT_MESSAGE,
+        title: `Вам передан чат в Директе: ${contactLabel(conversation)}`,
+        message: `Передал(а): ${user.name}`,
+        link: `/direct?c=${id}`,
+        data: { conversationId: id },
+      }).catch(e => this.logger.warn(`Уведомление о передаче чата не создано: ${e?.message || e}`));
+    }
+    return this.get(user, id);
+  }
+
+  /** Отметка в ленте о том, кто ведёт чат. Клиенту не уходит. authorId null — отметка CRM. */
+  private async addEvent(conversationId: string, authorId: string | null, text: string): Promise<void> {
+    const event = await this.messagesRepo.save(this.messagesRepo.create({
+      conversationId, direction: 'event', text, authorId, sentAt: new Date(),
+    }));
+    await this.pushMessage(conversationId, event.id);
   }
 
   /** Сколько чатов с непрочитанным — число у «Директа» в меню. */
-  async unreadTotal(): Promise<{ count: number }> {
-    return { count: await this.conversations.createQueryBuilder('c').where('c.unreadCount > 0').getCount() };
+  async unreadTotal(user: User): Promise<{ count: number }> {
+    const qb = this.conversations.createQueryBuilder('c').where('c.unreadCount > 0');
+    // Менеджеру — его чаты и свободные; руководство видит все.
+    if (!isTop(user)) qb.andWhere('(c.assigneeId IS NULL OR c.assigneeId = :me)', { me: user.id });
+    return { count: await qb.getCount() };
   }
 
   async get(user: User, id: string) {
-    const row = await this.conversations.findOne({ where: { id }, relations: ['lead', 'lastReplyBy'] });
+    let row = await this.conversations.findOne({ where: { id }, relations: ['lead', 'lastReplyBy', 'assignee'] });
     if (!row) throw new NotFoundException('Чат не найден');
+    if (await this.releaseStranded(row)) {
+      row = await this.conversations.findOne({ where: { id }, relations: ['lead', 'lastReplyBy', 'assignee'] });
+      if (!row) throw new NotFoundException('Чат не найден');
+    }
     const last = await this.lastMessages([row.id]);
     const names = await this.namesOf(this.uniq([...this.viewerIds(row.id), ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[]]));
     return this.summary(row, last.get(row.id) ?? null, names, user.id);
@@ -587,9 +679,15 @@ export class DirectService implements OnApplicationBootstrap {
 
   /** Сотрудник открыл чат: сообщения прочитаны, его уведомления о чате — тоже. */
   async markRead(user: User, id: string): Promise<void> {
-    const conversation = await this.conversation(id);
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['assignee'] });
+    if (!conversation) throw new NotFoundException('Чат не найден');
     this.ping(user.id, id);
-    if (conversation.unreadCount > 0) {
+    // Закреплённый чат «прочитан», когда его открыл тот, кто ведёт: коллега
+    // или руководство, заглянув, не снимают у менеджера отметку о новом.
+    // Тот, кто ведёт, больше не может вести клиентов — как свободный.
+    const owner = conversation.assignee;
+    const mayClear = !owner || owner.id === user.id || !canLead(owner);
+    if (conversation.unreadCount > 0 && mayClear) {
       await this.conversations.update(id, { unreadCount: 0 });
       await this.pushConversation(id);
     }
@@ -599,12 +697,12 @@ export class DirectService implements OnApplicationBootstrap {
   // ─── Что пишет CRM ──────────────────────────────────────────────────
 
   async sendText(user: User, id: string, text: string, publicBase: string, clientId?: string) {
-    const conversation = await this.writable(id);
+    const conversation = await this.writable(user, id);
     return this.sendTexts(user, conversation, text, publicBase, clientId);
   }
 
   async sendFile(user: User, id: string, upload: UploadedFile | undefined, text: string | undefined, publicBase: string, clientId?: string) {
-    const conversation = await this.writable(id);
+    const conversation = await this.writable(user, id);
     const file = this.files.checkOutgoing(upload);
     const stored = await this.files.saveOutgoing(file);
     const first = await this.deliver(user, conversation, { file: { ...file, ...stored } }, publicBase, clientId);
@@ -613,7 +711,7 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   async sendVoice(user: User, id: string, upload: UploadedFile | undefined, publicBase: string, clientId?: string) {
-    const conversation = await this.writable(id);
+    const conversation = await this.writable(user, id);
     const recorded = this.files.checkVoice(upload);
     let sound: Buffer;
     try {
@@ -631,7 +729,7 @@ export class DirectService implements OnApplicationBootstrap {
     const message = await this.messagesRepo.findOne({ where: { id: messageId } });
     if (!message) throw new NotFoundException('Сообщение не найдено');
     if (message.status !== 'failed') throw new ConflictException('Сообщение уже отправлено');
-    const conversation = await this.writable(message.conversationId);
+    const conversation = await this.writable(user, message.conversationId);
     // Двое нажали «Повторить» одновременно (или двойной клик) — уйдёт один раз:
     // в «отправляется» сообщение переводит только первый.
     const res = await this.messagesRepo.query(
@@ -656,19 +754,27 @@ export class DirectService implements OnApplicationBootstrap {
   async deleteNote(user: User, noteId: string): Promise<void> {
     const note = await this.messagesRepo.findOne({ where: { id: noteId } });
     if (!note || note.direction !== 'note') throw new NotFoundException('Заметка не найдена');
-    const isTop = user.role === 'admin' || user.role === 'founder';
-    if (note.authorId !== user.id && !isTop) throw new ForbiddenException('Удалить можно только свою заметку');
+    if (note.authorId !== user.id && !isTop(user)) throw new ForbiddenException('Удалить можно только свою заметку');
     await this.messagesRepo.delete(note.id);
     this.changed(note.conversationId);
   }
 
   /** «Создать лид»: карточка в Базе клиентов, направление — по менеджеру. */
   async createLead(user: User, id: string, dto: any) {
-    const conversation = await this.conversations.findOne({ where: { id }, relations: ['lead'] });
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['lead', 'assignee'] });
     if (!conversation) throw new NotFoundException('Чат не найден');
     if (conversation.lead) throw new ConflictException('Лид из этого чата уже создан');
-    const direction = (getSalesSegment(user.role)?.leadDirection as ClientLeadDirection | undefined) ?? dto.direction;
-    const lead = await this.clients.create({ ...dto, direction }, user.id, { id: user.id, name: user.name });
+    await this.releaseStranded(conversation);
+    if (!canReply(user, conversation.assigneeId)) {
+      throw new ForbiddenException(`Клиента ведёт ${conversation.assignee?.name || 'другой менеджер'} — лид заводит закреплённый менеджер или руководство`);
+    }
+    // Лид — у того, кто ведёт клиента; в свободном чате (или если он больше
+    // не может вести клиентов) — у создавшего.
+    const owner: User = conversation.assignee && canLead(conversation.assignee) ? conversation.assignee : user;
+    const segment = getSalesSegment(owner.role) ?? getSalesSegment(owner.secondaryRole);
+    const direction = (segment?.leadDirection as ClientLeadDirection | undefined) ?? dto.direction;
+    // ownerId — всегда тот, кто ведёт: чужое значение из запроса не принимаем.
+    const lead = await this.clients.create({ ...dto, direction, ownerId: owner.id }, owner.id, { id: user.id, name: user.name });
     await this.conversations.update(id, { leadId: lead.id });
     await this.pushConversation(id);
     return { leadId: lead.id };
@@ -714,8 +820,9 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   private async transmit(conversation: DirectConversation, messageId: string, publicBase: string, clientId?: string) {
-    const message = await this.messagesRepo.findOneOrFail({ where: { id: messageId } });
+    const message = await this.messagesRepo.findOneOrFail({ where: { id: messageId }, relations: ['author'] });
     const [file] = await this.attachments.find({ where: { messageId } });
+    let delivered = false;
     try {
       const to = conversation.contactId;
       let externalId: string;
@@ -737,15 +844,73 @@ export class DirectService implements OnApplicationBootstrap {
       );
       await this.answered(conversation.id, message.authorId, new Date());
       await this.markToken(false);
+      delivered = true;
     } catch (error) {
       const failure = failureOf(error);
       this.logger.warn(`Сообщение в Instagram не ушло (${failure}): ${String(error)}`);
       if (failure === 'TOKEN_INVALID') await this.markToken(true);
       await this.messagesRepo.update(message.id, { status: 'failed', error: failure });
     }
+    // Закрепление — после отправки и отдельно от неё: его сбой не должен
+    // превращать дошедшее сообщение в «не доставлено» (и в повторную отправку).
+    if (delivered && message.author) await this.bindOnReplySafe(conversation.id, message.author);
     await this.pushMessage(conversation.id, messageId, clientId);
     const fresh = await this.messagesRepo.findOneOrFail({ where: { id: messageId }, relations: ['author'] });
     return this.messageDto(fresh, await this.attachments.find({ where: { messageId } }), clientId);
+  }
+
+  /** Закрепление по ответу без права уронить то, что уже сделано (отправку, эхо). */
+  private async bindOnReplySafe(conversationId: string, author: User): Promise<void> {
+    await this.bindOnReply(conversationId, author)
+      .catch(e => this.logger.warn(`Чат ${conversationId} не закреплён за ${author.id}: ${e?.message || e}`));
+  }
+
+  /** Первый ответ менеджера продаж закрепляет свободный чат за ним.
+   *  Ответы руководства и из приложения Instagram не закрепляют. */
+  private async bindOnReply(conversationId: string, author: User): Promise<void> {
+    if (!bindsOnReply(author, null)) return;
+    // Двое ответили одновременно — чат достаётся первому, второй просто ответил.
+    const res = await this.conversations.query(
+      `UPDATE direct_conversations SET "assigneeId" = $2, "assignedAt" = now(), "updatedAt" = now()
+        WHERE id = $1 AND "assigneeId" IS NULL`,
+      [conversationId, author.id],
+    );
+    if (Number(Array.isArray(res) ? res[1] : 0) !== 1) return;
+    await this.addEvent(conversationId, author.id, `Чат закреплён за: ${author.name} — первый ответ клиенту`);
+  }
+
+  /**
+   * Тот, кто ведёт чат, больше не может вести клиентов (уволен, заблокирован,
+   * ушёл из продаж), а клиент ждёт ответа — чат освобождается, в ленте
+   * отметка. Пока клиент не пишет, закрепление не трогаем: блокировка могла
+   * быть на день, а руководство может передать чат и само.
+   * Принимает чат с загруженным assignee (тогда правит его) или id.
+   */
+  private async releaseStranded(target: DirectConversation | string): Promise<boolean> {
+    const conversation = typeof target === 'string'
+      ? await this.conversations.findOne({ where: { id: target }, relations: ['assignee'] })
+      : target;
+    const owner = conversation?.assignee;
+    if (!conversation || !owner || !conversation.waitingSince || canLead(owner)) return false;
+    const res = await this.conversations.query(
+      `UPDATE direct_conversations SET "assigneeId" = NULL, "assignedAt" = NULL, "updatedAt" = now()
+        WHERE id = $1 AND "assigneeId" = $2`,
+      [conversation.id, owner.id],
+    );
+    if (Number(Array.isArray(res) ? res[1] : 0) !== 1) {
+      // Чат как раз передали — берём того, кто ведёт теперь.
+      const fresh = await this.conversations.findOne({ where: { id: conversation.id }, relations: ['assignee'] });
+      conversation.assignee = fresh?.assignee ?? null;
+      conversation.assigneeId = fresh?.assigneeId ?? null;
+      conversation.assignedAt = fresh?.assignedAt ?? null;
+      return false;
+    }
+    conversation.assignee = null;
+    conversation.assigneeId = null;
+    conversation.assignedAt = null;
+    const why = owner.isActive === false || owner.isBlocked ? 'сейчас без доступа к CRM' : 'больше не в отделе продаж';
+    await this.addEvent(conversation.id, null, `Чат освобождён: ${owner.name} ${why}, а клиент ждёт ответа`);
+    return true;
   }
 
   private async markToken(invalid: boolean): Promise<void> {
@@ -753,9 +918,15 @@ export class DirectService implements OnApplicationBootstrap {
     if (state && state.invalid !== invalid) await this.instagram.update({ invalid });
   }
 
-  /** Можно ли сейчас написать в чат: Instagram подключён и окно 24 часов открыто. */
-  private async writable(id: string): Promise<DirectConversation> {
-    const conversation = await this.conversation(id);
+  /** Можно ли сейчас написать в чат: Instagram подключён, окно 24 часов
+   *  открыто и чат не закреплён за другим менеджером. */
+  private async writable(user: User, id: string): Promise<DirectConversation> {
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['assignee'] });
+    if (!conversation) throw new NotFoundException('Чат не найден');
+    await this.releaseStranded(conversation);
+    if (!canReply(user, conversation.assigneeId)) {
+      throw new ForbiddenException(`Чат ведёт ${conversation.assignee?.name || 'другой менеджер'} — клиенту отвечает закреплённый менеджер или руководство`);
+    }
     if (!this.instagram.connected) throw new ConflictException('Instagram ещё не подключён к CRM');
     const until = replyUntil(conversation);
     if (!until) throw new ConflictException('Клиент ещё не писал — Instagram не даёт написать первым');
@@ -819,7 +990,9 @@ export class DirectService implements OnApplicationBootstrap {
     };
   }
 
-  /** «Скорость ответа» за период: по каждому, кто отвечал. */
+  /** «Аналитика» за период: по каждому менеджеру продаж — сколько клиентов
+   *  ведёт, сколько ответов и как быстро, сколько лидов и сделок; плюс все,
+   *  кто отвечал (руководство, ответы из приложения Instagram). */
   async stats(fromIso?: string, toIso?: string) {
     const to = toIso ? new Date(toIso) : new Date();
     const from = fromIso ? new Date(fromIso) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -840,14 +1013,62 @@ export class DirectService implements OnApplicationBootstrap {
     const [waiting] = await this.conversations.query(
       `SELECT count(*)::int AS count, min("waitingSince") AS since FROM direct_conversations WHERE "waitingSince" IS NOT NULL`,
     );
+    // Клиенты по менеджерам: закреплено сейчас, новых за период, ждут ответа.
+    const clients: any[] = await this.conversations.query(
+      `SELECT "assigneeId" AS "userId", count(*)::int AS clients,
+              count(*) FILTER (WHERE "assignedAt" >= $1 AND "assignedAt" < $2)::int AS "newClients",
+              count(*) FILTER (WHERE "waitingSince" IS NOT NULL)::int AS waiting
+         FROM direct_conversations WHERE "assigneeId" IS NOT NULL
+        GROUP BY "assigneeId"`,
+      [from, to],
+    );
+    // Лиды из чатов «Директа», созданные за период, и сколько из них стали
+    // сделкой. Считаем по владельцу лида — как в Базе клиентов: при передаче
+    // чата лид остаётся за тем, кто его завёл. client_leads."createdAt" —
+    // время БЕЗ пояса (по часам базы): ::timestamptz у границ заставляет
+    // Postgres сравнивать моменты, а не цифры на часах.
+    const leads: any[] = await this.conversations.query(
+      `SELECT l."ownerId" AS "userId", count(*)::int AS leads,
+              count(*) FILTER (WHERE l.status::text = 'won')::int AS deals
+         FROM direct_conversations c JOIN client_leads l ON l.id = c."leadId"
+        WHERE l."ownerId" IS NOT NULL AND l."createdAt" >= $1::timestamptz AND l."createdAt" < $2::timestamptz
+        GROUP BY l."ownerId"`,
+      [from, to],
+    );
+    const managers = await this.managers();
+    const byId = new Map<string | null, any>();
+    const row = (userId: string | null, name: string, isManager: boolean) => {
+      if (!byId.has(userId)) {
+        byId.set(userId, {
+          userId, name, isManager, clients: 0, newClients: 0, waiting: 0,
+          replies: 0, median: null, average: null, fast: 0, leads: 0, deals: 0,
+        });
+      }
+      return byId.get(userId);
+    };
+    for (const m of managers) row(m.id, m.name, true);
+    for (const r of rows) {
+      Object.assign(row(r.userId, r.userId ? (r.name || 'Сотрудник') : 'Из приложения Instagram', false), {
+        replies: r.replies, median: r.median, average: r.average, fast: r.fast,
+      });
+    }
+    const names = await this.namesOf(this.uniq([...clients, ...leads].map(r => r.userId)));
+    for (const c of clients) Object.assign(row(c.userId, names.get(c.userId) ?? 'Сотрудник', false), { clients: c.clients, newClients: c.newClients, waiting: c.waiting });
+    for (const l of leads) Object.assign(row(l.userId, names.get(l.userId) ?? 'Сотрудник', false), { leads: l.leads, deals: l.deals });
+    const managerIds = new Set(managers.map(m => m.id));
+    const people = [...byId.values()]
+      .map(p => ({ ...p, isManager: p.userId !== null && managerIds.has(p.userId) }))
+      // Сначала менеджеры продаж по числу клиентов, потом руководство, «из приложения» — в конце.
+      .sort((a, b) => Number(b.isManager) - Number(a.isManager)
+        || Number(a.userId === null) - Number(b.userId === null)
+        || b.clients - a.clients || b.replies - a.replies || a.name.localeCompare(b.name, 'ru'));
+    const [free] = await this.conversations.query(`SELECT count(*)::int AS count FROM direct_conversations WHERE "assigneeId" IS NULL`);
     return {
       from: from.toISOString(),
       to: to.toISOString(),
-      people: rows.map(r => ({
-        userId: r.userId, name: r.userId ? (r.name || 'Сотрудник') : 'Из приложения Instagram',
-        replies: r.replies, median: r.median, average: r.average, fast: r.fast,
-      })),
+      people,
       waiting: { count: waiting?.count ?? 0, since: waiting?.since ?? null },
+      freeClients: free?.count ?? 0,
     };
   }
 
@@ -904,10 +1125,18 @@ export class DirectService implements OnApplicationBootstrap {
 
   // ─── Сборка ответов ─────────────────────────────────────────────────
 
-  private filtered(view: string | undefined, search: string | undefined) {
+  private filtered(view: string | undefined, search: string | undefined, user: User, assigneeId?: string) {
     const qb = this.conversations.createQueryBuilder('c');
     if (view === 'unread') qb.andWhere('c.unreadCount > 0');
     if (view === 'waiting') qb.andWhere('c.waitingSince IS NOT NULL');
+    // «Непрочитанные» и «Ждут ответа» — очередь работы: менеджеру — его чаты
+    // и свободные (чужие он не прочитает и не ответит), руководству — все.
+    if ((view === 'unread' || view === 'waiting') && !isTop(user)) {
+      qb.andWhere('(c.assigneeId IS NULL OR c.assigneeId = :me)', { me: user.id });
+    }
+    if (view === 'mine') qb.andWhere('c.assigneeId = :me', { me: user.id });
+    if (view === 'free') qb.andWhere('c.assigneeId IS NULL');
+    if (assigneeId) qb.andWhere('c.assigneeId = :aid', { aid: assigneeId });
     const words = (search || '').trim().replace(/^@/, '').slice(0, 100);
     if (words) {
       const like = `%${words.replace(/[\\%_]/g, m => `\\${m}`)}%`;
@@ -925,7 +1154,7 @@ export class DirectService implements OnApplicationBootstrap {
               m."authorId", m."sentAt", m."deletedAt",
               (SELECT a.kind FROM direct_attachments a WHERE a."messageId" = m.id ORDER BY a."createdAt" LIMIT 1) AS kind
          FROM direct_messages m
-        WHERE m."conversationId" = ANY($1::uuid[]) AND m.direction <> 'note'
+        WHERE m."conversationId" = ANY($1::uuid[]) AND m.direction NOT IN ('note', 'event')
         ORDER BY m."conversationId", m."sentAt" DESC, m.id DESC`,
       [ids],
     );
@@ -969,6 +1198,9 @@ export class DirectService implements OnApplicationBootstrap {
       } : null,
       replyUntil: replyUntil(row),
       lead: row.lead ? { id: row.lead.id, name: row.lead.name, status: row.lead.status } : null,
+      /** Менеджер продаж, который ведёт клиента; null — чат свободный. */
+      assignee: row.assignee ? { id: row.assignee.id, name: row.assignee.name } : null,
+      assignedAt: row.assignedAt,
       viewers,
     };
   }

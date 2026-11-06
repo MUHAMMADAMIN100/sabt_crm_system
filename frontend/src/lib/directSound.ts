@@ -24,9 +24,14 @@ export function setDirectSound(on: boolean): void {
 let ctx: AudioContext | null = null
 
 /** Короткий двойной сигнал. Браузер разрешает звук только после первого
- *  клика по странице — до него сигнал просто не прозвучит. */
-export function playDirectChime(conversationId?: string): void {
+ *  клика по странице — до него сигнал просто не прозвучит.
+ *  assigneeId — кто ведёт чат: менеджеру звенят только его чаты и свободные
+ *  (как и пуши), руководству — все. */
+export function playDirectChime(conversationId?: string, assigneeId?: string | null): void {
   if (!directSoundEnabled()) return
+  const user = useAuthStore.getState().user
+  const top = user?.role === 'admin' || user?.role === 'founder'
+  if (assigneeId && user && !top && assigneeId !== user.id) return
   // Чат открыт и вкладка на экране — человек и так видит сообщение.
   const params = new URLSearchParams(window.location.search)
   const watching = window.location.pathname === '/direct'

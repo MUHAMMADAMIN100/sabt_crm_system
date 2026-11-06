@@ -8,21 +8,28 @@ import { useAuthStore } from '@/store/auth.store'
 import { directSoundEnabled, playDirectChime, setDirectSound } from '@/lib/directSound'
 import ConversationList from './ConversationList'
 import ChatPane from './ChatPane'
-import SpeedView from './SpeedView'
+import AnalyticsView from './AnalyticsView'
 import ConnectionPanel from './ConnectionPanel'
 
-type Tab = 'chats' | 'speed'
+type Tab = 'chats' | 'analytics'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * «Директ» — переписка Instagram аккаунта агентства (04.11.2026).
- * Чат общий: видят все с доступом к Базе клиентов, отвечает любой.
- * Окно на весь экран (Layout снимает поля); на телефоне открытый чат — без
- * нижней панели и без шапки страницы. Адрес чата — /direct?c=<id>.
+ * Видят все с доступом к Базе клиентов; клиент закрепляется за менеджером
+ * продаж, который первым ответил (06.11.2026), — чужой закреплённый чат
+ * менеджер только читает. Окно на весь экран (Layout снимает поля); на
+ * телефоне открытый чат — без нижней панели и без шапки страницы.
+ * Адрес: /direct?c=<чат>&m=<менеджер>&tab=analytics.
  */
 export default function DirectPage() {
   const [params, setParams] = useSearchParams()
   const selected = params.get('c')
-  const tab: Tab = params.get('tab') === 'speed' ? 'speed' : 'chats'
+  // tab=speed — старый адрес «Скорости ответа», теперь это «Аналитика».
+  const tab: Tab = params.get('tab') === 'analytics' || params.get('tab') === 'speed' ? 'analytics' : 'chats'
+  const managerParam = params.get('m')
+  const assigneeId = managerParam && UUID.test(managerParam) ? managerParam : null
   const role = useAuthStore(s => s.user?.role)
   const isTop = role === 'admin' || role === 'founder'
   const [sound, setSound] = useState(directSoundEnabled())
@@ -40,11 +47,13 @@ export default function DirectPage() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [showConnection])
 
-  const go = (next: { c?: string | null; tab?: Tab }) => {
+  const go = (next: { c?: string | null; tab?: Tab; m?: string | null }) => {
     const p = new URLSearchParams(params)
-    if (next.tab !== undefined) { if (next.tab === 'speed') p.set('tab', 'speed'); else p.delete('tab') }
+    if (next.tab !== undefined) { if (next.tab === 'analytics') p.set('tab', 'analytics'); else p.delete('tab') }
     if (next.c !== undefined) { if (next.c) p.set('c', next.c); else p.delete('c') }
-    setParams(p, { replace: next.c === undefined })
+    if (next.m !== undefined) { if (next.m) p.set('m', next.m); else p.delete('m') }
+    // Открыть чат или менеджера из «Аналитики» — шаг, на который можно вернуться «Назад».
+    setParams(p, { replace: next.c === undefined && next.m === undefined })
   }
 
   const toggleSound = () => {
@@ -65,17 +74,16 @@ export default function DirectPage() {
         <h1 className="text-[15px] font-semibold text-surface-900 dark:text-white">Директ</h1>
         {status?.account && (
           <span className="hidden min-w-0 truncate text-xs text-surface-500 sm:inline">
-            Instagram <b className="font-medium text-surface-700 dark:text-surface-200">@{status.account}</b> · общий чат команды продаж
+            Instagram <b className="font-medium text-surface-700 dark:text-surface-200">@{status.account}</b> · клиент закрепляется за менеджером, который ответил первым
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <div className="inline-flex overflow-hidden rounded-md border border-surface-200 dark:border-surface-700" role="tablist">
-            {([['chats', 'Чаты'], ['speed', 'Скорость ответа']] as [Tab, string][]).map(([key, label]) => (
+            {([['chats', 'Чаты'], ['analytics', 'Аналитика']] as [Tab, string][]).map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => go({ tab: key })}
                 className={clsx('px-2.5 py-2 text-xs font-medium transition-colors sm:py-1',
                   tab === key ? 'bg-primary-600 text-white' : 'bg-surface-50 text-surface-600 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-300')}>
-                {/* На узком телефоне «Скорость ответа» не влезала рядом с кнопками — короче. */}
-                {key === 'speed' ? <>Скорость<span className="hidden min-[400px]:inline"> ответа</span></> : label}
+                {label}
               </button>
             ))}
           </div>
@@ -117,14 +125,17 @@ export default function DirectPage() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {tab === 'speed' ? (
-          <div className="h-full overflow-y-auto p-4 lg:p-6"><SpeedView /></div>
+        {tab === 'analytics' ? (
+          <div className="h-full overflow-y-auto p-4 lg:p-6">
+            <AnalyticsView onOpenManager={userId => go({ tab: 'chats', m: userId, c: null })} />
+          </div>
         ) : (
           <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(300px,360px)_1fr]">
             {/* grid-cols-1 = minmax(0, 1fr): без него колонка на телефоне растягивалась
                 по самому широкому элементу чата (375 px на экране 320). */}
             <div className={clsx('min-h-0 border-surface-200 dark:border-surface-700 lg:border-r', selected ? 'hidden lg:block' : 'block')}>
-              <ConversationList selectedId={selected} onSelect={id => go({ c: id })} />
+              <ConversationList selectedId={selected} onSelect={id => go({ c: id })}
+                assigneeId={assigneeId} onAssigneeChange={m => go({ m })} />
             </div>
             <div className={clsx('min-h-0', selected ? 'block' : 'hidden lg:block')}>
               {selected ? (

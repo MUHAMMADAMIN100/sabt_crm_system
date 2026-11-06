@@ -9,12 +9,20 @@ class CacheBustQuery {
   _t?: string;
 }
 
+/** Вкладки списка: mine — чаты, которые веду я; free — ни за кем не закреплены. */
+export const DIRECT_VIEWS = ['all', 'mine', 'free', 'unread', 'waiting'] as const;
+export type DirectView = typeof DIRECT_VIEWS[number];
+
 export class DirectListQueryDto extends CacheBustQuery {
-  @IsOptional() @IsIn(['all', 'unread', 'waiting'])
-  view?: 'all' | 'unread' | 'waiting';
+  @IsOptional() @IsIn(DIRECT_VIEWS as unknown as string[])
+  view?: DirectView;
 
   @IsOptional() @IsString() @MaxLength(100)
   search?: string;
+
+  /** Чаты одного менеджера — фильтр руководства и переход из «Аналитики». */
+  @IsOptional() @IsUUID()
+  assigneeId?: string;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
   limit?: number;
@@ -26,6 +34,15 @@ export class DirectListQueryDto extends CacheBustQuery {
 export class DirectCountsQueryDto extends CacheBustQuery {
   @IsOptional() @IsString() @MaxLength(100)
   search?: string;
+
+  @IsOptional() @IsUUID()
+  assigneeId?: string;
+}
+
+/** Передать чат менеджеру продаж; null — освободить. */
+export class DirectAssignDto {
+  @IsOptional() @IsUUID()
+  userId?: string | null;
 }
 
 export class DirectMessagesQueryDto extends CacheBustQuery {

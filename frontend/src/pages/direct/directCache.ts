@@ -1,5 +1,7 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { DirectConversation, DirectMessage } from '@/services/direct.api'
+import { useAuthStore } from '@/store/auth.store'
+import { isTopUser } from './directAccess'
 
 /**
  * Живые обновления «Директа» прямо в кэш страницы: сервер присылает по
@@ -36,8 +38,16 @@ export function upsertDirectMessage(qc: QueryClient, conversationId: string, mes
   })
 }
 
-const matchesView = (c: DirectConversation, view: string) =>
-  view === 'unread' ? c.unreadCount > 0 : view === 'waiting' ? !!c.waitingSince : true
+/** Как фильтрует сервер: «Непрочитанные» и «Ждут ответа» у менеджера — его
+ *  чаты и свободные, у руководства — все. */
+const matchesView = (c: DirectConversation, view: string, me: string | undefined, top: boolean) => {
+  const myWork = top || !c.assignee || c.assignee.id === me
+  return view === 'unread' ? c.unreadCount > 0 && myWork
+    : view === 'waiting' ? !!c.waitingSince && myWork
+      : view === 'mine' ? !!me && c.assignee?.id === me
+        : view === 'free' ? !c.assignee
+          : true
+}
 
 const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -55,15 +65,19 @@ function reconcileLater(qc: QueryClient, key: string, queryKey: readonly unknown
 export function applyDirectConversation(qc: QueryClient, conversation: DirectConversation): void {
   qc.setQueryData<DirectConversation>(['direct', 'conversation', conversation.id], conversation)
 
+  const user = useAuthStore.getState().user
+  const me = user?.id
+  const top = isTopUser(user)
   for (const [key, data] of qc.getQueriesData<InfiniteData<ListPage>>({ queryKey: ['direct', 'list'] })) {
-    const [, , view = 'all', search = ''] = key as [string, string, string?, string?]
+    // Ключ списка: ['direct', 'list', вкладка, поиск, менеджер].
+    const [, , view = 'all', search = '', assigneeId = ''] = key as [string, string, string?, string?, string?]
     // Поиск фильтрует на сервере — такой список просто перечитываем.
     if (!data?.pages?.length || search) {
       qc.invalidateQueries({ queryKey: key, exact: true })
       continue
     }
     const wasThere = data.pages.some(p => p.items.some(c => c.id === conversation.id))
-    const fits = matchesView(conversation, view)
+    const fits = matchesView(conversation, view, me, top) && (!assigneeId || conversation.assignee?.id === assigneeId)
     const pages = data.pages.map(p => ({ ...p, items: p.items.filter(c => c.id !== conversation.id) }))
     if (fits) {
       // Свежий чат — наверх: список идёт по времени последнего сообщения.

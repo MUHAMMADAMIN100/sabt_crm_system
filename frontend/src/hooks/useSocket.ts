@@ -268,7 +268,7 @@ export function useSocket(authMarker: string | null) {
       const message = payload?.message
       if (!id || !message?.id) return
       upsertDirectMessage(qc, id, message)
-      if (message.direction === 'in' && !message.deleted) playDirectChime(id)
+      if (message.direction === 'in' && !message.deleted) playDirectChime(id, payload?.assigneeId)
     })
     // direct:conversation — строка чата: превью, непрочитанные, «ждёт ответа».
     socket.on('direct:conversation', (payload: any) => {

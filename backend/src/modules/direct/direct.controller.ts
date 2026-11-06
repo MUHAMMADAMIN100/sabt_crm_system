@@ -10,7 +10,7 @@ import { CreateClientDto } from '../clients/dto/create-client.dto';
 import { DirectService } from './direct.service';
 import { MAX_DOCUMENT_SIZE, MAX_VOICE_SIZE } from './direct-files';
 import {
-  DirectCountsQueryDto, DirectListQueryDto, DirectMessagesQueryDto, DirectNoteDto, DirectSendFileDto,
+  DirectAssignDto, DirectCountsQueryDto, DirectListQueryDto, DirectMessagesQueryDto, DirectNoteDto, DirectSendFileDto,
   DirectSendTextDto, DirectSendVoiceDto, DirectStatsQueryDto,
 } from './direct.dto';
 
@@ -24,6 +24,8 @@ export function publicBase(req: ExpressRequest): string {
 /**
  * «Директ» для сотрудников. Доступ — как у Базы клиентов (clients.view):
  * админ, основатель, оба менеджера продаж и те, кому выдан доступ лично.
+ * Писать в закреплённый чат может только тот, кто его ведёт, и руководство
+ * (direct-access.ts) — это проверяет сервис.
  * @RequirePerm стоит на КАЖДОМ методе: PermissionsGuard читает только его.
  */
 @ApiTags('Direct')
@@ -41,8 +43,8 @@ export class DirectController {
 
   @Get('unread')
   @RequirePerm('clients.view')
-  unread() {
-    return this.direct.unreadTotal();
+  unread(@Request() req) {
+    return this.direct.unreadTotal(req.user);
   }
 
   @Get('stats')
@@ -59,8 +61,15 @@ export class DirectController {
 
   @Get('counts')
   @RequirePerm('clients.view')
-  counts(@Query() query: DirectCountsQueryDto) {
-    return this.direct.counts(query.search);
+  counts(@Request() req, @Query() query: DirectCountsQueryDto) {
+    return this.direct.counts(req.user, query.search, query.assigneeId);
+  }
+
+  /** Менеджеры продаж: кому передать чат, по кому фильтровать список. */
+  @Get('managers')
+  @RequirePerm('clients.view')
+  managers() {
+    return this.direct.managers();
   }
 
   @Get('conversations/:id')
@@ -145,6 +154,14 @@ export class DirectController {
   @RequirePerm('clients.view')
   async deleteNote(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
     await this.direct.deleteNote(req.user, id);
+  }
+
+  /** Передать чат менеджеру продаж или освободить. Руководство — любой,
+   *  менеджер — только свой (проверяет сервис). */
+  @Post('conversations/:id/assign')
+  @RequirePerm('clients.view')
+  assign(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() body: DirectAssignDto) {
+    return this.direct.assign(req.user, id, body.userId ?? null);
   }
 
   /** «Создать лид» из чата — те же поля, что у формы Базы клиентов. */

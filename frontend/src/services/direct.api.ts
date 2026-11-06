@@ -2,9 +2,13 @@ import api from '@/lib/api'
 
 /** «Директ» — переписка Instagram аккаунта агентства в CRM. */
 
-export type DirectView = 'all' | 'unread' | 'waiting'
+/** mine — чаты, которые веду я; free — ни за кем не закреплены. */
+export type DirectView = 'all' | 'mine' | 'free' | 'unread' | 'waiting'
 
 export interface DirectPerson { id: string; name: string }
+
+/** Менеджер продаж — кому можно передать чат. */
+export interface DirectManager { id: string; name: string; role: string }
 
 export interface DirectConversation {
   id: string
@@ -24,6 +28,10 @@ export interface DirectConversation {
   /** До какого момента можно ответить из CRM (правило 24 часов Instagram). */
   replyUntil: string | null
   lead: { id: string; name: string; status: string } | null
+  /** Менеджер продаж, который ведёт клиента (первым ответил из CRM или получил
+   *  чат). null — чат свободный: ответить может любой менеджер продаж. */
+  assignee: DirectPerson | null
+  assignedAt: string | null
   /** Кто ещё сейчас открыл этот чат. */
   viewers: DirectPerson[]
 }
@@ -50,7 +58,8 @@ export interface DirectMessage {
   clientId?: string | null
   /** Только у временного пузыря: почему отправка не дошла до сервера. */
   errorText?: string
-  direction: 'in' | 'out' | 'note'
+  /** note — заметка для команды; event — отметка «чат закреплён / передан». */
+  direction: 'in' | 'out' | 'note' | 'event'
   text: string | null
   status: DirectStatus | null
   error: string | null
@@ -75,11 +84,32 @@ export interface DirectStatusInfo {
   webhookUrl: string
 }
 
+export interface DirectStatsRow {
+  /** null — ответы из приложения Instagram (без автора). */
+  userId: string | null
+  name: string
+  /** Менеджер продаж; остальные строки — руководство и ответы из приложения. */
+  isManager: boolean
+  /** Клиентов ведёт сейчас / закрепилось за период / из них ждут ответа. */
+  clients: number
+  newClients: number
+  waiting: number
+  replies: number
+  median: number | null
+  average: number | null
+  fast: number
+  /** Лиды из чатов «Директа», созданные за период, и сколько стали сделкой. */
+  leads: number
+  deals: number
+}
+
 export interface DirectStats {
   from: string
   to: string
-  people: { userId: string | null; name: string; replies: number; median: number; average: number; fast: number }[]
+  people: DirectStatsRow[]
   waiting: { count: number; since: string | null }
+  /** Чатов ни за кем не закреплено. */
+  freeClients: number
 }
 
 /** Полный адрес файла API: фронт и сервер на разных доменах (Vercel / Railway). */
@@ -93,10 +123,14 @@ export function apiUrl(path: string | null | undefined): string | null {
 export const directApi = {
   status: () => api.get<DirectStatusInfo>('/direct/status').then(r => r.data),
   unread: () => api.get<{ count: number }>('/direct/unread').then(r => r.data),
-  list: (params: { view?: DirectView; search?: string; limit?: number; offset?: number }) =>
+  list: (params: { view?: DirectView; search?: string; assigneeId?: string; limit?: number; offset?: number }) =>
     api.get<{ items: DirectConversation[]; total: number }>('/direct/conversations', { params }).then(r => r.data),
-  counts: (search?: string) =>
-    api.get<Record<DirectView, number>>('/direct/counts', { params: { search: search || undefined } }).then(r => r.data),
+  counts: (search?: string, assigneeId?: string) =>
+    api.get<Record<DirectView, number>>('/direct/counts', { params: { search: search || undefined, assigneeId: assigneeId || undefined } }).then(r => r.data),
+  managers: () => api.get<DirectManager[]>('/direct/managers').then(r => r.data),
+  /** Передать чат менеджеру продаж; null — освободить. */
+  assign: (id: string, userId: string | null) =>
+    api.post<DirectConversation>(`/direct/conversations/${id}/assign`, { userId }).then(r => r.data),
   get: (id: string) => api.get<DirectConversation>(`/direct/conversations/${id}`).then(r => r.data),
   messages: (id: string, before?: string) =>
     api.get<{ items: DirectMessage[]; hasMore: boolean }>(`/direct/conversations/${id}/messages`, { params: { before, limit: 50 } }).then(r => r.data),
