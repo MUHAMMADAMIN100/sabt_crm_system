@@ -40,8 +40,10 @@ export default function SalesKpi() {
                 ? (kpiFrom === todayIso ? '— сегодня' : `— ${kpiFrom}`)
                 : `— ${kpiFrom} … ${kpiTo}`}
             </h3>
-            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-              <div className="w-[260px]">
+            {/* На телефоне период во всю ширину, процент справа от него:
+                поле в 260 px выталкивало «% от плана» за край экрана. */}
+            <div className="flex items-center gap-3 max-sm:w-full" onClick={(e) => e.stopPropagation()}>
+              <div className="w-[260px] max-sm:w-auto max-sm:min-w-0 max-sm:flex-1">
                 <DateRangePicker
                   from={kpiFrom}
                   to={kpiTo}

@@ -495,7 +495,10 @@ export default function CalendarPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="page-title">{t('calendar.title')}</h1>
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* На телефоне: первая строка — «Месяц/Неделя» и «Сегодня», вторая —
+            месяц со стрелками во всю ширину. Раньше стрелки и название
+            разъезжались по трём строкам. */}
+        <div className="flex items-center gap-3 flex-wrap max-sm:w-full">
           {/* Переключатель режима: Месяц / Неделя */}
           <div className="flex gap-1 bg-surface-100 dark:bg-surface-700 p-1 rounded-full">
             {([['month', 'Месяц'], ['week', 'Неделя']] as const).map(([v, label]) => (
@@ -503,7 +506,7 @@ export default function CalendarPage() {
                 key={v}
                 onClick={() => setCalView(v)}
                 className={clsx(
-                  'px-3 py-1 text-xs font-semibold rounded-full transition-colors',
+                  'px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-full transition-colors',
                   calView === v
                     ? 'bg-primary-600 text-white'
                     : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
@@ -511,6 +514,7 @@ export default function CalendarPage() {
               >{label}</button>
             ))}
           </div>
+          <div className="flex items-center gap-3 max-sm:order-last max-sm:w-full">
           <button
             onClick={() => setCurrent(d => calView === 'week'
               ? subWeeks(d, 1)
@@ -520,10 +524,11 @@ export default function CalendarPage() {
           >
             <ChevronLeft size={16} />
           </button>
-          <span className="text-sm font-semibold min-w-[140px] text-center capitalize text-surface-900 dark:text-surface-100">
+          {/* Заглавная только у месяца: «capitalize» делал «2026 Г.». */}
+          <span className="text-sm font-semibold min-w-[140px] max-sm:min-w-0 max-sm:flex-1 text-center text-surface-900 dark:text-surface-100">
             {calView === 'week'
               ? `${format(periodStart, 'd MMM', { locale: ru })} – ${format(periodEnd, 'd MMM', { locale: ru })}`
-              : `${format(current, 'LLLL yyyy', { locale: ru })} г.`}
+              : (m => m.charAt(0).toUpperCase() + m.slice(1))(`${format(current, 'LLLL yyyy', { locale: ru })} г.`)}
           </span>
           <button
             onClick={() => setCurrent(d => calView === 'week'
@@ -534,9 +539,10 @@ export default function CalendarPage() {
           >
             <ChevronRight size={16} />
           </button>
+          </div>
           <button
             onClick={() => setCurrent(new Date())}
-            className="px-4 py-1.5 text-sm font-semibold rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+            className="max-sm:ml-auto px-4 py-1.5 text-sm font-semibold rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
           >
             Сегодня
           </button>
@@ -558,7 +564,7 @@ export default function CalendarPage() {
             key={opt.value || 'all'}
             onClick={() => setScopeFilter(opt.value)}
             className={clsx(
-              'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              'inline-flex items-center gap-1 px-3 py-1.5 sm:py-1 rounded-full text-xs font-medium transition-colors',
               scopeFilter === opt.value
                 ? 'bg-primary-600 text-white'
                 : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600',
