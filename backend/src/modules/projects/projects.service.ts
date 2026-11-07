@@ -1976,6 +1976,11 @@ export class ProjectsService implements OnModuleInit {
       keyDateNote: smmData?.keyDateNote ?? null,
       collabSince: smmData?.collabSince ?? null,
       preferences: smmData?.preferences ?? null,
+      // Для съёмок (07.11.2026): куда ехать и кто встретит. Уходит видеографу
+      // и продюсеру в Telegram и на страницу сценария.
+      shootAddress: smmData?.shootAddress ?? null,
+      shootMapUrl: smmData?.shootMapUrl ?? null,
+      shootContact: smmData?.shootContact ?? null,
       metrics,
     };
   }
@@ -2080,7 +2085,8 @@ export class ProjectsService implements OnModuleInit {
   async setSmmProfile(
     id: string,
     dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
-      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[] },
+      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[];
+      shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -2095,6 +2101,15 @@ export class ProjectsService implements OnModuleInit {
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
+    // Съёмки: адрес, ссылка на карту (только http/https — она уходит ссылкой
+    // в Telegram) и человек на месте. Пусто — поле убираем.
+    if ('shootAddress' in dto) setOrDel('shootAddress', str(dto.shootAddress, 300));
+    if ('shootMapUrl' in dto) {
+      const url = str(dto.shootMapUrl, 500);
+      if (url && !/^https?:\/\/\S+$/i.test(url)) throw new BadRequestException('Ссылка на карту должна начинаться с http:// или https://');
+      setOrDel('shootMapUrl', url);
+    }
+    if ('shootContact' in dto) setOrDel('shootContact', str(dto.shootContact, 200));
     // Назначенные SMM-специалисты проекта. Принимаем только id пользователей с
     // ролью smm_specialist (защита «в выборе только специалисты») и руководителя
     // SMM — он ведёт свои проекты как специалист (30.10.2026), дедуп, cap 10.

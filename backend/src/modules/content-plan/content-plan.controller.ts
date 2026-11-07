@@ -140,7 +140,7 @@ export class ContentPlanController {
 
   @Patch('smart-item/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
-  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, @Request() req) {
+  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, @Request() req) {
     return this.service.smartUpdateItem(id, body || {}, { id: req.user?.id, name: req.user?.name });
   }
 

@@ -141,6 +141,12 @@ export class ContentPlanItem {
   @Column({ type: 'varchar', length: 8, nullable: true })
   prepStage: 'shoot' | 'edit' | 'design' | null;
 
+  /** «Другое место» у съёмки (07.11.2026): если снимают не по адресу
+   *  проекта. Пусто — снимают по адресу из карточки проекта
+   *  (smmData.shootAddress). Видеограф видит его в Telegram и по ссылке. */
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  shootPlace: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

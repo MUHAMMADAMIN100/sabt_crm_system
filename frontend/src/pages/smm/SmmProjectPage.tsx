@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode }
 import { createPortal } from 'react-dom'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
@@ -31,7 +31,7 @@ const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string
   { field: 'designerIds',     out: 'designers',     label: 'Дизайнер' },
 ]
 
-type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
+type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
   & Partial<Record<CrewField, string[]>> & Partial<Record<CrewOut, SmmSpec[]>>
   & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
   // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
@@ -282,15 +282,22 @@ export default function SmmProjectPage() {
   }
 
   const [cliEditing, setCliEditing] = useState(false)
-  const [draft, setDraft] = useState({ ownerName: '', keyDate: '', keyDateNote: '', collabSince: '', preferences: '' })
+  const [draft, setDraft] = useState({ ownerName: '', keyDate: '', keyDateNote: '', collabSince: '', preferences: '', shootAddress: '', shootMapUrl: '', shootContact: '' })
   useEffect(() => {
     if (profile && !cliEditing) setDraft({
       ownerName: profile.ownerName ?? '', keyDate: profile.keyDate ?? '', keyDateNote: profile.keyDateNote ?? '',
       collabSince: profile.collabSince ?? '', preferences: profile.preferences ?? '',
+      shootAddress: profile.shootAddress ?? '', shootMapUrl: profile.shootMapUrl ?? '', shootContact: profile.shootContact ?? '',
     })
   }, [profile, cliEditing])
   const saveClient = () => {
-    saveMut.mutate({ ownerName: draft.ownerName || null, keyDate: draft.keyDate || null, keyDateNote: draft.keyDateNote || null, collabSince: draft.collabSince || null, preferences: draft.preferences || null })
+    // Ссылку на карту часто вставляют без https:// — дописываем сами.
+    const map = draft.shootMapUrl.trim()
+    const mapUrl = map && !/^https?:\/\//i.test(map) ? `https://${map}` : map
+    saveMut.mutate({
+      ownerName: draft.ownerName || null, keyDate: draft.keyDate || null, keyDateNote: draft.keyDateNote || null, collabSince: draft.collabSince || null, preferences: draft.preferences || null,
+      shootAddress: draft.shootAddress.trim() || null, shootMapUrl: mapUrl || null, shootContact: draft.shootContact.trim() || null,
+    })
     setCliEditing(false)
   }
 
@@ -800,6 +807,26 @@ export default function SmmProjectPage() {
               {cliEditing
                 ? <DatePicker value={draft.collabSince} onChange={v => setDraft(d => ({ ...d, collabSince: v }))} placeholder="дата" className="w-[170px]" />
                 : <span className="text-sm font-semibold text-right">{fmtDate(profile?.collabSince)}</span>}
+            </div>
+            {/* Для съёмок (07.11.2026): уходит видеографу и продюсеру в Telegram
+                и на страницу сценария. Если съёмка в другом месте — его
+                указывают в самой съёмке. */}
+            <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Адрес для съёмок</span>
+              {cliEditing
+                ? <input value={draft.shootAddress} onChange={e => setDraft(d => ({ ...d, shootAddress: e.target.value }))} placeholder="ул. Айни, 61" maxLength={300} className={editIn + ' flex-1 min-w-0 max-w-[16rem] text-right'} />
+                : <span className="text-sm font-semibold text-right min-w-0 truncate" title={profile?.shootAddress || undefined}>{profile?.shootAddress || '—'}</span>}
+            </div>
+            <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Ссылка на карту</span>
+              {cliEditing
+                ? <input value={draft.shootMapUrl} onChange={e => setDraft(d => ({ ...d, shootMapUrl: e.target.value }))} placeholder="2gis.tj/… или maps.google.com/…" inputMode="url" maxLength={500} className={editIn + ' flex-1 min-w-0 max-w-[16rem] text-right'} />
+                : profile?.shootMapUrl
+                  ? <a href={profile.shootMapUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-right min-w-0 truncate hover:underline" style={{ color }}><MapPin size={14} className="shrink-0" /> Открыть карту</a>
+                  : <span className="text-sm font-semibold text-right">—</span>}
+            </div>
+            <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Контакт на месте</span>
+              {cliEditing
+                ? <input value={draft.shootContact} onChange={e => setDraft(d => ({ ...d, shootContact: e.target.value }))} placeholder="Имя, телефон" maxLength={200} className={editIn + ' flex-1 min-w-0 max-w-[16rem] text-right'} />
+                : <span className="text-sm font-semibold text-right min-w-0 truncate" title={profile?.shootContact || undefined}>{profile?.shootContact || '—'}</span>}
             </div>
             <div className="h-[112px] pt-2.5 flex flex-col gap-1.5">
               <span className="text-sm text-gray-500">Предпочтения</span>

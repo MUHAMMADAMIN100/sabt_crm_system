@@ -77,7 +77,7 @@ export const projectsApi = {
     api.patch(`/projects/${id}/smm-cycle`, data).then(r => r.data),
   // Профиль клиента SMM-проекта: владелец, значимый день, начало сотрудничества, предпочтения, история подписчиков.
   getSmmProfile: (id: string) => api.get(`/projects/${id}/smm-profile`).then(r => r.data),
-  setSmmProfile: (id: string, data: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; smmSpecialistIds?: string[]; videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[]; metrics?: { ym: string; subs?: number | null; reach?: number | null; eng?: number | null; leads?: number | null }[] }) =>
+  setSmmProfile: (id: string, data: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; smmSpecialistIds?: string[]; videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[]; metrics?: { ym: string; subs?: number | null; reach?: number | null; eng?: number | null; leads?: number | null }[] }) =>
     api.patch(`/projects/${id}/smm-profile`, data).then(r => r.data),
   sendPaymentRequest: (id: string, message?: string) =>
     api.post(`/projects/${id}/send-payment-request`, { message }).then(r => r.data),
@@ -106,6 +106,8 @@ export const projectsApi = {
 export interface ProducerShoot {
   id: string; date: string; time: string | null; projectName: string; title: string | null
   videographer: string | null; hasScript: boolean; done: boolean
+  /** Где снимать: «Другое место» съёмки или адрес проекта; ссылка на карту. */
+  address?: string | null; mapUrl?: string | null; contact?: string | null; smm?: string | null
 }
 
 /** Продюсер (29.10.2026): съёмки всех SMM-проектов — только посмотреть. */
@@ -117,6 +119,12 @@ export const producerApi = {
 /** Сценарий съёмки по ссылке из Telegram — без входа. */
 export interface PublicScript {
   title: string | null; projectName: string | null
+  /** О проекте (07.11.2026): куда ехать, кто встретит, у кого уточнять. */
+  project?: {
+    address: string | null; otherPlace: boolean; mapUrl: string | null
+    contact: string | null; phone: string | null; pageUrl: string | null
+    smm: string | null; preferences: string | null
+  } | null
   shoot: { date: string | null; time: string | null; videographer: string | null } | null
   publishDate: string | null; script: string | null; updatedAt: string | null
 }
@@ -574,7 +582,7 @@ export const contentPlanApi = {
   create: (data: any) => api.post('/content-plan', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
   // Умный календарь: перенос даты / статус без побочных эффектов (не Доска).
-  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null; durationMin?: number | null }) =>
+  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }) =>
     api.patch(`/content-plan/smart-item/${id}`, data).then(r => r.data),
   /** Авторасстановка: правила проекта + даты публикаций (itemId null — новая заготовка до нормы). */
   autoPlan: (projectId: string, data: { rules: object; reels: { itemId: string | null; date: string }[]; posts: { itemId: string | null; date: string }[] }) =>

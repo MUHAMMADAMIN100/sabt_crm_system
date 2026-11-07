@@ -45,6 +45,8 @@ type Proj = {
   id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; cycleAnchor?: string | null; normReels?: number | null; normPosts?: number | null
   // Авторасстановка: специалисты проекта, «мой ли проект» (для «Мои / Все») и сохранённые правила.
   specialistIds?: string[]; mine?: boolean; autoPlan?: AutoRules | null
+  /** Адрес съёмок из карточки проекта — подсказка у «Места» съёмки. */
+  shootAddress?: string | null
 }
 type CalData = { from: string; to: string; events: Ev[]; projects: Proj[]; backlog: Ev[] }
 type View = 'month' | 'week' | 'day' | 'stories'
@@ -374,6 +376,27 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось изменить длительность') },
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
+  // Время и место съёмки из окна съёмки (07.11.2026): накануне СММ ставит
+  // время, а если снимают не по адресу проекта — другое место.
+  const shootMut = useMutation({
+    mutationFn: ({ itemId, patch }: { itemId: string; patch: { publishTime?: string | null; shootPlace?: string | null } }) =>
+      contentPlanApi.smartUpdate(itemId, patch),
+    onMutate: async ({ itemId, patch }) => {
+      const key = calKey
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CalData>(key)
+      const upd = (e: Ev): Ev => e.itemId !== itemId ? e : {
+        ...e,
+        ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
+        ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
+      }
+      qc.setQueryData<CalData>(key, old => old ? { ...old, events: old.events.map(upd) } : old)
+      return { prev, key }
+    },
+    onError: (_e: any, _v: any, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось сохранить съёмку') },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
+  })
+  const shootAddressOf = (pid: string) => rawProjects.find(p => p.id === pid)?.shootAddress ?? null
   // Сохранение названия/описания позиции (из окна события) — оптимистично, чтобы
   // подпись на карточке обновилась сразу.
   const saveInfoMut = useMutation({
@@ -697,6 +720,15 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
+          projectAddress={shootAddressOf(detail.projectId)}
+          onShoot={detail.itemId ? (patch => {
+            shootMut.mutate({ itemId: detail.itemId!, patch })
+            setDetail(d => d ? {
+              ...d,
+              ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
+              ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
+            } : d)
+          }) : undefined}
           onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
           onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
       )}
@@ -813,6 +845,15 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
           onMark={done => markMut.mutate({ ev: detail, done })}
           onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
           onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
+          projectAddress={shootAddressOf(detail.projectId)}
+          onShoot={detail.itemId ? (patch => {
+            shootMut.mutate({ itemId: detail.itemId!, patch })
+            setDetail(d => d ? {
+              ...d,
+              ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
+              ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
+            } : d)
+          }) : undefined}
           onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
           onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
       )}
@@ -1953,8 +1994,12 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, readOnly = false }: { readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false }: { readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void; onShoot?: (patch: { publishTime?: string | null; shootPlace?: string | null }) => void; projectAddress?: string | null }) {
   const isShoot = e.kind === 'shoot'
+  // Время и место правятся только у съёмки под рилс (не монтаж, не дизайн).
+  const shootEdit = !readOnly && !!onShoot && isShoot && !!e.itemId && prepStageOf(e) === 'shoot'
+  const [place, setPlace] = useState(e.location || '')
+  const savePlace = () => { const v = place.trim(); if (onShoot && v !== (e.location || '')) onShoot({ shootPlace: v || null }) }
   const type = e.contentType || 'other'
   const done = isDone(e)
   const prep = isShoot ? prepMeta(e) : null
@@ -2055,7 +2100,32 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
               )}
             </div>
 
-            {(e.location || e.note) && (
+            {shootEdit && (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className={lab}>Время съёмки</p>
+                  <div className="flex items-center gap-2">
+                    <input type="time" step={900} value={e.time || ''}
+                      onChange={ev => onShoot!({ publishTime: ev.target.value || null })}
+                      className={inp + ' w-[130px] tabular-nums'} aria-label="Время съёмки" />
+                    {e.time
+                      ? <button type="button" onClick={() => onShoot!({ publishTime: null })} className="text-[12.5px] font-semibold text-gray-400 hover:text-gray-600">Убрать время</button>
+                      : <span className="text-[12px] text-gray-400 leading-snug">Укажите накануне до 18:00 — видеограф получит его в Telegram</span>}
+                  </div>
+                </div>
+                <div>
+                  <p className={lab}>Место съёмки</p>
+                  <input value={place} onChange={ev => setPlace(ev.target.value)} onBlur={savePlace}
+                    onKeyDown={ev => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur() }}
+                    maxLength={300} placeholder={projectAddress ? `По адресу проекта: ${projectAddress}` : 'По адресу проекта'} className={inp} />
+                  <p className="text-[11.5px] text-gray-400 mt-1">
+                    {projectAddress ? 'Пусто — снимаем по адресу проекта.' : 'Адрес проекта не указан — добавьте его на вкладке «Клиент» или впишите место здесь.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!shootEdit && (e.location || e.note) && (
               <div className="space-y-1.5 text-sm mt-3">
                 {e.location && <Row k="Место" v={e.location} />}
                 {e.note && <Row k="Заметка" v={e.note} />}

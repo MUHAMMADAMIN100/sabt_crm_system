@@ -123,7 +123,8 @@ export class ProjectsController {
   setSmmProfile(
     @Param('id') id: string,
     @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
-      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[] },
+      videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[];
+      shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null },
     @Request() req,
   ) {
     return this.service.setSmmProfile(id, body || {}, req.user);

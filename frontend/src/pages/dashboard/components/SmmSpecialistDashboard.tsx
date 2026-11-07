@@ -406,6 +406,8 @@ export default function SmmSpecialistDashboard() {
 
   return (
     <div className="space-y-4">
+      <TomorrowShoots projectIds={myProjectIds} />
+
       {/* Сводка дня */}
       {/* Шапка как в кабинете производства: слева кольцо и день, справа
           цифры в одну строку. На телефоне цифры уходят вниз во всю ширину. */}
@@ -661,6 +663,105 @@ export default function SmmSpecialistDashboard() {
  *  Обычный absolute обрезается прокручиваемым родителем — окном дня или телом
  *  панели задачи, — и меню уезжает под край. Здесь координаты считаются от
  *  кнопки, меню рендерится в body и при нехватке места снизу открывается вверх. */
+/** Накануне съёмки (07.11.2026): за неделю съёмки ставят по дням, а время —
+ *  накануне. Здесь завтрашние съёмки своих проектов с полем времени. В 12:00
+ *  тем, у кого время не стоит, приходит напоминание в Telegram, в 18:00
+ *  видеограф получает время вместе с адресом. Правка после 18:00 — ему
+ *  уходит «Время съёмки изменилось». */
+function TomorrowShoots({ projectIds }: { projectIds: ReadonlySet<unknown> }) {
+  const qc = useQueryClient()
+  const tk = dk(addDays(new Date(), 1))
+  const { data } = useQuery({
+    queryKey: ['smm-calendar', tk, tk],
+    queryFn: () => contentPlanApi.smmCalendar({ from: tk, to: tk }),
+  })
+  const list = useMemo(() => ((data?.events || []) as any[])
+    .filter(e => e.kind === 'shoot' && e.itemId && e.date === tk && prepStageOf(e) === 'shoot'
+      && projectIds.has(e.projectId) && !isDone(e) && !isCancelled(e))
+    .sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99'))
+      || String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru')
+      || String(a.id).localeCompare(String(b.id))),
+  [data, tk, projectIds])
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const saveMut = useMutation({
+    mutationFn: async (changes: { itemId: string; time: string | null }[]) => {
+      for (const c of changes) await contentPlanApi.smartUpdate(c.itemId, { publishTime: c.time })
+    },
+    // Черновик держим, пока не пришли свежие данные, — иначе поле на миг
+    // показало бы старое время.
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      setDraft({})
+      toast.success('Время сохранено')
+    },
+    onError: () => {
+      toast.error('Не удалось сохранить время')
+      void qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+    },
+  })
+  if (!list.length) return null
+
+  const valueOf = (e: any): string => (e.itemId in draft ? draft[e.itemId] : (e.time || ''))
+  const changes = list
+    .filter(e => e.itemId in draft && (draft[e.itemId] || null) !== (e.time || null))
+    .map(e => ({ itemId: e.itemId as string, time: draft[e.itemId] || null }))
+  const missing = list.filter(e => !valueOf(e)).length
+  const n = list.length
+  const afterSix = new Date().getHours() >= 18
+  const title = missing
+    ? `Завтра ${n} ${plural(n, 'съёмка', 'съёмки', 'съёмок')} — укажите время`
+    : `Завтра ${n} ${plural(n, 'съёмка', 'съёмки', 'съёмок')} · время указано`
+
+  return (
+    <div className={clsx('card !p-3.5 sm:!p-4 border-[1.5px]',
+      missing ? 'border-amber-300 dark:border-amber-700/70' : 'border-surface-200 dark:border-surface-700')}>
+      <div className="flex items-start gap-2.5">
+        <span className={clsx('w-8 h-8 rounded-lg grid place-items-center shrink-0',
+          missing ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-lime-500/12 text-lime-600 dark:text-lime-400')}>
+          <Camera size={16} />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-bold leading-snug text-surface-900 dark:text-surface-100">{title}</h3>
+          <p className="text-[12.5px] leading-snug text-surface-500 dark:text-surface-400 mt-0.5">
+            {afterSix
+              ? 'Видеограф уже получил сообщение. Если поменяете время, ему придёт новое.'
+              : 'До 18:00. В 18:00 видеограф получит время и адрес.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2">
+        {list.map(e => {
+          const v = valueOf(e)
+          return (
+            <div key={e.id} className="flex items-center gap-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 px-3 py-2">
+              <i className="w-2 h-2 rounded-full shrink-0" style={{ background: projColor(e.projectId) }} />
+              <div className="flex-1 min-w-0 leading-tight">
+                <b className="block text-[13.5px] font-semibold text-surface-900 dark:text-surface-100 truncate">{e.projectName}</b>
+                <span className="block text-[12px] text-surface-500 dark:text-surface-400 truncate">
+                  «{taskTitle(e)}»{e.assigneeName ? ` · ${e.assigneeName}` : ' · видеограф не назначен'}
+                </span>
+              </div>
+              <input type="time" step={900} value={v} aria-label={`Время съёмки: ${e.projectName}`}
+                onChange={ev => { const t = ev.target.value; setDraft(d => ({ ...d, [e.itemId]: t })) }}
+                className={clsx('w-[104px] shrink-0 h-9 rounded-lg border-[1.5px] px-2 text-[14px] font-semibold tabular-nums text-center outline-none',
+                  v ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+                    : 'border-red-300 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-900/20 dark:text-red-400')} />
+            </div>
+          )
+        })}
+      </div>
+
+      {changes.length > 0 && (
+        <button onClick={() => saveMut.mutate(changes)} disabled={saveMut.isPending}
+          className="mt-3 w-full h-10 rounded-xl bg-primary-600 text-white text-[13.5px] font-bold hover:brightness-110 disabled:opacity-60">
+          {saveMut.isPending ? 'Сохраняю…' : 'Сохранить время'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function AnchoredMenu({ anchorRef, open, onClose, width = 236, children }: {
   anchorRef: RefObject<HTMLElement | null>
   open: boolean

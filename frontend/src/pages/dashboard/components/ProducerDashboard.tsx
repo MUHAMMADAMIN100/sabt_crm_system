@@ -82,6 +82,14 @@ export default function ProducerDashboard() {
                   <span className="text-[12.5px] leading-snug text-surface-500 dark:text-surface-400">
                     {s.title ? `«${s.title}»` : 'Без названия'} · {s.videographer || 'видеограф не назначен'}
                   </span>
+                  {s.address && (
+                    s.mapUrl ? (
+                      <a href={s.mapUrl} target="_blank" rel="noreferrer"
+                        className="text-[12.5px] leading-snug text-primary-600 dark:text-primary-400 hover:underline break-words">
+                        📍 {s.address}
+                      </a>
+                    ) : <span className="text-[12.5px] leading-snug text-surface-500 dark:text-surface-400 break-words">📍 {s.address}</span>
+                  )}
                 </div>
               ))}
             </div>

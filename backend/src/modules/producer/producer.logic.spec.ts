@@ -1,4 +1,7 @@
-import { dailyMessage, nextWeek, readScriptToken, ruLongDay, ruRange, scriptToken, weeklyMessage, ProducerShoot } from './producer.logic';
+import {
+  changeHead, changeMessage, dailyMessage, isAnnounced, mapLink, missingTimeMessage, nextWeek, phoneOf, readScriptToken,
+  ruLongDay, ruRange, scriptToken, weeklyMessage, ProducerShoot, ShootSnapshot,
+} from './producer.logic';
 
 const ID = '5f0c2a9e-3b1d-4c7a-9e21-0a6b7c8d9e10';
 const shoot = (over: Partial<ProducerShoot> = {}): ProducerShoot => ({
@@ -35,8 +38,9 @@ describe('producer.logic', () => {
     ], 'https://crm.webrand.tj', link)!;
     expect(text.startsWith('🎬 <b>Съёмки на завтра — 2</b>\nпятница, 30 октября')).toBe(true);
     expect(text.indexOf('10:00 · Кофейня Nur')).toBeLessThan(text.indexOf('15:00 · Fitness Zone'));
-    expect(text).toContain(`«5 видов кофе за 30 секунд»\nснимает Бехруз\n<a href="${link(shoot())}">📄 Сценарий</a>`);
-    expect(text).toContain('снимает Сухроб\nсценария пока нет');
+    expect(text).toContain(`«5 видов кофе за 30 секунд»\nснимает Бехруз\n<a href="${link(shoot())}">📄 Сценарий и всё о съёмке</a>`);
+    expect(text).toContain('снимает Сухроб\n<a href="');
+    expect(text).toContain('📄 Всё о съёмке</a> · сценария пока нет');
   });
 
   it('нет съёмок — ничего не шлём', () => {
@@ -59,8 +63,8 @@ describe('producer.logic', () => {
     expect(text.indexOf('<b>Пн, 2 ноября</b>')).toBeLessThan(text.indexOf('<b>Вт, 3 ноября</b>'));
     expect(text.indexOf('Пекарня Нон')).toBeLessThan(text.indexOf('Шоурум Lola'));
     expect(text).toContain('«Брекеты: 3 мифа» · Бехруз\n<a href=');
-    expect(text).toContain('«Самса с тыквой» · Бехруз\nсценария пока нет');
-    expect(text).toContain('Накануне каждой съёмки придёт напоминание.');
+    expect(text).toContain('«Самса с тыквой» · Бехруз\n<a href=');
+    expect(text).toContain('Накануне в 18:00 придёт напоминание со временем и адресом.');
   });
 
   it('неделя: воскресенье в заголовке, только если в него есть съёмка', () => {
@@ -77,5 +81,82 @@ describe('producer.logic', () => {
     expect(week.startsWith('📅 <b>Ваши съёмки на неделю — 1</b>')).toBe(true);
     expect(week).toContain('«5 видов кофе за 30 секунд»\n<a href=');
     expect(week).not.toContain(' · Бехруз');
+  });
+
+  it('на завтра: адрес с картой, человек на месте и СММ', () => {
+    const text = dailyMessage('2026-11-10', [shoot({
+      date: '2026-11-10', address: 'ул. Айни, 61', mapUrl: 'https://2gis.tj/x?a=1&b=2',
+      contact: 'Фирдавс, +992 90 555 12 12', smm: 'Нигина',
+    })], 'x', link, { own: true })!;
+    expect(text).toContain('«5 видов кофе за 30 секунд»\n📍 ул. Айни, 61 · <a href="https://2gis.tj/x?a=1&amp;b=2">карта</a>\n👤 На месте: Фирдавс, +992 90 555 12 12\n💬 СММ: Нигина\n<a href=');
+  });
+
+  it('другое место — карта ищет его адрес, а не ссылку проекта', () => {
+    expect(mapLink({ address: 'ТЦ Сиёма Молл', otherPlace: true, mapUrl: 'https://2gis.tj/x' }))
+      .toBe('https://www.google.com/maps/search/?api=1&query=%D0%A2%D0%A6%20%D0%A1%D0%B8%D1%91%D0%BC%D0%B0%20%D0%9C%D0%BE%D0%BB%D0%BB');
+    expect(mapLink({ address: 'ул. Айни, 61', otherPlace: false, mapUrl: 'https://2gis.tj/x' })).toBe('https://2gis.tj/x');
+    expect(mapLink({ address: null, otherPlace: false, mapUrl: null })).toBeNull();
+  });
+
+  it('без времени — «уточните у СММ», строки «СММ» нет', () => {
+    const text = dailyMessage('2026-10-30', [shoot({ time: null, smm: 'Нигина' })], 'x', link, { own: true })!;
+    expect(text).toContain('<b>Время не указано · Кофейня Nur</b>\n«5 видов кофе за 30 секунд»\n🕑 время не указано — уточните у СММ: Нигина\n<a href=');
+    expect(text).not.toContain('💬');
+  });
+
+  it('телефон из контакта', () => {
+    expect(phoneOf('Фирдавс, +992 90 555 12 12')).toBe('+992905551212');
+    expect(phoneOf('администратор Зарина 93-444-55-66')).toBe('934445566');
+    expect(phoneOf('Фирдавс')).toBeNull();
+    expect(phoneOf(null)).toBeNull();
+  });
+
+  it('напоминание СММ: только съёмки без времени', () => {
+    expect(missingTimeMessage('2026-11-10', [shoot({ date: '2026-11-10' })], 'https://crm')).toBeNull();
+    const text = missingTimeMessage('2026-11-10', [
+      shoot({ date: '2026-11-10' }),
+      shoot({ id: 'b', date: '2026-11-10', time: null, projectName: 'Viodent', title: 'Отзыв пациента', videographer: null }),
+    ], 'https://crm')!;
+    expect(text.startsWith('⏰ <b>Завтра съёмка без времени</b>\nвторник, 10 ноября')).toBe(true);
+    expect(text).toContain('<b>Viodent</b> · «Отзыв пациента»\nснимает видеограф не назначен');
+    expect(text).not.toContain('Кофейня Nur');
+    expect(text).toContain('<a href="https://crm/">Указать время</a>');
+  });
+
+  it('видеограф уже знает о съёмке: сегодня или завтра после 18:00', () => {
+    expect(isAnnounced('2026-11-09', '2026-11-09', 10)).toBe(true);
+    expect(isAnnounced('2026-11-10', '2026-11-09', 17)).toBe(false);
+    expect(isAnnounced('2026-11-10', '2026-11-09', 18)).toBe(true);
+    expect(isAnnounced('2026-11-11', '2026-11-09', 20)).toBe(false);
+    expect(isAnnounced(null, '2026-11-09', 20)).toBe(false);
+  });
+
+  it('что изменилось', () => {
+    const b: ShootSnapshot = { date: '2026-11-10', time: null, place: null, assigneeId: 'u1', status: 'planned' };
+    expect(changeHead(b, { ...b, time: '16:00' })).toBe('Время съёмки назначено');
+    expect(changeHead({ ...b, time: '11:00' }, { ...b, time: '16:00' })).toBe('Время съёмки изменилось');
+    expect(changeHead(b, { ...b, date: '2026-11-12' })).toBe('Съёмку перенесли');
+    expect(changeHead(b, { ...b, place: 'ТЦ Сиёма' })).toBe('Место съёмки изменилось');
+    expect(changeHead(b, { ...b, status: 'cancelled' })).toBe('Съёмку отменили');
+    expect(changeHead(b, { ...b, date: null })).toBe('Съёмку убрали из плана');
+    expect(changeHead(b, { ...b, assigneeId: 'u2' })).toBeNull();
+    expect(changeHead(b, { ...b })).toBeNull();
+    expect(changeHead({ ...b, date: null }, b)).toBe('Добавили съёмку');
+    expect(changeHead({ ...b, date: null }, { ...b, date: null, time: '10:00' })).toBeNull();
+  });
+
+  it('«время изменилось»: было и стало, адрес и ссылка', () => {
+    const before: ShootSnapshot = { date: '2026-11-10', time: '11:00', place: null, assigneeId: 'u1', status: 'planned' };
+    const text = changeMessage('Время съёмки изменилось', before,
+      shoot({ date: '2026-11-10', time: '16:00', address: 'ул. Рудаки, 84' }), link, { own: true });
+    expect(text).toContain('🔁 <b>Время съёмки изменилось</b>\nКофейня Nur · «5 видов кофе за 30 секунд»\nбыло: вторник, 10 ноября, 11:00\nстало: вторник, 10 ноября, <b>16:00</b>\n📍 ул. Рудаки, 84');
+    const set = changeMessage('Время съёмки назначено', { ...before, time: null },
+      shoot({ date: '2026-11-10', time: '16:00' }), link, { own: true });
+    expect(set).toContain('«5 видов кофе за 30 секунд»\nвторник, 10 ноября, <b>16:00</b>\n<a href=');
+    expect(set).not.toContain('было:');
+    const added = changeMessage('Добавили съёмку', { ...before, date: null },
+      shoot({ date: '2026-11-10', time: '16:00' }), link, { own: true });
+    expect(added).toContain('«5 видов кофе за 30 секунд»\nвторник, 10 ноября, <b>16:00</b>');
+    expect(added).not.toContain('было:');
   });
 });

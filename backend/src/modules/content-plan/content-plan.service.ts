@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { dushanbeToday, VACATION_NOW_SQL } from '../employees/vacation';
 import { Repository } from 'typeorm';
@@ -46,6 +47,14 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   other: 'Контент',
 };
 
+/** Событие «съёмка изменилась»: id карточки и как было до правки. */
+export const SHOOT_CHANGED = 'content-plan.shoot-changed';
+export interface ShootChangedEvent {
+  itemId: string;
+  actorId: string | null;
+  before: { date: string | null; time: string | null; place: string | null; assigneeId: string | null; status: string };
+}
+
 @Injectable()
 export class ContentPlanService {
   private readonly logger = new Logger(ContentPlanService.name);
@@ -54,7 +63,28 @@ export class ContentPlanService {
     @InjectRepository(ContentPlanItem) private repo: Repository<ContentPlanItem>,
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     private gateway: AppGateway,
+    @Optional() private events?: EventEmitter2,
   ) {}
+
+  /** Съёмка изменилась (день, время, место, исполнитель, статус). Слушает
+   *  ProducerService: если видеографу уже ушло сообщение о ней — пришлёт
+   *  «Время съёмки изменилось». Событие, а не прямой вызов: Telegram в
+   *  зависимостях этого модуля замкнул бы кольцо модулей. */
+  private shootChanged(before: ContentPlanItem | null | undefined, actorId?: string | null) {
+    if (!before?.shootForItemId) return;
+    try {
+      this.events?.emit(SHOOT_CHANGED, {
+        itemId: before.id,
+        actorId: actorId || null,
+        before: {
+          date: this.dayOf(before.publishDate), time: before.publishTime || null,
+          place: before.shootPlace || null, assigneeId: before.assigneeId || null, status: String(before.status || ''),
+        },
+      } as ShootChangedEvent);
+    } catch (e) {
+      this.logger.warn(`shoot.changed не отправлено: ${(e as Error).message}`);
+    }
+  }
 
   /** Сообщить фронту что задачи проекта изменились — он перезагрузит
    *  канбан и календарь без F5 (useSocket подписан на tasks:changed). */
@@ -299,6 +329,7 @@ export class ContentPlanService {
     }
     await this.repo.update(itemId, { assigneeId: userId });
     this.emitTasksChanged(item.projectId);
+    this.shootChanged(item, actor.id);
     return { id: itemId, assigneeId: userId };
   }
 
@@ -337,6 +368,7 @@ export class ContentPlanService {
     }
     await this.repo.update(itemId, { assigneeId: userId });
     this.emitTasksChanged(item.projectId);
+    if (stage === 'shoot') this.shootChanged(item, actor.id);
     return { id: itemId, assigneeId: userId };
   }
 
@@ -646,6 +678,7 @@ export class ContentPlanService {
       this.logger.warn(`Failed to sync task for plan item ${id}: ${(e as Error).message}`);
     }
     this.emitTasksChanged(after.projectId);
+    this.shootChanged(before, updatedById);
     return after;
   }
 
@@ -757,7 +790,7 @@ export class ContentPlanService {
     }));
   }
 
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null }, actor?: { id?: string; name?: string }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string }) {
     const before = await this.repo.findOne({ where: { id } });
     const set: Partial<ContentPlanItem> = {};
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
@@ -766,6 +799,11 @@ export class ContentPlanService {
     // Длительность в минутах (15..600) или null.
     if ('durationMin' in patch) { const d = Math.trunc(Number(patch.durationMin)); set.durationMin = Number.isFinite(d) && d >= 15 && d <= 600 ? d : null; }
     if ('status' in patch && patch.status) set.status = patch.status;
+    // «Другое место» съёмки; пусто — снимают по адресу проекта.
+    if ('shootPlace' in patch) {
+      const v = typeof patch.shootPlace === 'string' ? patch.shootPlace.trim().slice(0, 300) : '';
+      set.shootPlace = v || null;
+    }
     if (Object.keys(set).length) await this.repo.update(id, set);
     // Авто-съёмка при переносе рилса: если съёмки нет (удалили) или она без даты (сняли) —
     // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
@@ -783,6 +821,7 @@ export class ContentPlanService {
           { kind: 'status', from: before.status, to: patch.status, plannedDate: nowDate }, actor);
       }
     }
+    if (Object.keys(set).length) this.shootChanged(before, actor?.id);
     return { ok: true };
   }
 
@@ -1169,6 +1208,8 @@ export class ContentPlanService {
         specialistIds: specIds(p),
         mine: !!actorId && (p.managerId === actorId || memberOf.has(p.id) || specIds(p).includes(actorId)),
         autoPlan: p.smmData?.autoPlan ? this.sanitizeAutoPlan(p.smmData.autoPlan) : null,
+        // Адрес съёмок проекта — подсказка у поля «Другое место».
+        shootAddress: typeof p.smmData?.shootAddress === 'string' ? p.smmData.shootAddress : null,
       }))
       .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
     const ids = active.map(p => p.id);
@@ -1205,10 +1246,12 @@ export class ContentPlanService {
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
               reel.topic AS "reelTopic", reel."scriptText" AS "reelScript", reel."contentType" AS "parentType",
               to_char(reel."publishDate"::date, 'YYYY-MM-DD') AS "reelDate",
-              ci."publishTime" AS time, ci."durationMin" AS "durationMin",
+              ci."publishTime" AS time, ci."durationMin" AS "durationMin", ci."shootPlace" AS place,
+              au.name AS "assigneeName",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
        LEFT JOIN content_plan_items reel ON reel.id = ci."shootForItemId"
+       LEFT JOIN users au ON au.id = ci."assigneeId"
        WHERE ci."projectId" = ANY($1::uuid[])
          AND ci."shootForItemId" IS NOT NULL
          AND ci."publishDate" IS NOT NULL
@@ -1259,10 +1302,11 @@ export class ContentPlanService {
       })),
       ...shootItems.map(s => ({
         id: `item:${s.itemId}`, itemId: s.itemId, kind: 'shoot', date: s.date, changedAt: s.changedAt || null,
-        assigneeId: s.assigneeId || null,
+        assigneeId: s.assigneeId || null, assigneeName: s.assigneeName || null,
         fileLink: s.fileLink || null,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
+        location: s.place || null,                          // «Другое место» съёмки; пусто — адрес проекта
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
         // Этап подготовки: shoot — съёмка, edit — монтаж, design — макет.
         // Легаси-карточки без этапа: пост → дизайн, остальное → съёмка.
