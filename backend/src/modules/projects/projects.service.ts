@@ -104,7 +104,8 @@ export class ProjectsService implements OnModuleInit {
 
   /** СММ и разработка разделены (решение владельца 14.10.2026) — разовая
    *  уборка данных, оставшихся от смешения: анкета SMM-клиента у проектов
-   *  разработки переезжает в контакты. Повторный запуск ничего не меняет.
+   *  разработки переезжает в контакты, рилсы и съёмки разработки удаляются.
+   *  Повторный запуск ничего не меняет.
    *  (14.10 здесь же снимались менеджеры по продажам разработки с
    *  SMM-проектов; 15.10 владелец вернул их в СММ — шаг убран, чтобы новые
    *  назначения не стирались при каждом перезапуске.) */
@@ -129,6 +130,29 @@ export class ProjectsService implements OnModuleInit {
       );
     }
     if (devRows.length) this.logger.log(`Анкета клиента перенесена в контакты у ${devRows.length} проектов разработки`);
+
+    // Рилсы, посты и карточки съёмки/монтажа/дизайна у проектов разработки
+    // (07.11.2026, решение владельца — удалить). Завелись, пока разработка
+    // открывалась страницами СММ, и продолжали раздаваться видеографам.
+    // Сначала связанные с ними задачи, потом сами карточки.
+    const tasks: Array<{ taskId: string }> = await this.repo.manager.query(
+      `SELECT DISTINCT ci."taskId" FROM content_plan_items ci
+         JOIN projects p ON p.id = ci."projectId"
+        WHERE p."projectType" = ANY($1::text[]) AND ci."taskId" IS NOT NULL`,
+      [DEV_PROJECT_TYPES],
+    );
+    if (tasks.length) {
+      await this.repo.manager.query(`DELETE FROM tasks WHERE id = ANY($1::uuid[])`, [tasks.map(t => t.taskId)])
+        .catch((e: any) => this.logger.warn(`Задачи контент-плана у разработки не удалены: ${e?.message || e}`));
+    }
+    const removed: any[] = await this.repo.manager.query(
+      `DELETE FROM content_plan_items ci USING projects p
+        WHERE p.id = ci."projectId" AND p."projectType" = ANY($1::text[])
+        RETURNING ci.id`,
+      [DEV_PROJECT_TYPES],
+    );
+    const n = Array.isArray(removed?.[0]) ? removed[0].length : removed.length;
+    if (n) this.logger.log(`Удалено ${n} карточек контент-плана у проектов разработки (задач: ${tasks.length})`);
   }
 
   constructor(

@@ -71,7 +71,7 @@ export const CONTENT_ON_TIME_SQL = `
     SELECT ci.id, ci."publishDate"::date AS due, ci.status::text AS status,
            ci."updatedAt"::date AS closed, u.uid
     FROM content_plan_items ci
-    JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false
+    JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false AND p."projectType" = 'SMM'
     JOIN LATERAL unnest($1::uuid[]) AS u(uid) ON (
       (ci."shootForItemId" IS NULL AND ci."contentType"::text <> 'story' AND (
         jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), u.uid::text)
@@ -851,7 +851,7 @@ export class KpiService {
                   to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS due,
                   to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS closed
            FROM content_plan_items ci
-           JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false
+           JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false AND p."projectType" = 'SMM'
            WHERE ci.status::text <> 'cancelled'
              AND ci."publishDate" IS NOT NULL
              AND ci."publishDate"::date BETWEEN $2::date AND $3::date

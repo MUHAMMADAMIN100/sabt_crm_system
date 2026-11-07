@@ -86,6 +86,19 @@ export class ContentPlanService {
     }
   }
 
+  /** Рилсы, посты, сторис и съёмки бывают только у SMM-проектов: у
+   *  разработки своя доска (решение владельца 14.10.2026). 07.11.2026
+   *  видеографу приходили «снять рилс» по проектам разработки — от
+   *  карточек, заведённых до разделения. Теперь сервер их не заводит. */
+  private async assertSmmProject(projectIds: Array<string | null | undefined>) {
+    const ids = [...new Set(projectIds.filter((x): x is string => typeof x === 'string' && !!x))];
+    if (!ids.length) return;
+    const rows: Array<{ id: string }> = await this.repo.manager.query(
+      `SELECT id FROM projects WHERE id = ANY($1::uuid[]) AND COALESCE("projectType", '') <> 'SMM'`, [ids],
+    );
+    if (rows.length) throw new BadRequestException('Рилсы, посты и съёмки бывают только у SMM-проектов');
+  }
+
   /** Сообщить фронту что задачи проекта изменились — он перезагрузит
    *  канбан и календарь без F5 (useSocket подписан на tasks:changed). */
   private emitTasksChanged(projectId?: string) {
@@ -409,6 +422,7 @@ export class ContentPlanService {
           ORDER BY s."createdAt" ASC LIMIT 1
        ) sh ON true
        WHERE ci."assigneeId" = $1
+         AND p."projectType" = 'SMM'
          AND ci."publishDate" IS NOT NULL
          AND ci."publishDate"::date >= ($2)::date AND ci."publishDate"::date <= ($3)::date
        ORDER BY ci."publishDate" ASC, ci."publishTime" ASC NULLS LAST, ci."createdAt" ASC, ci.id ASC`,
@@ -623,6 +637,7 @@ export class ContentPlanService {
   }
 
   async create(dto: Partial<ContentPlanItem>, createdById?: string) {
+    await this.assertSmmProject([dto.projectId]);
     const item = this.repo.create(dto);
     const saved = await this.repo.save(item);
     // Авто-создание задачи под этот элемент (если есть assignee + дата).
@@ -639,6 +654,7 @@ export class ContentPlanService {
   /** Массовое создание — нужно для авто-генерации плана из тарифа. */
   async createMany(items: Partial<ContentPlanItem>[], createdById?: string) {
     if (!items.length) return [];
+    await this.assertSmmProject(items.map(d => d.projectId));
     const entities = items.map(d => this.repo.create(d));
     const saved = await this.repo.save(entities);
     // Параллельно создаём задачи. Игнорируем ошибки отдельных элементов —

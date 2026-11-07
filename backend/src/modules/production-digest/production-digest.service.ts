@@ -37,6 +37,7 @@ export class ProductionDigestService {
        JOIN projects p ON p.id = ci."projectId"
        LEFT JOIN content_plan_items parent ON parent.id = ci."shootForItemId"
        WHERE ci."assigneeId" IS NOT NULL
+         AND p."projectType" = 'SMM'
          AND ci."publishDate"::date = ($1)::date
          AND ci.status NOT IN ('published', 'cancelled')
          AND NOT (COALESCE(ci."prepStage"::text, '') = 'shoot'

@@ -144,7 +144,7 @@ export class ProfileStatsService {
         `SELECT to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS due,
                 (ci.status::text = 'published' AND ci."updatedAt"::date <= ci."publishDate"::date) AS "onTime"
          FROM content_plan_items ci
-         JOIN projects p ON p.id = ci."projectId"
+         JOIN projects p ON p.id = ci."projectId" AND p."projectType" = 'SMM'
          WHERE ci.status::text <> 'cancelled'
            AND ci."publishDate" IS NOT NULL
            AND (ci."publishDate"::date <= $2::date OR ci.status::text = 'published')
