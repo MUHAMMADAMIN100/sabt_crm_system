@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request,
+  Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, Request,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ContentPlanService } from './content-plan.service';
@@ -12,6 +12,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { cachedResponse } from '../../common/response-cache';
+import { ClearCacheOnWriteInterceptor } from '../../common/clear-cache-on-write.interceptor';
 
 const EDIT_ROLES = [
   UserRole.ADMIN,
@@ -23,6 +25,9 @@ const EDIT_ROLES = [
 @ApiTags('Content Plan')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+// Перенос, статус, заготовки и очистка в умном календаре события изменения
+// не шлют — кэш календаря сбрасываем на любой записи здесь (08.11.2026).
+@UseInterceptors(ClearCacheOnWriteInterceptor)
 @Controller('content-plan')
 export class ContentPlanController {
   constructor(private service: ContentPlanService) {}
@@ -102,7 +107,14 @@ export class ContentPlanController {
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('projectId') projectId?: string) {
-    return this.service.smmCalendar(from, to, req.user?.id, projectId);
+    // Около девяти запросов на ±год — каждый экран СММ просит одно и то же.
+    // Короткий кэш (08.11.2026): в ключе смотрящий — от него зависит
+    // projects[].mine; месяц по Душанбе — им сервис заполняет пустые from/to.
+    // Сбрасывается любым событием изменения и записью через этот контроллер.
+    const actorId = req.user?.id;
+    const ym = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' }).slice(0, 7);
+    const key = `smm-calendar:${actorId || '-'}:${from || ''}:${to || ''}:${projectId || ''}:${ym}`;
+    return cachedResponse(key, 60_000, () => this.service.smmCalendar(from, to, actorId, projectId));
   }
 
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —

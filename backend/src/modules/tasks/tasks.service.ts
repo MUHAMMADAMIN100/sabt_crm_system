@@ -18,6 +18,7 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
+import { emitTasksChanged, TasksChangedPayload } from '../gateway/tasks-changed';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
@@ -121,6 +122,15 @@ export class TasksService implements OnModuleInit {
     private gateway: AppGateway,
     private taskResultsService: TaskResultsService,
   ) {}
+
+  /** «Задачи изменились» для фронта (08.11.2026). Личные задачи видит только
+   *  владелец — событие уходит лишь ему (вторая вкладка, телефон, задача из
+   *  Telegram), остальные ради чужой заметки ничего не перезапрашивают.
+   *  Публичный — им же пользуются расписания (напоминание об оплате, повтор
+   *  недели), чтобы созданные ими задачи тоже появлялись без опроса. */
+  notifyTasksChanged(payload: TasksChangedPayload, personalOwnerIds?: Array<string | null | undefined>) {
+    emitTasksChanged(this.gateway, payload, personalOwnerIds);
+  }
 
   /** Является ли пользователь PM в контексте конкретного проекта.
    *  Возвращает true если:
@@ -360,7 +370,11 @@ export class TasksService implements OnModuleInit {
       }
     }
 
-    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    this.notifyTasksChanged({
+      projectId: task.projectId ?? null, taskId, actorId: user.id,
+      // Последний шаг закрыл задачу — меняется прогресс проекта.
+      kind: allDone ? 'status' : 'edit',
+    });
     const fresh = await this.findOne(taskId);
     return { task: fresh, allDone };
   }
@@ -781,8 +795,12 @@ export class TasksService implements OnModuleInit {
     }
     // Личная задача касается только автора. Рассылка «задачи изменились»
     // заставляла КАЖДОГО сотрудника в сети перезапрашивать задачи, проекты и
-    // аналитику ради чужой заметки — и тормозила самого автора.
-    if (!isPersonal) this.gateway.broadcast('tasks:changed', { projectId: dto.projectId });
+    // аналитику ради чужой заметки — и тормозила самого автора. Теперь о ней
+    // узнаёт лишь сам автор (другие его вкладки и устройства).
+    this.notifyTasksChanged(
+      { projectId: dto.projectId ?? null, taskId: saved.id, actorId: userId, kind: 'create' },
+      isPersonal ? [userId] : undefined,
+    );
     return this.findOne(saved.id);
   }
 
@@ -1131,7 +1149,21 @@ export class TasksService implements OnModuleInit {
     // Личная задача (и до, и после правки) — без общей рассылки, см. create().
     const stayedPersonal = task.scope === TaskScope.PERSONAL
       && (!(dto as any).scope || (dto as any).scope === TaskScope.PERSONAL);
-    if (!stayedPersonal) this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    // Вид правки решает, нужен ли фронту тяжёлый список проектов (счётчики
+    // задач, прогресс): переименование и срок его не меняют.
+    const movedProject = 'projectId' in (dto as any)
+      && ((dto as any).projectId ?? null) !== (task.projectId ?? null);
+    const statusChanged = !!dto.status && dto.status !== oldStatus;
+    this.notifyTasksChanged(
+      {
+        // Перенесли в другой проект — затронуты оба, пусть фронт обновит все.
+        ...(movedProject ? {} : { projectId: task.projectId ?? null }),
+        taskId: id,
+        actorId: user.id,
+        kind: movedProject || scopeChanged ? 'move' : statusChanged ? 'status' : 'edit',
+      },
+      stayedPersonal ? [task.createdById] : undefined,
+    );
     return this.findOne(id);
   }
 
@@ -1161,7 +1193,10 @@ export class TasksService implements OnModuleInit {
     await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
-    if (task.scope !== TaskScope.PERSONAL) this.gateway.broadcast('tasks:changed', { projectId });
+    this.notifyTasksChanged(
+      { projectId: projectId ?? null, taskId: id, kind: 'delete' },
+      task.scope === TaskScope.PERSONAL ? [task.createdById] : undefined,
+    );
     return { message: 'Task deleted' };
   }
 
@@ -1198,7 +1233,10 @@ export class TasksService implements OnModuleInit {
     await this.deleteTaskWithReports(task);
     await this.notificationsService.deleteByLink(`/tasks/${id}`);
     await this.projectsService.updateProgress(projectId);
-    if (task.scope !== TaskScope.PERSONAL) this.gateway.broadcast('tasks:changed', { projectId });
+    this.notifyTasksChanged(
+      { projectId: projectId ?? null, taskId: id, actorId: user.id, kind: 'delete' },
+      task.scope === TaskScope.PERSONAL ? [task.createdById] : undefined,
+    );
     return { message: 'Task deleted' };
   }
 
@@ -1287,6 +1325,8 @@ export class TasksService implements OnModuleInit {
       if (copy) created += 1; else skipped += 1;
     }
     this.logger.log(`repeatWeek ${from}..${to} → ${target}: создано ${created}, пропущено ${skipped}`);
+    // Раньше копии появлялись у остальных только по опросу страницы задач.
+    if (created > 0) this.notifyTasksChanged({ actorId, kind: 'bulk' });
     return { week: target, created, skipped };
   }
 
@@ -1308,6 +1348,8 @@ export class TasksService implements OnModuleInit {
       const copy = await this.cloneToNextWeek(t, t.createdById);
       if (copy) created += 1;
     }
+    // Понедельничный повтор — тоже событие, иначе копии видны только по опросу.
+    if (created > 0) this.notifyTasksChanged({ kind: 'bulk' });
     return { week: thisMonday, created, source: source.length };
   }
 
@@ -1496,7 +1538,7 @@ export class TasksService implements OnModuleInit {
 
     await this.projectsService.updateProgress(task.projectId);
     await this.autoReportFromTask(task);
-    this.gateway.broadcast('tasks:changed', { projectId: task.projectId });
+    this.notifyTasksChanged({ projectId: task.projectId ?? null, taskId: id, actorId: user.id, kind: 'status' });
     return this.findOne(id);
   }
 
@@ -1582,7 +1624,7 @@ export class TasksService implements OnModuleInit {
     }).catch(() => {});
 
     this.projectsService.updateProgress(projectId).catch(() => {});
-    this.gateway.broadcast('tasks:changed', { projectId });
+    this.notifyTasksChanged({ projectId: projectId ?? null, taskId: id, actorId: user.id, kind: 'status' });
 
     return { id, status: 'returned', returnReason: reason, title: taskTitle };
   }
@@ -1638,6 +1680,10 @@ export class TasksService implements OnModuleInit {
       for (const t of tasks) t.deletionReason = reason;
       if (tasks.length) await this.repo.save(tasks);
       await this.repo.remove(tasks);
+      // Массовые действия раньше не слали события вовсе — остальные видели
+      // их только по опросу. Задач много и проекты разные: kind 'bulk',
+      // без projectId — фронт обновит всё, как при старом событии.
+      if (tasks.length) this.notifyTasksChanged({ actorId: user.id, kind: 'bulk' });
       return { affected: tasks.length };
     }
 
@@ -1647,6 +1693,7 @@ export class TasksService implements OnModuleInit {
         .set({ status: value as TaskStatus })
         .whereInIds(ids)
         .execute();
+      this.notifyTasksChanged({ actorId: user.id, kind: 'bulk' });
       return { affected: ids.length };
     }
 
@@ -1656,6 +1703,7 @@ export class TasksService implements OnModuleInit {
         .set({ assigneeId: value })
         .whereInIds(ids)
         .execute();
+      this.notifyTasksChanged({ actorId: user.id, kind: 'bulk' });
       return { affected: ids.length };
     }
 

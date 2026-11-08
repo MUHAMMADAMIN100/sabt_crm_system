@@ -24,10 +24,10 @@ export default function ManagementTasksPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'mine' | 'assigned'>('mine')
   // Раз в минуту опрашиваем только без связи с сервером (08.11.2026): при
-  // живом сокете оба списка обновляет событие tasks:changed. Раз в 2 мин —
-  // страховка: поручение, надиктованное в Telegram, этого события не шлёт.
+  // живом сокете оба списка обновляет событие tasks:changed — теперь его шлёт
+  // и поручение, надиктованное в Telegram, поэтому опрос раз в 2 мин убран.
   const live = useSocketConnected()
-  const pollEvery = live ? 2 * 60_000 : 60_000
+  const pollEvery = live ? false : 60_000
 
   const { data: mine = [], isLoading } = useQuery({
     queryKey: ['tasks-from-management'],

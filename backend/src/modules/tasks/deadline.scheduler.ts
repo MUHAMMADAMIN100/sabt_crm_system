@@ -526,7 +526,13 @@ export class DeadlineScheduler implements OnModuleInit {
           createdById: project.salesManagerId,
           assigneeId: project.salesManagerId,
         })
-        await this.taskRepo.save(task)
+        const saved = await this.taskRepo.save(task)
+        // Личная задача — событие только самому МП (08.11.2026): без него
+        // напоминание появлялось в его календаре лишь по опросу страницы.
+        this.tasksService.notifyTasksChanged(
+          { projectId: null, taskId: saved.id, kind: 'create' },
+          [project.salesManagerId],
+        )
       }
 
       sent++

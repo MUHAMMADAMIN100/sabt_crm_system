@@ -11,6 +11,7 @@ import { LateNotice } from './late-notice.entity';
 import { ShiftSettings } from './shift-settings.entity';
 import { User, UserRole } from '../users/user.entity';
 import { TelegramService } from '../telegram/telegram.service';
+import { clearResponseCache } from '../../common/response-cache';
 
 /** Рабочий день начинается в 09:00, опоздание — приход позже 09:30
  *  (решение владельца, 21.09.2026). Порог больше не круглый час, поэтому
@@ -360,6 +361,15 @@ export class WorkShiftsService implements OnApplicationBootstrap {
    *  месяц на всю команду — сотни строк, зато карточка человека открывается
    *  мгновенно, без второго похода на сервер. */
   async month(ym?: string) {
+    return this.buildMonth(ym);
+  }
+
+  /** Табель месяца; с onlyUserId — ровно по одному человеку (08.11.2026).
+   *  Профиль просит свой месяц шесть раз подряд, и каждый раз собиралась
+   *  вся компания ради одной строки. Правила те же, меняется лишь выборка:
+   *  смены, отсутствия и согласованные опоздания — только его, графики —
+   *  его и общий (других schedFor всё равно не смотрит). */
+  private async buildMonth(ym?: string, onlyUserId?: string) {
     const valid = typeof ym === 'string' && /^\d{4}-\d{2}$/.test(ym);
     const month = valid ? ym! : dushanbeDate().slice(0, 7);
     const [y, m] = month.split('-').map(Number);
@@ -367,28 +377,33 @@ export class WorkShiftsService implements OnApplicationBootstrap {
     const from = `${month}-01`;
     const to = `${month}-${String(daysInMonth).padStart(2, '0')}`;
 
-    const users = await this.userRepo.find({
-      where: { isActive: true },
-      select: ['id', 'name', 'role', 'avatar'],
-    });
-    const people = users.filter(u => u.role !== UserRole.FOUNDER);
-
-    const rows = await this.repo
+    const shiftsQb = this.repo
       .createQueryBuilder('s')
-      .where('s.date BETWEEN :from AND :to', { from, to })
-      .getMany();
-    const monthAbsences = await this.absenceRepo
+      .where('s.date BETWEEN :from AND :to', { from, to });
+    if (onlyUserId) shiftsQb.andWhere('s.employeeId = :uid', { uid: onlyUserId });
+    const absQb = this.absenceRepo
       .createQueryBuilder('a')
-      .where('a.date BETWEEN :from AND :to', { from, to })
-      .getMany();
-    const monthScheds = await this.schedRepo.find();
-    const excusedDays = new Set(
-      (await this.noticeRepo
-        .createQueryBuilder('n')
-        .where('n.date BETWEEN :from AND :to', { from, to })
-        .andWhere("n.status = 'approved'")
-        .getMany()).map(n => `${n.userId}:${n.date}`),
-    );
+      .where('a.date BETWEEN :from AND :to', { from, to });
+    if (onlyUserId) absQb.andWhere('a.employeeId = :uid', { uid: onlyUserId });
+    const noticeQb = this.noticeRepo
+      .createQueryBuilder('n')
+      .where('n.date BETWEEN :from AND :to', { from, to })
+      .andWhere("n.status = 'approved'");
+    if (onlyUserId) noticeQb.andWhere('n.userId = :uid', { uid: onlyUserId });
+
+    // Чтения друг от друга не зависят — разом.
+    const [users, rows, monthAbsences, monthScheds, notices] = await Promise.all([
+      this.userRepo.find({
+        where: onlyUserId ? { isActive: true, id: onlyUserId } : { isActive: true },
+        select: ['id', 'name', 'role', 'avatar'],
+      }),
+      shiftsQb.getMany(),
+      absQb.getMany(),
+      this.schedRepo.find(onlyUserId ? { where: [{ userId: onlyUserId }, { userId: IsNull() }] } : undefined),
+      noticeQb.getMany(),
+    ]);
+    const people = users.filter(u => u.role !== UserRole.FOUNDER);
+    const excusedDays = new Set(notices.map(n => `${n.userId}:${n.date}`));
     const absenceByUserDay = new Map<string, Record<number, string>>();
     for (const a of monthAbsences) {
       const dn = Number(String(a.date).slice(8, 10));
@@ -847,7 +862,7 @@ export class WorkShiftsService implements OnApplicationBootstrap {
   /** Мой табель за месяц — для личного профиля. Общий /month закрыт
    *  руководством, здесь отдаём ровно одного человека: себя. */
   async myMonth(userId: string, ym?: string) {
-    const res = await this.month(ym);
+    const res = await this.buildMonth(ym, userId);
     const mine = res.items.find(i => i.id === userId) || null;
     return {
       ym: res.ym, daysInMonth: res.daysInMonth, today: res.today,
@@ -1021,6 +1036,8 @@ export class WorkShiftsService implements OnApplicationBootstrap {
       s.endReason = 'auto';
     }
     await this.repo.save(rows);
+    // Ночное закрытие меняет табель без HTTP-записи — профиль в кэше устарел.
+    clearResponseCache();
     return rows.length;
   }
 
@@ -1037,7 +1054,10 @@ export class WorkShiftsService implements OnApplicationBootstrap {
       s.endedAt = end;
       return true;
     });
-    if (changed.length) await this.repo.save(changed);
+    if (changed.length) {
+      await this.repo.save(changed);
+      clearResponseCache();
+    }
     return changed.length;
   }
 

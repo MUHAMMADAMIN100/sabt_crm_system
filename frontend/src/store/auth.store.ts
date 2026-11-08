@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
 import { syncThemeFromServer, resetTheme } from '@/lib/theme'
 import { queryClient } from '@/lib/queryClient'
+import { wipePersistedCache } from '@/lib/persistCache'
 
 export type UserRole =
   | 'admin'
@@ -144,6 +145,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        // Снимок данных на устройстве (08.11.2026) стираем первым делом: если
+        // запрос выхода повиснет, а приложение закроют, данные не останутся.
+        wipePersistedCache()
         try { await api.post('/auth/logout') } catch {}
         // Сносим всё локальное — даже если cookie не очистилась (другой домен,
         // ошибка сети), пользователь должен видеть экран логина.
@@ -210,10 +214,12 @@ export const useAuthStore = create<AuthState>()(
             }, 1000)
             return
           }
-          // 401 = cookie протухла или подделана. Чистим всё.
+          // 401 = cookie протухла или подделана. Чистим всё — и снимок
+          // данных на устройстве (08.11.2026).
           try { localStorage.removeItem('auth-storage') } catch {}
           try { localStorage.removeItem('token') } catch {}
           tokenStore.clear()
+          wipePersistedCache()
           set({ authenticated: false, user: null, loading: false })
         }
         })()

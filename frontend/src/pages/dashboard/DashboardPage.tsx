@@ -7,7 +7,6 @@ import { StatCard, PageLoader, StatusBadge, PriorityBadge, ProgressBar, Avatar }
 import { FolderKanban, CheckSquare, Users, Clock, AlertTriangle, TrendingDown } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
 import { isDevDirector } from '@/lib/permissions'
@@ -30,6 +29,8 @@ const ProductionDashboard = lazy(() => import('./components/ProductionDashboard'
 const ProducerDashboard = lazy(() => import('./components/ProducerDashboard'))
 /** KPI команды разработки — кабинет руководителя направления. */
 const DevTeamKpiWidget = lazy(() => import('@/components/kpi/DevTeamKpiWidget'))
+// Круговая по статусам — лениво: recharts нужна только руководству (08.11.2026).
+const TasksByStatusPie = lazy(() => import('./components/TasksByStatusPie'))
 
 
 // ── Helpers for story dot colors ──────────────────────────────────
@@ -600,16 +601,14 @@ function DashboardContent() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="card">
               <h3 className="section-title mb-4">{t('dashboard.tasksByStatus')}</h3>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={tasksByStatus.map((s: any) => ({ ...s, count: Number(s.count) }))} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={45} outerRadius={70}>
-                    {tasksByStatus.map((_: any, i: number) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: any, n: any) => [v, t(`statuses.${n}`) !== `statuses.${n}` ? t(`statuses.${n}`) : n]} />
-                </PieChart>
-              </ResponsiveContainer>
+              {/* Заглушка той же высоты — пока грузится график, карточка не прыгает. */}
+              <Suspense fallback={<div style={{ height: 160 }} aria-hidden />}>
+                <TasksByStatusPie
+                  data={tasksByStatus}
+                  colors={PIE_COLORS}
+                  labelOf={(n: string) => (t(`statuses.${n}`) !== `statuses.${n}` ? t(`statuses.${n}`) : n)}
+                />
+              </Suspense>
               <div className="flex flex-wrap gap-2 mt-2">
                 {tasksByStatus.map((s: any, i: number) => (
                   <div key={s.status} className="flex items-center gap-1">

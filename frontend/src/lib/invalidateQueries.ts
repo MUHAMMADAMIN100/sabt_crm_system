@@ -1,59 +1,29 @@
 import type { QueryClient } from '@tanstack/react-query'
+import { FULL_SCOPE, getTaskChangeSync, invalidateTaskQueries } from './taskChangeSync'
 
 /**
  * Invalidates ALL queries that depend on task/project data.
  * Call this on any task or project mutation so every page stays in sync.
+ *
+ * 08.11.2026: тот же набор, что и у события tasks:changed (taskChangeSync), —
+ * поэтому эхо своей правки вкладка может пропустить, ничего не потеряв.
+ * Убраны ['employees'] (в списке сотрудников нет данных задач, а запрос
+ * висит в шапке и шёл после каждой правки) и сторис (считаются по отметкам
+ * сторис, у них своё событие stories:changed). Список проектов — через общий
+ * троттлинг: не чаще раза в 10 с.
  */
 export function invalidateAfterTaskChange(qc: QueryClient, projectId?: string) {
-  // ── Project data ──────────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['projects'] })
+  const sync = getTaskChangeSync(qc)
+  sync.markLocal(projectId)
+  invalidateTaskQueries(qc, FULL_SCOPE, sync.requestProjectsList)
+
+  // ── Только у автора: то, чего нет в событии ────────────
   qc.invalidateQueries({ queryKey: ['projects-archived'] })
-  qc.invalidateQueries({ queryKey: ['project'] })           // partial — covers ['project', *]
-
-  // ── Task data ─────────────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['tasks'] })
-  qc.invalidateQueries({ queryKey: ['my-tasks'] })
-  qc.invalidateQueries({ queryKey: ['task'] })               // partial — covers ['task', *]
-  qc.invalidateQueries({ queryKey: ['tasks-review'] })
-  qc.invalidateQueries({ queryKey: ['tasks-overdue'] })
-  qc.invalidateQueries({ queryKey: ['task-results'] })       // partial — covers ['task-results', *]
-  qc.invalidateQueries({ queryKey: ['task-checklist'] })     // partial
-  qc.invalidateQueries({ queryKey: ['task-files'] })         // partial
-
-  // ── Employee data ─────────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['employees'] })
-  qc.invalidateQueries({ queryKey: ['employee-tasks'] })     // partial — covers ['employee-tasks', *]
-  qc.invalidateQueries({ queryKey: ['employee-stories'] })   // partial
-
-  // ── Analytics — ALL dashboard queries ─────────────────
-  qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
-  qc.invalidateQueries({ queryKey: ['analytics-workload'] })
-  qc.invalidateQueries({ queryKey: ['overview'] })
   qc.invalidateQueries({ queryKey: ['proj-status'] })
-  qc.invalidateQueries({ queryKey: ['task-status'] })
-  qc.invalidateQueries({ queryKey: ['task-priority'] })
-  qc.invalidateQueries({ queryKey: ['proj-perf'] })
-  qc.invalidateQueries({ queryKey: ['emp-eff'] })
-  qc.invalidateQueries({ queryKey: ['emp-activity'] })
-  qc.invalidateQueries({ queryKey: ['employee-efficiency'] })
-  qc.invalidateQueries({ queryKey: ['employee-workload'] })
-
-  // ── Calendar & misc ───────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['calendar'] })
-  qc.invalidateQueries({ queryKey: ['unread-count'] })
   qc.invalidateQueries({ queryKey: ['notifications'] })
   qc.invalidateQueries({ queryKey: ['notifications-count'] })
-
-  // ── Files (cross-page sync) ───────────────────────────
   qc.invalidateQueries({ queryKey: ['files'] })              // partial — covers ['files', *]
   qc.invalidateQueries({ queryKey: ['files-project'] })      // partial
-
-  // ── Reports & stories ─────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['reports'] })
-  qc.invalidateQueries({ queryKey: ['stories'] })            // partial
-  qc.invalidateQueries({ queryKey: ['stories-all'] })
-  qc.invalidateQueries({ queryKey: ['project-stories'] })    // partial
-  qc.invalidateQueries({ queryKey: ['stories-global'] })     // partial
 }
 
 /**

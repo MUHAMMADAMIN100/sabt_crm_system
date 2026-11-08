@@ -1,13 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkShiftsService } from './work-shifts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { ClearCacheOnWriteInterceptor } from '../../common/clear-cache-on-write.interceptor';
 
 @ApiTags('Work shifts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+// Смены, правки, отсутствия и графики событий не шлют, а из них считаются
+// профиль и KPI в коротком кэше — сбрасываем его на любой записи (08.11.2026).
+@UseInterceptors(ClearCacheOnWriteInterceptor)
 @Controller('work-shifts')
 export class WorkShiftsController {
   constructor(private service: WorkShiftsService) {}

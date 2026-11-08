@@ -79,11 +79,12 @@ export default function TasksPage() {
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
   // Опрос раз в 30 с — только без связи с сервером (08.11.2026): при живом
-  // сокете список обновляет событие tasks:changed. Редкий опрос раз в 5 мин
-  // остаётся страховкой: задачи, поставленные голосом в Telegram, этого
-  // события не шлют.
+  // сокете список обновляет событие tasks:changed. С третьей волны его шлют
+  // все пути записи задач (голосовые из Telegram, массовые действия,
+  // напоминания об оплате, повтор недели), поэтому страховочный опрос раз в
+  // 5 мин убран; после обрыва связи сокет сам перезапрашивает активное.
   const live = useSocketConnected()
-  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: live ? 5 * 60_000 : 30_000 })
+  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: live ? false : 30_000 })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 

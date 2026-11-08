@@ -12,6 +12,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { CommentsModule } from '../comments/comments.module';
 import { TaskResultsModule } from '../task-results/task-results.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Global()
 @Module({
@@ -21,6 +22,10 @@ import { TaskResultsModule } from '../task-results/task-results.module';
     forwardRef(() => TasksModule),
     forwardRef(() => CommentsModule),
     forwardRef(() => TaskResultsModule),
+    // Голосовая задача из Telegram шлёт «задачи изменились» (08.11.2026) —
+    // иначе на сайте она появлялась только по опросу страницы. Как в
+    // content-plan: шлюз импортируем напрямую, он ни от кого не зависит.
+    GatewayModule,
   ],
   controllers: [TelegramController],
   providers: [TelegramService, VoiceTaskService, BotWorkspaceService],

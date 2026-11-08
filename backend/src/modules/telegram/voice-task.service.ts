@@ -10,6 +10,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { User, UserRole } from '../users/user.entity';
 import { TelegramService } from './telegram.service';
+import { AppGateway } from '../gateway/app.gateway';
+import { emitTasksChanged } from '../gateway/tasks-changed';
 
 /**
  * Голосовая постановка задач через Telegram.
@@ -105,6 +107,7 @@ export class VoiceTaskService {
     @InjectRepository(Employee) private empRepo: Repository<Employee>,
     private notifications: NotificationsService,
     private telegram: TelegramService,
+    private gateway: AppGateway,
   ) {
     const key = process.env.GEMINI_API_KEY;
     this.gemini = key ? new GoogleGenerativeAI(key) : null;
@@ -557,7 +560,15 @@ ${transcript === null
       createdById: userId,
       assigneeId: assigneeId || userId,
     });
-    return this.taskRepo.save(task);
+    const saved = await this.taskRepo.save(task);
+    // Сайт узнаёт о задаче сразу (08.11.2026). Личная — только автору, его
+    // вкладкам; поручение сотруднику — всем, как задача, поставленная на сайте.
+    emitTasksChanged(
+      this.gateway,
+      { projectId: null, taskId: saved.id, actorId: userId, kind: 'create' },
+      forOther ? undefined : [userId],
+    );
+    return saved;
   }
 
   private doneText(task: Task, intent: VoiceIntent, assigneeLabel?: string): string {

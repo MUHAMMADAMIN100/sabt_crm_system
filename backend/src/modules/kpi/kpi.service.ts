@@ -11,6 +11,13 @@ import { ClientLead, ClientLeadDirection } from '../clients/client-lead.entity';
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity';
 import { ClientsService } from '../clients/clients.service';
 import { DirectionScope, isInDirection } from '../../common/direction-scope';
+import { cachedResponse } from '../../common/response-cache';
+
+/** Короткий кэш KPI (08.11.2026): расчёт — десяток агрегаций, а просят его
+ *  панели, профиль и страница KPI одновременно. Ответ зависит только от
+ *  периода и скоупа направления, не от того, кто смотрит (права проверены
+ *  до вызова). Любое событие изменения кэш сбрасывает. */
+const KPI_TTL = 90_000;
 
 /** Универсальная KPI-метрика. */
 export interface KpiItem {
@@ -256,9 +263,22 @@ export class KpiService {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
   }
 
+  /** «Сегодня» для ключа кэша: по Душанбе — им считаются наступившие сроки,
+   *  и по часам сервера — им periodRange заполняет пустой период. */
+  private dayStamp(): string {
+    return `${this.todayLocal()}|${this.isoDay(new Date())}`;
+  }
+
   /** KPI одного юзера. Внутри использует bulk-методы (с массивом из одного
    *  id) — переиспользуем код. */
   async getUserKpi(userId: string, from?: string, to?: string): Promise<UserKpi | null> {
+    const key = `kpi:user:${userId}:${from || ''}:${to || ''}:${this.dayStamp()}`;
+    return cachedResponse(key, KPI_TTL, () => this.computeUserKpi(userId, from, to));
+  }
+
+  /** То же без короткого кэша — для тех, кто кэширует результат сам
+   *  (прошедшие месяцы профиля), чтобы не плодить лишние записи. */
+  async computeUserKpi(userId: string, from?: string, to?: string): Promise<UserKpi | null> {
     const list = await this.bulkKpi([userId], from, to);
     return list[0] || null;
   }
@@ -266,6 +286,13 @@ export class KpiService {
   /** KPI всех активных не-top сотрудников. Для дашборда основателя.
    *  Делает 5 групповых SQL-агрегаций → быстро даже на 100+ юзерах. */
   async getAllKpi(from?: string, to?: string, scope?: DirectionScope | null): Promise<UserKpi[]> {
+    // Руководитель направления и основатель видят разный состав — скоуп в ключе.
+    const scopeKey = scope ? scope.teamRoles.join(',') : '*';
+    const key = `kpi:all:${scopeKey}:${from || ''}:${to || ''}:${this.dayStamp()}`;
+    return cachedResponse(key, KPI_TTL, () => this.computeAllKpi(from, to, scope));
+  }
+
+  private async computeAllKpi(from?: string, to?: string, scope?: DirectionScope | null): Promise<UserKpi[]> {
     // Выбираем всех активных юзеров кроме admin/founder/co_founder.
     const users = await this.userRepo.find({
       where: { isActive: true, isBlocked: false },

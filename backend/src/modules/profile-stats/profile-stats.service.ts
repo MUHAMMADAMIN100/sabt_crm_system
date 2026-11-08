@@ -5,6 +5,7 @@ import { User } from '../users/user.entity';
 import { KpiService, UserKpi } from '../kpi/kpi.service';
 import { WorkShiftsService } from '../work-shifts/work-shifts.service';
 import { directionScopeOf, isInDirection } from '../../common/direction-scope';
+import { cachedResponse } from '../../common/response-cache';
 import { EmployeeGoal } from './employee-goal.entity';
 import {
   BONUS_RULE, Delivery, GOAL_METRICS, GoalMetrics, MonthEff, PRODUCTION_UNIT, ShiftDay, StoryDay, WorkKind,
@@ -12,6 +13,8 @@ import {
 } from './profile-stats.logic';
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
+/** Табель месяца для серий: минуты по дням и дни опозданий. */
+type ShiftMonthLite = { days: Record<number, number>; lateDays: number[] };
 
 /** Руководство: KPI и профиля-аналитики у них нет. */
 const TOP_ROLES = ['admin', 'founder'];
@@ -24,6 +27,10 @@ const MAX_GOALS = 3;
 const SHIFT_MONTHS = 6;
 /** История эффективности для достижений — полгода прошедших месяцев. */
 const EFF_MONTHS = 6;
+/** Закрытые месяцы профиля (KPI и смены) почти не меняются, а считались при
+ *  каждом открытии: 6 KPI и 5 табелей. Держим их час на человека (08.11.2026);
+ *  любое событие изменения и запись смен/контент-плана кэш сбрасывают. */
+const PAST_TTL = 60 * 60_000;
 
 const todayDushanbe = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 const shiftYm = (ym: string, delta: number) => {
@@ -161,14 +168,34 @@ export class ProfileStatsService {
     ];
   }
 
+  /** Табель месяца — только то, что нужно сериям: дни с часами и опоздания. */
+  private async shiftMonthLite(userId: string, m: string): Promise<ShiftMonthLite> {
+    const r = await this.shifts.myMonth(userId, m);
+    return { days: r.item.days || {}, lateDays: r.item.lateDays || [] };
+  }
+
+  /** Прошедшие месяцы профиля одним куском: эффективность по KPI и табели.
+   *  Ошибку не кэшируем — тогда считаем как раньше, по месяцу с подстраховкой. */
+  private async pastMonths(userId: string, effYms: string[], shiftYms: string[]) {
+    const key = `profile:past:${userId}:${effYms.join(',')}:${shiftYms.join(',')}`;
+    return cachedResponse(key, PAST_TTL, async () => {
+      const [kpis, shifts] = await Promise.all([
+        Promise.all(effYms.map(m => this.kpi.computeUserKpi(userId, `${m}-01`, monthEnd(m)))),
+        Promise.all(shiftYms.map(m => this.shiftMonthLite(userId, m))),
+      ]);
+      return { kpis, shifts: shifts as Array<ShiftMonthLite | null> };
+    }).catch(async () => ({
+      kpis: await Promise.all(effYms.map(m => this.kpiOf(userId, m))),
+      shifts: await Promise.all(shiftYms.map(m => this.shiftMonthLite(userId, m).catch(() => null))),
+    }));
+  }
+
   /** Смены за последние месяцы: рабочие дни и опоздания. */
-  private async shiftHistory(userId: string, ym: string) {
-    const months = Array.from({ length: SHIFT_MONTHS }, (_, i) => shiftYm(ym, -(SHIFT_MONTHS - 1 - i)));
-    const res = await Promise.all(months.map(m => this.shifts.myMonth(userId, m).catch(() => null)));
+  private shiftHistory(months: string[], res: Array<ShiftMonthLite | null>) {
     const days: ShiftDay[] = [];
     const perMonth: Array<{ ym: string; worked: number; late: number }> = [];
     res.forEach((r, i) => {
-      const it: any = r?.item;
+      const it: any = r;
       const late = new Set<number>(it?.lateDays || []);
       const worked = Object.entries(it?.days || {})
         .filter(([, min]) => Number(min) > 0)
@@ -216,10 +243,12 @@ export class ProfileStatsService {
     const storyFrom = firstLog?.first ? [firstLog.first, addDays(today, -400)].sort()[1] : null;
 
     const pastYms = Array.from({ length: EFF_MONTHS }, (_, i) => shiftYm(ym, -(EFF_MONTHS - i)));
-    const [kpiNow, pastKpis, shiftsHist, days, deliveries, hire, totals, goals] = await Promise.all([
+    // Смены — полгода по текущий месяц; прошедшие из них берём из кэша.
+    const shiftYms = Array.from({ length: SHIFT_MONTHS }, (_, i) => shiftYm(ym, -(SHIFT_MONTHS - 1 - i)));
+    const [kpiNow, past, shiftNow, days, deliveries, hire, totals, goals] = await Promise.all([
       this.kpiOf(user.id, ym),
-      Promise.all(pastYms.map(m => this.kpiOf(user.id, m))),
-      this.shiftHistory(user.id, ym),
+      this.pastMonths(user.id, pastYms, shiftYms.slice(0, -1)),
+      this.shiftMonthLite(user.id, ym).catch(() => null),
       storyFrom ? this.storyDays(user.id, storyFrom, today) : Promise.resolve([] as StoryDay[]),
       this.deliveries(user.id, kind, today),
       this.hireDate(user.id),
@@ -229,6 +258,8 @@ export class ProfileStatsService {
       this.goalRepo.find({ where: { userId: user.id, ym }, order: { createdAt: 'ASC' } }),
     ]);
 
+    const pastKpis = past.kpis;
+    const shiftsHist = this.shiftHistory(shiftYms, [...past.shifts, shiftNow]);
     const pastEff: MonthEff[] = pastKpis.map((k, i) => ({ ym: pastYms[i], percent: this.effOf(k) }));
     const nowEff = this.effOf(kpiNow);
     const prev = pastEff[pastEff.length - 1];

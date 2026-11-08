@@ -2726,6 +2726,98 @@ export class FinanceService implements OnModuleInit {
     return { ym, amount };
   }
 
+  /** Строка зарплатной ведомости одного сотрудника за месяц начисления.
+   *  Вынесена из expenseDetail (08.11.2026), чтобы «Моя зарплата» считала
+   *  ровно свою строку тем же кодом, а не всю ведомость ради одной.
+   *  salaryTx/instMap могут быть уже урезаны до этого сотрудника: строка
+   *  смотрит только на его операции и рассрочки. */
+  private salaryRowOf(
+    e: FinanceEmployee, ym: string,
+    ctx: {
+      salaryTx: FinanceTransaction[];
+      instMap: Map<string, FinanceInstallment[]>;
+      vacCtx: { vacations: VacationRecordLike[]; schedules: ScheduleRowLike[] };
+    },
+  ) {
+    const { salaryTx, instMap, vacCtx } = ctx;
+    const paidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
+    // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — операциями «Бонус» не
+    // создаётся, поэтому в «выплачено» открытого месяца их НЕ считаем.
+    const paidNoBonusOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+    // Аванс выдаётся сразу отдельной операцией — колонка показывает выданное.
+    const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
+    // Снапшот фиксирует выплаты и корректировки месяца, но не является
+    // источником оклада: старые версии могли записать туда аванс/остаток.
+    // Ставку всегда берём из salaryHistory соответствующего периода.
+    const snap = snapOf(e, ym);
+    // История столбцов доступна и для ЗАМОРОЖЕННОГО месяца — только для
+    // чтения, чтобы после выплаты можно было посмотреть, что было.
+    // Аванс — реальные операции (счёт/дата); бонус/штраф/отпускные — журнал.
+    const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
+      .filter(t => t.employeeId === e.id && pred(t))
+      .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const advanceEntries = txEntries(isAdvanceTx);
+    const bonusJournal = readDeductionEntries(e as any, 'bonusEntries', 'bonuses', ym);
+    const fineEntries = readDeductionEntries(e as any, 'fineEntries', 'fines', ym);
+    const vacationEntries = readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym);
+    if (snap) {
+      const operationPaid = paidOf(e.id);
+      const operationAdvance = advPaidOf(e.id);
+      const paid = recordedSalarySnapshotPaid(snap, operationPaid, operationAdvance);
+      // Старые замороженные месяцы: бонус был операцией — если журнал пуст,
+      // показываем бонус-операции (для чтения истории).
+      const bonusEntries = bonusJournal.length ? bonusJournal : txEntries(isBonusTx);
+      const snapParts: DeductionPart[] = Object.entries(snap.installments || {})
+        .map(([id, amount]) => ({
+          id, amount: r2(Number(amount) || 0),
+          name: instMap.get(e.id)?.find(i => i.id === id)?.name || 'Рассрочка',
+        }))
+        .filter(x => x.amount > 0);
+      return {
+        id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
+        hireDate: e.hireDate, terminationDate: e.terminationDate,
+        salaryHistory: e.salaryHistory || {},
+        salary: salaryForMonth(e, ym), advance: r2(Number(snap.advance) || 0),
+        bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
+        vacation: r2(Number(snap.vacation) || 0),
+        installment: snapInstallment(snap),
+        installmentParts: this.installmentRowView(instMap.get(e.id), e, ym, snapParts, true),
+        status: e.status, paid, toPay: 0,
+        frozen: true, paidAt: snap.paidAt ?? null,
+        advanceEntries, bonusEntries, fineEntries, vacationEntries,
+      };
+    }
+    const paid = paidNoBonusOf(e.id); // аванс + финальная ЗП (без бонус-операций)
+    const advance = advPaidOf(e.id); // уже выдано (входит в paid)
+    const bonus = bonusOf(e, ym);    // НАКОПИТЕЛЬНЫЙ — прибавляется к «к выплате»
+    const fine = fineOf(e, ym);      // удерживается при финальной выплате
+    const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
+    // Рассрочка — удержание, как штраф, но не больше того, что причитается.
+    const owed = Math.max(0, salaryForMonth(e, ym) + bonus - fine - vacation);
+    const instParts = this.installmentDeduction(instMap.get(e.id), e, ym, owed);
+    const installment = sumParts(instParts);
+    return {
+      id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
+      hireDate: e.hireDate, terminationDate: e.terminationDate,
+      salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
+      advance, bonus, fine, vacation, status: e.status, paid,
+      installment,
+      installmentParts: this.installmentRowView(instMap.get(e.id), e, ym, instParts, false),
+      advanceEntries,
+      bonusEntries: bonusJournal,
+      fineEntries,
+      vacationEntries,
+      // Отпуск в этом месяце: «за свой счёт» ждёт решения владельца.
+      vacationHints: this.vacationHintsFor(e, ym, vacCtx, vacationEntries),
+      // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
+      // аванс и бонус уже внутри «выплачено», поэтому остаток =
+      // оклад − штраф − отпускные − (финальные выплаты + авансы).
+      toPay: r2(Math.max(0, owed - installment - paid)),
+      frozen: false, paidAt: null,
+    };
+  }
+
   async expenseDetail(kind: string, ym: string, start?: string) {
     const { from, to } = monthRange(ym);
 
@@ -2741,85 +2833,8 @@ export class FinanceService implements OnModuleInit {
         this.installmentsByEmployee(),
         this.vacationContext(from, to),
       ]);
-      const paidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
-      // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — операциями «Бонус» не
-      // создаётся, поэтому в «выплачено» открытого месяца их НЕ считаем.
-      const paidNoBonusOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0));
-      // Аванс выдаётся сразу отдельной операцией — колонка показывает выданное.
-      const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => workedInFinanceMonth(e, ym));
-      const rows = activeEmps.map(e => {
-        // Снапшот фиксирует выплаты и корректировки месяца, но не является
-        // источником оклада: старые версии могли записать туда аванс/остаток.
-        // Ставку всегда берём из salaryHistory соответствующего периода.
-        const snap = snapOf(e, ym);
-        // История столбцов доступна и для ЗАМОРОЖЕННОГО месяца — только для
-        // чтения, чтобы после выплаты можно было посмотреть, что было.
-        // Аванс — реальные операции (счёт/дата); бонус/штраф/отпускные — журнал.
-        const txEntries = (pred: (t: FinanceTransaction) => boolean) => salaryTx
-          .filter(t => t.employeeId === e.id && pred(t))
-          .map(t => ({ id: t.id, date: (t.date || '').slice(0, 10), amount: r2(Number(t.amount) || 0), accountId: t.accountId ?? null, comment: t.comment ?? null, salaryYm: t.salaryYm ?? null }))
-          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-        const advanceEntries = txEntries(isAdvanceTx);
-        const bonusJournal = readDeductionEntries(e as any, 'bonusEntries', 'bonuses', ym);
-        const fineEntries = readDeductionEntries(e as any, 'fineEntries', 'fines', ym);
-        const vacationEntries = readDeductionEntries(e as any, 'vacationEntries', 'vacations', ym);
-        if (snap) {
-          const operationPaid = paidOf(e.id);
-          const operationAdvance = advPaidOf(e.id);
-          const paid = recordedSalarySnapshotPaid(snap, operationPaid, operationAdvance);
-          // Старые замороженные месяцы: бонус был операцией — если журнал пуст,
-          // показываем бонус-операции (для чтения истории).
-          const bonusEntries = bonusJournal.length ? bonusJournal : txEntries(isBonusTx);
-          const snapParts: DeductionPart[] = Object.entries(snap.installments || {})
-            .map(([id, amount]) => ({
-              id, amount: r2(Number(amount) || 0),
-              name: instMap.get(e.id)?.find(i => i.id === id)?.name || 'Рассрочка',
-            }))
-            .filter(x => x.amount > 0);
-          return {
-            id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
-            hireDate: e.hireDate, terminationDate: e.terminationDate,
-            salaryHistory: e.salaryHistory || {},
-            salary: salaryForMonth(e, ym), advance: r2(Number(snap.advance) || 0),
-            bonus: r2(Number(snap.bonus) || 0), fine: r2(Number(snap.fine) || 0),
-            vacation: r2(Number(snap.vacation) || 0),
-            installment: snapInstallment(snap),
-            installmentParts: this.installmentRowView(instMap.get(e.id), e, ym, snapParts, true),
-            status: e.status, paid, toPay: 0,
-            frozen: true, paidAt: snap.paidAt ?? null,
-            advanceEntries, bonusEntries, fineEntries, vacationEntries,
-          };
-        }
-        const paid = paidNoBonusOf(e.id); // аванс + финальная ЗП (без бонус-операций)
-        const advance = advPaidOf(e.id); // уже выдано (входит в paid)
-        const bonus = bonusOf(e, ym);    // НАКОПИТЕЛЬНЫЙ — прибавляется к «к выплате»
-        const fine = fineOf(e, ym);      // удерживается при финальной выплате
-        const vacation = vacationOf(e, ym); // отпуск/невыходы — тоже удержание
-        // Рассрочка — удержание, как штраф, но не больше того, что причитается.
-        const owed = Math.max(0, salaryForMonth(e, ym) + bonus - fine - vacation);
-        const instParts = this.installmentDeduction(instMap.get(e.id), e, ym, owed);
-        const installment = sumParts(instParts);
-        return {
-          id: e.id, name: e.name, role: e.role, userId: e.userId ?? null, category: e.category ?? null,
-          hireDate: e.hireDate, terminationDate: e.terminationDate,
-          salary: salaryForMonth(e, ym), salaryHistory: e.salaryHistory || {},
-          advance, bonus, fine, vacation, status: e.status, paid,
-          installment,
-          installmentParts: this.installmentRowView(instMap.get(e.id), e, ym, instParts, false),
-          advanceEntries,
-          bonusEntries: bonusJournal,
-          fineEntries,
-          vacationEntries,
-          // Отпуск в этом месяце: «за свой счёт» ждёт решения владельца.
-          vacationHints: this.vacationHintsFor(e, ym, vacCtx, vacationEntries),
-          // Обязательство месяца = оклад + выданные бонусы − штраф − отпускные;
-          // аванс и бонус уже внутри «выплачено», поэтому остаток =
-          // оклад − штраф − отпускные − (финальные выплаты + авансы).
-          toPay: r2(Math.max(0, owed - installment - paid)),
-          frozen: false, paidAt: null,
-        };
-      });
+      const rows = activeEmps.map(e => this.salaryRowOf(e, ym, { salaryTx, instMap, vacCtx }));
       const fund = r2(rows.reduce((s, e) => s + Number(e.salary), 0));
       const advances = r2(rows.reduce((s, e) => s + Number(e.advance), 0));
       const bonuses = r2(rows.reduce((s, e) => s + Number(e.bonus), 0));
@@ -4492,14 +4507,29 @@ export class FinanceService implements OnModuleInit {
 
 
   /** Зарплата запрашивающего за месяц + история закрытых месяцев.
-   *  Цифры считает та же ведомость, что видит владелец, — расхождений быть
-   *  не может; наружу отдаём ровно одну строку и только нужные поля. */
+   *  Цифры считает тот же код строки ведомости (salaryRowOf), что видит
+   *  владелец, — расхождений быть не может; наружу отдаём ровно одну строку
+   *  и только нужные поля.
+   *
+   *  С 08.11.2026 считаем только свою строку: раньше ради неё собиралась вся
+   *  ведомость (все сотрудники, все рассрочки, все выплаты месяца), а чтение
+   *  статуса периода ещё и создавало строки периодов в базе. Строке нужны
+   *  лишь её операции и рассрочки — их и грузим. Кэша нет: зарплаты между
+   *  людьми не делим. */
   async mySalary(userId: string, ym?: string) {
     const month = YM_RE.test(ym || '') ? (ym as string) : currentYm();
     const emp = await this.resolveMyEmployee(userId);
     if (!emp) return { linked: false, ym: month, employee: null, row: null, history: [] };
-    const detail: any = await this.expenseDetail('salary', month);
-    const found = (detail.rows || []).find((r: any) => r.id === emp.id) || null;
+    const { from, to } = monthRange(month);
+    const [salaryTx, insts, vacCtx] = await Promise.all([
+      this.salaryTxForMonth(month, emp.id),
+      this.installmentsOf(emp.id),
+      this.vacationContext(from, to),
+    ]);
+    // В ведомости строка есть, только если человек работал в этом месяце.
+    const found: any = workedInFinanceMonth(emp, month)
+      ? this.salaryRowOf(emp, month, { salaryTx, instMap: new Map([[emp.id, insts]]), vacCtx })
+      : null;
     const row = found ? {
       ym: month,
       salary: found.salary, advance: found.advance, bonus: found.bonus,
@@ -4529,7 +4559,7 @@ export class FinanceService implements OnModuleInit {
         };
       });
     // Свои рассрочки — только просмотр: менять суммы может лишь владелец.
-    const installments = (await this.installmentsOf(emp.id))
+    const installments = insts
       .map(i => this.installmentPersonalView(i, emp))
       // закрытую показываем ещё пару месяцев — человеку видно, что всё
       .filter(v => !v.done || (!!v.lastAt && v.lastAt >= shiftYm(currentYm(), -2)));

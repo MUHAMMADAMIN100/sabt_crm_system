@@ -7,6 +7,7 @@ import { tokenStore } from '@/lib/api'
 import { playDirectChime } from '@/lib/directSound'
 import { setSocketConnected } from '@/lib/socketState'
 import { applyDirectConversation, upsertDirectMessage } from '@/pages/direct/directCache'
+import { getTaskChangeSync, setTaskChangeUserGetter } from '@/lib/taskChangeSync'
 
 /**
  * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
@@ -152,50 +153,15 @@ export function useSocket(authMarker: string | null) {
       // Активный refetch — чтобы данные пришли мгновенно, не по визиту
     })
 
-    socket.on('tasks:changed', () => {
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['my-tasks'] })
-      qc.invalidateQueries({ queryKey: ['task'] })
-      qc.invalidateQueries({ queryKey: ['project'] })
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      qc.invalidateQueries({ queryKey: ['overview'] })
-      qc.invalidateQueries({ queryKey: ['task-status'] })
-      qc.invalidateQueries({ queryKey: ['task-priority'] })
-      qc.invalidateQueries({ queryKey: ['tasks-review'] })
-      qc.invalidateQueries({ queryKey: ['tasks-overdue'] })
-      qc.invalidateQueries({ queryKey: ['task-results'] })
-      qc.invalidateQueries({ queryKey: ['task-checklist'] })
-      qc.invalidateQueries({ queryKey: ['task-files'] })
-      qc.invalidateQueries({ queryKey: ['employee-tasks'] })
-      qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
-      qc.invalidateQueries({ queryKey: ['analytics-workload'] })
-      qc.invalidateQueries({ queryKey: ['employee-workload'] })
-      qc.invalidateQueries({ queryKey: ['employee-efficiency'] })
-      qc.invalidateQueries({ queryKey: ['emp-eff'] })
-      qc.invalidateQueries({ queryKey: ['emp-activity'] })
-      qc.invalidateQueries({ queryKey: ['proj-perf'] })
-      qc.invalidateQueries({ queryKey: ['calendar'] })
-      qc.invalidateQueries({ queryKey: ['unread-count'] })
-      qc.invalidateQueries({ queryKey: ['reports'] })
-      // KPI и риски считаются из задач — без этого виджет KPI команды и
-      // раздел «Риски» отставали до перезагрузки страницы.
-      qc.invalidateQueries({ queryKey: ['kpi-all'] })
-      qc.invalidateQueries({ queryKey: ['kpi-user'] })
-      qc.invalidateQueries({ queryKey: ['kpi-details'] })
-      qc.invalidateQueries({ queryKey: ['risks-projects'] })
-      qc.invalidateQueries({ queryKey: ['risks-employees'] })
-      qc.invalidateQueries({ queryKey: ['workload-employees-all'] })
-      qc.invalidateQueries({ queryKey: ['workload-pm-all'] })
-      qc.invalidateQueries({ queryKey: ['workload-employees'] })
-      // Ключи страницы «Риски и нагрузка» и вкладки проекта — React Query
-      // сопоставляет ключи поэлементно, префикс их не покрывает.
-      qc.invalidateQueries({ queryKey: ['workload-pm'] })
-      qc.invalidateQueries({ queryKey: ['workload-team-all'] })
-      // Кабинет поручений исполнителя: выданная задача должна появиться у
-      // него сразу, а не через минуту по refetchInterval.
-      qc.invalidateQueries({ queryKey: ['tasks-from-management'] })
-      qc.invalidateQueries({ queryKey: ['tasks-assigned-by-me'] })
-    })
+    // «Задачи изменились» (08.11.2026, третья волна): события за 400 мс
+    // собираются в одно обновление, эхо своей правки из этой вкладки
+    // пропускается (она уже обновила всё сама в invalidateAfterTaskChange),
+    // карточка проекта — только затронутого, а тяжёлый список проектов —
+    // лишь когда могли измениться счётчики задач, и не чаще раза в 10 с.
+    // Подробности и правила — lib/taskChangeSync.ts.
+    setTaskChangeUserGetter(() => useAuthStore.getState().user?.id)
+    const taskSync = getTaskChangeSync(qc)
+    socket.on('tasks:changed', (payload: any) => taskSync.receive(payload))
 
     // Комментарии, результаты работ и вложения — карточка задачи обновляется
     // у всех, кто её сейчас открыл, без перезагрузки.
@@ -226,7 +192,7 @@ export function useSocket(authMarker: string | null) {
     // (create/update/remove) — сразу инвалидируем и рефечим все KPI-кэши
     // и список клиентов. Это убирает необходимость F5 на дашборде MP и
     // у founder, когда менеджер двигает лида / меняет «Тип звонка».
-    socket.on('leads:changed', () => {
+    socket.on('leads:changed', (payload: any) => {
       qc.invalidateQueries({ queryKey: ['clients'] })
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
       qc.invalidateQueries({ queryKey: ['sales-kpi'] })
@@ -236,6 +202,16 @@ export function useSocket(authMarker: string | null) {
       // Встречи клиентов отображаются в Календаре — обновляем и его,
       // чтобы назначенная встреча появилась без F5.
       qc.invalidateQueries({ queryKey: ['calendar'] })
+      // Встреча/звонок по клиенту — личная задача владельца лида
+      // (clients.service.syncMeetingTask), отдельного tasks:changed у неё нет.
+      // Обновляем его списки задач: без этого задача появлялась только по
+      // опросу страницы задач, а его больше нет при живом сокете (08.11.2026).
+      const myId = useAuthStore.getState().user?.id
+      if (myId && payload?.ownerId === myId) {
+        qc.invalidateQueries({ queryKey: ['tasks'] })
+        qc.invalidateQueries({ queryKey: ['my-tasks'] })
+        qc.invalidateQueries({ queryKey: ['own-tasks'] })
+      }
     })
 
     // «Директ». Сервер шлёт события только тем, у кого есть доступ к переписке.
@@ -283,7 +259,7 @@ export function useSocket(authMarker: string | null) {
     })
 
     socketRef.current = socket
-    return () => { setSocketConnected(false); socket.disconnect() }
+    return () => { setSocketConnected(false); taskSync.reset(); socket.disconnect() }
   }, [authMarker, qc])
 
   return socketRef

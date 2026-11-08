@@ -15,6 +15,7 @@ import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Project } from '../projects/project.entity';
 import { User, UserRole } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { emitTasksChanged as sendTasksChanged, TasksChangedPayload } from '../gateway/tasks-changed';
 
 export interface ContentPlanFilters {
   projectId?: string;
@@ -100,13 +101,20 @@ export class ContentPlanService {
   }
 
   /** Сообщить фронту что задачи проекта изменились — он перезагрузит
-   *  канбан и календарь без F5 (useSocket подписан на tasks:changed). */
-  private emitTasksChanged(projectId?: string) {
-    try {
-      this.gateway.broadcast('tasks:changed', projectId ? { projectId } : {});
-    } catch (e) {
-      this.logger.warn(`Failed to broadcast tasks:changed: ${(e as Error).message}`);
-    }
+   *  канбан и календарь без F5 (useSocket подписан на tasks:changed).
+   *  ctx (08.11.2026): кто и что поменял — фронт по нему решает, нужен ли
+   *  тяжёлый список проектов, и узнаёт эхо собственной правки.
+   *  content: true — у всех обновится умный календарь и экраны контента
+   *  (раньше событие их не трогало). kind по умолчанию 'content': тронуты
+   *  только карточки, сами задачи нет — списки задач перезапрашивать не надо.
+   *  Через broadcast — он же сбрасывает кэш ответов сервера. */
+  private emitTasksChanged(projectId?: string | null, ctx: Omit<TasksChangedPayload, 'projectId' | 'content'> = {}) {
+    sendTasksChanged(this.gateway, {
+      ...(projectId ? { projectId } : {}),
+      kind: 'content',
+      ...ctx,
+      content: true,
+    });
   }
 
   /** Собирает payload задачи из элемента контент-плана. */
@@ -315,7 +323,7 @@ export class ContentPlanService {
       [userId],
     ).catch((e: any) => { this.logger.warn(`setDefaultVideographer backfill failed: ${e?.message || e}`); return []; });
 
-    this.emitTasksChanged();
+    this.emitTasksChanged(undefined, { actorId: actor.id });
     return { userId, moved: Array.isArray(moved) ? moved.length : 0 };
   }
 
@@ -341,7 +349,7 @@ export class ContentPlanService {
       if (!ok) throw new BadRequestException('Съёмку можно передать только видеографу');
     }
     await this.repo.update(itemId, { assigneeId: userId });
-    this.emitTasksChanged(item.projectId);
+    this.emitTasksChanged(item.projectId, { actorId: actor.id });
     this.shootChanged(item, actor.id);
     return { id: itemId, assigneeId: userId };
   }
@@ -380,7 +388,7 @@ export class ContentPlanService {
       if (!ok) throw new BadRequestException(refuse[stage as string] || 'Этому сотруднику карточку назначить нельзя');
     }
     await this.repo.update(itemId, { assigneeId: userId });
-    this.emitTasksChanged(item.projectId);
+    this.emitTasksChanged(item.projectId, { actorId: actor.id });
     if (stage === 'shoot') this.shootChanged(item, actor.id);
     return { id: itemId, assigneeId: userId };
   }
@@ -474,7 +482,7 @@ export class ContentPlanService {
     }
     if (!Object.keys(upd).length) return { id, status: item.status };
     await this.repo.update(id, upd);
-    this.emitTasksChanged(item.projectId);
+    this.emitTasksChanged(item.projectId, { actorId: userId });
     return { id, status: upd.status ?? item.status };
   }
 
@@ -608,19 +616,25 @@ export class ContentPlanService {
         !it.taskId && (it.publishDate || it.preparationDeadline),
       );
       if (orphans.length > 0) {
+        let created = 0;
         await Promise.all(orphans.map(async (it) => {
           try {
             const taskId = await this.syncTaskForItem(it);
             if (taskId && taskId !== it.taskId) {
               await this.repo.update(it.id, { taskId });
               it.taskId = taskId;
+              created++;
             }
           } catch (e) {
             this.logger.warn(`Backfill task for item ${it.id} failed: ${(e as Error).message}`);
           }
         }));
-        // Уведомляем фронт чтобы канбан/календарь перерисовались сразу.
-        this.emitTasksChanged(f.projectId);
+        // Уведомляем фронт, только если задачи и правда появились
+        // (08.11.2026). Карточка с датой, но без темы, задачу не получает и
+        // остаётся «сиротой» навсегда — раньше из-за неё КАЖДОЕ открытие
+        // плана рассылало всем «задачи изменились», и вся команда
+        // перезапрашивала задачи, проекты и KPI просто от чтения.
+        if (created > 0) this.emitTasksChanged(f.projectId, { kind: 'create' });
       }
     }
 
@@ -646,8 +660,12 @@ export class ContentPlanService {
       saved.taskId = taskId;
       await this.repo.update(saved.id, { taskId });
     }
-    if (taskId) this.emitTasksChanged(saved.projectId);
     await this.ensurePrepForItem(saved); // авто-съёмка под рилс (если рилс с датой)
+    // Шлём всегда (08.11.2026): карточка без задачи тоже видна в умном
+    // календаре у других. После ensurePrep — чтобы приехала и съёмка.
+    this.emitTasksChanged(saved.projectId, taskId
+      ? { taskId, actorId: createdById ?? null, kind: 'create' }
+      : { actorId: createdById ?? null });
     return saved;
   }
 
@@ -672,7 +690,10 @@ export class ContentPlanService {
         this.logger.warn(`Failed to auto-create task for plan item ${s.id}: ${(e as Error).message}`);
       }
     }));
-    if (createdAny) this.emitTasksChanged(saved[0]?.projectId);
+    // Шлём всегда: карточки без задач тоже видны в умном календаре.
+    this.emitTasksChanged(saved[0]?.projectId, createdAny
+      ? { actorId: createdById ?? null, kind: 'create' }
+      : { actorId: createdById ?? null });
     return saved;
   }
 
@@ -684,6 +705,7 @@ export class ContentPlanService {
     // Синхронизируем связанную задачу — title/assignee/dates могли измениться.
     // syncTaskForItem может вернуть null (если задача была удалена из-за
     // удаления дат или очистки topic) — тогда обнуляем taskId в БД.
+    const hadTask = !!after.taskId;
     try {
       const taskId = await this.syncTaskForItem(after, updatedById);
       if (taskId !== after.taskId) {
@@ -693,7 +715,14 @@ export class ContentPlanService {
     } catch (e) {
       this.logger.warn(`Failed to sync task for plan item ${id}: ${(e as Error).message}`);
     }
-    this.emitTasksChanged(after.projectId);
+    // Задача появилась/исчезла — меняются счётчики проекта; иначе это правка.
+    const hasTask = !!after.taskId;
+    this.emitTasksChanged(after.projectId, {
+      taskId: after.taskId ?? null,
+      actorId: updatedById ?? null,
+      // Задачи не было и нет — тронута только карточка.
+      kind: hasTask === hadTask ? (hasTask ? 'edit' : 'content') : hasTask ? 'create' : 'delete',
+    });
     this.shootChanged(before, updatedById);
     return after;
   }
@@ -713,8 +742,11 @@ export class ContentPlanService {
     }
     const anchor = Number(project?.smmData?.cycleStartDay);
     const win = (Number.isFinite(anchor) && anchor >= 1) ? this.currentCycleBounds(anchor) : null;
-    await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels), win);
-    await this.reconcileStub(projectId, ContentItemType.POST, 'Пост', norm(posts), win);
+    const changed = await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels), win)
+      + await this.reconcileStub(projectId, ContentItemType.POST, 'Пост', norm(posts), win);
+    // Заготовки добавились/убрались — у остальных обновится корзина
+    // «Не запланировано» (08.11.2026). Норма и так совпадала — молчим.
+    if (changed > 0) this.emitTasksChanged(projectId);
     return { ok: true };
   }
 
@@ -723,7 +755,8 @@ export class ContentPlanService {
    *  удаляем (сначала незапланированные, потом лишние в календаре), недостающие
    *  создаём как незапланированные. Трогаем только авто-заготовки («Рилс N» /
    *  «Пост N») — реальный контент не затрагиваем. */
-  private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number, win: { start: string; end: string } | null) {
+  /** Возвращает, сколько заготовок удалено или создано. */
+  private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number, win: { start: string; end: string } | null): Promise<number> {
     const params: any[] = [projectId, String(type), label];
     let dateCond = `"publishDate" IS NULL`;
     if (win) {
@@ -742,11 +775,14 @@ export class ContentPlanService {
     if (auto.length > norm) {
       const del = auto.slice(norm).map((r: any) => r.id);
       if (del.length) await this.repo.delete(del).catch(() => {});
+      return del.length;
     } else if (auto.length < norm) {
       const rows: ContentPlanItem[] = [];
       for (let i = auto.length; i < norm; i++) rows.push(this.repo.create({ projectId, contentType: type, topic: `${label} ${i + 1}`, status: ContentPlanStatus.PLANNED }));
       if (rows.length) await this.repo.save(rows).catch(() => {});
+      return rows.length;
     }
+    return 0;
   }
 
   /** Умный календарь: полностью очистить контент проекта (для сброса теста).
@@ -754,6 +790,7 @@ export class ContentPlanService {
   async smartClearProject(projectId: string) {
     if (!projectId) return { ok: true, deleted: 0 };
     const res = await this.repo.delete({ projectId }).catch(() => ({ affected: 0 } as any));
+    if ((res?.affected ?? 0) > 0) this.emitTasksChanged(projectId);
     return { ok: true, deleted: res?.affected ?? 0 };
   }
 
@@ -838,6 +875,10 @@ export class ContentPlanService {
       }
     }
     if (Object.keys(set).length) this.shootChanged(before, actor?.id);
+    // Перенос/статус/время в умном календаре раньше не слал событий — у
+    // остальных карточка стояла на старом месте до перезагрузки (08.11.2026).
+    // Пачка переносов у получателей сливается в одно обновление.
+    if (before) this.emitTasksChanged(item?.projectId ?? before.projectId, { actorId: actor?.id ?? null });
     return { ok: true };
   }
 
@@ -848,7 +889,8 @@ export class ContentPlanService {
     // Каскад: удаляем авто-съёмку этого рилса (если есть).
     await this.repo.delete({ shootForItemId: id });
     await this.repo.remove(item);
-    if (item.taskId) this.emitTasksChanged(item.projectId);
+    // Шлём и без задачи: карточка пропадает из умного календаря у всех.
+    this.emitTasksChanged(item.projectId, item.taskId ? { taskId: item.taskId, kind: 'delete' } : {});
     return { message: 'Content plan item deleted' };
   }
 
@@ -1017,7 +1059,8 @@ export class ContentPlanService {
     const sd: any = { ...(fresh?.smmData || project.smmData || {}) };
     sd.autoPlan = { ...rules, lastCycle: win?.start ?? sd.autoPlan?.lastCycle ?? null };
     await projectRepo.update(projectId, { smmData: sd });
-    if (res.placed) this.emitTasksChanged(projectId);
+    // Шлём и при placed = 0: правила авторасстановки сохранены в проект.
+    this.emitTasksChanged(projectId, { actorId: actor?.id ?? null });
     return { ok: true, ...res };
   }
 

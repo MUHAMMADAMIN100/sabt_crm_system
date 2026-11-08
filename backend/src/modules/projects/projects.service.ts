@@ -819,6 +819,9 @@ export class ProjectsService implements OnModuleInit {
 
     try {
       await this.taskRepo.save(tasks);
+      // Стартовые задачи — тоже «задачи изменились» (08.11.2026): событие
+      // проекта списки задач не обновляет, они появлялись только по опросу.
+      this.gateway.broadcast('tasks:changed', { projectId: project.id, kind: 'create' });
     } catch (e: any) {
       // eslint-disable-next-line no-console
       console.warn('starter tasks generation failed:', e?.message);

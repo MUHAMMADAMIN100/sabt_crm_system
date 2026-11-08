@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import { Task } from '../tasks/task.entity';
 import { buildTrustedOrigins } from '../../common/trusted-origins';
+import { clearResponseCache } from '../../common/response-cache';
 
 const ALLOWED_WS_ORIGINS = [...buildTrustedOrigins()];
 
@@ -174,6 +175,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Broadcast to all
   broadcast(event: string, data: any) {
+    // Данные изменились — короткий кэш тяжёлых ответов сбрасываем ДО рассылки:
+    // клиенты сразу перезапросят и должны получить свежее (08.11.2026).
+    clearResponseCache();
     this.safeEmit(() => this.server.emit(event, data), event);
   }
 }

@@ -4,6 +4,12 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  // Метка сборки (08.11.2026): к ней привязан кэш данных на устройстве
+  // (lib/persistCache.ts) — после новой выкладки снимок прошлой версии не
+  // подхватывается, вдруг форма ответов сервера поменялась.
+  define: {
+    __BUILD_ID__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now())),
+  },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },

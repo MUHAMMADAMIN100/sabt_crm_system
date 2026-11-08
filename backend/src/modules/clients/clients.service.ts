@@ -611,68 +611,76 @@ export class ClientsService implements OnModuleInit {
       try { return await build(); } catch { return 0; }
     };
 
-    const newCompanies = await safeCount(() => base()
-      .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-      .getCount());
+    // Семь счётчиков друг от друга не зависят — считаем разом (08.11.2026):
+    // раньше шли по очереди, и KPI менеджера ждал семь походов в базу.
+    // safeCount никогда не бросает, так что цифры те же, что и по очереди.
+    const [
+      newCompanies, coldCallEvents, coldCallsState, personalEmails, meetings,
+      progressFromTable, progressFromActivity,
+    ] = await Promise.all([
+      safeCount(() => base()
+        .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .getCount()),
 
-    // «Холодные звонки» — СОБЫТИЙНЫЙ учёт: каждая отметка «Тип звонка =
-    // Холодный» пишет событие в lead_actions. KPI = число событий за
-    // период. Это надёжнее состояния: каждый звонок +1, звонок не
-    // «исчезает» при последующей смене типа звонка у лида.
-    // Fallback: если событий 0 (старые данные до релиза) — берём прежний
-    // счёт по состоянию, чтобы цифра не «обнулилась» на деплое.
-    const coldCallEvents = await safeCount(async () => {
-      const rows = await this.repo.manager.query(
-        `SELECT COUNT(*)::int AS c FROM lead_actions
-         WHERE user_id = $1 AND kind = 'cold_call' AND created_at BETWEEN $2 AND $3`,
-        [ownerId, periodFrom, periodTo],
-      );
-      return Number(rows?.[0]?.c || 0);
-    });
-    const coldCallsState = await safeCount(() => base()
-      .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
-      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-      .getCount());
+      // «Холодные звонки» — СОБЫТИЙНЫЙ учёт: каждая отметка «Тип звонка =
+      // Холодный» пишет событие в lead_actions. KPI = число событий за
+      // период. Это надёжнее состояния: каждый звонок +1, звонок не
+      // «исчезает» при последующей смене типа звонка у лида.
+      // Fallback: если событий 0 (старые данные до релиза) — берём прежний
+      // счёт по состоянию, чтобы цифра не «обнулилась» на деплое.
+      safeCount(async () => {
+        const rows = await this.repo.manager.query(
+          `SELECT COUNT(*)::int AS c FROM lead_actions
+           WHERE user_id = $1 AND kind = 'cold_call' AND created_at BETWEEN $2 AND $3`,
+          [ownerId, periodFrom, periodTo],
+        );
+        return Number(rows?.[0]?.c || 0);
+      }),
+      safeCount(() => base()
+        .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
+        .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .getCount()),
+
+      // «Персональные письма» — теперь считаются по ЯВНОМУ полю
+      // emailStatus='sent' («Написал»), которое менеджер выбирает в форме
+      // клиента селектом «Письмо». updatedAt в окне — менеджер «трогал»
+      // лида в этом периоде. Точная цифра вместо эвристики по channel/email.
+      safeCount(() => base()
+        .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
+        .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .getCount()),
+
+      // Встречи засчитываются в KPI того ДНЯ, на который они назначены:
+      // nextContactAt попадает в выбранное окно [periodFrom, periodTo].
+      // (Раньше был «горизонт +14 дней» — будущие встречи капали в KPI
+      //  сегодняшнего дня; теперь привязка строго к дате встречи.)
+      safeCount(() => base()
+        .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .getCount()),
+
+      // Главная метрика: чистый прогресс по воронке.
+      // Источник №1 (первичный) — SUM(delta) из lead_progress: +1 forward,
+      // -1 backward. Менеджер не может «накручивать», гоняя лид взад-вперёд.
+      // Источник №2 (fallback) — COUNT из activity_logs, только если в
+      // lead_progress 0 (миграция не прошла / новый деплой ещё не подхватился).
+      safeCount(async () => {
+        const rows = await this.activityRepo.manager.query(
+          `SELECT COALESCE(SUM(delta), 0)::int AS s FROM lead_progress
+           WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
+          [ownerId, periodFrom, periodTo],
+        );
+        return Math.max(0, Number(rows?.[0]?.s || 0));
+      }),
+      safeCount(() =>
+        this.activityRepo
+          .createQueryBuilder('a')
+          .where('a.userId = :uid', { uid: ownerId })
+          .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
+          .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .getCount(),
+      ),
+    ]);
     const coldCalls = coldCallEvents > 0 ? coldCallEvents : coldCallsState;
-
-    // «Персональные письма» — теперь считаются по ЯВНОМУ полю
-    // emailStatus='sent' («Написал»), которое менеджер выбирает в форме
-    // клиента селектом «Письмо». updatedAt в окне — менеджер «трогал»
-    // лида в этом периоде. Точная цифра вместо эвристики по channel/email.
-    const personalEmails = await safeCount(() => base()
-      .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
-      .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-      .getCount());
-
-    // Встречи засчитываются в KPI того ДНЯ, на который они назначены:
-    // nextContactAt попадает в выбранное окно [periodFrom, periodTo].
-    // (Раньше был «горизонт +14 дней» — будущие встречи капали в KPI
-    //  сегодняшнего дня; теперь привязка строго к дате встречи.)
-    const meetings = await safeCount(() => base()
-      .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-      .getCount());
-
-    // Главная метрика: чистый прогресс по воронке.
-    // Источник №1 (первичный) — SUM(delta) из lead_progress: +1 forward,
-    // -1 backward. Менеджер не может «накручивать», гоняя лид взад-вперёд.
-    // Источник №2 (fallback) — COUNT из activity_logs, только если в
-    // lead_progress 0 (миграция не прошла / новый деплой ещё не подхватился).
-    const progressFromTable = await safeCount(async () => {
-      const rows = await this.activityRepo.manager.query(
-        `SELECT COALESCE(SUM(delta), 0)::int AS s FROM lead_progress
-         WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
-        [ownerId, periodFrom, periodTo],
-      );
-      return Math.max(0, Number(rows?.[0]?.s || 0));
-    });
-    const progressFromActivity = await safeCount(() =>
-      this.activityRepo
-        .createQueryBuilder('a')
-        .where('a.userId = :uid', { uid: ownerId })
-        .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
-        .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-        .getCount(),
-    );
     const progressCount = progressFromTable > 0 ? progressFromTable : progressFromActivity;
 
     // Число дней в выбранном периоде: сегодня → 1, неделя → 7, месяц → ~30.

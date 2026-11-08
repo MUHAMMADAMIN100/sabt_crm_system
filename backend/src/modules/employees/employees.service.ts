@@ -562,6 +562,9 @@ export class EmployeesService implements OnModuleInit {
     }
 
     this.gateway.broadcast('employees:changed', {});
+    // С задач удалённого сняты исполнитель и автор — списки задач у всех
+    // должны это увидеть без опроса страницы (08.11.2026).
+    if (userId) this.gateway.broadcast('tasks:changed', { kind: 'bulk' });
     return { message: 'Employee deleted' };
   }
 
