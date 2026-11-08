@@ -1,3 +1,4 @@
+import { projectListFields } from '../../common/project-list-fields';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -590,7 +591,7 @@ export class ContentPlanService {
     const qb = this.repo.createQueryBuilder('c')
       .leftJoinAndSelect('c.assignee', 'assignee')
       .leftJoinAndSelect('c.pm', 'pm')
-      .leftJoinAndSelect('c.project', 'project');
+      .leftJoin('c.project', 'project').addSelect(projectListFields('project'));
 
     if (f.projectId) qb.andWhere('c.projectId = :pid', { pid: f.projectId });
     if (f.status) qb.andWhere('c.status = :st', { st: f.status });

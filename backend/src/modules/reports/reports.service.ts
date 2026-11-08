@@ -1,3 +1,4 @@
+import { projectListFields } from '../../common/project-list-fields';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -31,7 +32,7 @@ export class ReportsService {
   }) {
     const qb = this.repo.createQueryBuilder('r')
       .leftJoinAndSelect('r.employee', 'employee')
-      .leftJoinAndSelect('r.project', 'project')
+      .leftJoin('r.project', 'project').addSelect(projectListFields('project'))
       .leftJoinAndSelect('r.task', 'task');
 
     if (filters.scope) {

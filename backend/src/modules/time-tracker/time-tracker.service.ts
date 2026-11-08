@@ -1,3 +1,4 @@
+import { projectListFields } from '../../common/project-list-fields';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -46,7 +47,7 @@ export class TimeTrackerService {
   findByEmployee(employeeId: string, from?: string, to?: string) {
     const qb = this.repo.createQueryBuilder('tl')
       .leftJoinAndSelect('tl.task', 'task')
-      .leftJoinAndSelect('task.project', 'project')
+      .leftJoin('task.project', 'project').addSelect(projectListFields('project'))
       .where('tl.employeeId = :employeeId', { employeeId });
     if (from) qb.andWhere('tl.date >= :from', { from });
     if (to) qb.andWhere('tl.date <= :to', { to });

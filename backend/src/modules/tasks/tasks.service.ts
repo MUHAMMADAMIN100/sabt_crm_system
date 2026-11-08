@@ -23,6 +23,7 @@ import { TaskResultsService } from '../task-results/task-results.service';
 import { DailyReport } from '../reports/daily-report.entity';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import { directionScopeOf } from '../../common/direction-scope';
+import { projectListFields } from '../../common/project-list-fields';
 
 // PM_DEV здесь же: проект-менеджер по разработке ставит задачи команде, а не
 // только себе. Раньше он мог назначать других лишь внутри dev-проекта — задача
@@ -418,7 +419,7 @@ export class TasksService implements OnModuleInit {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
-      .leftJoinAndSelect('t.project', 'project');
+      .leftJoin('t.project', 'project').addSelect(projectListFields('project'));
 
     // КП-задачи живут только в Онбординге на колонке «КП». В общих списках
     // задач/календаря их быть не должно. Применяем глобально.
@@ -1379,7 +1380,7 @@ export class TasksService implements OnModuleInit {
       // (бриф, профиль клиента, правила авторасстановки), и у человека с
       // сотней задач ответ раздувался в разы. Экраны берут отсюда лишь имя.
       .leftJoin('t.project', 'project')
-      .addSelect(['project.id', 'project.name', 'project.projectType'])
+      .addSelect(projectListFields('project'))
       .where(
         `(t."assigneeId" = :uid
           OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = :uid)
@@ -1406,7 +1407,7 @@ export class TasksService implements OnModuleInit {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
-      .leftJoinAndSelect('t.project', 'project')
+      .leftJoin('t.project', 'project').addSelect(projectListFields('project'))
       .where(
         `(t."assigneeId" = :uid
           OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = :uid))`,
@@ -1437,7 +1438,7 @@ export class TasksService implements OnModuleInit {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
-      .leftJoinAndSelect('t.project', 'project')
+      .leftJoin('t.project', 'project').addSelect(projectListFields('project'))
       .where('t."createdById" = :uid', { uid: userId })
       // Свои личные заметки-задачи в этот список не тянем.
       .andWhere(`t.scope <> 'personal'`)
@@ -1455,7 +1456,7 @@ export class TasksService implements OnModuleInit {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
       .leftJoinAndSelect('t.createdBy', 'createdBy')
-      .leftJoinAndSelect('t.project', 'project')
+      .leftJoin('t.project', 'project').addSelect(projectListFields('project'))
       .where('t.deadline < NOW()')
       // Закрытые для overdue — done/cancelled.
       .andWhere('t.status NOT IN (:...statuses)', { statuses: TASK_CLOSED_FOR_OVERDUE })

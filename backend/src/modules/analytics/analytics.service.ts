@@ -1,3 +1,4 @@
+import { projectListFields } from '../../common/project-list-fields';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
@@ -815,7 +816,7 @@ export class AnalyticsService {
   /** Aggregated stories per day across all projects (global founder view) */
   async getStoriesGlobal(fromStr: string, toStr: string) {
     const stories = await this.storyRepo.createQueryBuilder('s')
-      .leftJoinAndSelect('s.project', 'project')
+      .leftJoin('s.project', 'project').addSelect(projectListFields('project'))
       .where('s.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
       .getMany();
 

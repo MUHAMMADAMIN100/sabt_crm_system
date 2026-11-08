@@ -11,6 +11,7 @@ import { NotificationType } from '../notifications/notification.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
+import { projectListFields } from '../../common/project-list-fields';
 
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
 const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
@@ -64,7 +65,7 @@ export class StoriesService {
 
   async getByEmployee(employeeId: string, from: string, to: string) {
     return this.repo.createQueryBuilder('s')
-      .leftJoinAndSelect('s.project', 'project')
+      .leftJoin('s.project', 'project').addSelect(projectListFields('project'))
       .where('s.employeeId = :employeeId', { employeeId })
       .andWhere('s.date BETWEEN :from AND :to', { from, to })
       .getMany();
@@ -73,7 +74,7 @@ export class StoriesService {
   async getAll(from: string, to: string) {
     return this.repo.createQueryBuilder('s')
       .leftJoinAndSelect('s.employee', 'employee')
-      .leftJoinAndSelect('s.project', 'project')
+      .leftJoin('s.project', 'project').addSelect(projectListFields('project'))
       .where('s.date BETWEEN :from AND :to', { from, to })
       .getMany();
   }

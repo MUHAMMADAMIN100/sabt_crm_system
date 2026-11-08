@@ -1,3 +1,4 @@
+import { projectListFields } from '../../common/project-list-fields';
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -62,7 +63,7 @@ export class CalendarService {
     const taskQb = this.taskRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
-      .leftJoinAndSelect('t.project', 'project')
+      .leftJoin('t.project', 'project').addSelect(projectListFields('project'))
       .where('t.deadline IS NOT NULL')
       .andWhere(
         `(t.deadline >= :from AND COALESCE(t."startDate"::date, DATE(t."createdAt")) <= :to)`,
