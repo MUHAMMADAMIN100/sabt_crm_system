@@ -65,6 +65,15 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
       </div>
     );
   }
+  if (id.startsWith('smmdue-')) {
+    // Оплату SMM-клиента отмечают на странице SMM — там же частичная оплата.
+    return (
+      <div className="cal-item-rows">
+        <div className="cal-item-row"><span>Статус</span><b>Срок прошёл</b></div>
+        <Link to="/finance/income/smm" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть SMM</Link>
+      </div>
+    );
+  }
   if (id.startsWith('due-')) {
     // Долг со сроком «вернуть до»: отдают на странице «Долги» (сразу или траншем).
     return (
@@ -143,6 +152,14 @@ export default function FinancePlanningPage() {
     ...keepMonth,
   });
   const debtsQ = useQuery({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
+  // SMM-оплаты не лежат плановыми платежами — сроки считает страница SMM.
+  // Берём её же данные на сегодня (тот же ключ, кэш общий), чтобы просрочки
+  // SMM-клиентов попали в «Просрочено» (08.11.2026: не было Комерцбанка и Chrono).
+  const nowYm = currentYm();
+  const smmQ = useQuery({
+    queryKey: ['finance', 'income-direction', 'smm', nowYm, ''],
+    queryFn: () => financeApi.incomeDirectionDetail('smm', nowYm),
+  });
   const subsQ = useQuery({ queryKey: ['finance', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
   // Зарплата для календаря — тот же источник, что страница «Зарплата»:
   // expenseDetail('salary') → «К выплате» (toPay) за месяц. Совпадает с экраном.
@@ -495,8 +512,22 @@ export default function FinancePlanningPage() {
           ]) });
       }
     }
+    // SMM-клиенты, не заплатившие в срок (срок в другом месяце: свой месяц
+    // уже есть в календаре строкой прогноза).
+    for (const r of ((smmQ.data as any)?.rows || [])) {
+      const due = r?.due?.date ? String(r.due.date).slice(0, 10) : '';
+      const amount = Number(r?.overdue) || 0;
+      if (!due || amount <= 0.005 || due >= today || due.slice(0, 7) === calYm) continue;
+      out.push({ id: `smmdue-${r.project?.id}-${due}`, date: due, amount, type: 'income', status: 'completed', done: false,
+        comment: r.project?.name || 'SMM-клиент',
+        details: detailList([
+          { label: 'Направление', value: 'SMM' },
+          { label: 'Срок был', value: formatDate(due) },
+          { label: 'Не оплачено', value: money(amount) },
+        ]) });
+    }
     return out;
-  }, [plannedQ.data, projById, debtById, debtNameById, calYm]);
+  }, [plannedQ.data, smmQ.data, projById, debtById, debtNameById, calYm]);
 
   // Перетаскивание операции на другой день сохраняет дату в записи:
   // разовая → дата операции, план-платёж → срок оплаты, подписка → день оплаты.
