@@ -135,6 +135,8 @@ export default function FinanceTransactionsPage() {
       status: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
     }),
     placeholderData: (prev: any) => prev, // при листании не мигаем пустотой
+    // Постраничный журнал нужен только таблице; календарь берёт свой месяц.
+    enabled: view === 'table',
   });
   // Календарь берёт СВОЙ месяц целиком — в постраничном журнале месяца может не быть.
   const calQ = useQuery({

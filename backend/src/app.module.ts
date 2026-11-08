@@ -80,10 +80,12 @@ import { DbIndexesService } from './common/db-indexes.service';
         migrationsTransactionMode: 'each',
         logging: false,
         ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
-        poolSize: 5,
+        // 12 соединений (08.11.2026, было 5): страница финансов шлёт 5–8
+        // запросов, каждый — несколько чтений; при пяти они стояли в очереди.
+        poolSize: 12,
         connectTimeoutMS: 10000,
         extra: {
-          max: 5,
+          max: 12,
           min: 1,
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 10000,

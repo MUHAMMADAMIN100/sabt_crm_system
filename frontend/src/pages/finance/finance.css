@@ -3422,3 +3422,17 @@
 /* «Просрочено» за все месяцы (08.11.2026). */
 .fin-root .pln-tile .late-prev { color: var(--red); }
 .fin-root .pln-tile .late-list .late-days { color: var(--red); font-weight: 600; white-space: nowrap; }
+
+/* Смена месяца без пустых заготовок (08.11.2026): цифры прошлого месяца
+   бледнеют и не принимают нажатий, пока грузится новый; шапка — рабочая. */
+.fin-root.fin-stale > :not(.page-head):not(.back),
+.fin-root .fin-stale-box { opacity: .55; pointer-events: none; transition: opacity .15s ease; }
+/* Под переключателем, а не внутри: иначе шапка прыгала бы при каждой загрузке. */
+.fin-root .month-nav { position: relative; }
+.fin-root .month-nav-updating {
+  position: absolute; top: calc(100% + 3px); right: 8px; font-size: 11.5px; font-weight: 600;
+  color: var(--accent); white-space: nowrap; pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fin-root.fin-stale > :not(.page-head):not(.back), .fin-root .fin-stale-box { transition: none; }
+}

@@ -162,8 +162,11 @@ describe('FinanceService correctness', () => {
       backupRepo as any,
       forecastAdjustmentRepo as any,
       payrollPeriodRepo as any,
+      // Штрафы за опоздания и Telegram добавились в сервис позже теста.
+      { find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null), save: jest.fn(async (v: any) => v) } as any,
       dataSource as any,
       {} as any,
+      { sendToUser: jest.fn().mockResolvedValue(undefined), appUrl: 'https://crm.test' } as any,
     );
   });
 

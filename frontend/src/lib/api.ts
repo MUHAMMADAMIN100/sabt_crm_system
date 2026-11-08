@@ -100,9 +100,9 @@ api.interceptors.request.use(config => {
   if (access && config.headers) {
     ;(config.headers as any).Authorization = `Bearer ${access}`
   }
-  if (config.method === 'get' || config.method === 'GET') {
-    config.params = { ...(config.params || {}), _t: Date.now() }
-  }
+  // Метки _t больше нет (08.11.2026): из-за уникального адреса браузер перед
+  // каждым запросом заново спрашивал CORS-разрешение (~0,2 с). От кэша теперь
+  // защищает сервер — у ответов с данными Cache-Control: no-store.
   return config
 })
 

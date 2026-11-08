@@ -11,7 +11,7 @@ import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import TxTable from './TxTable';
 import TransactionModal from './TransactionModal';
-import { FinLoading, FinLoadError, invalidateFinance } from './FinKit';
+import { keepMonth, FinLoading, FinLoadError, invalidateFinance } from './FinKit';
 import { financeApi } from '@/services/api.service';
 import { MonthlyFlowComparison, OverviewCashFlowChart } from './FinanceCharts';
 import { AccountLabel } from './AccountIdentity';
@@ -35,10 +35,12 @@ export default function FinanceOverviewPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ['finance', 'overview', ym],
     queryFn: () => financeApi.overview(ym),
+    ...keepMonth,
   });
+  const prefetch = (m: string) => qc.prefetchQuery({ queryKey: ['finance', 'overview', m], queryFn: () => financeApi.overview(m) });
 
   const ov: any = data || {};
   const balances: any[] = ov.balances || [];
@@ -105,7 +107,7 @@ export default function FinanceOverviewPage() {
       <div className="fin-root">
         <div className="page-head">
           <div><h1 className="flex"><FinIcon name="overview" size={22} /> Обзор</h1><p>Доход, расход и баланс за выбранный месяц</p></div>
-          <MonthNav ym={ym} onChange={setYm} />
+          <MonthNav ym={ym} onChange={setYm} prefetch={prefetch} />
         </div>
         {isError ? <FinLoadError onRetry={() => refetch()} /> : <FinLoading />}
       </div>
@@ -113,14 +115,14 @@ export default function FinanceOverviewPage() {
   }
 
   return (
-    <div className="fin-root">
+    <div className={'fin-root' + (isPlaceholderData ? ' fin-stale' : '')}>
       <div className="page-head">
         <div>
           <h1 className="flex"><FinIcon name="overview" size={22} /> Обзор</h1>
           <p>Доход, расход и баланс за выбранный месяц</p>
         </div>
         <div className="flex">
-          <MonthNav ym={ym} onChange={setYm} />
+          <MonthNav ym={ym} onChange={setYm} prefetch={prefetch} />
           <button className="btn ghost" onClick={downloadReport} disabled={exporting}
             title="Excel: вся история финансов — 13 листов, с проверками, где цифры не сходятся">
             <FinIcon name="download" size={16} /> {exporting ? 'Готовлю отчёт…' : 'Скачать отчёт'}

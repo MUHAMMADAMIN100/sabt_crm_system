@@ -1641,6 +1641,16 @@ export class FinanceService implements OnModuleInit {
     return qb.getMany();
   }
 
+  /** То же, что salaryTxForMonth, но из уже загруженных проведённых на
+   *  сегодня расходов (allExp = active): без запроса к базе на каждый месяц.
+   *  Условия совпадают с запросом: расход сотруднику, начислен за ym, а у
+   *  старых операций без salaryYm — по дате. */
+  private salaryTxFrom(allExp: FinanceTransaction[], ym: string): FinanceTransaction[] {
+    const { from, to } = monthRange(ym);
+    return allExp.filter(t => t.type === FinanceTxType.EXPENSE && t.employeeId != null
+      && (t.salaryYm === ym || (t.salaryYm == null && t.date >= from && t.date <= to)));
+  }
+
   /** Пожизненный баланс счёта = startBalance + приходы − расходы + переводы. */
   private lifetimeBalance(a: FinanceAccount, txs: FinanceTransaction[]): number {
     let bal = Number(a.startBalance);
@@ -1700,14 +1710,18 @@ export class FinanceService implements OnModuleInit {
   // ─── ОБЗОР ───────────────────────────────────────────────────────
   async overview(ym: string, role?: string) {
     const { from, to } = monthRange(ym);
-    const m = await this.maps();
-    const allTx = this.active(await this.txRepo.find());
+    // Независимые чтения — разом (08.11.2026): раньше шли по очереди, и обзор
+    // отвечал ~1,4 с. Порядок вызовов прежний, считается всё так же.
+    const [m, allTxRaw, plannedRaw, subs, salaryAccrualTx, instMap, assets] = await Promise.all([
+      this.maps(), this.txRepo.find(), this.ppRepo.find(), this.subRepo.find(),
+      this.salaryTxForMonth(ym), this.installmentsByEmployee(), this.assetRepo.find(),
+    ]);
+    const allTx = this.active(allTxRaw);
     const balanceTx = this.postedAsOf(allTx);
     // Доход по Development с 1 августа скрыт для уволенного со-основателя.
     const scopedTx = this.scopeIncomeTx(allTx, m, role);
     const monthTx = scopedTx.filter(t => t.date >= from && t.date <= to);
-    const planned = this.scopePlanned(await this.ppRepo.find(), m, role);
-    const subs = await this.subRepo.find();
+    const planned = this.scopePlanned(plannedRaw, m, role);
 
     const monthIncome = monthTx.filter(t => t.type === FinanceTxType.INCOME);
     const monthExpense = monthTx.filter(t => t.type === FinanceTxType.EXPENSE);
@@ -1786,9 +1800,7 @@ export class FinanceService implements OnModuleInit {
     // «Потрачено на ЗП» — движение денег по ДАТЕ (для карточки расхода/сверки
     // со счётом). Обязательство и остаток к выплате — по месяцу НАЧИСЛЕНИЯ.
     const salaryPaid = this.sum(monthExpense.filter(t => this.groupOf(t, m) === 'salary'));
-    const salaryAccrualTx = await this.salaryTxForMonth(ym);
     let salaryToPayAcc = 0, salaryPlanAcc = 0, salaryAdvAcc = 0, salaryBonAcc = 0;
-    const instMap = await this.installmentsByEmployee();
     for (const e of activeEmps) {
       const txs = salaryAccrualTx.filter(t => t.employeeId === e.id);
       const paid = r2(txs.reduce((s, t) => s + Number(t.amount), 0));
@@ -1867,7 +1879,6 @@ export class FinanceService implements OnModuleInit {
 
     // Амортизация за просматриваемый месяц: линейная доля цены активов,
     // у которых месяц входит в срок службы (списанные/проданные не считаем).
-    const assets = await this.assetRepo.find();
     const amortMonthly = r2(assets.reduce((s, a) => {
       const price = Number(a.price) || 0;
       const life = Number(a.serviceMonths) || 0;
@@ -2373,11 +2384,16 @@ export class FinanceService implements OnModuleInit {
   // ─── РАСХОД: сводка и детализация ────────────────────────────────
   async expenseSummary(ym: string) {
     const { from, to } = monthRange(ym);
-    const m = await this.maps();
-    const monthExp = this.active(await this.txRepo.find({ where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any }));
-    const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
-    const subs = await this.subRepo.find();
-    const planned = await this.ppRepo.find();
+    // Независимые чтения — разом (08.11.2026), раньше по очереди.
+    const [m, monthExpRaw, allExpRaw, subs, planned, salarySummaryTx, instMap] = await Promise.all([
+      this.maps(),
+      this.txRepo.find({ where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any }),
+      this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }),
+      this.subRepo.find(), this.ppRepo.find(),
+      this.salaryTxForMonth(ym), this.installmentsByEmployee(),
+    ]);
+    const monthExp = this.active(monthExpRaw);
+    const allExp = this.active(allExpRaw);
 
     const activeEmps = m.employees.filter(e => workedInFinanceMonth(e, ym));
     const salaryFund = r2(activeEmps.reduce((s, e) => s + salaryForMonth(e, ym), 0));
@@ -2386,8 +2402,6 @@ export class FinanceService implements OnModuleInit {
     // Аванс/бонус — фактические выдачи операциями (входят в «выплачено»);
     // обязательство = оклад + бонусы − штраф.
     // По месяцу НАЧИСЛЕНИЯ (salaryYm), а не по дате выплаты.
-    const salarySummaryTx = await this.salaryTxForMonth(ym);
-    const instMap = await this.installmentsByEmployee();
     let salaryAdvances = 0, salaryBonuses = 0, salaryFines = 0, salaryToPayAgg = 0, salaryPaidCount = 0;
     for (const e of activeEmps) {
       const snap = snapOf(e, ym);
@@ -2482,8 +2496,11 @@ export class FinanceService implements OnModuleInit {
 
   /** Осталось выплатить зарплату за месяц начисления; выплаченный
    *  (заморожен снимком) — 0. Будущие месяцы — по текущим окладам. */
-  private async salaryToPayFor(salaryYm: string, employees: FinanceEmployee[], instMap: Map<string, FinanceInstallment[]>) {
-    const txs = await this.salaryTxForMonth(salaryYm);
+  private async salaryToPayFor(
+    salaryYm: string, employees: FinanceEmployee[], instMap: Map<string, FinanceInstallment[]>,
+    preloaded?: FinanceTransaction[],
+  ) {
+    const txs = preloaded ?? await this.salaryTxForMonth(salaryYm);
     let sum = 0;
     for (const e of employees) {
       if (!workedInFinanceMonth(e, salaryYm) || snapOf(e, salaryYm)) continue;
@@ -2591,11 +2608,12 @@ export class FinanceService implements OnModuleInit {
 
   /** Всё, что нужно для расчёта расхода по месяцам, — одним заходом в базу. */
   private async planContext() {
-    const m = await this.maps();
-    const allExp = this.active(await this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }));
-    const planned = await this.ppRepo.find();
-    const instMap = await this.installmentsByEmployee();
-    const plans = await this.otherPlansMap();
+    const [m, allExpRaw, planned, instMap, plans] = await Promise.all([
+      this.maps(),
+      this.txRepo.find({ where: { type: FinanceTxType.EXPENSE } as any }),
+      this.ppRepo.find(), this.installmentsByEmployee(), this.otherPlansMap(),
+    ]);
+    const allExp = this.active(allExpRaw);
     const avg = this.otherAverage(allExp, m);
     return { m, allExp, planned, instMap, plans, avg, bankDebts: m.debts.filter(isBankDebt) };
   }
@@ -2605,7 +2623,10 @@ export class FinanceService implements OnModuleInit {
   private async planMonth(ym: string, ctx: Awaited<ReturnType<FinanceService['planContext']>>) {
     const { m, allExp, planned, instMap, plans, avg, bankDebts } = ctx;
     const monthExp = allExp.filter(t => String(t.date).slice(0, 7) === ym);
-    const salary = await this.salaryToPayFor(shiftYm(ym, -1), m.employees, instMap);
+    // Выплаты ЗП месяца — из уже загруженных расходов, а не запросом на
+    // каждый месяц (график «Расхода» делал их 12 подряд).
+    const salYm = shiftYm(ym, -1);
+    const salary = await this.salaryToPayFor(salYm, m.employees, instMap, this.salaryTxFrom(allExp, salYm));
     const rent = r2(m.subscriptions
       .filter(s => s.active && Number(s.amount) > 0 && subLiveIn(s, ym))
       .reduce((sum, s) => {
@@ -2707,16 +2728,19 @@ export class FinanceService implements OnModuleInit {
 
   async expenseDetail(kind: string, ym: string, start?: string) {
     const { from, to } = monthRange(ym);
-    const m = await this.maps();
-    const monthExp = this.active(await this.txRepo.find({ where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any }));
 
     if (kind === 'salary') {
-      const period = await this.salaryPeriodState(ym);
-      const emps = await this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });
       // Зарплатная таблица собирается по МЕСЯЦУ НАЧИСЛЕНИЯ (salaryYm), а не по
       // дате: выплата за июнь 10 июля попадает в июньскую таблицу.
-      const salaryTx = await this.salaryTxForMonth(ym);
-      const instMap = await this.installmentsByEmployee();
+      // Независимые чтения — разом (08.11.2026); справочники и расходы месяца
+      // этой ветке не нужны — раньше грузились впустую.
+      const [period, emps, salaryTx, instMap, vacCtx] = await Promise.all([
+        this.salaryPeriodState(ym),
+        this.empRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } }),
+        this.salaryTxForMonth(ym),
+        this.installmentsByEmployee(),
+        this.vacationContext(from, to),
+      ]);
       const paidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id).reduce((s, t) => s + Number(t.amount), 0));
       // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — операциями «Бонус» не
       // создаётся, поэтому в «выплачено» открытого месяца их НЕ считаем.
@@ -2724,7 +2748,6 @@ export class FinanceService implements OnModuleInit {
       // Аванс выдаётся сразу отдельной операцией — колонка показывает выданное.
       const advPaidOf = (id: string) => r2(salaryTx.filter(t => t.employeeId === id && isAdvanceTx(t)).reduce((s, t) => s + Number(t.amount), 0));
       const activeEmps = emps.filter(e => workedInFinanceMonth(e, ym));
-      const vacCtx = await this.vacationContext(from, to);
       const rows = activeEmps.map(e => {
         // Снапшот фиксирует выплаты и корректировки месяца, но не является
         // источником оклада: старые версии могли записать туда аванс/остаток.
@@ -2821,6 +2844,12 @@ export class FinanceService implements OnModuleInit {
         })),
       };
     }
+
+    const [m, monthExpRaw] = await Promise.all([
+      this.maps(),
+      this.txRepo.find({ where: { date: Between(from, to), type: FinanceTxType.EXPENSE } as any }),
+    ]);
+    const monthExp = this.active(monthExpRaw);
 
     if (kind === 'subscriptions') {
       const all = await this.subRepo.find({ order: { position: 'ASC', createdAt: 'ASC' } });

@@ -45,8 +45,10 @@ export default defineConfig({
           'vendor-charts': ['recharts'],
           // Real-time
           'vendor-socket': ['socket.io-client'],
-          // Utilities
-          'vendor-utils': ['date-fns', 'react-hot-toast'],
+          // Utilities. clsx и tailwind-merge — здесь явно (08.11.2026): иначе
+          // clsx уезжал в vendor-charts вместе с recharts, и библиотеку
+          // графиков (115 КБ) грузил первый вход на любую страницу.
+          'vendor-utils': ['date-fns', 'react-hot-toast', 'clsx', 'tailwind-merge'],
         },
       },
     },

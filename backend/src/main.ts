@@ -192,6 +192,16 @@ async function bootstrap() {
     frameguard: { action: 'deny' },
     noSniff: true,
   }));
+  // Ответы с данными браузер не кэширует (08.11.2026). Раньше от кэша спасала
+  // метка времени _t в каждом GET, но из-за неё браузер не мог запомнить
+  // CORS-разрешение и перед каждым запросом слал лишний OPTIONS (~0,2 с).
+  // Картинки и файлы ставят свой Cache-Control — он перекроет этот.
+  app.use((req: any, res: any, next: () => void) => {
+    if (req.method === 'GET' && String(req.headers?.accept || '').includes('application/json')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+    next();
+  });
   // cookie-parser нужен, чтобы JwtStrategy могла прочитать токен из httpOnly
   // куки — пользователи больше не хранят JWT в localStorage.
   app.use(cookieParser());
@@ -217,6 +227,9 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
+    // Браузер запоминает разрешение на 2 часа (больше Chrome не даёт) и не
+    // спрашивает его перед каждым запросом.
+    maxAge: 7200,
   });
 
   app.useGlobalFilters(new ThrottlerExceptionFilter(), new UploadExceptionFilter());

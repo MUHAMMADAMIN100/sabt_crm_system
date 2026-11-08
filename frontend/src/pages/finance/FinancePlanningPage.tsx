@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
 import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, todayISO } from './finlib';
-import { FinLoadError, FinLoading, invalidateFinanceAll } from './FinKit';
+import { FinLoadError, FinLoading, invalidateFinanceAll, keepMonth } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import PlanCalendar from './PlanCalendar';
@@ -140,6 +140,7 @@ export default function FinancePlanningPage() {
   const instQ = useQuery({
     queryKey: ['finance', 'installments', 'calendar', calYm],
     queryFn: () => financeApi.installmentsCalendar(calYm),
+    ...keepMonth,
   });
   const debtsQ = useQuery({ queryKey: ['finance', 'debts'], queryFn: () => financeApi.debts() });
   const subsQ = useQuery({ queryKey: ['finance', 'subscriptions'], queryFn: () => financeApi.subscriptions() });
@@ -148,6 +149,7 @@ export default function FinancePlanningPage() {
   const salaryQ = useQuery({
     queryKey: ['finance', 'expenseDetail', 'salary', salaryYm],
     queryFn: () => financeApi.expenseDetail('salary', salaryYm),
+    ...keepMonth,
   });
   // Операции журнала за месяц — берём только будущие разовые (не привязанные к
   // зарплате/подписке/долгу, чтобы не задваивать эти источники).
@@ -164,6 +166,7 @@ export default function FinancePlanningPage() {
         status: 'all', pageSize: 1000,
       });
     },
+    ...keepMonth,
   });
   const projById = useMemo(() => {
     const m = new Map<string, any>();
@@ -520,12 +523,25 @@ export default function FinancePlanningPage() {
   const all = [plannedQ, projectsQ, instQ, debtsQ, subsQ, salaryQ, txMonthQ];
   const loading = all.some((q) => q.isLoading);
   const failed = all.find((q) => q.isError);
+  const stale = instQ.isPlaceholderData || salaryQ.isPlaceholderData || txMonthQ.isPlaceholderData;
+  // Соседний месяц заранее (08.11.2026) — те же три запроса, что зависят от месяца.
+  const prefetch = (m: string) => {
+    const sy = shiftYm(m, -1);
+    const [y, mm] = m.split('-').map(Number);
+    const last = new Date(y, mm, 0).getDate();
+    qc.prefetchQuery({ queryKey: ['finance', 'installments', 'calendar', m], queryFn: () => financeApi.installmentsCalendar(m) });
+    qc.prefetchQuery({ queryKey: ['finance', 'expenseDetail', 'salary', sy], queryFn: () => financeApi.expenseDetail('salary', sy) });
+    qc.prefetchQuery({
+      queryKey: ['finance', 'transactions', 'month-plan', m],
+      queryFn: () => financeApi.transactions({ from: `${m}-01`, to: `${m}-${String(last).padStart(2, '0')}`, status: 'all', pageSize: 1000 }),
+    });
+  };
   return (
-    <div className="fin-root">
+    <div className={'fin-root' + (stale ? ' fin-stale' : '')}>
       <div className="page-head">
         <div><h1 className="flex"><FinIcon name="chart" size={22} /> Планирование</h1><p>Сколько придёт и уйдёт в месяце и когда</p></div>
         <div className="flex" style={{ gap: 8 }}>
-          <MonthNav ym={calYm} onChange={setCalYm} />
+          <MonthNav ym={calYm} onChange={setCalYm} prefetch={prefetch} />
           <button className="btn primary" onClick={() => setAdding(true)}><FinIcon name="plus" size={16} /> Платёж</button>
         </div>
       </div>

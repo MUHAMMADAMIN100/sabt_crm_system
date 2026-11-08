@@ -5,7 +5,7 @@
 // месяцы факт, текущий — ушло + осталось, дальше — план (фон подкрашен).
 // «3 / 6 месяцев / 1 год» — месяцы периода, те же цифры, что в таблице.
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, moneyBare, monthLabel } from './finlib';
 
@@ -81,6 +81,7 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
   const { data, isLoading } = useQuery({
     queryKey: ['finance', 'expenseChart', period ? `p${period}` : ym],
     queryFn: () => financeApi.expenseChart(ym, period),
+    placeholderData: keepPreviousData,
   });
   const [ref, width] = useWidth();
   const [hover, setHover] = useState<number | null>(null);

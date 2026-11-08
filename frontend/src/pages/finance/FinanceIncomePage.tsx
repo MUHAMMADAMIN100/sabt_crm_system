@@ -1,31 +1,34 @@
 // Доход: обзор трёх направлений (SMM / Development / Design). Порт fin-webrand/src/pages/Income.tsx.
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import './finance.css';
 import { money, monthLabel, pluralRu, INCOME_GROUPS, useYmParam, withYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
-import { FinLoading, FinLoadError } from './FinKit';
+import { keepMonth, FinLoading, FinLoadError } from './FinKit';
 import { financeApi } from '@/services/api.service';
 
 export default function FinanceIncomePage() {
   const [ym, setYm] = useYmParam();
   const navigate = useNavigate();
 
-  const { data: dirs, isLoading, isError, refetch } = useQuery({
+  const qc = useQueryClient();
+  const { data: dirs, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ['finance', 'income-directions', ym],
     queryFn: () => financeApi.incomeDirections(ym),
+    ...keepMonth,
   });
+  const prefetch = (m: string) => qc.prefetchQuery({ queryKey: ['finance', 'income-directions', m], queryFn: () => financeApi.incomeDirections(m) });
 
   return (
-    <div className="fin-root">
+    <div className={'fin-root' + (isPlaceholderData ? ' fin-stale' : '')}>
       <div className="page-head">
         <div>
           <h1 className="flex"><FinIcon name="income" size={22} /> Доход</h1>
           <p>Четыре направления — нажмите, чтобы открыть проекты</p>
         </div>
-        <MonthNav ym={ym} onChange={setYm} />
+        <MonthNav ym={ym} onChange={setYm} prefetch={prefetch} />
       </div>
 
       {isLoading ? <FinLoading /> : isError ? <FinLoadError onRetry={() => refetch()} /> : (

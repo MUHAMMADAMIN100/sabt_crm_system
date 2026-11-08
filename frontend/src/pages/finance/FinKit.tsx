@@ -5,6 +5,13 @@ import { ReactNode, useEffect, useId, useRef, type RefObject } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import type { QueryClient } from '@tanstack/react-query';
+import { keepPreviousData } from '@tanstack/react-query';
+
+/** Для запросов «за месяц» (08.11.2026): при смене месяца держим цифры
+ *  прошлого, пока грузится новый, — вместо пустых заготовок. Страница
+ *  на это время бледнеет и не принимает нажатий (класс fin-stale), чтобы
+ *  не нажать «Выплатить» за чужой месяц; рядом с месяцем — «Обновляется…». */
+export const keepMonth = { placeholderData: keepPreviousData } as const;
 
 // Ключи запросов: ['finance', …] — журнал и расчёты (зависят от денег),
 // ['finref', …] — справочники (счета/категории/проекты/сотрудники/подписки/активы).

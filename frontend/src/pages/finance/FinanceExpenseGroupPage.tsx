@@ -48,11 +48,14 @@ export default function FinanceExpenseGroupPage() {
   // Месяц приходит из адреса (?ym=…) — тот же, что был выбран в «Расходах».
   const [ym, setYm] = useYmParam(currentYm());
   const openedWithoutMonth = useRef(!new URLSearchParams(location.search).has('ym'));
-  const { data: payrollDefault } = useQuery({
+  const { data: payrollDefault, isError: payrollDefaultFailed } = useQuery({
     queryKey: ['finance', 'salaryPeriod', 'current'],
     queryFn: () => financeApi.salaryPeriod(),
     enabled: kind === 'salary' && openedWithoutMonth.current,
   });
+  // Ведомость грузим, когда известен её месяц (08.11.2026): раньше она
+  // загружалась за текущий месяц, а потом ещё раз — за открытый период.
+  const waitPayrollMonth = kind === 'salary' && openedWithoutMonth.current && !payrollDefault && !payrollDefaultFailed;
   useEffect(() => {
     if (kind !== 'salary' || !openedWithoutMonth.current || !payrollDefault?.latestOpenYm) return;
     openedWithoutMonth.current = false;
@@ -91,7 +94,7 @@ export default function FinanceExpenseGroupPage() {
         <div><h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1><p>Детализация и быстрая оплата</p></div>
         <MonthNav ym={ym} onChange={setYm} />
       </div>
-      {kind === 'salary' && <SalaryList ym={ym} onYmChange={setYm} />}
+      {kind === 'salary' && (waitPayrollMonth ? <FinLoading cards={4} /> : <SalaryList ym={ym} onYmChange={setYm} />)}
       {kind === 'rent_subs' && <SubsList ym={ym} />}
       {kind === 'debts' && <DebtsList ym={ym} />}
     </div>

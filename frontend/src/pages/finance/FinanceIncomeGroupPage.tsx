@@ -7,7 +7,7 @@ import './finance.css';
 import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, pluralRu, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
-import { FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
+import { keepMonth, FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
 import useNarrow from '@/hooks/useNarrow';
@@ -35,10 +35,11 @@ export default function FinanceIncomeGroupPage() {
   const narrow = useNarrow(720);
   const smmManagers = useSmmManagers(smm);
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ['finance', 'income-direction', direction, ym, start ?? ''],
     queryFn: () => financeApi.incomeDirectionDetail(direction!, ym, start),
     enabled: !!g,
+    ...keepMonth,
   });
 
   // Архив для Development/Design — в детальном ответе его нет, берём из справочника проектов.
@@ -62,7 +63,7 @@ export default function FinanceIncomeGroupPage() {
   const shiftStart = (months: string[], delta: number) => setStart(shiftYm(months[0], delta));
 
   return (
-    <div className="fin-root">
+    <div className={'fin-root' + (isPlaceholderData ? ' fin-stale' : '')}>
       <Link to={withYm('/finance/income', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Доход</Link>
       <div className={'page-head' + (smm ? ' fin-smm-head' : '')}>
         <div>

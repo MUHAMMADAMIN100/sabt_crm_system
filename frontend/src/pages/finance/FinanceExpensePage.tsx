@@ -4,13 +4,13 @@
 // вперёд от текущего (вариант Б: карточки + таблица статья × месяц). Назад к
 // одному месяцу — нажать текущий месяц справа.
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, moneyBare, EXPENSE_GROUPS, OTHER_GROUP, BANK_GROUP, useYmParam, withYm, shiftYm, monthLabel, pluralRu, currentYm } from './finlib';
 import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
-import { FinLoading, FinLoadError } from './FinKit';
+import { keepMonth, FinLoading, FinLoadError } from './FinKit';
 import { INSTALLMENT_COLOR } from './InstallmentsSection';
 import ExpenseLineChart, { SERIES as CHART_SERIES } from './ExpenseLineChart';
 import './finance.css';
@@ -38,6 +38,14 @@ export default function FinanceExpensePage() {
 
   const start = currentYm();
   const end = shiftYm(start, Math.max(0, period - 1));
+  // Соседний месяц заранее — карточки, ведомость ЗП и график (08.11.2026).
+  const qc = useQueryClient();
+  const prefetch = (m: string) => {
+    qc.prefetchQuery({ queryKey: ['finance', 'expenseSummary', m], queryFn: () => financeApi.expenseSummary(m) });
+    const s = shiftYm(m, -1);
+    qc.prefetchQuery({ queryKey: ['finance', 'expenseDetail', 'salary', s], queryFn: () => financeApi.expenseDetail('salary', s) });
+    qc.prefetchQuery({ queryKey: ['finance', 'expenseChart', m], queryFn: () => financeApi.expenseChart(m, 0) });
+  };
 
   return (
     <div className="fin-root">
@@ -58,7 +66,7 @@ export default function FinanceExpensePage() {
             <button type="button" className="fin-exp-month" onClick={() => setPeriod(0)} title="Вернуться к одному месяцу">
               {cap(monthLabel(start, true))}
             </button>
-          ) : <MonthNav ym={ym} onChange={setYm} />}
+          ) : <MonthNav ym={ym} onChange={setYm} prefetch={prefetch} />}
         </div>
       </div>
       {period ? <PeriodView months={period} onOpen={(path, cardYm) => navigate(withYm(path, cardYm))} /> : <MonthView ym={ym} />}
@@ -70,9 +78,17 @@ export default function FinanceExpensePage() {
 
 function MonthView({ ym }: { ym: string }) {
   const navigate = useNavigate();
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ['finance', 'expenseSummary', ym],
     queryFn: () => financeApi.expenseSummary(ym),
+    ...keepMonth,
+  });
+  // График грузим сразу, вместе с карточками (08.11.2026). Раньше он начинал
+  // грузиться, только когда карточки уже пришли: «Расход» открывался 3,4 с.
+  useQuery({
+    queryKey: ['finance', 'expenseChart', ym],
+    queryFn: () => financeApi.expenseChart(ym, 0),
+    ...keepMonth,
   });
 
   // Зарплату платим 10-го числа за ПРОШЛЫЙ месяц. Поэтому в «Расход/M» карточка
@@ -81,7 +97,9 @@ function MonthView({ ym }: { ym: string }) {
   const salaryQ = useQuery({
     queryKey: ['finance', 'expenseDetail', 'salary', salaryYm],
     queryFn: () => financeApi.expenseDetail('salary', salaryYm),
+    ...keepMonth,
   });
+  const stale = isPlaceholderData || salaryQ.isPlaceholderData;
   const salCards: any = salaryQ.data?.cards || {};
   const salAdvances = Number(salCards.advances || 0);
   const salPaid = Number(salCards.paid || 0);
@@ -115,7 +133,7 @@ function MonthView({ ym }: { ym: string }) {
   );
 
   return (
-    <>
+    <div className={stale ? 'fin-stale-box' : undefined}>
     <div className="cards grid-5">
       <BreakdownHover className="card clickable" ym={salaryYm} kind="group" id="salary" title={salary.label} color={salary.color} icon={salary.icon}
         onClick={() => navigate(withYm('/finance/expense/salary', salaryYm))}>
@@ -154,7 +172,7 @@ function MonthView({ ym }: { ym: string }) {
       </BreakdownHover>
     </div>
     <ExpenseLineChart ym={ym} period={0} />
-    </>
+    </div>
   );
 }
 
@@ -232,6 +250,8 @@ function PeriodView({ months, onOpen }: { months: number; onOpen: (path: string,
     queryKey: ['finance', 'expensePlan', months],
     queryFn: () => financeApi.expensePlan(months),
   });
+  // График периода — тоже сразу, не после таблицы.
+  useQuery({ queryKey: ['finance', 'expenseChart', `p${months}`], queryFn: () => financeApi.expenseChart(currentYm(), months) });
   if (isLoading) return <FinLoading cards={5} />;
   if (isError || !data) return <FinLoadError onRetry={() => refetch()} />;
 
