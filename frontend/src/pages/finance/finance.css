@@ -3396,3 +3396,29 @@
 @media (prefers-reduced-motion: reduce) {
   .fin-root .fin-exp-chart .dot, .fin-root .fin-exp-chart .legend button { transition: none; }
 }
+
+/* Последние операции на «Обзоре»: на телефоне — список по дням (08.11.2026).
+   Таблица там обрезалась справа, и сумм не было видно. */
+.fin-root .fin-tx-mlist { display: none; }
+@media (max-width: 720px) {
+  .fin-root .fin-tx-table { display: none; }
+  .fin-root .fin-tx-mlist { display: flex; flex-direction: column; gap: 6px; }
+}
+.fin-root .fin-tx-mday-block { display: flex; flex-direction: column; gap: 6px; }
+.fin-root .fin-tx-mday { font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 2px 0; }
+.fin-root .fin-tx-mgroup { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.fin-root .fin-tx-mrow {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 12px;
+  border: 0; border-bottom: 1px solid var(--border); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.fin-root .fin-tx-mrow:last-child { border-bottom: 0; }
+.fin-root .fin-tx-mrow:active { background: var(--surface-hover); }
+.fin-root .fin-tx-mrow .tx { flex: 1; min-width: 0; line-height: 1.25; }
+.fin-root .fin-tx-mrow .tx b { display: block; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fin-root .fin-tx-mrow .tx span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fin-root .fin-tx-mrow .am { text-align: right; font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-root .fin-tx-mrow .am small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+
+/* «Просрочено» за все месяцы (08.11.2026). */
+.fin-root .pln-tile .late-prev { color: var(--red); }
+.fin-root .pln-tile .late-list .late-days { color: var(--red); font-weight: 600; white-space: nowrap; }

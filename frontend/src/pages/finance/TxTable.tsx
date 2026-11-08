@@ -27,8 +27,50 @@ export default function TxTable({ txns, onEdit, onDelete }: {
     return <AccountLabel name={t.accountName ?? t.fromAccountName ?? t.toAccountName} compact />;
   };
 
+  // На телефоне — список по дням (08.11.2026): таблица обрезалась справа,
+  // и сумм, счёта и клиента не было видно. Нажатие открывает операцию.
+  const days: Array<{ date: string; items: any[] }> = [];
+  for (const t of txns as any[]) {
+    const last = days[days.length - 1];
+    if (last && last.date === t.date) last.items.push(t);
+    else days.push({ date: t.date, items: [t] });
+  }
+  const dayLabel = (iso: string) => {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return iso;
+    return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, ${d.toLocaleDateString('ru-RU', { weekday: 'short' })}`;
+  };
+  const who = (t: any) => t.projectName ?? t.employeeName ?? t.debtName ?? null;
+  const shortAccount = (t: any) => (t.type === 'transfer' || t.type === 'saving')
+    ? [t.fromAccountName, t.toAccountName].filter(Boolean).join(' → ')
+    : (t.accountName ?? t.fromAccountName ?? t.toAccountName ?? '');
+
   return (
-    <div className="table-wrap">
+    <>
+    <div className="fin-tx-mlist">
+      {days.map(day => (
+        <div key={day.date} className="fin-tx-mday-block">
+          <div className="fin-tx-mday">{dayLabel(day.date)}</div>
+          <div className="fin-tx-mgroup">
+            {day.items.map((t: any) => {
+              const sg = sign(t);
+              const title = t.type === 'transfer' ? 'Перевод' : t.type === 'saving' ? 'Накопления' : (t.categoryName ?? 'Без категории');
+              const sub = who(t) ?? t.comment ?? '';
+              return (
+                <button key={t.id} type="button" className="fin-tx-mrow" onClick={() => onEdit?.(t)}>
+                  {t.type === 'transfer' || t.type === 'saving'
+                    ? <CatIcon icon={t.type === 'saving' ? 'piggy' : 'transactions'} color={t.type === 'saving' ? 'var(--violet)' : 'var(--accent)'} size={26} />
+                    : <CatIcon icon={t.categoryIcon} color={t.categoryColor} size={26} />}
+                  <span className="tx"><b>{title}</b>{sub && <span>{sub}</span>}</span>
+                  <span className={'am ' + sg.cls}>{sg.s} {money(t.amount).replace('+', '')}<small>{shortAccount(t)}</small></span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+    <div className="table-wrap fin-tx-table">
       <table>
         <thead>
           <tr>
@@ -90,5 +132,6 @@ export default function TxTable({ txns, onEdit, onDelete }: {
         </tbody>
       </table>
     </div>
+    </>
   );
 }

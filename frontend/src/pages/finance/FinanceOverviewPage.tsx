@@ -238,10 +238,11 @@ export default function FinanceOverviewPage() {
       </div>
 
       <div className="between" style={{ marginBottom: 12 }}>
-        <div className="section-title" style={{ margin: 0 }}>Транзакции за месяц</div>
-        <button className="btn ghost sm" onClick={() => navigate('/finance/transactions')}>Все операции →</button>
+        <div className="section-title" style={{ margin: 0 }}>Последние операции</div>
+        <button className="btn ghost sm" onClick={() => navigate(`/finance/transactions?ym=${ym}`)}>Все операции →</button>
       </div>
-      <TxTable txns={txns} onEdit={(t: any) => setModal({ open: true, initial: t })} onDelete={handleDelete} />
+      {/* Только 7 последних (08.11.2026): полный журнал месяца — в «Транзакциях». */}
+      <TxTable txns={txns.slice(0, 7)} onEdit={(t: any) => setModal({ open: true, initial: t })} onDelete={handleDelete} />
 
       {modal.open && <TransactionModal initial={modal.initial} onClose={() => setModal({ open: false })} />}
     </div>

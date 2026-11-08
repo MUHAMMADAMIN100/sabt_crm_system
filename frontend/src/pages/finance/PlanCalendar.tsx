@@ -64,9 +64,13 @@ function Amount({ t }: { t: any }) {
   return <span className={`a ${inc ? 'inc' : 'exp'}`}>{inc ? '+' : '−'}{moneyBare(t.amount)}</span>;
 }
 
-export default function PlanCalendar({ ym, txns, renderStatusControl, onMoveItem, canMoveItem }: {
+export default function PlanCalendar({ ym, txns, lateOther = [], renderStatusControl, onMoveItem, canMoveItem }: {
   ym: string;
   txns: any[];
+  /** Просроченное из других месяцев (08.11.2026): долги клиентов и наши
+   *  платежи не пропадают из «Просрочено», когда месяц сменился. В итоги
+   *  месяца не входят — только в карточку «Просрочено» и строку под итогами. */
+  lateOther?: any[];
   renderStatusControl?: (item: any, close: () => void) => any;
   onMoveItem?: (item: any, dateISO: string) => void;
   canMoveItem?: (item: any) => boolean;
@@ -129,10 +133,27 @@ export default function PlanCalendar({ ym, txns, renderStatusControl, onMoveItem
       else { exp += a; if (s === 'done') expDone += a; }
       if (s === 'late') late.push(t);
     }
+    // Просроченное других месяцев: прошлые — отдельной строкой под итогами.
+    const monthStart = `${ym}-01`;
+    let prevInc = 0, prevExp = 0;
+    const seen = new Set(late.map((t) => t.id));
+    for (const t of lateOther) {
+      if (seen.has(t.id) || t.done || effDate(t) >= today) continue;
+      seen.add(t.id);
+      late.push(t);
+      if (effDate(t) < monthStart) {
+        if (t.type === 'income') prevInc += Number(t.amount) || 0;
+        else if (t.type === 'expense') prevExp += Number(t.amount) || 0;
+      }
+    }
     late.sort((a, b) => effDate(a).localeCompare(effDate(b)));
-    return { inc, incDone, exp, expDone, late };
+    const lateInc = late.filter((t) => t.type === 'income').reduce((a, t) => a + (Number(t.amount) || 0), 0);
+    const lateExp = late.filter((t) => t.type === 'expense').reduce((a, t) => a + (Number(t.amount) || 0), 0);
+    return { inc, incDone, exp, expDone, late, lateInc, lateExp, prevInc, prevExp };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inMonth, today]);
+  }, [inMonth, lateOther, today, ym]);
+  const daysLate = (t: any) => Math.max(1, Math.round(
+    (new Date(`${today}T00:00:00`).getTime() - new Date(`${effDate(t)}T00:00:00`).getTime()) / 86400000));
 
   // ── Операции по дням с учётом фильтра. В дне сверху просроченное и то,
   //    чего ждём, крупное выше; прошедшее — в конце.
@@ -210,12 +231,14 @@ export default function PlanCalendar({ ym, txns, renderStatusControl, onMoveItem
         <span className="lb">Придёт в {MON_PREP[monthNo - 1]}</span>
         <span className="vl pos">+{money(sum.inc)}</span>
         <span className="sb">уже пришло {moneyBare(sum.incDone)} · ждём {moneyBare(sum.inc - sum.incDone)}</span>
+        {sum.prevInc > 0.005 && <span className="sb late-prev">и ещё {money(sum.prevInc)} просрочено с прошлых месяцев</span>}
         <div className="progress"><i style={{ width: pct(sum.incDone, sum.inc), background: 'var(--green)' }} /></div>
       </section>
       <section className="card pln-tile" aria-label="Уйдёт">
         <span className="lb">Уйдёт в {MON_PREP[monthNo - 1]}</span>
         <span className="vl neg">−{money(sum.exp)}</span>
         <span className="sb">уже ушло {moneyBare(sum.expDone)} · осталось {moneyBare(sum.exp - sum.expDone)}</span>
+        {sum.prevExp > 0.005 && <span className="sb late-prev">и ещё {money(sum.prevExp)} не оплачено с прошлых месяцев</span>}
         <div className="progress"><i style={{ width: pct(sum.expDone, sum.exp), background: 'var(--red)' }} /></div>
       </section>
       <section className={`card pln-tile${sum.late.length ? ' late' : ''}`} aria-label="Просрочено">
@@ -224,14 +247,22 @@ export default function PlanCalendar({ ym, txns, renderStatusControl, onMoveItem
           {sum.late.length ? pluralRu(sum.late.length, 'платёж', 'платежа', 'платежей') : 'нет'}
         </span>
         {sum.late.length ? (
-          <span className="late-list">
-            {sum.late.slice(0, 3).map((t) => (
-              <button key={t.id} type="button" onClick={() => setDetail(t)}>
-                {dayLabel(effDate(t))}: {titleOf(t)} <Amount t={t} />
-              </button>
-            ))}
-            {sum.late.length > 3 && <span className="sb">ещё {sum.late.length - 3}</span>}
-          </span>
+          <>
+            <span className="sb">
+              {sum.lateInc > 0.005 && <>ждём <b className="pos">{moneyBare(sum.lateInc)}</b></>}
+              {sum.lateInc > 0.005 && sum.lateExp > 0.005 && ' · '}
+              {sum.lateExp > 0.005 && <>должны <b className="neg">{moneyBare(sum.lateExp)}</b></>}
+            </span>
+            {/* За все месяцы, от самого старого (08.11.2026). */}
+            <span className="late-list">
+              {sum.late.slice(0, 5).map((t) => (
+                <button key={t.id} type="button" onClick={() => setDetail(t)}>
+                  {dayLabel(effDate(t))}: {titleOf(t)} <Amount t={t} /> <span className="late-days">· {daysLate(t)} дн.</span>
+                </button>
+              ))}
+              {sum.late.length > 5 && <span className="sb">ещё {sum.late.length - 5}</span>}
+            </span>
+          </>
         ) : <span className="sb">всё вовремя</span>}
       </section>
     </div>

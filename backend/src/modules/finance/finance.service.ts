@@ -1736,9 +1736,20 @@ export class FinanceService implements OnModuleInit {
     // Development-доход у со-основателя «как будто 0» с 1 августа: и факт (через
     // scopedTx), и план (тариф) прячем за месяцы от августа.
     const hideDevPlan = this.hidesDevIncome(role) && ym >= FinanceService.COFOUNDER_DEV_INCOME_FROM.slice(0, 7);
+    // SMM и обслуживание платят тариф каждый месяц — план месяца = тарифы.
+    // У разработки и дизайна тариф — сумма договора целиком, поэтому план
+    // месяца — их платежи этого месяца, как на карточке «Доход за месяц» и на
+    // странице направления (08.11.2026: здесь стояло 370 050 с. вместо 30 000 с.).
+    const MONTHLY_DIRS = new Set(['smm', 'maintenance']);
     const incomePlan = dirs.map(dir => {
       const projs = this.scopeProjects(m.projects.filter(p => p.direction === dir && isEarning(p)), role);
-      const plan = (hideDevPlan && dir === 'development') ? 0 : r2(projs.reduce((s, p) => s + Number(p.tariff), 0));
+      const ids = new Set(projs.map(p => p.id));
+      const plan = (hideDevPlan && dir === 'development') ? 0
+        : MONTHLY_DIRS.has(dir) ? r2(projs.reduce((s, p) => s + Number(p.tariff), 0))
+        : r2(planned
+          .filter(pp => pp.ym === ym && pp.projectId && ids.has(pp.projectId)
+            && (pp.status === 'expected' || (pp.status === 'received' && pp.receivedTxId)))
+          .reduce((s, pp) => s + Number(pp.amount), 0));
       const fact = this.sum(monthIncome.filter(t => this.directionOf(t, m) === dir));
       return { direction: dir, plan, fact };
     });

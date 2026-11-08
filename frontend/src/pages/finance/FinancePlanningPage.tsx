@@ -35,6 +35,14 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
   const activeAccounts = ((accounts as any[]) || []).filter((a) => !a.archived);
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
+  // Дата оплаты (08.11.2026): у просроченного по умолчанию — сегодня. Раньше
+  // бралась дата срока, и оплата, пришедшая сегодня, задним числом уходила в
+  // прошлый месяц.
+  const [payDate, setPayDate] = useState(() => {
+    const d = String(item.date || '').slice(0, 10);
+    const today = todayISO();
+    return d && d < today ? today : (d || today);
+  });
   useEffect(() => { if (!accountId && activeAccounts.length) setAccountId(activeAccounts[0].id); }, [activeAccounts, accountId]);
 
   const id = String(item.id || '');
@@ -70,14 +78,14 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
     return <div className="cal-item-rows"><div className="cal-item-row"><span>Статус</span><b>{doneLabel}</b></div></div>;
   }
   const rawId = isPlan ? id.slice(3) : id.slice(4);
-  const date = String(item.date || '').slice(0, 10) || todayISO();
+  const itemDate = String(item.date || '').slice(0, 10) || todayISO();
 
   async function mark() {
     if (busy || (isPlan && !accountId)) return;
     setBusy(true);
     try {
-      if (isPlan) await financeApi.receivePlanned(rawId, { accountId, date });
-      else await financeApi.markSubPaid(rawId, { ym, date });
+      if (isPlan) await financeApi.receivePlanned(rawId, { accountId, date: payDate || itemDate });
+      else await financeApi.markSubPaid(rawId, { ym, date: payDate || itemDate });
       invalidateFinanceAll(qc); onClose();
     } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
@@ -105,6 +113,9 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
               </select>
             </div>
           )}
+          <div className="field"><label>{income ? 'Когда пришли деньги' : 'Когда оплатили'}</label>
+            <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+          </div>
           <button className="btn primary" disabled={busy || (isPlan && !accountId)} onClick={mark}>
             {income ? 'Отметить полученной' : 'Отметить оплаченной'}
           </button>
@@ -437,6 +448,53 @@ export default function FinancePlanningPage() {
     return out;
   }, [plannedQ.data, subsQ.data, salaryQ.data, txMonthQ.data, instQ.data, txById, projById, debtNameById, debtById, calYm, calYear, salaryYm]);
 
+  // «Просрочено» за все месяцы (08.11.2026): не пришедшие оплаты клиентов и
+  // не отданные транши/платежи банкам с прошлых (и любых других) месяцев.
+  // Подписки прошлых месяцев не берём: оплату подписки за старый месяц видно
+  // только по операциям того месяца, а их здесь нет — были бы ложные просрочки.
+  const lateOther = useMemo(() => {
+    const today = todayISO();
+    const out: any[] = [];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    for (const p of (plannedQ.data || [])) {
+      if (p.status !== 'expected') continue;
+      const planYm = p.dueDate ? String(p.dueDate).slice(0, 7) : (p.ym || '');
+      if (!planYm || planYm === calYm) continue;
+      const [py, pm] = planYm.split('-').map(Number);
+      const last = new Date(py, pm, 0).getDate();
+      let date = p.dueDate ? String(p.dueDate).slice(0, 10) : '';
+      if (p.projectId) {
+        const proj = projById.get(p.projectId);
+        if (!isEarningProject(proj)) continue;
+        if (!date) {
+          const cday = proj?.contractDate ? Math.min(Number(String(proj.contractDate).slice(8, 10)) || 1, last) : 1;
+          date = `${planYm}-${pad(cday)}`;
+        }
+        if (date >= today) continue;
+        out.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'income', status: 'completed', done: false,
+          comment: proj?.name || 'Оплата по проекту',
+          details: detailList([
+            { label: 'Направление', value: proj ? (DIR_LABEL[proj.direction] || proj.direction) : null },
+            { label: 'Срок был', value: formatDate(date) },
+          ]) });
+      } else if (p.debtId) {
+        const debt = debtById.get(p.debtId);
+        if (!date) date = `${planYm}-${pad(Math.min(Number(debt?.dueDay) || 10, last))}`;
+        if (date >= today) continue;
+        const bank = debt?.kind === 'bank';
+        const debtName = debtNameById.get(p.debtId);
+        out.push({ id: `pp-${p.id}`, date, amount: p.amount, type: 'expense', status: 'completed', done: false,
+          comment: bank ? (debtName || 'Платёж банку') : (debtName ? `${debtName} · транш` : 'Транш долга'),
+          details: detailList([
+            { label: bank ? 'Рассрочка' : 'Долг', value: debt?.name || debtName },
+            bank ? { label: 'Банк', value: debt?.counterparty } : null,
+            { label: 'Срок был', value: formatDate(date) },
+          ]) });
+      }
+    }
+    return out;
+  }, [plannedQ.data, projById, debtById, debtNameById, calYm]);
+
   // Перетаскивание операции на другой день сохраняет дату в записи:
   // разовая → дата операции, план-платёж → срок оплаты, подписка → день оплаты.
   const canMovePlanItem = (item: any) => {
@@ -473,7 +531,7 @@ export default function FinancePlanningPage() {
       </div>
       {failed ? <FinLoadError onRetry={() => all.forEach((q) => q.isError && q.refetch())} />
         : loading ? <FinLoading cards={3} /> : (
-          <PlanCalendar ym={calYm} txns={calTxns}
+          <PlanCalendar ym={calYm} txns={calTxns} lateOther={lateOther}
             renderStatusControl={(item, close) => <PlanningStatusControl item={item} ym={calYm} onClose={close} />}
             onMoveItem={movePlanItem} canMoveItem={canMovePlanItem} />
         )}
