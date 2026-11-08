@@ -20,6 +20,7 @@ import { DevTasksTab } from './components/DevTasksTab'
 import { DevTeamBlock } from './components/DevTeamBlock'
 import { DevTypeChip } from './components/DevTypeChip'
 import { boardUrl, taskUrl } from './devLinks'
+import { BackLink } from '@/lib/navMemory'
 import {
   deadlineInfo, longDay, nearestDeadlines, openByAssignee, plural, shortDay, stageOf, taskStats,
   timeProgress, todayIso,
@@ -110,7 +111,7 @@ export default function DevProjectPage() {
   })
   const archiveMut = useMutation({
     mutationFn: () => projectsApi.archive(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success('Проект в архиве'); navigate('/dev/projects') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['projects'] }); toast.success('Проект в архиве'); navigate('/dev/projects', { replace: true }) },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось перенести в архив'),
   })
 
@@ -163,7 +164,7 @@ export default function DevProjectPage() {
   if (isError || !project || !isDevProjectType(project.projectType)) {
     return (
       <div className="space-y-3">
-        <Link to="/dev/projects" className="inline-flex items-center gap-1 text-sm text-[#2D5DA8] dark:text-[#8FB0E6]"><ChevronLeft size={16} /> Проекты</Link>
+        <BackLink fallback="/dev/projects" fallbackLabel="Проекты" className="inline-flex items-center gap-1 text-sm text-[#2D5DA8] dark:text-[#8FB0E6]" icon={<ChevronLeft size={16} />} />
         <p className="text-surface-500">{project && !isError ? 'Это не проект разработки.' : 'Проект не найден или нет доступа.'}</p>
       </div>
     )
@@ -177,9 +178,8 @@ export default function DevProjectPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-1.5">
-        <Link to="/dev/projects" className="self-start inline-flex items-center gap-1 text-[13.5px] text-[#2D5DA8] hover:text-[#1E4785] dark:text-[#8FB0E6]">
-          <ChevronLeft size={15} /> Проекты
-        </Link>
+        <BackLink fallback="/dev/projects" fallbackLabel="Проекты" icon={<ChevronLeft size={15} />}
+          className="self-start inline-flex items-center gap-1 text-[13.5px] text-[#2D5DA8] hover:text-[#1E4785] dark:text-[#8FB0E6]" />
         <div className="flex items-center gap-3 flex-wrap">
           {nameEditing ? (
             <div className="flex items-center gap-2">

@@ -12,6 +12,7 @@ import { Avatar } from '@/components/ui'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 /** Сколько разделов стоит прямо на панели. Остальные уходят под «Ещё». */
 const PINNED = 3
@@ -33,6 +34,23 @@ export default function BottomNav() {
   const [q, setQ] = useState('')
   const [fan, setFan] = useState(false)
   const [hidden, setHidden] = useState(false)
+  // Шторка «Ещё» и веер «+» — шаг истории (08.11.2026): системный «Назад»
+  // закрывает их, а не уводит со страницы. Одна запись на обе: переключение
+  // между ними заменяет шаг, а не копит.
+  useHistoryOverlay('nav', more ? 'more' : fan ? 'fan' : null, v => { setMore(v === 'more'); setFan(v === 'fan') })
+  // Действие из веера: другая страница — заменяет шаг веера; та же страница
+  // (например «Отметить сторис» на «Панели») — сначала снимаем шаг, потом
+  // меняем адрес, иначе осталась бы лишняя запись и «мёртвый» «Назад».
+  const runAction = (to: string) => {
+    if (fan && to.split('?')[0] === location.pathname) {
+      window.addEventListener('popstate', () => navigate(to, { replace: true }), { once: true })
+      setFan(false)
+      return
+    }
+    const replace = fan
+    setFan(false)
+    navigate(to, { replace })
+  }
 
   const pinned = items.slice(0, PINNED)
   const rest = items.slice(PINNED)
@@ -78,7 +96,7 @@ export default function BottomNav() {
     // Окно «отметить сторис» (/?day=today) есть только в кабинете
     // СММ-специалиста — у остальных панель другая, и пункт никуда не вёл.
     if (user?.role === 'smm_specialist') {
-      list.push({ key: 'story', label: 'Отметить сторис', icon: ImageIcon, run: () => navigate('/?day=today') })
+      list.push({ key: 'story', label: 'Отметить сторис', icon: ImageIcon, run: () => runAction('/?day=today') })
     }
     // Форма создания есть не на всех страницах «Задач»: у руководителя
     // разработки — список с «+ Задача», у основателя и админа — «Выдать
@@ -87,13 +105,13 @@ export default function BottomNav() {
     if (userCan(user, 'tasks.create')) {
       const taskHref = isDevLead(user) ? '/tasks?new=1'
         : (user?.role === 'founder' || user?.role === 'admin') ? '/employees/week?issue=1' : null
-      if (taskHref) list.push({ key: 'task', label: 'Новая задача', icon: ClipboardCheck, run: () => navigate(taskHref) })
+      if (taskHref) list.push({ key: 'task', label: 'Новая задача', icon: ClipboardCheck, run: () => runAction(taskHref) })
     }
     if (canSeeSmmSection(user?.role) && userCan(user, 'projects.create')) {
-      list.push({ key: 'project', label: 'Добавить проект', icon: FolderKanban, run: () => navigate('/smm/projects?new=1') })
+      list.push({ key: 'project', label: 'Добавить проект', icon: FolderKanban, run: () => runAction('/smm/projects?new=1') })
     }
     return list
-  }, [user, navigate])
+  }, [user, navigate, fan, location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasFan = actions.length > 0
   const tabCls = 'relative flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
@@ -274,7 +292,7 @@ export default function BottomNav() {
                 <span className="text-[12.5px] text-white/70">Доступных действий нет</span>
               )}
               {actions.map(a => (
-                <button key={a.key} onClick={() => { setFan(false); a.run() }}
+                <button key={a.key} onClick={() => a.run()}
                   className="flex items-center gap-2.5 rounded-xl bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3.5 py-2.5 shadow-lg">
                   <a.icon size={16} className="text-primary-600 dark:text-primary-400" />
                   <b className="text-[12.5px] font-semibold text-surface-900 dark:text-surface-100">{a.label}</b>
@@ -296,7 +314,7 @@ export default function BottomNav() {
                 {/* Профиль и «Выйти» — сверху: раньше они стояли после 36 строк. */}
                 {!searching && (
                   <div className="mx-1 mb-2 flex items-center gap-3 rounded-2xl border border-surface-200 bg-surface-50 p-2 dark:border-surface-700 dark:bg-surface-800">
-                    <NavLink to="/profile" onClick={() => setMore(false)} className="flex min-w-0 flex-1 items-center gap-3">
+                    <NavLink to="/profile" onClick={() => setMore(false)} replace={more} className="flex min-w-0 flex-1 items-center gap-3">
                       <Avatar name={user?.name || ''} src={(user as any)?.avatar} size={36} />
                       <span className="min-w-0">
                         <b className="block truncate text-[14px] font-semibold text-surface-900 dark:text-surface-100">{user?.name || 'Профиль'}</b>
@@ -355,7 +373,7 @@ export default function BottomNav() {
                         {open && (
                           <div className="mb-2 ml-4 border-l border-surface-200 pl-2.5 dark:border-surface-700">
                             {g.shown.map(l => (
-                              <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end={g.end} compact />
+                              <SheetLink key={l.to} to={l.to} icon={l.icon} label={l.label} onGo={() => setMore(false)} end={g.end} compact replace={more} />
                             ))}
                           </div>
                         )}
@@ -365,7 +383,7 @@ export default function BottomNav() {
                 </div>
                 {restF.length > 0 && <SheetGroup title="Разделы" />}
                 {restF.map(i => (
-                  <SheetLink key={i.to} to={i.to} icon={i.icon} label={i.label} onGo={() => setMore(false)} />
+                  <SheetLink key={i.to} to={i.to} icon={i.icon} label={i.label} onGo={() => setMore(false)} replace={more} />
                 ))}
               </div>
             </div>
@@ -427,13 +445,15 @@ function SheetGroup({ title }: { title: string }) {
 /** Строка-ссылка в шторке. Высота 48 — по ней попадают пальцем не целясь;
  *  текущий раздел подсвечен, иначе в списке из двадцати пунктов не понять,
  *  где ты находишься. */
-function SheetLink({ to, icon: Icon, label, onGo, end, compact }: {
+function SheetLink({ to, icon: Icon, label, onGo, end, compact, replace }: {
   to: string; icon: any; label: string; onGo: () => void; end?: boolean
+  /** Переход из открытой шторки заменяет её шаг в истории. */
+  replace?: boolean
   /** Подпункт раскрытой группы — строка ниже и без стрелки. */
   compact?: boolean
 }) {
   return (
-    <NavLink to={to} end={end} onClick={onGo}
+    <NavLink to={to} end={end} onClick={onGo} replace={replace}
       className={({ isActive }) => clsx(
         'flex items-center gap-3 px-3 rounded-xl', compact ? 'min-h-[42px]' : 'min-h-[48px]',
         isActive

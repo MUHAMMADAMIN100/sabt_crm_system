@@ -16,6 +16,7 @@ import { InstallmentsList, InstallmentSalaryField, INSTALLMENT_COLOR } from './I
 import { DebtsList } from './DebtsBoard';
 import { OtherPlanBlock, useOtherPlan, avgBasis } from './OtherPlanBlock';
 import './finance.css';
+import { BackLink } from '@/lib/navMemory'
 
 const SALARY_ROW_CONTROL_SELECTOR = [
   'button',
@@ -65,7 +66,7 @@ export default function FinanceExpenseGroupPage() {
   if (kind === 'other') {
     return (
       <div className="fin-root">
-        <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+        <BackLink fallback={withYm('/finance/expense', ym)} fallbackLabel="Расход" className="back" icon={<FinIcon name="chevronLeft" size={15} />} />
         <div className="page-head">
           <div><h1 className="flex" style={{ color: OTHER_GROUP.color }}><FinIcon name={OTHER_GROUP.icon} size={22} /> <span style={{ color: 'var(--text)' }}>Прочие расходы</span></h1><p>Реклама, транспорт, налоги и другие категории</p></div>
           <MonthNav ym={ym} onChange={setYm} />
@@ -78,7 +79,7 @@ export default function FinanceExpenseGroupPage() {
   if (kind === 'installments') {
     return (
       <div className="fin-root">
-        <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+        <BackLink fallback={withYm('/finance/expense', ym)} fallbackLabel="Расход" className="back" icon={<FinIcon name="chevronLeft" size={15} />} />
         <InstallmentsList />
       </div>
     );
@@ -89,7 +90,7 @@ export default function FinanceExpenseGroupPage() {
 
   return (
     <div className="fin-root">
-      <Link to={withYm('/finance/expense', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Расход</Link>
+      <BackLink fallback={withYm('/finance/expense', ym)} fallbackLabel="Расход" className="back" icon={<FinIcon name="chevronLeft" size={15} />} />
       <div className="page-head">
         <div><h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1><p>Детализация и быстрая оплата</p></div>
         <MonthNav ym={ym} onChange={setYm} />

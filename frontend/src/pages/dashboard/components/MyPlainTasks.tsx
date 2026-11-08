@@ -7,6 +7,7 @@ import { CalendarDays, ClipboardList, Check, MoreHorizontal } from 'lucide-react
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 /**
  * «Мои задачи» — обычные поручения в кабинете, ОТДЕЛЬНО от производственных
@@ -20,6 +21,8 @@ import clsx from 'clsx'
  */
 export default function MyPlainTasks({ hidePersonal = false }: { hidePersonal?: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null)
+  // «Назад» закрывает шторку задачи на «Панели» (08.11.2026).
+  useHistoryOverlay('plain-task', openId, setOpenId)
   const qc = useQueryClient()
   const { data: tasks } = useQuery({ queryKey: ['my-tasks'], queryFn: tasksApi.my })
   // Отметка «готово» прямо в списке — как на карточках производства.

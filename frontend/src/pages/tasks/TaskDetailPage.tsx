@@ -19,6 +19,7 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { stripLeadingEmoji } from '@/lib/stripEmoji'
+import { useBackTarget } from '@/lib/navMemory'
 
 const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'video_editor', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'targetologist', 'employee']
@@ -88,6 +89,8 @@ const STATUS_FLOW: Record<string, string[]> = {
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // «‹» — на шаг назад; открыли из уведомления в новой вкладке — в задачи.
+  const back = useBackTarget('/tasks', 'Задачи')
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -454,10 +457,10 @@ export default function TaskDetailPage() {
     return (
       <div className="space-y-4">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => back.go()}
           className="inline-flex items-center gap-2 text-sm text-surface-500 dark:text-surface-400 hover:text-primary-600"
         >
-          <ArrowLeft size={16} /> Назад
+          <ArrowLeft size={16} /> {back.label}
         </button>
         <div className="card flex flex-col items-center justify-center py-16 px-6 text-center max-w-lg mx-auto">
           <div className="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center mb-4">
@@ -501,7 +504,7 @@ export default function TaskDetailPage() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+        <button onClick={() => back.go()} aria-label={`Назад: ${back.label}`} title={back.label} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">

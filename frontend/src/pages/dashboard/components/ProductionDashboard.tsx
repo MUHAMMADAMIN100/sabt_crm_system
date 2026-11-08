@@ -27,6 +27,7 @@ import { contentPlanApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { TaskPanel, TaskRow } from './SmmSpecialistDashboard'
 import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, CellBadge, ownLines, type CellLine } from './OwnTasks'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const WEEK = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
@@ -159,6 +160,14 @@ export default function ProductionDashboard() {
   // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
   // него остаётся висеть без списка, из которого её открыли.
   const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnFocus(false) }
+
+  // «Назад» закрывает окно дня и панель задачи (08.11.2026). Ушли из окна
+  // дальше (в проект, в задачу) — при возврате оно снова открыто на том же дне.
+  useHistoryOverlay('day', dayOpen ? dk(sel) : null, v => {
+    if (v) { const d = new Date(`${v}T00:00:00`); setSel(d); setCursor(d); setDayOpen(true) }
+    else { setDayOpen(false); setOwnFocus(false) }
+  })
+  useHistoryOverlay('task', openId, v => setOpenId(v))
   const addOwnToday = (ev: { currentTarget: HTMLElement }) => {
     const now = new Date()
     setCursor(now); setSel(now)

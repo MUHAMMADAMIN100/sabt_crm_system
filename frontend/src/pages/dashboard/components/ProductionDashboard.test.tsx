@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import ProductionDashboard from './ProductionDashboard'
 
 // Кабинет видеографа / монтажёра / дизайнера: день открывается модальным
@@ -42,7 +43,8 @@ const shoot = {
 
 function renderCabinet() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><ProductionDashboard /></QueryClientProvider>)
+  // Окно дня — шаг истории («Назад» его закрывает), поэтому нужен маршрутизатор, как в приложении.
+  render(<MemoryRouter><QueryClientProvider client={client}><ProductionDashboard /></QueryClientProvider></MemoryRouter>)
 }
 const todayCell = () => document.querySelector(`[data-own-cell="${TODAY}"]`) as HTMLElement
 

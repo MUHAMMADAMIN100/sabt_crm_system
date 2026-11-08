@@ -8,6 +8,7 @@ import { CalendarDays, Hammer } from 'lucide-react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 /**
  * «Мои карточки на доске разработки» — блок в кабинете разработчика и
@@ -20,6 +21,8 @@ import clsx from 'clsx'
  */
 export default function MyDevCards() {
   const [openId, setOpenId] = useState<string | null>(null)
+  // «Назад» закрывает шторку задачи на «Панели» (08.11.2026).
+  useHistoryOverlay('dev-card', openId, setOpenId)
   const { data: tasks } = useQuery({ queryKey: ['my-tasks'], queryFn: tasksApi.my })
 
   const cards = useMemo(() => {

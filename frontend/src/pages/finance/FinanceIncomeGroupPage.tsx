@@ -13,6 +13,7 @@ import { financeApi } from '@/services/api.service';
 import useNarrow from '@/hooks/useNarrow';
 import SmmManagerCell, { useSmmManagers } from './SmmManagerCell';
 import { splitSmmRows, overdueRows, dueTone, dayMonth, dayMon } from './smmIncome';
+import { BackLink } from '@/lib/navMemory'
 
 function useAccounts(): any[] {
   const { data } = useQuery({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() });
@@ -64,7 +65,7 @@ export default function FinanceIncomeGroupPage() {
 
   return (
     <div className={'fin-root' + (isPlaceholderData ? ' fin-stale' : '')}>
-      <Link to={withYm('/finance/income', ym)} className="back"><FinIcon name="chevronLeft" size={15} /> Доход</Link>
+      <BackLink fallback={withYm('/finance/income', ym)} fallbackLabel="Доход" className="back" icon={<FinIcon name="chevronLeft" size={15} />} />
       <div className={'page-head' + (smm ? ' fin-smm-head' : '')}>
         <div>
           <h1 className="flex" style={{ color: g.color }}><FinIcon name={g.icon} size={22} /> <span style={{ color: 'var(--text)' }}>{g.label}</span></h1>

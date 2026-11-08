@@ -40,10 +40,15 @@ export function useSocket(authMarker: string | null) {
       reconnectionDelayMax: 5000,
     })
 
+    // Повторных refetchQueries после invalidateQueries больше нет (08.11.2026):
+    // invalidate сам перезапрашивает всё, что на экране, и каждый запрос
+    // уходил дважды. При первом подключении данные только что загружены —
+    // перезапрашиваем всё только после обрыва связи.
+    let connectedOnce = false
     socket.on('connect', () => {
       setSocketConnected(true)
-      // On (re)connect refetch everything that might have been missed
-      qc.refetchQueries({ type: 'active' })
+      if (connectedOnce) qc.refetchQueries({ type: 'active' })
+      connectedOnce = true
     })
 
     // When admin updates this user's role/profile — refresh auth store and notify
@@ -129,10 +134,6 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['workload-pm'] })
       qc.invalidateQueries({ queryKey: ['workload-pm-all'] })
       qc.invalidateQueries({ queryKey: ['workload-team-all'] })
-      qc.refetchQueries({ queryKey: ['projects'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['project'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['project-ads'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['analytics-dashboard'], type: 'active' })
     })
 
     socket.on('stories:changed', () => {
@@ -149,8 +150,6 @@ export function useSocket(authMarker: string | null) {
       // карточке проекта — без него отметка доезжала не на все экраны.
       qc.invalidateQueries({ queryKey: ['smm-calendar'] })
       // Активный refetch — чтобы данные пришли мгновенно, не по визиту
-      qc.refetchQueries({ queryKey: ['project-stories'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['stories-global'], type: 'active' })
     })
 
     socket.on('tasks:changed', () => {
@@ -196,15 +195,6 @@ export function useSocket(authMarker: string | null) {
       // него сразу, а не через минуту по refetchInterval.
       qc.invalidateQueries({ queryKey: ['tasks-from-management'] })
       qc.invalidateQueries({ queryKey: ['tasks-assigned-by-me'] })
-      qc.refetchQueries({ queryKey: ['tasks-from-management'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['tasks-assigned-by-me'], type: 'active' })
-      // Force active queries to refetch immediately
-      qc.refetchQueries({ queryKey: ['tasks'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['project'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['my-tasks'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['analytics-workload'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['analytics-dashboard'], type: 'active' })
     })
 
     // Комментарии, результаты работ и вложения — карточка задачи обновляется
@@ -213,30 +203,23 @@ export function useSocket(authMarker: string | null) {
       // Реальный ключ карточки — ['task-comments', taskId] (TaskDrawer).
       qc.invalidateQueries({ queryKey: ['task-comments'] })
       qc.invalidateQueries({ queryKey: ['task'] })
-      qc.refetchQueries({ queryKey: ['task-comments'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['task'], type: 'active' })
     })
 
     socket.on('task-results:changed', () => {
       qc.invalidateQueries({ queryKey: ['task-results'] })
       qc.invalidateQueries({ queryKey: ['task'] })
-      qc.refetchQueries({ queryKey: ['task-results'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['task'], type: 'active' })
     })
 
     socket.on('files:changed', () => {
       qc.invalidateQueries({ queryKey: ['files'] })
       qc.invalidateQueries({ queryKey: ['files-project'] })
       qc.invalidateQueries({ queryKey: ['task-files'] })
-      qc.refetchQueries({ queryKey: ['files'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['task-files'], type: 'active' })
     })
 
     socket.on('reports:changed', () => {
       qc.invalidateQueries({ queryKey: ['reports'] })
       qc.invalidateQueries({ queryKey: ['my-reports'] })
       qc.invalidateQueries({ queryKey: ['analytics-dashboard'] })
-      qc.refetchQueries({ queryKey: ['reports'], type: 'active' })
     })
 
     // Real-time KPI продаж: бэк броадкастит при любом изменении лида
@@ -253,11 +236,6 @@ export function useSocket(authMarker: string | null) {
       // Встречи клиентов отображаются в Календаре — обновляем и его,
       // чтобы назначенная встреча появилась без F5.
       qc.invalidateQueries({ queryKey: ['calendar'] })
-      qc.refetchQueries({ queryKey: ['sales-kpi'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['kpi-user'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['kpi-all'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['clients'], type: 'active' })
-      qc.refetchQueries({ queryKey: ['calendar'], type: 'active' })
     })
 
     // «Директ». Сервер шлёт события только тем, у кого есть доступ к переписке.
@@ -292,7 +270,6 @@ export function useSocket(authMarker: string | null) {
     // у кого она открыта. Без F5.
     socket.on('dev-tracker:changed', () => {
       qc.invalidateQueries({ queryKey: ['dev-tracker'] })
-      qc.refetchQueries({ queryKey: ['dev-tracker'], type: 'active' })
     })
 
     // Сервер принудительно рвёт сокет при протухшем JWT ('io server

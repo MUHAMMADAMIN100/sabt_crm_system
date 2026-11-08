@@ -17,6 +17,7 @@ import { smmPaymentsApi, type SalesCalPay } from '@/services/api.service'
 import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, PayDot, ownLines, type CellLine } from './OwnTasks'
 import { Ring, Metric } from './DaySummary'
 import SalesKpi from './SalesKpi'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -114,6 +115,13 @@ export default function SalesManagerDashboard() {
   }
 
   const closeDay = () => { setDayOpen(false); setOwnFocus(false) }
+
+  // «Назад» закрывает окно дня и панель задачи (08.11.2026). Ушли из окна
+  // дальше (в проект, в задачу) — при возврате оно снова открыто на том же дне.
+  useHistoryOverlay('day', dayOpen ? dk(sel) : null, v => {
+    if (v) { const d = new Date(`${v}T00:00:00`); setSel(d); setCursor(d); setDayOpen(true) }
+    else { setDayOpen(false); setOwnFocus(false) }
+  })
 
   // Окно дня: Esc закрывает, страница под окном не листается.
   useEffect(() => {

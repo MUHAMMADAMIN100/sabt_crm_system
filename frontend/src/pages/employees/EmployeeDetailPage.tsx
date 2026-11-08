@@ -24,10 +24,13 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import { prepareAvatar } from '@/lib/imageCompress'
+import { useBackTarget } from '@/lib/navMemory'
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // «‹» — на шаг назад, а если открыли по ссылке — в список сотрудников.
+  const back = useBackTarget('/employees', 'Сотрудники')
   const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
@@ -154,7 +157,7 @@ export default function EmployeeDetailPage() {
       {/* В шапке — имя сотрудника: на телефоне карточка с фото ниже KPI,
           и без имени сверху было непонятно, чья это страница. */}
       <div className="flex items-center gap-3">
-        <button type="button" onClick={() => navigate(-1)} aria-label="Назад" className="p-2.5 -ml-1 shrink-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+        <button type="button" onClick={() => back.go()} aria-label={`Назад: ${back.label}`} title={back.label} className="p-2.5 -ml-1 shrink-0 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
           <ArrowLeft size={18} />
         </button>
         <div className="min-w-0">

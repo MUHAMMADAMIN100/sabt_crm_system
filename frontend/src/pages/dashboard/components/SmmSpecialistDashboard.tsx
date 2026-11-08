@@ -14,6 +14,7 @@ import 'react-day-picker/dist/style.css'
 import toast from 'react-hot-toast'
 import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, CellBadge, ownLines, type CellLine } from './OwnTasks'
 import { Ring, Metric } from './DaySummary'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -306,6 +307,14 @@ export default function SmmSpecialistDashboard() {
   // Закрываем оба слоя разом: панель задачи открыта поверх окна дня и без
   // него остаётся висеть без списка, из которого её открыли.
   const closeDay = () => { setDayOpen(false); setOpenId(null); setOwnFocus(false) }
+
+  // «Назад» закрывает окно дня и панель задачи (08.11.2026). Ушли из окна
+  // дальше (в проект, в задачу) — при возврате оно снова открыто на том же дне.
+  useHistoryOverlay('day', dayOpen ? dk(sel) : null, v => {
+    if (v) { const d = new Date(`${v}T00:00:00`); setSel(d); setCursor(d); setDayOpen(true) }
+    else { setDayOpen(false); setOwnFocus(false) }
+  })
+  useHistoryOverlay('task', openId, v => setOpenId(v))
 
   // Кнопка создания в нижней панели ведёт сюда с ?day=today: открываем
   // сегодняшний день сразу, чтобы отметить сторис в одно касание. Следим за

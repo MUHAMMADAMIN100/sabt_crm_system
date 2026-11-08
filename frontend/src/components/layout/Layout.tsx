@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
@@ -9,6 +9,7 @@ import KpiCelebrationWatcher from '@/hooks/useKpiCelebrationWatcher'
 import StampCelebration from '@/components/tasks/StampCelebration'
 import { authApi } from '@/services/api.service'
 import clsx from 'clsx'
+import { useScrollMemory } from '@/lib/navMemory'
 
 /** Брендированный «пульсирующий S» лоадер при переходе между route'ами.
  *  Layout (Sidebar + Header) остаётся смонтированным — sidebar не «мигает»
@@ -86,6 +87,9 @@ export default function Layout() {
   }, [])
   useSocket(authenticated ? 'cookie' : null)
   useSessionHeartbeat(authenticated ? 'cookie' : null)
+  // «Назад» на шаг (08.11.2026): прокрутка и «вы были здесь» для каждого шага.
+  const mainRef = useRef<HTMLElement>(null)
+  const navType = useScrollMemory(mainRef)
 
   // Auto-close sidebar on mobile/tablet navigation
   useEffect(() => {
@@ -128,7 +132,7 @@ export default function Layout() {
         {/* На телефоне навигация снизу: три раздела, «Ещё» и кнопка создания.
             Кнопка-гамбургер в углу больше не нужна. */}
         {!directChatOpen && <BottomNav />}
-        <main className={clsx(
+        <main ref={mainRef} className={clsx(
           'flex-1',
           directRoute
             ? clsx('min-h-0 overflow-hidden', !directChatOpen && 'pb-24 lg:pb-0')
@@ -139,7 +143,9 @@ export default function Layout() {
           <div
             key={location.pathname}
             className={clsx(
-              directRoute ? 'h-full' : 'max-w-screen-2xl mx-auto animate-page-in',
+              // При «Назад» страница встаёт сразу, без проявления: возврат
+              // не должен выглядеть как новая загрузка.
+              directRoute ? 'h-full' : clsx('max-w-screen-2xl mx-auto', navType !== 'POP' && 'animate-page-in'),
               financeRoute && 'finance-workspace-inner w-full min-w-0',
             )}
           >

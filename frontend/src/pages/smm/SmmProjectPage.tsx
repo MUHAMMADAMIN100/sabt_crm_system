@@ -13,6 +13,7 @@ import { assignProjectColors, projColor, cycleBoundsFor, fmtCycleRange, type Smm
 import SmmPage from './SmmPage'
 import ClientPaymentRow from './ClientPaymentRow'
 import ClientAccountCard from './ClientAccountCard'
+import { BackLink } from '@/lib/navMemory'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -243,7 +244,7 @@ export default function SmmProjectPage() {
   // активного списка и календаря SMM, история сохраняется, можно вернуть из «Архива»).
   const archiveMut = useMutation({
     mutationFn: () => projectsApi.archive(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate('/smm/projects') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-calendar'] }); qc.invalidateQueries({ queryKey: ['smm-archived'] }); toast.success('Сотрудничество завершено — проект в архиве'); navigate('/smm/projects', { replace: true }) },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Не удалось завершить'),
   })
 
@@ -424,7 +425,7 @@ export default function SmmProjectPage() {
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-gray-400" /></div>
   if (!info || !p) return (
     <div className="space-y-4">
-      <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+      <BackLink fallback="/smm/projects" fallbackLabel="Проекты" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700" icon={<ChevronLeft size={16} />} />
       <p className="text-gray-400">Проект не найден.</p>
     </div>
   )
@@ -490,7 +491,7 @@ export default function SmmProjectPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link to="/smm/projects" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ChevronLeft size={16} /> Проекты</Link>
+        <BackLink fallback="/smm/projects" fallbackLabel="Проекты" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700" icon={<ChevronLeft size={16} />} />
         <div className="flex items-center gap-2">
           <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
           {canRename && (

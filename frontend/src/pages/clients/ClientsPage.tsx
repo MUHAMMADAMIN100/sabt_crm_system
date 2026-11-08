@@ -27,6 +27,7 @@ function formatLastActivity(iso?: string | null): { text: string; title: string 
   return { text, title }
 }
 import clsx from 'clsx'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 // Канбан-доска онбординга — отрисовывается прямо здесь при переключении
 // view-mode. Lazy, чтобы не тянуть в bundle когда юзер не открывает kanban.
@@ -198,6 +199,13 @@ export default function ClientsPage() {
     : (leads || [])
   const callRequestedCount = (leads || []).filter((l: any) => l.callRequested).length
 
+  // «Назад» на телефоне закрывает карточку клиента, а не страницу (08.11.2026).
+  useHistoryOverlay('client', editLead?.id ? String(editLead.id) : null, v => {
+    if (!v) { setEditLead(null); setShowCreate(false); return }
+    const list: any[] = Array.isArray(leads) ? leads : ((leads as any)?.items ?? [])
+    const found = list.find((l: any) => String(l.id) === v)
+    if (found) setEditLead(found)
+  })
   const { data: stats } = useQuery({
     queryKey: ['clients-stats'],
     queryFn: clientsApi.stats,

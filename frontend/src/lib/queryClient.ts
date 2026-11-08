@@ -17,7 +17,7 @@ export const queryClient = new QueryClient({
       // Real-time актуальность обеспечивает WebSocket: useSocket точечно
       // инвалидирует нужные queryKey при изменениях на сервере.
       staleTime: 60 * 1000,
-      gcTime: 10 * 60 * 1000,         // 10 мин держим в кеше
+      gcTime: 60 * 60 * 1000,         // 60 мин держим в кеше (08.11.2026, было 10 — через 10 мин раздел грузился заново)
       refetchOnWindowFocus: false,    // не дёргать сеть при каждом alt-tab
       refetchOnMount: true,           // но при первом монтировании — берём из кеша если свежо
       refetchOnReconnect: true,

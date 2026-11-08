@@ -28,6 +28,7 @@ import clsx from 'clsx'
 import { STATUS_LABELS as TASK_STATUS_LABELS } from '@/lib/taskStatus'
 import ClientAccessCard from '@/components/projects/ClientAccessCard'
 import { userCan } from '@/lib/permissions'
+import { useBackTarget } from '@/lib/navMemory'
 
 // Wave 11: 4-статусная модель — канбан имеет 4 колонки = 4 статуса.
 // Маппер STATUS_TO_COLUMN остаётся для безопасной обработки старых
@@ -50,6 +51,8 @@ const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}$
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // «‹» — на шаг назад; открыли из уведомления в новой вкладке — на «Панель».
+  const back = useBackTarget('/', 'Панель')
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'about' | 'client' | 'members' | 'activity'>('overview')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
@@ -409,7 +412,7 @@ export default function ProjectDetailPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
+        <button onClick={() => back.go()} aria-label={`Назад: ${back.label}`} title={back.label} className="p-2 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-xl text-surface-600 dark:text-surface-400">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">

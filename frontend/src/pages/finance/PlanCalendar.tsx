@@ -13,6 +13,7 @@ import { moneyBare, money, todayISO, pluralRu } from './finlib';
 import CalendarItemModal from './CalendarItemModal';
 import { FinModal } from './FinKit';
 import './finance.css';
+import { useHistoryOverlay } from '@/lib/navMemory';
 
 type Status = 'done' | 'wait' | 'late' | 'note';
 type Filter = 'all' | 'income' | 'expense' | 'open';
@@ -78,6 +79,12 @@ export default function PlanCalendar({ ym, txns, lateOther = [], renderStatusCon
   const narrow = useNarrow();
   const [detail, setDetail] = useState<any>(null);
   const [sheetIso, setSheetIso] = useState<string | null>(null);
+  // «Назад» закрывает шторку дня и карточку операции (08.11.2026); ушли из
+  // карточки дальше («Открыть долги») — при возврате она снова открыта.
+  useHistoryOverlay('pln-day', sheetIso, (v) => setSheetIso(v));
+  useHistoryOverlay('pln-op', detail ? String(detail.id) : null, (v) => {
+    setDetail(v ? ([...txns, ...lateOther].find((t) => String(t.id) === v) ?? null) : null);
+  });
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<Filter>('all');
   const [dragId, setDragId] = useState<string | null>(null);

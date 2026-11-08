@@ -1162,3 +1162,12 @@ aside {
 .app-shell.direct-shell {
   height: 100dvh;
 }
+
+/* «Вы были здесь» (08.11.2026): вернулись «Назад» из карточки — строка, из
+   которой ушли, на секунду подсвечивается. */
+.nav-was-here { animation: navWasHere 1.5s ease-out; }
+@keyframes navWasHere {
+  0%, 35% { background-color: rgb(var(--prim-500) / 0.16); box-shadow: inset 3px 0 0 rgb(var(--prim-500)); }
+  100%    { background-color: transparent; box-shadow: inset 3px 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .nav-was-here { animation: none; outline: 2px solid rgb(var(--prim-500) / 0.5); } }

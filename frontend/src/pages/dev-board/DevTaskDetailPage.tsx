@@ -28,6 +28,7 @@ import {
   type DevTaskDetail, type BoardUser,
 } from './devBoardTypes'
 import { boardUrl, taskUrl, projectUrl } from '@/pages/dev/devLinks'
+import { BackLink } from '@/lib/navMemory'
 
 /**
  * Детальная карточка задачи «Доски разработки» в духе страницы базы данных
@@ -671,7 +672,8 @@ export default function DevTaskDetailPage() {
       qc.removeQueries({ queryKey: detailKey })
       qc.invalidateQueries({ queryKey: LIST_KEY })
       toast.success('Задача удалена')
-      navigate(boardUrl())
+      // Заменяем шаг: «Назад» не должен вести в удалённую задачу.
+      navigate(boardUrl(), { replace: true })
     },
     onError: (e: any) => {
       const s = e?.response?.status
@@ -757,9 +759,7 @@ export default function DevTaskDetailPage() {
                 Повторить
               </button>
             )}
-            <Link to={boardUrl()} className="btn-secondary inline-flex items-center gap-1.5">
-              <ArrowLeft size={15} /> Назад к доске
-            </Link>
+            <BackLink fallback={boardUrl()} fallbackLabel="Доска" className="btn-secondary inline-flex items-center gap-1.5" icon={<ArrowLeft size={15} />} />
           </div>
         }
       />
@@ -908,12 +908,8 @@ export default function DevTaskDetailPage() {
     <div className="dev-board-root max-w-3xl min-w-0 w-full dev-view-enter">
       {/* Шапка: назад + клонирование + удаление */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-5">
-        <Link
-          to={boardUrl()}
-          className="inline-flex items-center gap-1.5 min-h-[40px] text-sm text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200"
-        >
-          <ArrowLeft size={16} /> Назад к доске
-        </Link>
+        <BackLink fallback={boardUrl()} fallbackLabel="Доска" icon={<ArrowLeft size={16} />}
+          className="inline-flex items-center gap-1.5 min-h-[40px] text-sm text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200" />
         <div className="flex-1" />
         {canManage && (
           <div ref={cloneRef} className="relative">

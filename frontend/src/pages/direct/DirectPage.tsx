@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bell, BellOff, MessageCircle, Settings2 } from 'lucide-react'
@@ -26,6 +26,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  */
 export default function DirectPage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const selected = params.get('c')
   const role = useAuthStore(s => s.user?.role)
   const isTop = role === 'admin' || role === 'founder'
@@ -58,14 +59,32 @@ export default function DirectPage() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [showConnection])
 
+  // Чат, открытый из списка, — шаг «Назад» (08.11.2026). Переход из чата в
+  // другой чат шагов не копит, а «‹» в чате снимает свой шаг, а не добавляет
+  // новый: раньше на телефоне «‹», а потом системный «Назад» снова открывали чат.
+  const chatPushed = useRef(false)
   const go = (next: { c?: string | null; tab?: Tab; m?: string | null }) => {
+    if (next.c === null && next.tab === undefined && next.m === undefined && chatPushed.current) {
+      chatPushed.current = false
+      navigate(-1)
+      return
+    }
     const p = new URLSearchParams(params)
     if (next.tab !== undefined) { if (next.tab === 'analytics') p.set('tab', 'analytics'); else p.delete('tab') }
     if (next.c !== undefined) { if (next.c) p.set('c', next.c); else p.delete('c') }
     if (next.m !== undefined) { if (next.m) p.set('m', next.m); else p.delete('m') }
-    // Открыть чат или менеджера из «Аналитики» — шаг, на который можно вернуться «Назад».
-    setParams(p, { replace: next.c === undefined && next.m === undefined })
+    // Открыть чат из списка или менеджера из «Аналитики» — шаг «Назад»;
+    // другой чат при открытом — замена.
+    // На компьютере список и чат видны рядом — открыть чат не шаг; на
+    // телефоне чат закрывает список — шаг.
+    const phone = typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+    const openingChat = !!next.c && !selected && phone
+    const step = openingChat || next.m !== undefined
+    if (openingChat && next.tab === undefined && next.m === undefined) chatPushed.current = true
+    setParams(p, { replace: !step })
   }
+  // Ушли со «шага чата» системным «Назад» — шаг уже снят.
+  useEffect(() => { if (!selected) chatPushed.current = false }, [selected])
 
   const toggleSound = () => {
     const next = !sound

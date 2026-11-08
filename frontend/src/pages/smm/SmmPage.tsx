@@ -15,6 +15,7 @@ import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { isSmmViewOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
+import { useHistoryOverlay } from '@/lib/navMemory'
 
 export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -2214,6 +2215,9 @@ function MobilePlanner({
   }, [monthStr, today])
 
   const [sheet, setSheet] = useState<'none' | 'backlog' | 'filter'>('none')
+  // «Назад» на телефоне закрывает шторки «Не запланировано» и «Фильтр»
+  // (08.11.2026), а не уводит из календаря.
+  useHistoryOverlay('smm-sheet', sheet === 'none' ? null : sheet, v => setSheet(v === 'backlog' || v === 'filter' ? v : 'none'))
   const [backlogProj, setBacklogProj] = useState<string | null>(null)
   // Режим переноса: выбранная карточка ждёт, на какой день её поставить.
   const [moving, setMoving] = useState<Ev | null>(null)
