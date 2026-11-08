@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { projectsApi, storiesApi } from '@/services/api.service'
+import { useSocketConnected } from '@/lib/socketState'
 import { StatCard } from '@/components/ui'
 import StoryCalendar from '@/components/stories/StoryCalendar'
 import { Image as ImageIcon, CheckCircle2, ListChecks, CalendarDays } from 'lucide-react'
@@ -23,10 +24,13 @@ export default function StorymakerDashboard() {
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
+  // Опрос — только пока нет связи с сервером (08.11.2026): при живом сокете
+  // отметки приносит событие stories:changed.
+  const live = useSocketConnected()
   const { data: todayStories } = useQuery({
     queryKey: ['stories', 'all', today, today],
     queryFn: () => storiesApi.all(today, today),
-    refetchInterval: 30000,
+    refetchInterval: live ? false : 30_000,
   })
   const { data: monthStories } = useQuery({
     queryKey: ['stories', 'all', monthStart, today],

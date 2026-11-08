@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { assignProjectColors, projColor, type SmmProj } from './smmShared'
 import SmmProjectCreateModal from './SmmProjectCreateModal'
 import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
+import { useUrlState } from '@/lib/urlState'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 import SmmManagerBoard from './SmmManagerBoard'
 
@@ -43,12 +44,16 @@ export default function SmmProjectsPage() {
   const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
-  const [tab, setTab] = useState<'active' | 'archived'>('active')
+  // Вкладка и вид — в адресе с заменой шага (08.11.2026): вернулись «Назад»
+  // из проекта — открыто то же, что было.
+  const [tab, setTab] = useUrlState('tab', 'active', ['active', 'archived'] as const)
   // Вид: сетка проектов ↔ схема SMM-специалистов ↔ схема менеджеров (плавно,
   // без перехода). Вкладки вместо одной кнопки «Схема» — вариант А, 10.10.2026.
-  const [view, setView] = useState<'grid' | 'schema' | 'managers'>('grid')
-  const [schemaSeen, setSchemaSeen] = useState(false)
-  const [managersSeen, setManagersSeen] = useState(false)
+  // Без права на схемы старая ссылка со схемой открывает сетку.
+  const [urlView, setView] = useUrlState('view', 'grid', ['grid', 'schema', 'managers'] as const)
+  const view = canSeeLoad ? urlView : 'grid'
+  const [schemaSeen, setSchemaSeen] = useState(view === 'schema')
+  const [managersSeen, setManagersSeen] = useState(view === 'managers')
   const pickView = (v: 'grid' | 'schema' | 'managers') => {
     setView(v)
     if (v === 'schema') setSchemaSeen(true)

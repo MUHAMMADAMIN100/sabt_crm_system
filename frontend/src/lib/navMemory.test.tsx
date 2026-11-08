@@ -168,4 +168,17 @@ describe('«Назад» — ровно на шаг', () => {
     await back()
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'day' })).toBeNull())
   })
+
+  it('сменили месяц при открытом окне, закрыли окно — месяц не откатывается', async () => {
+    window.history.replaceState(null, '', '/nested')
+    render(<App />)
+    fireEvent.click(screen.getByText('день'))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'day' })).toBeTruthy())
+    fireEvent.click(screen.getByText('декабрь'))
+    await waitFor(() => expect(window.location.search).toBe('?ym=2026-12'))
+    fireEvent.click(screen.getByText('закрыть всё'))
+    await act(async () => { await new Promise(r => setTimeout(r, 150)) })
+    expect(screen.queryByRole('dialog', { name: 'day' })).toBeNull()
+    await waitFor(() => expect(window.location.search).toBe('?ym=2026-12'))
+  })
 })

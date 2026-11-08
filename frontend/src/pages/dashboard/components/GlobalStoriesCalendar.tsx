@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { analyticsApi, projectsApi } from '@/services/api.service'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isAfter } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -29,10 +29,21 @@ export default function GlobalStoriesCalendar() {
   const from = format(startOfMonth(current), 'yyyy-MM-dd')
   const to = format(endOfMonth(current), 'yyyy-MM-dd')
 
-  const { data: storiesData, isLoading } = useQuery({
+  // Смена месяца (08.11.2026): сетка проектов остаётся на месте, пока грузится
+  // новый месяц, — вместо «Загрузка...» на весь блок. Клетки до ответа серые:
+  // отметок нового месяца ещё нет, красным «не сделано» их красить нельзя.
+  const qc = useQueryClient()
+  const { data: storiesData, isLoading, isPlaceholderData: stale } = useQuery({
     queryKey: ['stories-global', from, to],
     queryFn: () => analyticsApi.storiesGlobal(from, to),
+    placeholderData: keepPreviousData,
   })
+  // Наведение на стрелку — соседний месяц грузим заранее: к нажатию он готов.
+  const prefetchMonth = (delta: number) => {
+    const c = new Date(current.getFullYear(), current.getMonth() + delta)
+    const f = format(startOfMonth(c), 'yyyy-MM-dd'), t = format(endOfMonth(c), 'yyyy-MM-dd')
+    qc.prefetchQuery({ queryKey: ['stories-global', f, t], queryFn: () => analyticsApi.storiesGlobal(f, t) })
+  }
 
   const { data: allProjects } = useQuery({
     queryKey: ['projects'],
@@ -75,6 +86,7 @@ export default function GlobalStoriesCalendar() {
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() - 1))}
+              onPointerEnter={() => prefetchMonth(-1)} onFocus={() => prefetchMonth(-1)}
               className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
             >
               <ChevronLeft size={16} />
@@ -84,6 +96,7 @@ export default function GlobalStoriesCalendar() {
             </span>
             <button
               onClick={() => setCurrent(d => new Date(d.getFullYear(), d.getMonth() + 1))}
+              onPointerEnter={() => prefetchMonth(1)} onFocus={() => prefetchMonth(1)}
               className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-700 rounded-lg text-surface-500"
             >
               <ChevronRight size={16} />
@@ -98,7 +111,7 @@ export default function GlobalStoriesCalendar() {
       ) : projects.length === 0 ? (
         <p className="text-sm text-surface-400 text-center py-8">Нет активных SMM-проектов</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className={clsx('grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
           {projects.map((p: any) => {
             const target = storiesDailyTarget(p, current) // месячная норма / дни выбранного месяца
             const projectMap = map[p.id] || {}
@@ -137,7 +150,7 @@ export default function GlobalStoriesCalendar() {
                     }
                     let bg = 'bg-surface-100 dark:bg-surface-700/40'
                     let textColor = 'text-surface-400 dark:text-surface-500'
-                    if (future) {
+                    if (future || stale) {
                       bg = 'bg-surface-50 dark:bg-surface-800/50'
                     } else if (count >= target) {
                       bg = 'bg-green-500'

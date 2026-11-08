@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, isSameDay, startOfWeek } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Send } from 'lucide-react'
@@ -14,11 +14,20 @@ export default function ProducerDashboard() {
   const from = format(weekStart, 'yyyy-MM-dd')
   const to = format(addDays(weekStart, 6), 'yyyy-MM-dd')
 
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['producer-shoots', from, to],
     queryFn: () => producerApi.shoots(from, to),
   })
   const items: ProducerShoot[] = data?.items || []
+  // Смена недели (08.11.2026): прошлую неделю на экране не держим — её съёмки
+  // в дни новой недели всё равно не попадут, и вышло бы ложное «Съёмок нет».
+  // Вместо этого соседнюю неделю грузим заранее, при наведении на стрелку.
+  const prefetchWeek = (n: number) => {
+    const ws = addWeeks(weekStart, n)
+    const f = format(ws, 'yyyy-MM-dd'), t = format(addDays(ws, 6), 'yyyy-MM-dd')
+    qc.prefetchQuery({ queryKey: ['producer-shoots', f, t], queryFn: () => producerApi.shoots(f, t) })
+  }
 
   // Неделя у нас пн–сб; воскресенье показываем, только если в него съёмка.
   const days = useMemo(() => {
@@ -41,11 +50,13 @@ export default function ProducerDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <button type="button" aria-label="Прошлая неделя" onClick={() => setWeekStart(w => addWeeks(w, -1))}
+            onPointerEnter={() => prefetchWeek(-1)} onFocus={() => prefetchWeek(-1)}
             className="w-10 h-10 grid place-items-center rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700">
             <ChevronLeft size={16} />
           </button>
           <span className="min-w-[150px] text-center text-sm font-semibold text-surface-900 dark:text-surface-50">{range}</span>
           <button type="button" aria-label="Следующая неделя" onClick={() => setWeekStart(w => addWeeks(w, 1))}
+            onPointerEnter={() => prefetchWeek(1)} onFocus={() => prefetchWeek(1)}
             className="w-10 h-10 grid place-items-center rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 hover:bg-surface-50 dark:hover:bg-surface-700">
             <ChevronRight size={16} />
           </button>

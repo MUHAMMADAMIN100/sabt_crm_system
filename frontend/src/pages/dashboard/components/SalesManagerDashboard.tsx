@@ -7,7 +7,7 @@
 // Ниже — KPI звонков и встреч (владелец оставил его на виду).
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Info, Plus, Wallet, X } from 'lucide-react'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, format, getDay, isSameDay, isToday, startOfMonth } from 'date-fns'
@@ -77,11 +77,21 @@ export default function SalesManagerDashboard() {
   }
 
   // Деньги месяца; просроченные сервер отдаёт всегда — для «Просрочено».
-  const { data: cal } = useQuery({
+  // Смена месяца не обнуляет экран (08.11.2026): пока грузится новый, держим
+  // прошлый, а календарь и цифры месяца бледнеют.
+  const qc = useQueryClient()
+  const { data: cal, isPlaceholderData: stale } = useQuery({
     queryKey: ['sales-pay-calendar', from, to],
     queryFn: () => smmPaymentsApi.calendar(from, to),
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
+  // Наведение на стрелку — соседний месяц грузим заранее: к нажатию он готов.
+  const prefetchMonth = (delta: number) => {
+    const c = addMonths(cursor, delta)
+    const f = dk(startOfMonth(c)), t = dk(endOfMonth(c))
+    qc.prefetchQuery({ queryKey: ['sales-pay-calendar', f, t], queryFn: () => smmPaymentsApi.calendar(f, t), staleTime: 60_000 })
+  }
   const items = cal?.items || []
 
   const payByDay = useMemo(() => {
@@ -168,7 +178,7 @@ export default function SalesManagerDashboard() {
     <div className="space-y-4">
       {/* Сводка дня — шапка как у СММ: слева кольцо и день, справа цифры.
           На телефоне цифры уходят вниз во всю ширину. */}
-      <div className="card">
+      <div className={clsx('card transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-4 min-w-0 flex-1">
             <Ring done={dayDone} total={dayTotal} unit="дел" />
@@ -200,16 +210,18 @@ export default function SalesManagerDashboard() {
         {/* На телефоне месяц со стрелками — слева: по центру правая стрелка
             уходила под кнопку «+» (320 px). */}
         <div className="relative flex items-center justify-start sm:justify-center gap-2 sm:gap-4 mb-3">
-          <button type="button" onClick={() => goMonth(-1)} title="Прошлый месяц" aria-label="Прошлый месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
+          <button type="button" onClick={() => goMonth(-1)} onPointerEnter={() => prefetchMonth(-1)} onFocus={() => prefetchMonth(-1)} title="Прошлый месяц" aria-label="Прошлый месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
           <b className="text-sm font-bold capitalize min-w-[110px] sm:min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
-          <button type="button" onClick={() => goMonth(1)} title="Следующий месяц" aria-label="Следующий месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
+          <button type="button" onClick={() => goMonth(1)} onPointerEnter={() => prefetchMonth(1)} onFocus={() => prefetchMonth(1)} title="Следующий месяц" aria-label="Следующий месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
           {/* Своя задача на сегодня — в одно нажатие, не открывая день вручную. */}
           <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня" aria-label="Своя задача на сегодня"
             className="absolute right-0 top-0 h-9 sm:h-8 min-w-[36px] justify-center px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        {/* Оплаты здесь только смотрят (отмечают в «Финансах»), поэтому
+            пока грузится месяц, хватает бледности — нажатия не запрещаем. */}
+        <div className={clsx('grid grid-cols-7 gap-1.5 transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {

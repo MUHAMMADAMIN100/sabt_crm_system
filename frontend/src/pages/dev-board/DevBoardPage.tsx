@@ -30,6 +30,7 @@ import {
   type DevSprint, type DevWebhook, type DevWebhookDelivery, type BoardUser,
 } from './devBoardTypes'
 import { taskUrl, projectUrl } from '@/pages/dev/devLinks'
+import { useUrlFlag, useUrlNumber, useUrlState, usePatchUrl } from '@/lib/urlState'
 
 /**
  * «Доска разработки» — канбан задач команды разработки (Jira/Notion-стиль).
@@ -44,6 +45,7 @@ const LIST_KEY = ['dev-tracker', 'list'] as const
 type GroupBy = 'status' | 'priority' | 'assignee'
 type SortKey = 'title' | 'deadline' | 'priority' | null
 type BoardView = 'board' | 'table' | 'calendar' | 'timeline'
+const BOARD_VIEWS: readonly BoardView[] = ['board', 'table', 'calendar', 'timeline']
 
 /** WIP-лимиты колонок (только UI, localStorage 'dev-board-wip'). */
 const WIP_KEY = 'dev-board-wip'
@@ -1064,7 +1066,9 @@ function WeekAgenda({ byDay, onOpen, onCreateAt, canCreate, className = 'md:hidd
    *  повестку и на десктопе в режиме «Неделя» — тогда передаём 'hidden md:block'). */
   className?: string
 }) {
-  const [weekOffset, setWeekOffset] = useState(0)
+  // Неделя — в адресе (?cw=, с заменой шага, 08.11.2026): вернулись из задачи —
+  // та же неделя. Повестка на телефоне и на компьютере — одна и та же неделя.
+  const [weekOffset, setWeekOffset] = useUrlNumber('cw', 0)
   const [expandedDay, setExpandedDay] = useState<string | null>(null)
 
   const days = useMemo(() => {
@@ -1096,7 +1100,7 @@ function WeekAgenda({ byDay, onOpen, onCreateAt, canCreate, className = 'md:hidd
   return (
     <div className={clsx('card min-h-0 flex-1', className)}>
       <div className="flex items-center gap-1 mb-2">
-        <button className={navBtn} onClick={() => setWeekOffset(o => o - 1)} title="Предыдущая неделя" aria-label="Предыдущая неделя">
+        <button className={navBtn} onClick={() => setWeekOffset(weekOffset - 1)} title="Предыдущая неделя" aria-label="Предыдущая неделя">
           <ChevronLeft size={18} />
         </button>
         <span className="flex-1 text-center text-sm font-semibold text-surface-800 dark:text-surface-200 capitalize">
@@ -1108,7 +1112,7 @@ function WeekAgenda({ byDay, onOpen, onCreateAt, canCreate, className = 'md:hidd
         >
           Сегодня
         </button>
-        <button className={navBtn} onClick={() => setWeekOffset(o => o + 1)} title="Следующая неделя" aria-label="Следующая неделя">
+        <button className={navBtn} onClick={() => setWeekOffset(weekOffset + 1)} title="Следующая неделя" aria-label="Следующая неделя">
           <ChevronRight size={18} />
         </button>
       </div>
@@ -1226,7 +1230,8 @@ function MonthCalendar({ tasks, onOpen, onCreateAt, canCreate, onDeadDrop }: {
   /** DnD пилюли задачи на дату: страница сохраняет через updateField (canManage-guard внутри). */
   onDeadDrop?: (id: string, dateISO: string) => void
 }) {
-  const [monthOffset, setMonthOffset] = useState(0)
+  // Месяц — в адресе (?cm=, с заменой шага, 08.11.2026).
+  const [monthOffset, setMonthOffset] = useUrlNumber('cm', 0)
   const today = new Date()
   const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
 
@@ -1317,14 +1322,14 @@ function MonthCalendar({ tasks, onOpen, onCreateAt, canCreate, onDeadDrop }: {
             </button>
           ))}
         </div>
-        <button className={navBtn} onClick={() => setMonthOffset(o => o - 1)} title="Предыдущий месяц" aria-label="Предыдущий месяц"><ChevronLeft size={16} /></button>
+        <button className={navBtn} onClick={() => setMonthOffset(monthOffset - 1)} title="Предыдущий месяц" aria-label="Предыдущий месяц"><ChevronLeft size={16} /></button>
         <button
           className="text-xs px-2 py-1 rounded-md text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
           onClick={() => setMonthOffset(0)}
         >
           Сегодня
         </button>
-        <button className={navBtn} onClick={() => setMonthOffset(o => o + 1)} title="Следующий месяц" aria-label="Следующий месяц"><ChevronRight size={16} /></button>
+        <button className={navBtn} onClick={() => setMonthOffset(monthOffset + 1)} title="Следующий месяц" aria-label="Следующий месяц"><ChevronRight size={16} /></button>
       </div>
 
       {calMode === 'week' ? (
@@ -1796,9 +1801,10 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
   }
 
   // Смещение недель в режиме «Неделя» (0 — текущая Пн–Вс).
-  const [weekOffset, setWeekOffset] = useState(0)
+  // Оба смещения — в адресе (?tw=, ?tm=, с заменой шага, 08.11.2026).
+  const [weekOffset, setWeekOffset] = useUrlNumber('tw', 0)
   // Смещение месяцев в режиме «Месяц» (0 — текущий, строго 1..последнее число).
-  const [monthOffset, setMonthOffset] = useState(0)
+  const [monthOffset, setMonthOffset] = useUrlNumber('tm', 0)
 
   // Диапазон дней: неделя — строго Пн–Вс (со смещением стрелками);
   // месяц — строго с 1-го по последнее число текущего месяца
@@ -1960,7 +1966,7 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
           <div className="inline-flex items-center gap-0.5" role="group" aria-label="Листание недель">
             <button
               type="button"
-              onClick={() => setWeekOffset(o => o - 1)}
+              onClick={() => setWeekOffset(weekOffset - 1)}
               aria-label="Предыдущая неделя"
               title="Предыдущая неделя"
               className="p-1.5 rounded-md text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
@@ -1978,7 +1984,7 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
             )}
             <button
               type="button"
-              onClick={() => setWeekOffset(o => o + 1)}
+              onClick={() => setWeekOffset(weekOffset + 1)}
               aria-label="Следующая неделя"
               title="Следующая неделя"
               className="p-1.5 rounded-md text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
@@ -1991,7 +1997,7 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
           <div className="inline-flex items-center gap-0.5" role="group" aria-label="Листание месяцев">
             <button
               type="button"
-              onClick={() => setMonthOffset(o => o - 1)}
+              onClick={() => setMonthOffset(monthOffset - 1)}
               aria-label="Предыдущий месяц"
               title="Предыдущий месяц"
               className="p-1.5 rounded-md text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
@@ -2009,7 +2015,7 @@ function TimelineView({ tasks, users, groupBy, onOpen, onDatesChange, canManage 
             )}
             <button
               type="button"
-              onClick={() => setMonthOffset(o => o + 1)}
+              onClick={() => setMonthOffset(monthOffset + 1)}
               aria-label="Следующий месяц"
               title="Следующий месяц"
               className="p-1.5 rounded-md text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
@@ -2499,12 +2505,15 @@ export default function DevBoardPage() {
   const canManage = userCan(user, 'dev-tracker.manage')
 
   // Вид (доска/таблица/календарь/таймлайн) — сохраняется между визитами.
-  const [view, setView] = useState<BoardView>(() => {
+  // С 08.11.2026 ещё и в адресе (?view=, с заменой шага), localStorage —
+  // запасной вариант, когда доску открыли из меню.
+  const [viewDefault] = useState<BoardView>(() => {
     try {
       const v = localStorage.getItem('dev-board-view')
       return v === 'table' || v === 'calendar' || v === 'timeline' || v === 'board' ? (v as BoardView) : 'board'
     } catch { return 'board' }
   })
+  const [view, setView] = useUrlState<BoardView>('view', viewDefault, BOARD_VIEWS)
   const pageRef = useRef<HTMLDivElement>(null)
   const changeView = (v: BoardView) => {
     setView(v)
@@ -2515,22 +2524,31 @@ export default function DevBoardPage() {
     pageRef.current?.closest('main')?.scrollTo({ top: 0 })
   }
 
-  const [assigneeFilter, setAssigneeFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState<'' | DevTaskPriority>('')
+  // Фильтры доски живут в адресе (08.11.2026, с заменой шага — шагов «Назад»
+  // не прибавляют): вернулись из задачи — те же фильтры и группировка.
+  // Раньше так был устроен только ?project=; теперь все читаются прямо из
+  // адреса, без копии в состоянии и встречной синхронизации.
+  const patchUrl = usePatchUrl()
+  const [assigneeFilter, setAssigneeFilter] = useUrlState<string>('assignee', '')
+  const [priorityFilter, setPriorityFilter] = useUrlState<'' | DevTaskPriority>(
+    'priority', '', ['', ...(Object.keys(DEV_PRIORITY_LABELS) as DevTaskPriority[])],
+  )
   // Фильтр по тегам (ANY-совпадение): клик по тегу toggles, дублирует
-  // серверный ?tags= клиентским условием в `filtered`.
-  const [tagFilter, setTagFilter] = useState<string[]>([])
+  // серверный ?tags= клиентским условием в `filtered`. В адресе — ?tags=a,b.
+  const [tagsParam, setTagsParam] = useUrlState<string>('tags', '')
+  const tagFilter = useMemo(() => tagsParam.split(',').filter(Boolean), [tagsParam])
+  const setTagFilter = (next: string[]) => setTagsParam(next.join(','))
   const toggleTag = (tag: string) => {
-    setTagFilter(prev => (prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]))
+    setTagFilter(tagFilter.includes(tag) ? tagFilter.filter(t => t !== tag) : [...tagFilter, tag])
   }
   // Фильтр по проекту «Разработка»: '' — все, 'none' — без проекта, иначе id.
   // Пришёл из ссылки вида /dev-board?project=<id> (кнопка со страницы проекта).
   const [searchParams, setSearchParams] = useSearchParams()
-  const [projectFilter, setProjectFilter] = useState<string>(() => searchParams.get('project') || '')
-  const [onlyMine, setOnlyMine] = useState(false)
-  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [projectFilter, setProjectFilter] = useUrlState<string>('project', '')
+  const [onlyMine, setOnlyMine] = useUrlFlag('mine')
+  const [overdueOnly, setOverdueOnly] = useUrlFlag('overdue')
   // Только блокеры: серверный ?blocked=true в queryFn + клиентская страховка.
-  const [blockedOnly, setBlockedOnly] = useState(false)
+  const [blockedOnly, setBlockedOnly] = useUrlFlag('blocked')
   // Спринт: '' — все, 'none' — без спринта, иначе id (серверный ?sprint=).
   const [sprintFilter, setSprintFilter] = useState('')
   // Mobile: панель фильтров свернута по умолчанию (раскрывается кнопкой).
@@ -2546,36 +2564,13 @@ export default function DevBoardPage() {
     (blockedOnly ? 1 : 0) +
     (tagFilter.length ? 1 : 0)
   const clearFilters = () => {
-    setAssigneeFilter('')
-    setPriorityFilter('')
-    setProjectFilter('')
+    // Все ключи — одной заменой адреса: отдельные вызовы затёрли бы друг друга.
+    patchUrl({ assignee: null, priority: null, project: null, tags: null, mine: null, overdue: null, blocked: null })
     setSprintFilter('')
-    setOnlyMine(false)
-    setOverdueOnly(false)
-    setBlockedOnly(false)
-    setTagFilter([])
   }
-  const [groupBy, setGroupBy] = useState<GroupBy>('status')
+  const [groupBy, setGroupBy] = useUrlState<GroupBy>('group', 'status', ['status', 'priority', 'assignee'])
   // WIP-лимиты колонок — только UI (localStorage 'dev-board-wip').
   const [wipLimits] = useState(loadWip)
-
-  // projectFilter ↔ ?project= двусторонне (без циклов — через сравнение).
-  // URL→state: внешняя ссылка/навигация меняет фильтр доски.
-  useEffect(() => {
-    const fromUrl = searchParams.get('project') || ''
-    setProjectFilter(prev => (prev === fromUrl ? prev : fromUrl))
-  }, [searchParams])
-  // state→URL: смена фильтра в UI отражается в адресе (replace, без истории).
-  useEffect(() => {
-    const cur = searchParams.get('project') || ''
-    const next = projectFilter || ''
-    if (cur === next) return
-    const ns = new URLSearchParams(searchParams)
-    if (next) ns.set('project', next)
-    else ns.delete('project')
-    setSearchParams(ns, { replace: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectFilter])
 
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
@@ -3361,7 +3356,7 @@ export default function DevBoardPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setOnlyMine(v => !v)}
+                onClick={() => setOnlyMine(!onlyMine)}
                 className={clsx(
                   'min-h-[40px] inline-flex items-center gap-1.5 text-sm px-2.5 rounded-lg border transition-colors',
                   onlyMine
@@ -3372,7 +3367,7 @@ export default function DevBoardPage() {
                 <UserIcon size={14} /> Только мои
               </button>
               <button
-                onClick={() => setOverdueOnly(v => !v)}
+                onClick={() => setOverdueOnly(!overdueOnly)}
                 className={clsx(
                   'min-h-[40px] inline-flex items-center gap-1.5 text-sm px-2.5 rounded-lg border transition-colors',
                   overdueOnly
@@ -3383,7 +3378,7 @@ export default function DevBoardPage() {
                 <AlertTriangle size={14} /> Просроченные
               </button>
               <button
-                onClick={() => setBlockedOnly(v => !v)}
+                onClick={() => setBlockedOnly(!blockedOnly)}
                 className={clsx(
                   'min-h-[40px] inline-flex items-center gap-1.5 text-sm px-2.5 rounded-lg border transition-colors',
                   blockedOnly
@@ -3523,7 +3518,7 @@ export default function DevBoardPage() {
           </div>
         )}
         <button
-          onClick={() => setOnlyMine(v => !v)}
+          onClick={() => setOnlyMine(!onlyMine)}
           className={clsx(
             'inline-flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border transition-colors',
             onlyMine
@@ -3534,7 +3529,7 @@ export default function DevBoardPage() {
           <UserIcon size={14} /> Только мои
         </button>
         <button
-          onClick={() => setOverdueOnly(v => !v)}
+          onClick={() => setOverdueOnly(!overdueOnly)}
           className={clsx(
             'inline-flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border transition-colors',
             overdueOnly
@@ -3545,7 +3540,7 @@ export default function DevBoardPage() {
           <AlertTriangle size={14} /> Просроченные
         </button>
         <button
-          onClick={() => setBlockedOnly(v => !v)}
+          onClick={() => setBlockedOnly(!blockedOnly)}
           className={clsx(
             'inline-flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border transition-colors',
             blockedOnly

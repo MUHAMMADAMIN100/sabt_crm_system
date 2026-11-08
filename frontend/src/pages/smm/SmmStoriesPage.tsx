@@ -1,11 +1,12 @@
 // «Сторисы» — отдельная подстраница СММ: мини-календари по проектам за месяц.
 // Раньше это был таб внутри «Умного календаря»; вынесено в свой роут /smm/stories.
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { addMonths, startOfMonth, endOfMonth, format } from 'date-fns'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { contentPlanApi } from '@/services/api.service'
+import { useUrlState } from '@/lib/urlState'
 import { StoriesTab, buildCells, monthTitle, assignProjectColors, type Ev, type SDay } from './SmmPage'
 
 const iso = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -20,8 +21,14 @@ const storyCount = (e: Ev): number => {
 
 export default function SmmStoriesPage() {
   const navigate = useNavigate()
-  const [cursor, setCursor] = useState(new Date())
-  const monthStr = format(cursor, 'yyyy-MM')
+  // Месяц — в адресе (?ym=ГГГГ-ММ) с заменой шага (08.11.2026): вернулись
+  // «Назад» из проекта — тот же месяц. Текущий месяц в адрес не пишем;
+  // кривое значение из старой ссылки — текущий месяц.
+  const nowYm = format(new Date(), 'yyyy-MM')
+  const [rawYm, setYm] = useUrlState('ym', nowYm)
+  const monthStr = /^\d{4}-(0[1-9]|1[0-2])$/.test(rawYm) ? rawYm : nowYm
+  const cursor = useMemo(() => { const [y, m] = monthStr.split('-').map(Number); return new Date(y, m - 1, 1) }, [monthStr])
+  const shiftMonth = (dir: number) => setYm(format(addMonths(cursor, dir), 'yyyy-MM'))
   const from = iso(startOfMonth(cursor))
   const to = iso(endOfMonth(cursor))
 
@@ -99,10 +106,10 @@ export default function SmmStoriesPage() {
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold tracking-tight">Сторисы · {monthTitle(monthStr)}</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => setCursor(new Date())} className="text-[13px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Сегодня</button>
+          <button onClick={() => setYm(nowYm)} className="text-[13px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Сегодня</button>
           <div className="flex items-center gap-0.5">
-            <button onClick={() => setCursor(c => addMonths(c, -1))} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronLeft size={17} /></button>
-            <button onClick={() => setCursor(c => addMonths(c, 1))} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronRight size={17} /></button>
+            <button onClick={() => shiftMonth(-1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronLeft size={17} /></button>
+            <button onClick={() => shiftMonth(1)} className="w-8 h-8 grid place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><ChevronRight size={17} /></button>
           </div>
         </div>
       </header>

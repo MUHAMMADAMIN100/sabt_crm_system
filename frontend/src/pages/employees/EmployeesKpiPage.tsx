@@ -4,7 +4,7 @@
 // «Сегодня / Неделя / Месяц / Прошлый месяц». Подробности — в карточке
 // сотрудника по клику.
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { employeesApi, kpiApi } from '@/services/api.service'
@@ -24,9 +24,13 @@ const TEXT: Record<string, string> = {
 export default function EmployeesKpiPage() {
   const [period, setPeriod] = useState<KpiPeriod>('month')
   const range = kpiPeriodRange(period)
-  const { data: kpi, isLoading } = useQuery({
+  // Смена периода (08.11.2026): рейтинг прошлого периода остаётся на экране
+  // бледным, пока считается новый, — раньше весь экран сменялся загрузкой.
+  // Соседний период заранее не грузим: KPI всей команды считается тяжело.
+  const { data: kpi, isLoading, isPlaceholderData: stale } = useQuery({
     queryKey: ['kpi-all', range.from, range.to],
     queryFn: () => kpiApi.all(range),
+    placeholderData: keepPreviousData,
   })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 
@@ -73,7 +77,7 @@ export default function EmployeesKpiPage() {
       </div>
 
       {isLoading ? <PageLoader /> : !rows.length ? <EmptyState title="KPI пока не считается ни у кого" /> : (
-        <>
+        <div className={clsx('space-y-5 transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
           <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
             <div className="card !px-3 sm:!px-4 !py-3">
               <div className="text-xl sm:text-[22px] font-extrabold tabular-nums text-surface-900 dark:text-surface-100">{avg === null ? '—' : `${avg} %`}</div>
@@ -127,7 +131,7 @@ export default function EmployeesKpiPage() {
                 : <div key={r.userId} className={cls}>{body}</div>
             })}
           </section>
-        </>
+        </div>
       )}
     </div>
   )

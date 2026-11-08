@@ -255,6 +255,12 @@ async function bootstrap() {
     prefix: '/uploads',
     setHeaders: (res, filePath) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Кэш на год (08.11.2026): каждый, кто пишет в uploads/ (загрузка файлов,
+      // фото моделей, результат из Telegram, старые аватарки), даёт файлу новое
+      // имя uuid.ext и поверх старого не пишет. Под одним адресом файл не
+      // меняется — браузер не перекачивает фото и вложения при каждом заходе.
+      // Если появится запись в uploads/ под повторяющимся именем — ей срок короче.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       const lowerPath = filePath.toLowerCase();
       const ext = lowerPath.slice(lowerPath.lastIndexOf('.'));
       const ct = String(res.getHeader('Content-Type') || '').toLowerCase();

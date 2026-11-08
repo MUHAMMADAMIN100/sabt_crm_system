@@ -9,13 +9,14 @@ import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors, Sparkles } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { isSmmViewOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { useHistoryOverlay } from '@/lib/navMemory'
+import { usePatchUrl } from '@/lib/urlState'
 
 export type Ev = {
   id: string; itemId?: string; shootId?: string; kind: 'shoot' | 'publication'; date: string
@@ -212,6 +213,27 @@ const VIEWS: { k: View; label: string }[] = [
   { k: 'month', label: 'Месяц' }, { k: 'week', label: 'Неделя' }, { k: 'day', label: 'День' },
 ]
 
+// ── Адрес страницы (08.11.2026, вторая волна «Назад») ──
+// Вид, фильтры по проектам и типам и показанная дата живут в адресе с заменой
+// шага: вернулись «Назад» — календарь там же, шагов истории не прибавилось.
+// Встроенный календарь (вкладка «Контент-план» карточки проекта) пишет свои
+// ключи с буквой «c», чтобы не путаться с ключами карточки; фильтра по
+// проекту там в адресе нет — проект и так один.
+type UrlKeys = { view: string; type: string; date: string; proj: string | null }
+const URL_KEYS: UrlKeys = { view: 'view', type: 'type', date: 'd', proj: 'p' }
+const URL_KEYS_EMBEDDED: UrlKeys = { view: 'cview', type: 'ctype', date: 'cd', proj: null }
+// «Сторисы» — давно своя страница, в адресе такого вида быть не может.
+const URL_VIEWS: readonly string[] = ['month', 'week', 'day']
+/** 'ГГГГ-ММ-ДД' из адреса → дата; кривое или несуществующее число — null. */
+function parseUrlDay(v: string | null): Date | null {
+  const m = v ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v) : null
+  if (!m) return null
+  const y = +m[1], mo = +m[2], d = +m[3]
+  const dt = new Date(y, mo - 1, d)
+  return y >= 2000 && y <= 2100 && dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null
+}
+const parseUrlList = (v: string | null): string[] => (v ? v.split(',').filter(Boolean) : [])
+
 // ═══════════════════════════════════════════════════════════════════════
 /** Наблюдателю авторасстановку не предлагаем — пустая карта «нечего расставлять». */
 const NO_AUTO = new Map<string, number>()
@@ -228,14 +250,24 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const isVideographer = ['videographer', 'video_editor'].includes(user?.role ?? '')
     || ['videographer', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
   const isPhone = useIsPhone()
-  const [view, setView] = useState<View>('month')
-  const [cursor, setCursor] = useState(new Date())
+  // Начальные вид, дата и фильтры — из адреса (см. URL_KEYS), дальше адрес —
+  // зеркало состояния (эффект ниже).
+  const [urlParams] = useSearchParams()
+  const patchUrl = usePatchUrl()
+  const K = embeddedProjectId ? URL_KEYS_EMBEDDED : URL_KEYS
+  const [view, setView] = useState<View>(() => {
+    const v = urlParams.get(K.view)
+    return v && URL_VIEWS.includes(v) ? v as View : 'month'
+  })
+  const [cursor, setCursor] = useState(() => parseUrlDay(urlParams.get(K.date)) ?? new Date())
   // Счётчик явной навигации (стрелки/«Сегодня») — по нему непрерывный месячный вид прокручивается к месяцу.
   const [scrollSeq, setScrollSeq] = useState(0)
   // Фильтр по проектам — множественный выбор (пусто = все проекты).
   // Во встроенном режиме (страница проекта) сразу выбираем этот проект — чтобы
   // показывались подсветка цикла и его съёмки.
-  const [selProjects, setSelProjects] = useState<Set<string>>(() => embeddedProjectId ? new Set([embeddedProjectId]) : new Set())
+  const [selProjects, setSelProjects] = useState<Set<string>>(() => embeddedProjectId
+    ? new Set([embeddedProjectId])
+    : new Set(K.proj ? parseUrlList(urlParams.get(K.proj)) : []))
   const [search, setSearch] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const toggleProject = (id: string) => setSelProjects(prev => {
@@ -244,7 +276,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     return next
   })
   // Фильтр по типу в шапке (пусто = все типы).
-  const [selTypes, setSelTypes] = useState<Set<FKind>>(new Set())
+  const [selTypes, setSelTypes] = useState<Set<FKind>>(() =>
+    new Set(parseUrlList(urlParams.get(K.type)).filter((k): k is FKind => (FKINDS as string[]).includes(k))))
   const toggleType = (k: FKind) => setSelTypes(prev => {
     const next = new Set(prev)
     if (next.has(k)) next.delete(k); else next.add(k)
@@ -252,15 +285,44 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   })
   const clearTypes = () => setSelTypes(new Set())
 
+  // Зеркало в адресе: состояние — источник правды, адрес догоняет его одной
+  // заменой шага и только по своим ключам. Почему не наоборот: на телефоне
+  // типы меняют в шторке, а шторка — свой шаг истории (useHistoryOverlay);
+  // закрыли её — история вернулась на шаг ниже, где в адресе ещё старый
+  // фильтр, и зеркало тут же дописывает туда текущий. И лента месяца/недели
+  // сообщает видимый месяц из прокрутки — запись адреса из устаревшего
+  // замыкания тут ничего не затрёт.
+  const urlWant = useMemo(() => {
+    const w: Record<string, string | null> = {
+      [K.view]: view === 'month' ? null : view,
+      [K.type]: FKINDS.filter(k => selTypes.has(k)).join(',') || null,
+      [K.date]: isSameDay(cursor, new Date()) ? null : iso(cursor),
+    }
+    if (K.proj) w[K.proj] = [...selProjects].join(',') || null
+    return w
+  }, [K, view, selTypes, cursor, selProjects])
+  useEffect(() => {
+    const diff = Object.keys(urlWant).filter(k => urlParams.get(k) !== urlWant[k])
+    if (diff.length === 0) return
+    if (diff.some(k => k !== K.date)) { patchUrl(urlWant); return }
+    // Сменилась только дата — значит, листают ленту: пишем, когда прокрутка
+    // замрёт, а не на каждом месяце (каждая запись адреса — перерисовка страницы).
+    const t = window.setTimeout(() => patchUrl(urlWant), 400)
+    return () => window.clearTimeout(t)
+  }, [K, urlWant, urlParams, patchUrl])
+
+  // Телефон всегда показывает месяц (планировщик): «День» из адреса, открытого
+  // на телефоне, не должен сужать загрузку до одного дня.
+  const dataView: View = isPhone ? 'month' : view
   const { from, to } = useMemo(() => {
-    if (view === 'day') return { from: iso(cursor), to: iso(cursor) }
-    if (view === 'stories') return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) }
+    if (dataView === 'day') return { from: iso(cursor), to: iso(cursor) }
+    if (dataView === 'stories') return { from: iso(startOfMonth(cursor)), to: iso(endOfMonth(cursor)) }
     // Месяц И неделя — непрерывные ленты: грузим ШИРОКОЕ окно ±1 год (по году курсора). Ключ меняется
     // редко (только при переходе через год), поэтому задачи есть сразу во всей ленте, без подзагрузки
     // на каждый месяц/неделю — иначе они «выскакивают» и лента прыгает.
     const y = cursor.getFullYear()
     return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y + 1, 11, 31)) }
-  }, [view, cursor])
+  }, [dataView, cursor])
 
   // Ключ кэша один на всех: и запрос, и оптимистичные правки. Раньше правки
   // адресовались в ['smm-calendar', from, to] — в ключ, которого нет:
@@ -297,6 +359,15 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const allEvents = (data?.events ?? []).filter(e => (!embeddedProjectId || e.projectId === embeddedProjectId) && inScope(e.projectId) && !isEditPrep(e))
   const projects = rawProjects.filter(p => (!embeddedProjectId || p.id === embeddedProjectId) && inScope(p.id))
   const backlog = (data?.backlog ?? []).filter(b => (!embeddedProjectId || b.projectId === embeddedProjectId) && inScope(b.projectId) && !isEditPrep(b))
+  // Проекты из адреса, которых в списке нет (архив, чужая ссылка, режим «Мои»),
+  // убираем при первой загрузке: иначе календарь пустой без видимой причины.
+  const urlProjChecked = useRef(!!embeddedProjectId)
+  useEffect(() => {
+    if (urlProjChecked.current || !data) return
+    urlProjChecked.current = true
+    const known = new Set(projects.map(p => p.id))
+    setSelProjects(prev => [...prev].every(id => known.has(id)) ? prev : new Set([...prev].filter(id => known.has(id))))
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
   const today = todayIso()
   // Родитель карточки подготовки: по нему берём дату выхода и понимаем, вышел ли он.
   const pubByItem = useMemo(() => {
@@ -653,7 +724,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       const bl = backlog.filter(b => b.projectId === p.id && b.kind === 'publication')
       const cyc = projCycle(p.id)
       let need = bl.length
-      if (cyc && view !== 'day') {
+      if (cyc && dataView !== 'day') {
         const sched = allEvents.filter(e => e.projectId === p.id && e.kind === 'publication' && e.contentType !== 'story'
           && e.date >= cyc.start && e.date <= cyc.end)
         const sr = sched.filter(e => e.contentType === 'reel').length
@@ -665,7 +736,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       m.set(p.id, need)
     }
     return m
-  }, [projects, backlog, allEvents, view])
+  }, [projects, backlog, allEvents, dataView])
   const [autoProj, setAutoProj] = useState<string | null>(null)
   const autoWindow = (projectId: string) => {
     const cyc = projCycle(projectId)
@@ -2206,13 +2277,20 @@ function MobilePlanner({
   scope: 'mine' | 'all'; setScope: (v: 'mine' | 'all') => void; showScope: boolean
 }) {
   const monthStr = format(cursor, 'yyyy-MM')
-  const [selDay, setSelDay] = useState<string>(today)
+  // Выбранный день — это показанная дата страницы (она в адресе): после
+  // «Назад» открыт тот же день (08.11.2026). Без даты в адресе — сегодня.
+  const [selDay, setSelDay] = useState<string>(() => iso(cursor))
   // Переключили месяц — выбираем сегодня (если оно тут) либо первое число.
   useEffect(() => {
     setSelDay(prev => prev.slice(0, 7) === monthStr
       ? prev
       : (today.slice(0, 7) === monthStr ? today : `${monthStr}-01`))
   }, [monthStr, today])
+  // И обратно: выбранный день отдаём наверх — оттуда он попадает в адрес.
+  // День всегда внутри показанного месяца, так что месяц от этого не меняется.
+  useEffect(() => {
+    setCursor(c => iso(c) === selDay ? c : new Date(`${selDay}T00:00:00`))
+  }, [selDay]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [sheet, setSheet] = useState<'none' | 'backlog' | 'filter'>('none')
   // «Назад» на телефоне закрывает шторки «Не запланировано» и «Фильтр»

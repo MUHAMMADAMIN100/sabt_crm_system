@@ -2,7 +2,7 @@
 // открывался страницей SMM-проекта: «Выполнение плана: Рилсы, Посты, Сторис»
 // и анкета SMM-клиента. Теперь — этап, сроки, команда, задачи доски и
 // контакты клиента; рилсов, циклов и контент-плана у разработки нет.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Check, ChevronLeft, ChevronRight, Loader2, MoreVertical, Pencil, X } from 'lucide-react'
@@ -21,6 +21,7 @@ import { DevTeamBlock } from './components/DevTeamBlock'
 import { DevTypeChip } from './components/DevTypeChip'
 import { boardUrl, taskUrl } from './devLinks'
 import { BackLink } from '@/lib/navMemory'
+import { useUrlState } from '@/lib/urlState'
 import {
   deadlineInfo, longDay, nearestDeadlines, openByAssignee, plural, shortDay, stageOf, taskStats,
   timeProgress, todayIso,
@@ -60,6 +61,7 @@ const editBtnCls = 'inline-flex items-center gap-1.5 text-[12.5px] font-semibold
 const blueBtnCls = 'inline-flex items-center justify-center gap-1.5 min-h-[34px] px-3.5 rounded-[10px] text-[13.5px] font-semibold text-white bg-[#2D5DA8] hover:bg-[#244C8C] disabled:opacity-60'
 
 type Tab = 'overview' | 'tasks' | 'client'
+const TABS: readonly Tab[] = ['overview', 'tasks', 'client']
 
 export default function DevProjectPage() {
   const { id } = useParams<{ id: string }>()
@@ -70,7 +72,10 @@ export default function DevProjectPage() {
   const canArchive = userCan(user, 'projects.archive')
   const seesBoard = userCan(user, 'dev-tracker.view')
   const canStage = [user?.role, user?.secondaryRole].some(r => !!r && STAGE_ROLES.includes(r))
-  const [tab, setTab] = useState<Tab>('overview')
+  // Вкладка в адресе (?tab=, с заменой шага, 08.11.2026): «Назад» из задачи
+  // возвращает на ту же вкладку. Ссылка на другой проект приходит без ?tab —
+  // он открывается на «Обзоре», как раньше делал сброс по смене id.
+  const [tab, setTab] = useUrlState<Tab>('tab', 'overview', TABS)
 
   const { data: project, isLoading, isError } = useQuery<any>({
     queryKey: ['dev-project', id],
@@ -158,7 +163,6 @@ export default function DevProjectPage() {
   // ── меню и архив ──
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
-  useEffect(() => { setTab('overview') }, [id])
 
   if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="animate-spin text-surface-400" /></div>
   if (isError || !project || !isDevProjectType(project.projectType)) {

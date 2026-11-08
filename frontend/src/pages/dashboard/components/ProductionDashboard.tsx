@@ -12,7 +12,7 @@
 // красный контур просрочена. Видно и объём дня, и сколько уже закрыто.
 import { useMemo, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday,
   addMonths, format, subDays, differenceInCalendarDays,
@@ -195,7 +195,20 @@ export default function ProductionDashboard() {
   /** Съёмку передаёт её исполнитель или тот, кто распоряжается съёмками. */
   const canGiveItem = (it: Item) => it.stage === 'shoot' && (canManage || it.assigneeId === user?.id)
 
-  const { data } = useQuery({ queryKey: ['my-work', from, to], queryFn: () => contentPlanApi.myWork(from, to) })
+  // Смена месяца не обнуляет экран (08.11.2026): пока грузится новый месяц,
+  // держим прошлый, а календарь бледнеет и не нажимается — чтобы не отметить
+  // задачу по ещё не пришедшему месяцу.
+  const { data, isPlaceholderData: stale } = useQuery({
+    queryKey: ['my-work', from, to],
+    queryFn: () => contentPlanApi.myWork(from, to),
+    placeholderData: keepPreviousData,
+  })
+  // Наведение на стрелку — соседний месяц грузим заранее: к нажатию он готов.
+  const prefetchMonth = (n: number) => {
+    const c = addMonths(cursor, n)
+    const f = dk(startOfMonth(c)), t = dk(endOfMonth(c))
+    qc.prefetchQuery({ queryKey: ['my-work', f, t], queryFn: () => contentPlanApi.myWork(f, t) })
+  }
   // Просрочку ищем шире месяца: задача могла повиснуть в прошлом.
   const overdueFrom = useMemo(() => dk(subDays(new Date(), 90)), [])
   const { data: pastData } = useQuery({
@@ -342,7 +355,7 @@ export default function ProductionDashboard() {
   return (
     <div className="space-y-4">
       {/* Сводка дня */}
-      <div className="card">
+      <div className={clsx('card transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-lg font-bold">Сегодня</h1>
@@ -391,16 +404,16 @@ export default function ProductionDashboard() {
         {/* На телефоне месяц со стрелками — слева: по центру правая стрелка
             уходила под кнопку «+» (320 px). */}
         <div className="relative flex items-center justify-start sm:justify-center gap-2 sm:gap-4 mb-3">
-          <button type="button" onClick={() => goMonth(-1)} title="Прошлый месяц" aria-label="Прошлый месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
+          <button type="button" onClick={() => goMonth(-1)} onPointerEnter={() => prefetchMonth(-1)} onFocus={() => prefetchMonth(-1)} title="Прошлый месяц" aria-label="Прошлый месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronLeft size={16} /></button>
           <b className="text-sm font-bold capitalize min-w-[110px] sm:min-w-[130px] text-center">{format(cursor, 'LLLL yyyy', { locale: ru })}</b>
-          <button type="button" onClick={() => goMonth(1)} title="Следующий месяц" aria-label="Следующий месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
+          <button type="button" onClick={() => goMonth(1)} onPointerEnter={() => prefetchMonth(1)} onFocus={() => prefetchMonth(1)} title="Следующий месяц" aria-label="Следующий месяц" className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:bg-surface-200 dark:hover:bg-surface-700 flex items-center justify-center"><ChevronRight size={16} /></button>
           {/* Своя задача на сегодня — в одно нажатие, не открывая день вручную. */}
           <button type="button" onClick={addOwnToday} title="Поставить себе задачу на сегодня" aria-label="Своя задача на сегодня"
             className="absolute right-0 top-0 h-9 sm:h-8 min-w-[36px] justify-center px-2 sm:px-3 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 text-[12.5px] font-bold flex items-center gap-1.5">
             <Plus size={15} /><span className="hidden sm:inline">Своя задача</span>
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
+        <div className={clsx('grid grid-cols-7 gap-1.5 transition-opacity', stale && 'opacity-60 pointer-events-none')} aria-busy={stale}>
           {WEEK.map(w => <div key={w} className="text-center text-[9.5px] font-bold uppercase text-surface-400 dark:text-surface-500 pb-1">{w}</div>)}
           {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} />)}
           {days.map(d => {
@@ -501,7 +514,8 @@ export default function ProductionDashboard() {
               <button onClick={closeDay} title="Закрыть"
                 className="ml-auto w-8 h-8 shrink-0 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 flex items-center justify-center self-center"><X size={15} /></button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))]">
+            {/* Окно дня, открытое до прихода месяца («Назад», клавиатура), — тоже без нажатий. */}
+            <div className={clsx('flex-1 min-h-0 overflow-y-auto overscroll-contain border-t border-surface-100 dark:border-surface-800 px-4 sm:px-5 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))] transition-opacity', stale && 'opacity-60 pointer-events-none')} aria-busy={stale}>
               <div className="text-[11px] font-bold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-2">Задачи</div>
               <OwnDayTasks dayKey={selKey} todayKey={todayKey} own={own} autoFocus={ownFocus} />
               {selItems.length === 0 ? (

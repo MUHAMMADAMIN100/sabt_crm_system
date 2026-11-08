@@ -22,8 +22,8 @@
 // задач и просрочено; справа «Нагрузка»; фильтр «Все · С просрочкой ·
 // Свободны» и поиск; клик по карточке контент-плана — окошко с действиями;
 // «Не распределено» закреплено сверху; выходные уже; отделы сворачиваются.
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -35,6 +35,7 @@ import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
 import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection } from '@/lib/permissions'
+import { useUrlNumber, useUrlState } from '@/lib/urlState'
 
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -115,7 +116,9 @@ export default function WeekTasks() {
   // СММ команде разработки не отдаётся (14.10.2026).
   const seesSmm = canSeeSmmSection(useAuthStore(s => s.user?.role))
   const narrow = useNarrow(900)
-  const [offset, setOffset] = useState(0)
+  // Неделя, «Кого показать» и поиск — в адресе с заменой шага (08.11.2026):
+  // вернулись «Назад» из карточки сотрудника — та же неделя и тот же отбор.
+  const [offset, setOffset] = useUrlNumber('w', 0)
   /** Кому и на какой день выдаём — открывается «плюсом» в клетке. */
   const [issue, setIssue] = useState<{ userId: string; date: string } | null>(null)
   const [repeating, setRepeating] = useState(false)
@@ -126,8 +129,19 @@ export default function WeekTasks() {
   // не ответит; при ошибке возвращается обратно.
   const [moved, setMoved] = useState<Record<string, { userId: string; date: string }>>({})
   // Кого показать и поиск по имени.
-  const [filter, setFilter] = useState<'all' | 'late' | 'free'>('all')
-  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useUrlState('f', 'all', ['all', 'late', 'free'] as const)
+  const [urlQ, setUrlQ] = useUrlState<string>('q', '')
+  // Поле поиска — своё состояние, чтобы печаталось плавно; в адрес — через 300 мс.
+  const [query, setQuery] = useState(urlQ)
+  const lastQ = useRef(urlQ)
+  const setUrlQRef = useRef(setUrlQ)
+  setUrlQRef.current = setUrlQ
+  useEffect(() => { if (urlQ !== lastQ.current) { lastQ.current = urlQ; setQuery(urlQ) } }, [urlQ])
+  useEffect(() => {
+    if (query === lastQ.current) return
+    const tm = setTimeout(() => { lastQ.current = query; setUrlQRef.current(query) }, 300)
+    return () => clearTimeout(tm)
+  }, [query])
   // Свёрнутые отделы и раскрытые клетки («ещё N», «✓ N готово»).
   const [shut, setShut] = useState<Record<string, boolean>>({})
   const [openCell, setOpenCell] = useState<Record<string, boolean>>({})
@@ -164,11 +178,14 @@ export default function WeekTasks() {
   const { data: tasks = [] } = useQuery<any[]>({
     queryKey: ['week-tasks', from, to],
     queryFn: () => tasksApi.list({ deadlineFrom: from, deadlineBefore: to }),
+    // Смена недели — прежняя сетка остаётся, пока не придёт новая (не мигает пустотой).
+    placeholderData: keepPreviousData,
   })
   const { data: cal } = useQuery<any>({
     queryKey: ['week-plan', from, to],
     queryFn: () => contentPlanApi.smmCalendar({ from, to }),
     enabled: seesSmm,
+    placeholderData: keepPreviousData,
   })
 
   // Окошко закрывается по Esc и при прокрутке — иначе висит не у своей карточки.
@@ -404,12 +421,12 @@ export default function WeekTasks() {
   const nav = (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-2 max-sm:w-full">
-        <button type="button" onClick={() => setOffset(o => o - 1)} aria-label="Прошлая неделя"
+        <button type="button" onClick={() => setOffset(offset - 1)} aria-label="Прошлая неделя"
           className="w-11 h-11 shrink-0 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
           <ChevronLeft size={18} />
         </button>
         <span className="min-w-[164px] max-sm:min-w-0 max-sm:flex-1 px-1 text-center text-[15px] font-bold whitespace-nowrap">{label}</span>
-        <button type="button" onClick={() => setOffset(o => o + 1)} aria-label="Следующая неделя"
+        <button type="button" onClick={() => setOffset(offset + 1)} aria-label="Следующая неделя"
           className="w-11 h-11 shrink-0 rounded-xl border border-surface-200 dark:border-surface-700 flex items-center justify-center text-surface-500">
           <ChevronRight size={18} />
         </button>

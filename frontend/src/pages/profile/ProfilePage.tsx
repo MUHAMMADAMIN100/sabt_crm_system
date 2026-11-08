@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
 import { usersApi, meApi, workShiftsApi } from '@/services/api.service'
 import { Avatar } from '@/components/ui'
@@ -239,10 +239,11 @@ function MyInstallment({ item }: { item: any }) {
 
 /** Переключатель месяца. Вынесен из денежной карточки: на компьютере её
  *  больше нет, а «Мои смены» без выбора месяца остались бы немыми. */
-function MonthNav({ ym, setYm }: { ym: string; setYm: (v: string) => void }) {
+function MonthNav({ ym, setYm, onPeek }: { ym: string; setYm: (v: string) => void; onPeek?: (ym: string) => void }) {
   return (
     <div className="flex items-center gap-1 shrink-0">
       <button onClick={() => setYm(shiftYm(ym, -1))} aria-label="Предыдущий месяц"
+        onPointerEnter={() => onPeek?.(shiftYm(ym, -1))} onFocus={() => onPeek?.(shiftYm(ym, -1))}
         className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
         <ChevronLeft size={15} />
       </button>
@@ -250,6 +251,7 @@ function MonthNav({ ym, setYm }: { ym: string; setYm: (v: string) => void }) {
         {monthOnly(ym)} {ym.slice(0, 4)}
       </span>
       <button onClick={() => setYm(shiftYm(ym, 1))} aria-label="Следующий месяц"
+        onPointerEnter={() => onPeek?.(shiftYm(ym, 1))} onFocus={() => onPeek?.(shiftYm(ym, 1))}
         className="w-7 h-7 flex items-center justify-center rounded-lg border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700">
         <ChevronRight size={15} />
       </button>
@@ -301,15 +303,24 @@ export default function ProfilePage() {
   const [ym, setYm] = useState(() => currentSalaryYm())
   const isFounder = user?.role === 'founder'
 
-  const { data: sal, isLoading: salLoading } = useQuery({
+  // Смена месяца (08.11.2026): пока грузится новый, держим прошлый бледным,
+  // а не «Загружаю…» и нули в сменах. Здесь только просмотр — бледности хватает.
+  const { data: sal, isLoading: salLoading, isPlaceholderData: salStale } = useQuery({
     queryKey: ['me', 'salary', ym],
     queryFn: () => meApi.salary(ym),
+    placeholderData: keepPreviousData,
   })
-  const { data: shifts } = useQuery({
+  const { data: shifts, isPlaceholderData: shiftsStale } = useQuery({
     queryKey: ['me', 'shifts', ym],
     queryFn: () => workShiftsApi.myMonth(ym),
     enabled: !isFounder,
+    placeholderData: keepPreviousData,
   })
+  // Наведение на стрелку месяца — соседний месяц грузим заранее.
+  const peekMonth = (next: string) => {
+    qc.prefetchQuery({ queryKey: ['me', 'salary', next], queryFn: () => meApi.salary(next) })
+    if (!isFounder) qc.prefetchQuery({ queryKey: ['me', 'shifts', next], queryFn: () => workShiftsApi.myMonth(next) })
+  }
 
   const row = sal?.row || null
   const emp = sal?.employee || null
@@ -435,9 +446,10 @@ export default function ProfilePage() {
                 <span className="text-[13px] text-surface-500 dark:text-surface-400">
                   {row?.frozen ? 'Выплачено за месяц' : 'К выплате за месяц'}
                 </span>
-                <MonthNav ym={ym} setYm={setYm} />
+                <MonthNav ym={ym} setYm={setYm} onPeek={peekMonth} />
               </div>
 
+              <div className={`transition-opacity${salStale ? ' opacity-60' : ''}`} aria-busy={salStale}>
               {salLoading ? (
                 <p className="text-sm text-surface-400 dark:text-surface-500 py-6">Загружаю…</p>
               ) : !sal?.linked ? (
@@ -531,6 +543,7 @@ export default function ProfilePage() {
                   )}
                 </>
               )}
+              </div>
             </div>
           )}
 
@@ -550,13 +563,14 @@ export default function ProfilePage() {
                 <h3 className="section-title">Мои смены</h3>
                 {/* На телефоне месяц переключают в денежной карточке выше;
                     на компьютере её нет — ставим переключатель сюда. */}
-                <div className="hidden lg:block"><MonthNav ym={ym} setYm={setYm} /></div>
+                <div className="hidden lg:block"><MonthNav ym={ym} setYm={setYm} onPeek={peekMonth} /></div>
                 {/* Месяц подписываем, только когда листают прошлое: для
                     текущего он и так написан в переключателе выше. */}
                 {ym !== currentSalaryYm() && (
                   <span className="lg:hidden text-xs text-surface-400 dark:text-surface-500 first-letter:uppercase whitespace-nowrap">{monthOnly(ym)}</span>
                 )}
               </div>
+              <div className={`transition-opacity${shiftsStale ? ' opacity-60' : ''}`} aria-busy={shiftsStale}>
               <div className="flex items-center justify-between gap-3 py-3 mt-1 border-b border-surface-100 dark:border-surface-700/60">
                 <span className="text-sm text-surface-600 dark:text-surface-300">Отработано</span>
                 <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-surface-900 dark:text-surface-100">{hoursOf(mine?.totalMinutes || 0)}</span>
@@ -572,6 +586,7 @@ export default function ProfilePage() {
                 <span className={`text-[15px] font-semibold tabular-nums ${(mine?.lateDays?.length || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-surface-900 dark:text-surface-100'}`}>
                   {mine?.lateDays?.length || 0}
                 </span>
+              </div>
               </div>
             </div>
           )}

@@ -25,6 +25,9 @@ import { ru } from 'date-fns/locale'
 import toast from 'react-hot-toast'
 import { prepareAvatar } from '@/lib/imageCompress'
 import { useBackTarget } from '@/lib/navMemory'
+import { useUrlState } from '@/lib/urlState'
+
+const EMP_TABS = ['overview', 'workload', 'quality', 'risk', 'activity'] as const
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -66,7 +69,9 @@ export default function EmployeeDetailPage() {
 
   const [editingSalary, setEditingSalary] = useState(false)
   const [salaryInput, setSalaryInput] = useState('')
-  const [activeTab, setActiveTab] = useState<'overview' | 'workload' | 'quality' | 'risk' | 'activity'>('overview')
+  // Вкладка в адресе (?tab=, с заменой шага): вернулись «Назад» из задачи —
+  // открыта та же вкладка, а не «Обзор» (08.11.2026).
+  const [activeTab, setActiveTab] = useUrlState('tab', 'overview', EMP_TABS)
 
   const { data: emp, isLoading } = useQuery({ queryKey: ['employee', id], queryFn: () => employeesApi.get(id!) })
 
@@ -168,7 +173,7 @@ export default function EmployeeDetailPage() {
 
       {/* Wave 15: tab strip — обзор оставляем как было, остальные дают глубокую аналитику */}
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['overview', 'workload', 'quality', 'risk', 'activity'] as const).map(tab => (
+        {EMP_TABS.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={clsx('px-4 py-3 sm:py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px]',
               activeTab === tab

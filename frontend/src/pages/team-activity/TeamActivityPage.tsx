@@ -189,7 +189,9 @@ export default function TeamActivityPage() {
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['team-activity', userId ?? 'all', from ?? 'all', limit],
     queryFn: () => activityLogApi.team({ userId, from, limit }),
-    refetchInterval: 30000,
+    // Своего события в сокете у ленты нет — опрос остаётся единственным
+    // обновлением, но реже: раз в минуту, а не в 30 с (08.11.2026).
+    refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   })
 

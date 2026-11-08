@@ -14,6 +14,7 @@ import SmmPage from './SmmPage'
 import ClientPaymentRow from './ClientPaymentRow'
 import ClientAccountCard from './ClientAccountCard'
 import { BackLink } from '@/lib/navMemory'
+import { useUrlState } from '@/lib/urlState'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -323,7 +324,10 @@ export default function SmmProjectPage() {
   // ── Отчёт ──
   const [reportOpen, setReportOpen] = useState(false)
   // ── Вкладки страницы: обзор / аналитика / клиент / контент-план ──
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'client' | 'plan'>('overview')
+  // Вкладка — в адресе (?tab=) с заменой шага (08.11.2026): отдельным шагом
+  // «Назад» она не считается, но при возврате на карточку открыта та же.
+  // Другой проект — другой адрес без ?tab, то есть «Обзор».
+  const [tab, setTab] = useUrlState('tab', 'overview', ['overview', 'analytics', 'client', 'plan'] as const)
   // ── Меню ⋯ в шапке + подтверждение завершения сотрудничества ──
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)

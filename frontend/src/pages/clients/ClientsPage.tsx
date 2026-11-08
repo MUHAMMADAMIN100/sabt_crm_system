@@ -28,6 +28,7 @@ function formatLastActivity(iso?: string | null): { text: string; title: string 
 }
 import clsx from 'clsx'
 import { useHistoryOverlay } from '@/lib/navMemory'
+import { useUrlState, useUrlFlag, useUrlNumber, usePatchUrl } from '@/lib/urlState'
 
 // Канбан-доска онбординга — отрисовывается прямо здесь при переключении
 // view-mode. Lazy, чтобы не тянуть в bundle когда юзер не открывает kanban.
@@ -141,27 +142,38 @@ function useScrollActiveChip(ref: RefObject<HTMLDivElement>, key: unknown) {
 
 export default function ClientsPage() {
   const qc = useQueryClient()
-  const [search, setSearch] = useState('')
+  // Поиск, статус, интерес, сфера, «К звонку», страница и вид — в адресе с
+  // заменой шага (08.11.2026): вернулись «Назад» — список как был.
+  const patchUrl = usePatchUrl()
+  const patchRef = useRef(patchUrl)
+  patchRef.current = patchUrl
   // Дебаунсим поисковую строку — иначе при каждом keystroke стартует
   // новый запрос /clients и весь список перерисовывается (мигает).
   // 250 мс — компромисс между «отзывчивостью» и «не дёргать сервер».
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Поле печатает своим состоянием, в адрес (?q=) уходит уже после паузы.
+  const [debouncedSearch] = useUrlState<string>('q', '')
+  const [search, setSearch] = useState(debouncedSearch)
+  const lastQ = useRef(debouncedSearch)
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    if (debouncedSearch !== lastQ.current) { lastQ.current = debouncedSearch; setSearch(debouncedSearch) }
+  }, [debouncedSearch])
+  useEffect(() => {
+    const next = search.trim()
+    if (next === lastQ.current) return
+    const t = setTimeout(() => { lastQ.current = next; patchRef.current({ q: next || null, page: null }) }, 250)
     return () => clearTimeout(t)
   }, [search])
-  const [status, setStatus] = useState('')
-  const [interest, setInterest] = useState('')
-  const [sphere, setSphere] = useState('')
+  const [sphere] = useUrlState<string>('sphere', '')
   const [editLead, setEditLead] = useState<any>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
+  const [pageRaw, setPage] = useUrlNumber('page', 1)
   // Переключатель вида: list (таблица клиентов) ↔ kanban (доска онбординга).
-  // Сохраняем в localStorage чтобы при возврате видеть тот же режим.
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
-    try { return (localStorage.getItem('clients-view') as 'list' | 'kanban') || 'list' } catch { return 'list' }
+  // В адресе (?view=); localStorage — запасной вариант, когда открыли из меню.
+  const [viewDefault] = useState<'list' | 'kanban'>(() => {
+    try { return localStorage.getItem('clients-view') === 'kanban' ? 'kanban' : 'list' } catch { return 'list' }
   })
+  const [viewMode, setViewMode] = useUrlState('view', viewDefault, ['list', 'kanban'] as const)
   const setViewModePersisted = (v: 'list' | 'kanban') => {
     setViewMode(v)
     try { localStorage.setItem('clients-view', v) } catch {}
@@ -178,11 +190,14 @@ export default function ClientsPage() {
   // «Позвонить»: руководитель отмечает лида галочкой — звонок назначается
   // менеджеру-владельцу СРАЗУ (без отдельной кнопки), плюс фильтр
   // «только отмеченные к звонку».
-  const [onlyCallRequested, setOnlyCallRequested] = useState(false)
+  // ?callRequested=1 — и deep-link из уведомления «📞 Звонки от руководителя».
+  const [callFlag, setOnlyCallRequested] = useUrlFlag('callRequested')
+  const [status] = useUrlState('status', '', ['', ...statusOptionsFor(role).map(o => o.value)])
+  const [interest] = useUrlState('interest', '', ['', ...INTEREST_CHIPS.map(c => c.value)])
   const statusRow = useRef<HTMLDivElement>(null)
   const interestRow = useRef<HTMLDivElement>(null)
   useScrollActiveChip(statusRow, status)
-  useScrollActiveChip(interestRow, `${interest}|${onlyCallRequested}`)
+  useScrollActiveChip(interestRow, `${interest}|${callFlag}`)
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ['clients', debouncedSearch, status, interest, sphere],
@@ -194,10 +209,15 @@ export default function ClientsPage() {
   })
 
   // Список под рендер: при фильтре «К звонку» оставляем только отмеченных.
+  const callRequestedCount = (leads || []).filter((l: any) => l.callRequested).length
+  // Отмеченных больше нет (вернулись по старой ссылке) — кнопки «К звонку»
+  // не видно, поэтому и фильтр не держим, иначе список пуст без выхода.
+  const onlyCallRequested = callFlag && callRequestedCount > 0
   const displayLeads = onlyCallRequested
     ? (leads || []).filter((l: any) => l.callRequested)
     : (leads || [])
-  const callRequestedCount = (leads || []).filter((l: any) => l.callRequested).length
+  // Страница из адреса — в пределах списка.
+  const page = Math.min(Math.max(1, pageRaw), Math.max(1, Math.ceil(displayLeads.length / PAGE_SIZE)))
 
   // «Назад» на телефоне закрывает карточку клиента, а не страницу (08.11.2026).
   useHistoryOverlay('client', editLead?.id ? String(editLead.id) : null, v => {
@@ -220,15 +240,8 @@ export default function ClientsPage() {
   // показываем toast, query тоже чистим.
   const location = useLocation()
   const navigate = useNavigate()
-  // Deep-link из уведомления «📞 Звонки от руководителя» → сразу фильтр.
-  useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    if (params.get('callRequested') === '1') {
-      setOnlyCallRequested(true)
-      navigate(location.pathname, { replace: true })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search])
+  // Deep-link из уведомления «📞 Звонки от руководителя» (?callRequested=1)
+  // теперь сам и есть фильтр в адресе — отдельной обработки не нужно.
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const leadId = params.get('id')
@@ -239,8 +252,12 @@ export default function ClientsPage() {
     } else {
       toast('Клиент не найден или удалён', { icon: 'ℹ️' })
     }
-    // Убираем ?id из URL чтобы при F5 не триггерилось снова.
-    navigate(location.pathname, { replace: true })
+    // Убираем ?id из URL чтобы при F5 не триггерилось снова. Остальные
+    // параметры (фильтры, поиск) оставляем.
+    const rest = new URLSearchParams(location.search)
+    rest.delete('id')
+    const qs = rest.toString()
+    navigate(location.pathname + (qs ? `?${qs}` : ''), { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, location.search])
 
@@ -437,15 +454,17 @@ export default function ClientsPage() {
     },
   })
 
-  // Reset page when filters change
-  const filterKey = `${search}|${status}|${interest}|${sphere}`
-  useMemo(() => setPage(1), [filterKey])
+  // Страницу сбрасываем в обработчиках фильтров (вместе с фильтром, одним
+  // шагом адреса), а не эффектом: эффект при возврате «Назад» сбросил бы
+  // запомненную страницу.
 
   const spheres = useMemo(() => {
     const set = new Set<string>()
     leads?.forEach((l: any) => l.sphere && set.add(l.sphere))
+    // Выбранная сфера из адреса — всегда в списке, чтобы её можно было снять.
+    if (sphere) set.add(sphere)
     return Array.from(set).sort()
-  }, [leads])
+  }, [leads, sphere])
 
   if (isLoading) return <PageLoader />
 
@@ -524,7 +543,7 @@ export default function ClientsPage() {
       <div ref={statusRow} className={CHIP_ROW}>
         <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Статус:</span>
         <button
-          onClick={() => setStatus('')}
+          onClick={() => patchUrl({ status: null, page: null })}
           data-active={!status}
           className={clsx(
             'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
@@ -542,7 +561,7 @@ export default function ClientsPage() {
           return (
             <button
               key={s.value}
-              onClick={() => setStatus(active ? '' : s.value)}
+              onClick={() => patchUrl({ status: active ? null : s.value, page: null })}
               data-active={active}
               className={clsx(
                 'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-all',
@@ -562,7 +581,7 @@ export default function ClientsPage() {
       <div ref={interestRow} className={CHIP_ROW}>
         <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Интерес:</span>
         <button
-          onClick={() => setInterest('')}
+          onClick={() => patchUrl({ interest: null, page: null })}
           data-active={!interest}
           className={clsx(
             'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
@@ -587,7 +606,7 @@ export default function ClientsPage() {
           return (
             <button
               key={c.value}
-              onClick={() => setInterest(active ? '' : c.value)}
+              onClick={() => patchUrl({ interest: active ? null : c.value, page: null })}
               data-active={active}
               className={clsx(
                 'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
@@ -601,7 +620,7 @@ export default function ClientsPage() {
         {/* «📞 К звонку» — отмеченные руководителем для обзвона. */}
         {callRequestedCount > 0 && (
           <button
-            onClick={() => setOnlyCallRequested(v => !v)}
+            onClick={() => setOnlyCallRequested(!onlyCallRequested)}
             data-active={onlyCallRequested}
             className={clsx(
               'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
@@ -626,7 +645,7 @@ export default function ClientsPage() {
             className="input pl-9"
           />
         </div>
-        <select value={sphere} onChange={e => setSphere(e.target.value)} className="input sm:w-48">
+        <select value={sphere} onChange={e => patchUrl({ sphere: e.target.value || null, page: null })} className="input sm:w-48">
           <option value="">Все сферы</option>
           {spheres.map(s => <option key={s} value={s}>{s}</option>)}
         </select>

@@ -27,6 +27,7 @@ import { Modal } from '@/components/ui'
 import useNarrow from '@/hooks/useNarrow'
 import { useAuthStore } from '@/store/auth.store'
 import CyclePublicationsModal from './CyclePublicationsModal'
+import { useUrlState } from '@/lib/urlState'
 
 type Mood = 'good' | 'meh' | 'bad' | null
 type Row = {
@@ -52,6 +53,8 @@ type Row = {
 }
 type Data = { ym: string; today: string; ref: string; seeMoney: boolean; projects: Row[] }
 type Filter = 'all' | 'mine' | 'behind' | 'unhappy' | 'nocontact' | 'late' | 'ads'
+const FILTERS: readonly Filter[] = ['all', 'mine', 'behind', 'unhappy', 'nocontact', 'late', 'ads']
+const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 
 const MON = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
@@ -122,9 +125,14 @@ function freshOf(d: number | null): string {
 export default function SmmControlPage() {
   const qc = useQueryClient()
   const narrow = useNarrow()
-  const [ym, setYm] = useState(thisYm)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [q, setQ] = useState('')
+  // Месяц, фильтр и поиск — в адресе с заменой шага (08.11.2026): вернулись
+  // «Назад» — всё как было. Текущий месяц и «Все» в адрес не пишем; кривое
+  // значение из старой ссылки — значение по умолчанию.
+  const nowYm = thisYm()
+  const [rawYm, setYm] = useUrlState('ym', nowYm)
+  const ym = YM_RE.test(rawYm) ? rawYm : nowYm
+  const [urlFilter, setFilter] = useUrlState<Filter>('filter', 'all', FILTERS)
+  const [q, setQ] = useUrlState<string>('q', '')
   const [moodFor, setMoodFor] = useState<Row | null>(null)
   // Окно «Публикации цикла» — по id, чтобы после отметки шапка окна брала
   // свежие «вышло / должно быть» из обновлённого списка.
@@ -144,6 +152,8 @@ export default function SmmControlPage() {
   })
   const rows = data?.projects ?? []
   const seeMoney = !!data?.seeMoney
+  // «Оплата просрочена» есть только у тех, кто видит деньги: из чужой ссылки — «Все».
+  const filter: Filter = urlFilter === 'late' && !seeMoney ? 'all' : urlFilter
 
   /** Отметка с мгновенным откликом: строка меняется сразу, при ошибке
    *  откатывается только то, что меняли. Весь список после каждой отметки
@@ -244,12 +254,12 @@ export default function SmmControlPage() {
           <h1 className="text-xl font-bold">Контроль проектов</h1>
         </div>
         <div className="ml-auto inline-flex items-center gap-0.5 p-1 rounded-xl border border-surface-200 dark:border-surface-700">
-          <button type="button" aria-label="Прошлый месяц" onClick={() => setYm(v => shiftYm(v, -1))}
+          <button type="button" aria-label="Прошлый месяц" onClick={() => setYm(shiftYm(ym, -1))}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800">
             <ChevronLeft size={18} />
           </button>
           <span className="min-w-[132px] text-center text-[14px] font-semibold">{monthLabel}</span>
-          <button type="button" aria-label="Следующий месяц" onClick={() => setYm(v => shiftYm(v, 1))}
+          <button type="button" aria-label="Следующий месяц" onClick={() => setYm(shiftYm(ym, 1))}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800">
             <ChevronRight size={18} />
           </button>

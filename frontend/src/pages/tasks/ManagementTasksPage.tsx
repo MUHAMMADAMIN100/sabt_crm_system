@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tasksApi } from '@/services/api.service'
+import { useSocketConnected } from '@/lib/socketState'
 import { PageLoader, EmptyState, Avatar } from '@/components/ui'
 import { STATUS_LABELS, STATUS_COLOR_CLASSES, normalizeTaskStatus } from '@/lib/taskStatus'
 import { ClipboardList, Crown, Play, Check, CalendarDays, AlertTriangle } from 'lucide-react'
@@ -22,11 +23,16 @@ const PRIORITY_LABELS: Record<string, string> = {
 export default function ManagementTasksPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'mine' | 'assigned'>('mine')
+  // Раз в минуту опрашиваем только без связи с сервером (08.11.2026): при
+  // живом сокете оба списка обновляет событие tasks:changed. Раз в 2 мин —
+  // страховка: поручение, надиктованное в Telegram, этого события не шлёт.
+  const live = useSocketConnected()
+  const pollEvery = live ? 2 * 60_000 : 60_000
 
   const { data: mine = [], isLoading } = useQuery({
     queryKey: ['tasks-from-management'],
     queryFn: () => tasksApi.fromManagement(),
-    refetchInterval: 60000,
+    refetchInterval: pollEvery,
   })
   // Вкладку «Я выдал» показываем по ФАКТУ наличия выданных задач, а не по
   // списку ролей: задачи ставят и менеджеры продаж, и назначенные менеджеры
@@ -35,7 +41,7 @@ export default function ManagementTasksPage() {
   const { data: assigned = [] } = useQuery({
     queryKey: ['tasks-assigned-by-me'],
     queryFn: () => tasksApi.assignedByMe(),
-    refetchInterval: 60000,
+    refetchInterval: pollEvery,
   })
   const canAssign = assigned.length > 0
 

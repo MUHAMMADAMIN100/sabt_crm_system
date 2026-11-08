@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { kpiApi, employeesApi } from '@/services/api.service'
 import { Avatar } from '@/components/ui'
@@ -75,10 +75,13 @@ export default function EmployeesKpiWidget() {
   const [filter, setFilter] = useState<string>('all')
   const range = periodRange(period)
 
-  const { data: kpis, isLoading } = useQuery<UserKpi[]>({
+  // Смена периода (08.11.2026): список прошлого периода остаётся бледным,
+  // пока считается новый, — а не «Загрузка KPI…» вместо всего виджета.
+  const { data: kpis, isLoading, isPlaceholderData: stale } = useQuery<UserKpi[]>({
     queryKey: ['kpi-all', period],
     queryFn: () => kpiApi.all(range),
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
 
   // Подтягиваем employees чтобы построить (userId → employee) маппу с
@@ -173,7 +176,7 @@ export default function EmployeesKpiWidget() {
       {filtered.length === 0 ? (
         <p className="text-xs text-surface-400 py-4 text-center">Нет сотрудников в этой группе</p>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className={clsx('grid grid-cols-1 lg:grid-cols-2 gap-3 transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
           {filtered.map(row => {
             const emp = empByUserId.get(row.userId)
             return (

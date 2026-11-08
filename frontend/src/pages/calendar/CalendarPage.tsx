@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { calendarApi, projectsApi, tasksApi, employeesApi, clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui'
@@ -13,6 +13,7 @@ import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { useUrlState } from '@/lib/urlState'
 
 // Светофорная палитра: 🟢 старт = успех, 🔴 финиш = закрытие/риск, 🟡 задача = в работе.
 const TYPE_COLORS: Record<string, string> = {
@@ -105,10 +106,23 @@ function TaskStatusToggle({ done, onToggle }: { done: boolean; onToggle: (e: Rea
 }
 
 export default function CalendarPage() {
-  const [current, setCurrent] = useState(new Date())
+  // Месяц/неделя, режим и фильтр «Тип» — в адресе с заменой шага (08.11.2026):
+  // вернулись «Назад» из задачи или клиента — тот же месяц и тот же вид.
+  // ?d=ГГГГ-ММ-ДД — опорный день (в месяце — его месяц, в неделе — его неделя);
+  // сегодня в адрес не пишем.
+  const [dParam, setDParam] = useUrlState<string>('d', '')
+  const current = useMemo(() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dParam)
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+      if (!Number.isNaN(d.getTime())) return d
+    }
+    return new Date()
+  }, [dParam])
+  const setCurrent = (next: Date) => setDParam(isToday(next) ? '' : format(next, 'yyyy-MM-dd'))
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [showTaskForm, setShowTaskForm] = useState(false)
-  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('')
+  const [scopeParam, setScopeFilter] = useUrlState<ScopeFilter>('scope', '', ['', 'personal', 'business', 'general'])
   // Side modal для просмотра деталей задачи при клике на event.
   const [detailEventId, setDetailEventId] = useState<string | null>(null)
   // Карточка клиента прямо в календаре (клик по встрече).
@@ -117,7 +131,7 @@ export default function CalendarPage() {
   // ту же FounderQuickTaskForm в режиме редактирования.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   // Режим календаря: месяц или неделя (с часовой сеткой).
-  const [calView, setCalView] = useState<'month' | 'week'>('month')
+  const [calView, setCalView] = useUrlState('view', 'month', ['month', 'week'] as const)
   // День, для которого открыт модал «все задачи дня» (клик по «+N ещё»).
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null)
   // Час выбранного слота в недельном виде — для префилла времени задачи.
@@ -138,6 +152,8 @@ export default function CalendarPage() {
   // Роли, которые ведут в календаре СВОИ задачи: форма без типа «Общая»,
   // с выбором проекта и без пометки «от основателя».
   const ownTasksCreator = isSalesManager || isPmDev
+  // «Общие» у этих ролей скрыты — по старой ссылке ?scope=general покажем «Все».
+  const scopeFilter: ScopeFilter = ownTasksCreator && scopeParam === 'general' ? '' : scopeParam
   // Рядовой сотрудник ведёт в календаре СВОЁ расписание: создаёт задачи и
   // встречи себе. Тип «Личная» зафиксирован, поэтому выбора исполнителя в
   // форме нет — раздавать работу коллегам из календаря по-прежнему могут
@@ -163,6 +179,8 @@ export default function CalendarPage() {
       from, to,
       ...(scopeFilter && { scope: scopeFilter }),
     }),
+    // Смена месяца — прежняя сетка остаётся, пока не придёт новая.
+    placeholderData: keepPreviousData,
   })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list(), enabled: isManagerPlus || isFounderView })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list(), enabled: isManagerPlus || isFounderView })
@@ -422,7 +440,10 @@ export default function CalendarPage() {
       if ((isFounderView || isManagerPlus || isSelfOnlyCreator) && isOwnTask) setEditingTaskId(e.taskId)
       else setDetailEventId(e.id)
     } else if (e.link) {
-      window.location.href = e.link
+      // Переход внутри CRM — через роутер: «Назад» возвращает в календарь
+      // без перезагрузки всего приложения (08.11.2026).
+      if (/^https?:\/\//.test(e.link)) window.location.href = e.link
+      else navigate(e.link)
     }
   }
 
@@ -516,9 +537,9 @@ export default function CalendarPage() {
           </div>
           <div className="flex items-center gap-3 max-sm:order-last max-sm:w-full">
           <button
-            onClick={() => setCurrent(d => calView === 'week'
-              ? subWeeks(d, 1)
-              : new Date(d.getFullYear(), d.getMonth() - 1))}
+            onClick={() => setCurrent(calView === 'week'
+              ? subWeeks(current, 1)
+              : new Date(current.getFullYear(), current.getMonth() - 1))}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
             aria-label="Назад"
           >
@@ -531,9 +552,9 @@ export default function CalendarPage() {
               : (m => m.charAt(0).toUpperCase() + m.slice(1))(`${format(current, 'LLLL yyyy', { locale: ru })} г.`)}
           </span>
           <button
-            onClick={() => setCurrent(d => calView === 'week'
-              ? addWeeks(d, 1)
-              : new Date(d.getFullYear(), d.getMonth() + 1))}
+            onClick={() => setCurrent(calView === 'week'
+              ? addWeeks(current, 1)
+              : new Date(current.getFullYear(), current.getMonth() + 1))}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
             aria-label="Вперёд"
           >

@@ -62,6 +62,10 @@ const ROUTE_LABEL: Record<string, string> = {
   '/finance': 'Обзор',
 }
 
+/** Идёт восстановление места после «Назад» (на случай, если страница сразу
+ *  заменит адрес). */
+let restoring: { until: number; target: number; mark?: Mark } | null = null
+
 const ROW_SELECTOR = 'a, button, tr, li, [role="button"], [role="row"], [data-row]'
 const markOf = (el: Element): Mark | null => {
   const row = el.closest(ROW_SELECTOR) as HTMLElement | null
@@ -84,6 +88,14 @@ export function useScrollMemory(mainRef: RefObject<HTMLElement>) {
   useLayoutEffect(() => {
     const idx = historyIdx()
     if (navType === 'PUSH') mem.stack.length = idx
+    // Тот же шаг получил новый ключ (сменили месяц или фильтр — адрес
+    // заменён): переносим на него прокрутку, строку и заголовок.
+    const prevKey = mem.stack[idx]
+    if (navType === 'REPLACE' && prevKey && prevKey !== location.key) {
+      if (mem.scroll[prevKey] != null && mem.scroll[location.key] == null) mem.scroll[location.key] = mem.scroll[prevKey]
+      if (mem.mark[prevKey] && !mem.mark[location.key]) mem.mark[location.key] = mem.mark[prevKey]
+      if (mem.pages[prevKey]?.title) mem.pages[location.key] = { path: '', title: mem.pages[prevKey].title }
+    }
     mem.stack[idx] = location.key
     const prev = mem.pages[location.key]
     mem.pages[location.key] = { path: location.pathname + location.search, title: prev?.title }
@@ -96,25 +108,33 @@ export function useScrollMemory(mainRef: RefObject<HTMLElement>) {
     const el = mainRef.current
     if (!el) return
     if (navType === 'PUSH') { el.scrollTop = 0; return }
-    if (navType !== 'POP') return
-    const target = mem.scroll[location.key] ?? 0
-    const mark = mem.mark[location.key]
+    // Страница сразу после «Назад» заменила адрес (дописала параметр) —
+    // восстановление продолжаем, иначе оно оборвалось бы на полпути.
+    const continuing = navType === 'REPLACE' && restoring && Date.now() < restoring.until
+    if (navType !== 'POP' && !continuing) return
+    const target = continuing ? restoring!.target : (mem.scroll[location.key] ?? 0)
+    const mark = continuing ? restoring!.mark : mem.mark[location.key]
+    restoring = { until: Date.now() + 1500, target, mark }
     let done = false
     const started = Date.now()
-    // Данные могут прийти не сразу — ждём, пока страница дорастёт до нужной высоты.
+    // Данные могут прийти не сразу — ждём, пока страница дорастёт до нужной
+    // высоты. Таймер, а не requestAnimationFrame: тот замирает, пока вкладка
+    // не на экране, и место тогда не восстанавливалось бы.
+    let timer: number | undefined
     const tryRestore = () => {
       if (done) return
       const enough = el.scrollHeight - el.clientHeight >= target - 2
       if (enough || Date.now() - started > 2500) {
         el.scrollTop = target
         done = true
+        restoring = null
         if (mark) highlight(el, mark)
         return
       }
-      raf = requestAnimationFrame(tryRestore)
+      timer = window.setTimeout(tryRestore, 30)
     }
-    let raf = requestAnimationFrame(tryRestore)
-    return () => { done = true; cancelAnimationFrame(raf) }
+    tryRestore()
+    return () => { done = true; window.clearTimeout(timer) }
   }, [location.key]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -205,16 +225,26 @@ export function BackLink({ fallback, fallbackLabel, className, icon, children }:
 // сами. Ушли из окна на другую страницу — шаг остаётся, и при возврате окно
 // снова открыто. Пока идёт наше собственное снятие шагов, окна не открываем.
 let pendingCloses = 0
-let lastPopKey: string | null = null
-let skipKey: string | null = null
+// Каждое событие «Назад»/«Вперёд» — свой номер. По ключу шага различать
+// нельзя: у первой страницы после входа ключ всегда один и тот же ('default'),
+// и своё закрытие окна на ней не распознавалось бы.
+let popSeq = 0
+if (typeof window !== 'undefined') window.addEventListener('popstate', () => { popSeq++ })
+let lastPopSeq = 0
+let skipSeq = -1
 // Закрыли сразу несколько окон (день и задачу поверх) — снимаем их шаги одним
 // прыжком: два «Назад» в одно мгновение браузер может склеить в один.
 let backSteps = 0
 let backScheduled = false
+// Адрес на момент закрытия окна: если пока окно было открыто, сменили месяц
+// или фильтр (адрес заменён), после снятия шага возвращаем свежий адрес —
+// иначе он откатился бы к тому, что был под окном.
+let urlAfterBack: string | null = null
 function scheduleBack(go: (delta: number) => void) {
   backSteps++
   if (backScheduled) return
   backScheduled = true
+  urlAfterBack = window.location.pathname + window.location.search + window.location.hash
   queueMicrotask(() => {
     const n = backSteps
     backSteps = 0
@@ -242,11 +272,20 @@ export function useHistoryOverlay(id: string, value: string | null, apply: (v: s
   // История → окно.
   useEffect(() => {
     if (navType === 'POP') {
-      if (lastPopKey !== location.key) {
-        lastPopKey = location.key
-        if (pendingCloses > 0) { pendingCloses--; skipKey = location.key }
+      if (lastPopSeq !== popSeq) {
+        lastPopSeq = popSeq
+        if (pendingCloses > 0) {
+          pendingCloses--
+          skipSeq = popSeq
+          // Своё закрытие окна: вернуть свежий адрес той же страницы.
+          const fresh = urlAfterBack
+          urlAfterBack = null
+          if (fresh && fresh !== here && fresh.split(/[?#]/)[0] === location.pathname) {
+            navigate(fresh, { replace: true, state: location.state })
+          }
+        }
       }
-      if (skipKey === location.key) {
+      if (skipSeq === popSeq) {
         // Своё снятие шагов: только закрываем, не открываем заново.
         if (inState === null && value !== null) { expected.current = null; applyRef.current(null) }
         return

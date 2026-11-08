@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { kpiApi, employeesApi, tasksApi, analyticsApi } from '@/services/api.service'
 import { Avatar } from '@/components/ui'
@@ -54,10 +54,14 @@ export default function DevTeamKpiWidget({ onCreateTask }: { onCreateTask?: (use
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const range = periodRange(period)
 
-  const { data: kpis } = useQuery<any[]>({
+  // Смена периода (08.11.2026): проценты прошлого периода остаются бледными,
+  // пока считается новый, — раньше у всех на миг вставало «нет данных».
+  // Бледнеет только колонка KPI: задачи и кнопки от периода не зависят.
+  const { data: kpis, isPlaceholderData: stale } = useQuery<any[]>({
     queryKey: ['kpi-all', period],
     queryFn: () => kpiApi.all(range),
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   })
   const { data: employees } = useQuery({
     queryKey: ['employees'],
@@ -226,7 +230,7 @@ export default function DevTeamKpiWidget({ onCreateTask }: { onCreateTask?: (use
                   </div>
                 </div>
 
-                <div className="w-24 sm:w-32 shrink-0">
+                <div className={clsx('w-24 sm:w-32 shrink-0 transition-opacity', stale && 'opacity-60')} aria-busy={stale}>
                   {row.noData ? (
                     <p className="text-[11px] text-surface-400 text-right">нет данных</p>
                   ) : (

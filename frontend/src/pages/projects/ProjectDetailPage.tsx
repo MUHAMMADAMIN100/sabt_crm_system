@@ -28,7 +28,9 @@ import clsx from 'clsx'
 import { STATUS_LABELS as TASK_STATUS_LABELS } from '@/lib/taskStatus'
 import ClientAccessCard from '@/components/projects/ClientAccessCard'
 import { userCan } from '@/lib/permissions'
-import { useBackTarget } from '@/lib/navMemory'
+import { useBackTarget, useHistoryOverlay } from '@/lib/navMemory'
+import { useUrlState } from '@/lib/urlState'
+import { useSocketConnected } from '@/lib/socketState'
 
 // Wave 11: 4-статусная модель — канбан имеет 4 колонки = 4 статуса.
 // Маппер STATUS_TO_COLUMN остаётся для безопасной обработки старых
@@ -45,6 +47,9 @@ const STATUS_TO_COLUMN: Record<string, string> = {
   review: 'in_progress', on_client_approval: 'in_progress', approved: 'in_progress',
   returned: 'in_progress', rescheduled: 'in_progress', published: 'done',
 }
+type ProjectTab = 'overview' | 'tasks' | 'about' | 'client' | 'members' | 'activity'
+// «Задачи» и «Активность» скрыты — по старой ссылке ?tab=tasks откроется «Обзор».
+const PROJECT_TABS: readonly ProjectTab[] = ['overview', 'about', 'client', 'members']
 const API_URL = import.meta.env.VITE_API_URL || ''
 const fileUrl = (path: string) => path?.startsWith('http') ? path : `${API_URL}${path}`
 
@@ -53,11 +58,15 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate()
   // «‹» — на шаг назад; открыли из уведомления в новой вкладке — на «Панель».
   const back = useBackTarget('/', 'Панель')
-  const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'about' | 'client' | 'members' | 'activity'>('overview')
+  // Вкладка в адресе (?tab=, с заменой шага, 08.11.2026): вернулись «Назад» —
+  // та же вкладка. В адрес пускаем только видимые вкладки.
+  const [activeTab, setActiveTab] = useUrlState<ProjectTab>('tab', 'overview', PROJECT_TABS)
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [editingTask, setEditingTask] = useState<any>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  // Шторка задачи — шаг истории: «Назад» закрывает её, а не уходит со страницы.
+  useHistoryOverlay('task', openTaskId, setOpenTaskId)
   const [draggedTask, setDraggedTask] = useState<any>(null)
   const [showEditProject, setShowEditProject] = useState(false)
   const [showEditClient, setShowEditClient] = useState(false)
@@ -104,10 +113,13 @@ export default function ProjectDetailPage() {
   const [showRequestPayment, setShowRequestPayment] = useState(false)
   const [requestMessage, setRequestMessage] = useState('')
 
+  const live = useSocketConnected()
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
-    refetchInterval: 30000,
+    // Пока сокет на связи, проект обновляют события projects:/tasks:changed;
+    // опрос раз в 30 с — только без сокета (08.11.2026).
+    refetchInterval: live ? false : 30000,
   })
 
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
@@ -565,7 +577,7 @@ export default function ProjectDetailPage() {
       )}
 
       <div className="flex gap-1 border-b border-surface-100 dark:border-surface-700 overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0">
-        {(['overview', 'about', 'client', 'members'] as const)
+        {PROJECT_TABS
           // Вкладки «Задачи» и «Активность» скрыты: задачи ведутся в Умном календаре.
           .map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}

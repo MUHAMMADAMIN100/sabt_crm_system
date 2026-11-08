@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { employeesApi, usersApi, financeApi } from '@/services/api.service'
@@ -13,17 +13,32 @@ import { CollapsibleField } from '@/components/ui/CollapsibleField'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { useUrlState, useUrlFlag, useUrlNumber, usePatchUrl } from '@/lib/urlState'
 
 export default function EmployeesPage() {
-  const [search, setSearch] = useState('')
-  const [position, setPosition] = useState('')
+  // Поиск, должность, «В отпуске», вид и страница — в адресе с заменой шага
+  // (08.11.2026): вернулись «Назад» из карточки — список как был.
+  const patchUrl = usePatchUrl()
+  const patchRef = useRef(patchUrl)
+  patchRef.current = patchUrl
+  const [urlQ] = useUrlState<string>('q', '')
+  // Поле поиска — своё состояние, чтобы печаталось плавно; в адрес — через 300 мс.
+  const [search, setSearch] = useState(urlQ)
+  const lastQ = useRef(urlQ)
+  useEffect(() => { if (urlQ !== lastQ.current) { lastQ.current = urlQ; setSearch(urlQ) } }, [urlQ])
+  useEffect(() => {
+    if (search === lastQ.current) return
+    const tm = setTimeout(() => { lastQ.current = search; patchRef.current({ q: search || null }) }, 300)
+    return () => clearTimeout(tm)
+  }, [search])
+  const [posRaw] = useUrlState<string>('pos', '')
   // «В отпуске · N» — кто сейчас в отпуске (27.10.2026).
-  const [onlyVacation, setOnlyVacation] = useState(false)
+  const [onlyVacation] = useUrlFlag('vac')
   // Оргструктура, Задачи недели, Активность, План продаж и KPI — свои
   // подстраницы раздела «Сотрудники» (решение владельца 19.10.2026); здесь
   // только список людей карточками или таблицей.
-  const [view, setView] = useState<'cards' | 'table'>('cards')
-  const [page, setPage] = useState(1)
+  const [view, setView] = useUrlState('view', 'cards', ['cards', 'table'] as const)
+  const [pageRaw, setPage] = useUrlNumber('page', 1)
   const PAGE_SIZE = 16
   const [showCreate, setShowCreate] = useState(false)
   const [editEmp, setEditEmp] = useState<any>(null)
@@ -78,8 +93,10 @@ export default function EmployeesPage() {
     ...existingPositions.filter(p => !POSITION_CANON.includes(p)),
   ]
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1) }, [search, position])
+  // Должность из старой ссылки, которой больше нет, — «Все должности».
+  const position = allPositions.includes(posRaw) ? posRaw : ''
+  // Страницу сбрасываем в обработчиках фильтров, а не эффектом: эффект при
+  // возврате «Назад» сбросил бы запомненную страницу.
 
   // Руководитель SMM видит только SMM-сотрудников в списке.
   const isSmmLead = user?.role === 'smm_director'
@@ -94,6 +111,8 @@ export default function EmployeesPage() {
   }) || []
   const vacationCount = (allEmployees || []).filter((emp: any) => emp.status === 'vacation').length
 
+  // Страница из адреса — в пределах списка (старая ссылка, сотрудников стало меньше).
+  const page = Math.min(Math.max(1, pageRaw), Math.max(1, Math.ceil(employees.length / PAGE_SIZE)))
   const pagedEmployees = employees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const getTelegramUrl = (tg: string) => {
@@ -240,14 +259,14 @@ export default function EmployeesPage() {
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('employees.searchPlaceholder')} className="input pl-9" />
+          <input value={search} onChange={e => { setSearch(e.target.value); if (pageRaw !== 1) setPage(1) }} placeholder={t('employees.searchPlaceholder')} className="input pl-9" />
         </div>
-        <select value={position} onChange={e => setPosition(e.target.value)} className="input w-44">
+        <select value={position} onChange={e => patchUrl({ pos: e.target.value || null, page: null })} className="input w-44">
           <option value="">Все должности</option>
           {allPositions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         {(vacationCount > 0 || onlyVacation) && (
-          <button type="button" onClick={() => { setOnlyVacation(v => !v); setPage(1) }} aria-pressed={onlyVacation}
+          <button type="button" onClick={() => patchUrl({ vac: onlyVacation ? null : '1', page: null })} aria-pressed={onlyVacation}
             className={clsx('h-10 px-3.5 rounded-xl border text-sm font-semibold transition-colors',
               onlyVacation
                 ? 'border-amber-400/70 bg-amber-400/10 text-amber-600 dark:text-amber-300'

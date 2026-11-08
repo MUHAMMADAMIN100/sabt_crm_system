@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { shortenName } from '@/lib/name'
 import { tasksApi, projectsApi, employeesApi } from '@/services/api.service'
 import { invalidateAfterTaskChange } from '@/lib/invalidateQueries'
+import { useSocketConnected } from '@/lib/socketState'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
 import { PageLoader, StatusBadge, PriorityBadge, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
@@ -77,7 +78,12 @@ export default function TasksPage() {
   const ALL_STATUSES = TASK_STATUSES
   const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
-  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: 30000 })
+  // Опрос раз в 30 с — только без связи с сервером (08.11.2026): при живом
+  // сокете список обновляет событие tasks:changed. Редкий опрос раз в 5 мин
+  // остаётся страховкой: задачи, поставленные голосом в Telegram, этого
+  // события не шлют.
+  const live = useSocketConnected()
+  const { data: allTasks, isLoading } = useQuery({ queryKey: ['tasks'], queryFn: () => (isManagerPlus || isSalesManager) ? tasksApi.list() : tasksApi.my(), refetchInterval: live ? 5 * 60_000 : 30_000 })
   const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
   const { data: employees } = useQuery({ queryKey: ['employees'], queryFn: () => employeesApi.list() })
 

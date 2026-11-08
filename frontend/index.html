@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sabt System</title>
+    <!-- Соединение с сервером API открываем сразу (08.11.2026), а не когда
+         загрузится приложение: первый запрос не ждёт DNS и TLS. Адрес Vite
+         подставляет при сборке. Ссылку ставим скриптом: без адреса (локально
+         через прокси) её просто не будет, а неподставленное имя переменной в
+         теге link роняло бы сборку. use-credentials — запросы к API идут с cookie. -->
+    <script>
+      (function (u) {
+        if (!/^https?:\/\//.test(u)) return
+        var l = document.createElement('link')
+        l.rel = 'preconnect'
+        l.href = u
+        l.crossOrigin = 'use-credentials'
+        document.head.appendChild(l)
+      })('%VITE_API_URL%')
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- IBM Plex Sans — шрифт, сделанный для корпоративного софта: полная

@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import './finance.css'
-import { money, currentYm, apiErr } from './finlib'
+import { money, apiErr, useYmParam } from './finlib'
 import FinIcon from './FinIcon'
 import MonthNav from './MonthNav'
 import { FinLoading, FinLoadError, invalidateFinance } from './FinKit'
@@ -43,7 +43,8 @@ type Data = {
 
 export default function FinanceTransportPage() {
   const qc = useQueryClient()
-  const [ym, setYm] = useState(currentYm())
+  // Месяц — в адресе (?ym=, с заменой шага, 08.11.2026): вернулись «Назад» — тот же месяц.
+  const [ym, setYm] = useYmParam()
   const q = useQuery<Data>({ queryKey: ['transport-list', ym], queryFn: () => transportApi.list(ym) })
   const accountsQ = useQuery<any[]>({ queryKey: ['finref', 'accounts'], queryFn: () => financeApi.accounts() })
   const accounts = (accountsQ.data ?? []).filter((a: any) => !a.archived)

@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { storiesApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { useSocketConnected } from '@/lib/socketState'
 import { storiesDailyTarget } from '@/pages/smm/smmShared'
 import { Avatar } from '@/components/ui'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday } from 'date-fns'
@@ -59,10 +60,13 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   const userId = employeeId || user?.id || ''
   const cacheKey = employeeId ? userId : 'all'
 
+  // Опрос — только пока нет связи с сервером (08.11.2026): при живом сокете
+  // каждую отметку приносит событие stories:changed, и опрос был лишним.
+  const live = useSocketConnected()
   const { data: stories } = useQuery({
     queryKey: ['stories', cacheKey, from, to],
     queryFn: () => storiesApi.all(from, to),
-    refetchInterval: 30000, // страховка на случай разрыва socket
+    refetchInterval: live ? false : 30_000,
   })
 
   const { data: projects } = useQuery({

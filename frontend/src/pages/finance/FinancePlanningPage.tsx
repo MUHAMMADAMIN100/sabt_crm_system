@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, todayISO } from './finlib';
+import { apiErr, currentYm, formatDate, money, monthLabel, pluralRu, shiftYm, todayISO, useYmParam, withYm } from './finlib';
 import { FinLoadError, FinLoading, invalidateFinanceAll, keepMonth } from './FinKit';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
@@ -70,7 +70,8 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
     return (
       <div className="cal-item-rows">
         <div className="cal-item-row"><span>Статус</span><b>Срок прошёл</b></div>
-        <Link to="/finance/income/smm" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть SMM</Link>
+        {/* Просрочку SMM считаем по данным текущего месяца — там её и видно. */}
+        <Link to={withYm('/finance/income/smm', currentYm())} className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть SMM</Link>
       </div>
     );
   }
@@ -79,7 +80,8 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
     return (
       <div className="cal-item-rows">
         <div className="cal-item-row"><span>Статус</span><b>{item.date < todayISO() ? 'Срок прошёл' : 'Вернуть до этого дня'}</b></div>
-        <Link to="/finance/expense/debts" className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть долги</Link>
+        {/* Срок долга — в этом же месяце календаря: «Долги» открываем на нём. */}
+        <Link to={withYm('/finance/expense/debts', ym)} className="btn sm" style={{ alignSelf: 'flex-start', marginTop: 8 }}>Открыть долги</Link>
       </div>
     );
   }
@@ -137,7 +139,9 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
 export default function FinancePlanningPage() {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
-  const [calYm, setCalYm] = useState(currentYm());
+  // Месяц — в адресе (?ym=, с заменой шага, 08.11.2026), как на других
+  // страницах «Финансов»: вернулись «Назад» из долгов или SMM — тот же месяц.
+  const [calYm, setCalYm] = useYmParam();
   // ── Данные календаря: всё движение денег по датам ──────────────────
   const calYear = calYm.slice(0, 4);
   // Зарплата выдаётся 10-го числа за ПРЕДЫДУЩИЙ месяц (работали в августе —
