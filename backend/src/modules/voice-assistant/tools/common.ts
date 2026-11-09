@@ -97,6 +97,30 @@ export function norm(s: unknown): string {
   return String(s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[«»"'`.,!?;:()\-–—_/\\]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm',
+  н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh',
+  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  // таджикские
+  ғ: 'gh', ӣ: 'i', қ: 'q', ӯ: 'u', ҳ: 'h', ҷ: 'j',
+};
+
+/** Имя «по звучанию» латиницей: «Мухаммадамина» и «Muhammadamin» сравнимы.
+ *  В зарплатной ведомости имена латиницей, а говорят по-русски. */
+export function soundKey(s: unknown): string {
+  return norm(s)
+    .split('')
+    .map((ch) => (ch in TRANSLIT ? TRANSLIT[ch] : ch))
+    .join('')
+    .replace(/kh/g, 'h').replace(/dzh|dj|zh/g, 'j').replace(/ts/g, 'c').replace(/yu/g, 'u').replace(/ya/g, 'a')
+    .replace(/q/g, 'k').replace(/gh/g, 'g').replace(/w/g, 'v').replace(/ey/g, 'ei');
+}
+
+/** Похожесть имён с учётом разных алфавитов. */
+export function nameScore(candidate: string, spoken: string): number {
+  return Math.max(matchScore(candidate, spoken), matchScore(soundKey(candidate), soundKey(spoken)));
+}
+
 /** Насколько название похоже на запрос: доля слов запроса, найденных по
  *  основе (первые 4 буквы) — падежи «Архидеи/Архидея» совпадают. */
 export function matchScore(title: string, query: string): number {

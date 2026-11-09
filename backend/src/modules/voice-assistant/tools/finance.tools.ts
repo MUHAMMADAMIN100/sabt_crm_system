@@ -2,6 +2,7 @@ import { hasGrant } from '../../auth/permissions';
 import { ApiError } from '../internal-api';
 import { checkDate, fmtDateRu, matchScore, norm } from './common';
 import { ToolContext, ToolDef, ToolError, WriteOutcome } from './types';
+import { SALARY_WORDS } from './salary.tools';
 
 /**
  * Финансы — только у кого finance.manage (основатель), как раздел на сайте.
@@ -127,6 +128,12 @@ interface OpArgs {
 }
 
 async function prepareOperation(args: OpArgs, ctx: ToolContext) {
+  // 09.11.2026: «Оштрафуй Мухаммадамина на 500» ИИ провёл как расход «Прочее».
+  // Штраф, премия, аванс, зарплата — это ведомость сотрудника, не расход
+  // компании: такую подмену не пропускаем.
+  if (SALARY_WORDS.test(ctx.utterance)) {
+    throw new ToolError('Это просьба про зарплату сотрудника (штраф/премия/аванс/выплата), а не расход компании. Используй salary_accrual или salary_payout; если сотрудник или смысл неясны — спроси через ask_choice.');
+  }
   if (!['income', 'expense', 'transfer'].includes(args.type)) throw new ToolError('Тип операции: доход, расход или перевод.');
   const amount = checkAmount(args.amount);
   const date = args.date ? checkDate(args.date) : ctx.today;
@@ -154,7 +161,8 @@ export const recordOperation: ToolDef<OpArgs> = {
   name: 'record_operation',
   kind: 'write',
   description:
-    'Записать операцию в финансы: расход («запиши расход 300 на рекламу с Алифа»), доход, перевод между счетами. '
+    'Записать операцию компании: расход («запиши расход 300 на рекламу с Алифа»), доход, перевод между счетами. '
+    + 'НЕ для штрафов, премий, авансов и зарплаты сотрудникам — для них salary_accrual / salary_payout. '
     + 'Нужны сумма, счёт (Алиф / Dushanbe City / Наличные) и статья. Оплату клиента за проект проводи через client_payment.',
   parameters: {
     type: 'object',

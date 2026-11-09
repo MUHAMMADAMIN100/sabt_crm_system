@@ -31,6 +31,11 @@ export interface WriteOutcome {
   undo?: UndoStep[];
   /** Доп. кнопки (например «📎 Приложить результат»). */
   buttons?: Button[][];
+  /** Сообщения в Telegram другим людям после успеха (штраф/премия —
+   *  сотруднику). Сайт сам их не шлёт — шлёт бот. */
+  notify?: Array<{ userId: string; text: string }>;
+  /** Что сообщить тем же людям, если действие отменили кнопкой. */
+  undoNotify?: Array<{ userId: string; text: string }>;
 }
 
 export interface ToolDef<A = any> {

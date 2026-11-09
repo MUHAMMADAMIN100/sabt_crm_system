@@ -364,3 +364,46 @@ describe('язык расшифровки и модели', () => {
     expect(reasoningFor('gpt-4.1-mini')).toBeUndefined();
   });
 });
+
+import { nameScore } from './tools/common';
+import { salaryAccrual, SALARY_WORDS } from './tools/salary.tools';
+import { recordOperation } from './tools/finance.tools';
+
+describe('зарплата: штраф, премия, защита от подмены', () => {
+  it('имя кириллицей находит латиницу ведомости (и наоборот)', () => {
+    expect(nameScore('Turazoda Muhammadamin Mahmad', 'Мухаммадамина')).toBe(1);
+    expect(nameScore('Mayunusova Farzona Firdavsovna', 'Фарзоне')).toBe(1);
+    expect(nameScore('Sabrina Oblokulova', 'Сабрине')).toBe(1);
+    expect(nameScore('Lashkarova Savribegim Eradzhevna', 'Сабрине')).toBe(0);
+    expect(nameScore('Khakimova Maryam', 'Хакимова')).toBe(1);
+  });
+
+  it('«оштрафуй» — штраф в ведомость за месяц даты, сообщение сотруднику и отмена', async () => {
+    const EMP = '55555555-5555-5555-5555-555555555555';
+    let body: any;
+    const api = fakeApi({
+      'GET /finance/employees': () => [{ id: EMP, name: 'Turazoda Muhammadamin Mahmad', userId: ME, status: 'active', fineEntries: { '2026-11': [{ id: 'old', amount: 50 }] } }],
+      [`POST /finance/employees/${EMP}/deduction`]: (b) => { body = b; return { fineEntries: { '2026-11': [{ id: 'old', amount: 50 }, { id: 'new1', amount: 500 }] } }; },
+    });
+    const ctx = ctxWith(api, { role: 'founder' });
+    ctx.utterance = 'Оштрафуй Мухаммадамина на 500 сомони за опоздание';
+    expect(salaryAccrual.confirm!({} as any, ctx)).toBe(true);
+    const pv = await salaryAccrual.preview!({ employee: 'Мухаммадамина', kind: 'fine', amount: 500, reason: 'опоздание' }, ctx);
+    expect(pv).toMatch(/ШТРАФ/);
+    expect(pv).toMatch(/Turazoda Muhammadamin/);
+    const out = await salaryAccrual.run({ employee: 'Мухаммадамина', kind: 'fine', amount: 500, reason: 'опоздание' }, ctx);
+    expect(body).toEqual({ kind: 'fine', ym: '2026-11', amount: 500, date: '2026-11-09', note: 'опоздание' });
+    expect(out.undo?.[0].path).toBe(`/finance/employees/${EMP}/deduction/new1?kind=fine&ym=2026-11`);
+    expect(out.notify?.[0]).toMatchObject({ userId: ME });
+    expect(out.notify?.[0].text).toMatch(/Штраф/);
+    expect(out.undoNotify?.[0].text).toMatch(/отмен/);
+  });
+
+  it('«оштрафуй … на 500» нельзя провести как расход компании', async () => {
+    const ctx = ctxWith(fakeApi({}), { role: 'founder' });
+    ctx.utterance = 'Ашрафуй Мухамадамина на 500 сомон';
+    expect(SALARY_WORDS.test(ctx.utterance)).toBe(true);
+    await expect(recordOperation.preview!({ type: 'expense', amount: 500, account: 'алиф', category: 'прочее' }, ctx))
+      .rejects.toThrow(/зарплату сотрудника/);
+  });
+});

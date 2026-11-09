@@ -18,10 +18,11 @@ import { TASK_TOOLS } from './tools/tasks.tools';
 import { CLIENT_TOOLS } from './tools/clients.tools';
 import { SMM_TOOLS } from './tools/smm.tools';
 import { FINANCE_TOOLS } from './tools/finance.tools';
+import { SALARY_TOOLS } from './tools/salary.tools';
 import { Button, ToolContext, ToolDef, UndoStep } from './tools/types';
 
 /** Все инструменты. Кому какие видны — решает available(user). */
-export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS, ...SALARY_TOOLS];
 
 const SESSION_TTL_MS = 20 * 60_000;
 const HISTORY_MAX = 4;
@@ -35,7 +36,8 @@ const MAX_VOICE_SEC = 180;
  *  отдельным блоком, а не репликами бота: реплики ИИ копировал и писал
  *  «сделано», ничего не сделав (прогон 09.11.2026). */
 interface Session { refs: RefTable; history: string[]; at: number }
-interface UndoEntry { chatId: number; userId: string; steps: UndoStep[]; at: number }
+type Notice = { userId: string; text: string };
+interface UndoEntry { chatId: number; userId: string; steps: UndoStep[]; undoNotify: Notice[]; at: number }
 interface ConfirmEntry { chatId: number; userId: string; calls: PendingCall[]; refs: ReturnType<RefTable['toJSON']>; utterance: string; at: number }
 interface ChoiceEntry { chatId: number; userId: string; utterance: string; options: string[]; replyTaskId: string | null; at: number }
 
@@ -165,6 +167,7 @@ export class VoiceAssistantService implements OnModuleInit {
         await this.telegram.sendMessage(chatId, `⚠️ Отменить удалось не всё: ${esc(failed.join('; '))}`);
         return { toast: 'Отменено частично', append: '↩️ Отменено частично' };
       }
+      await this.notifyPeople(u.undoNotify);
       return { toast: 'Отменено', append: '↩️ Отменено' };
     }
 
@@ -244,10 +247,14 @@ export class VoiceAssistantService implements OnModuleInit {
   ): Promise<void> {
     const lines: string[] = [];
     const undo: UndoStep[] = [];
+    const notices: Notice[] = [];
+    const undoNotices: Notice[] = [];
     for (const d of result.done) {
       if (d.outcome) {
         lines.push(esc(d.outcome.summary));
         if (d.outcome.undo) undo.unshift(...[...d.outcome.undo].reverse());
+        if (d.outcome.notify) notices.push(...d.outcome.notify);
+        if (d.outcome.undoNotify) undoNotices.push(...d.outcome.undoNotify);
       } else if (d.error && !result.text) {
         lines.push(`⚠️ ${esc(d.error)}`);
       }
@@ -271,12 +278,21 @@ export class VoiceAssistantService implements OnModuleInit {
     }
     if (undo.length) {
       const key = this.key();
-      this.undos.set(key, { chatId, userId: user.id, steps: undo, at: Date.now() });
+      this.undos.set(key, { chatId, userId: user.id, steps: undo, undoNotify: undoNotices, at: Date.now() });
       buttons.push([{ text: '↩ Отменить', callback_data: `va:undo:${key}` }]);
     }
     if (!lines.length) lines.push('🤔 Не понял, что нужно сделать. Например: «Задачу "Макет" — на готово» или «Какие задачи у меня на завтра?»');
     this.sweep();
     await this.telegram.sendMessage(chatId, `${head || ''}${lines.join('\n')}`.slice(0, 4000), buttons.length ? buttons : undefined);
+    await this.notifyPeople(notices);
+  }
+
+  /** Сообщения другим людям (штраф/премия — сотруднику). Сбой доставки
+   *  не отменяет сделанное: запись в CRM уже есть. */
+  private async notifyPeople(list: Notice[] = []): Promise<void> {
+    for (const n of list) {
+      await this.telegram.sendToUser(n.userId, n.text).catch((e) => this.logger.warn(`уведомление ${n.userId}: ${e?.message || e}`));
+    }
   }
 
   private historyNote(r: AgentResult): string {

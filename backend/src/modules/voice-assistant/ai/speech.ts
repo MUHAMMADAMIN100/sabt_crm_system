@@ -38,7 +38,10 @@ export function cyrillicShare(text: string): number {
 /** Подсказка распознавателю — обычной фразой и не длиннее нужного. */
 export function speechPrompt(names: string): string {
   const list = names.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 60).join(', ');
-  return list ? `Голосовая команда для CRM агентства. Возможные имена и названия: ${list}.` : '';
+  // Рабочие слова CRM: без них «Оштрафуй» распознавалось как «Ашрафуй» (09.11.2026).
+  return `Голосовая команда для CRM агентства. Слова: оштрафуй, штраф, премия, аванс, зарплата, отпускные, сомони, `
+    + `отгул, смена, перерыв, лид, сторис, рилс, съёмка, монтаж, контент-план, Алиф, Dushanbe City.`
+    + (list ? ` Имена и названия: ${list}.` : '');
 }
 
 export async function transcribe(audio: Buffer, hint: string): Promise<Transcript> {
