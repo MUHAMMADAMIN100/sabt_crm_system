@@ -4,7 +4,8 @@ import { matchScore, addDays, weekdayRu, dushanbeISO, fmtDeadline } from './tool
 import { ToolContext, ToolError } from './tools/types';
 import { ApiError } from './internal-api';
 import { setTaskStatus, createTask, findTasks, updateTask, deleteTask, VOICE_MARK } from './tools/tasks.tools';
-import { shiftPause, shiftStart } from './tools/shifts.tools';
+import { shiftPause, shiftStart, pauseKindFromSpeech } from './tools/shifts.tools';
+import { NeedChoice } from './tools/types';
 import { taskIdFromReply } from '../telegram/telegram.controller';
 import { webhookSecretFor } from '../telegram/telegram.service';
 
@@ -234,10 +235,18 @@ describe('смена', () => {
   it('перерыв с причиной', async () => {
     let body: any;
     const api = fakeApi({ 'POST /work-shifts/pause': (b) => { body = b; return { todayMinutes: 125 }; } });
-    const out = await shiftPause.run({ kind: 'lunch' }, ctxWith(api));
+    const ctx = ctxWith(api); ctx.utterance = 'я ушёл на обед';
+    const out = await shiftPause.run({ kind: 'personal' }, ctx);
     expect(body).toEqual({ kind: 'lunch' });
     expect(out.summary).toMatch(/обед/);
     expect(out.summary).toMatch(/2 ч 05 мин/);
+  });
+  it('без причины — вопрос кнопками, а не догадка ИИ', async () => {
+    const ctx = ctxWith(fakeApi({})); ctx.utterance = 'поставь на паузу';
+    await expect(shiftPause.run({ kind: 'personal' }, ctx)).rejects.toBeInstanceOf(NeedChoice);
+    expect(pauseKindFromSpeech('выехал к клиенту на съёмку')).toBe('work');
+    expect(pauseKindFromSpeech('поставь на паузу (Человек уточнил кнопкой: «Личное»)')).toBe('personal');
+    expect(pauseKindFromSpeech('ба хӯрок рафтам')).toBe('lunch');
   });
   it('уже работающему не начинает смену второй раз', async () => {
     const api = fakeApi({ 'GET /work-shifts/my': () => ({ state: 'working', dayStartedLabel: '09:02' }) });
@@ -318,5 +327,40 @@ describe('цикл разбора', () => {
     expect(firstResult.content).toMatch(/Нет задачи с меткой/);
     expect(r.done.filter((d) => d.outcome).length).toBe(1);
     expect(api.calls.some((c) => c.method === 'PATCH' && c.body.status === 'done')).toBe(true);
+  });
+});
+
+import { looksLikeHintEcho, speechPrompt } from './ai/speech';
+
+describe('эхо подсказки распознавания', () => {
+  const names = 'Лашкарова Саврибегим Эраджевна, Маюнусова Фарзона Фирдавсовна, Тест SMM проект, ПРВ-Альфа';
+  const prompt = speechPrompt(names);
+  it('ловит «расшифровку», которая повторяет подсказку', () => {
+    expect(looksLikeHintEcho('Лашкарова Саврибегим Эраджевна, Маюнусова Фарзона Фирдавсовна, Тест SMM проект', `${prompt} ${names}`)).toBe(true);
+    expect(looksLikeHintEcho('Голосовая команда для CRM агентства. Возможные имена и названия: Лашкарова', `${prompt} ${names}`)).toBe(true);
+  });
+  it('обычные команды с именами — не эхо', () => {
+    expect(looksLikeHintEcho('И перенеси её на пятницу', `${prompt} ${names}`)).toBe(false);
+    expect(looksLikeHintEcho('Поставь Фарзоне задачу сделать сторис для Тест SMM проекта', `${prompt} ${names}`)).toBe(false);
+    expect(looksLikeHintEcho('Какие задачи у Маюнусовой Фарзоны?', `${prompt} ${names}`)).toBe(false);
+  });
+});
+
+import { cyrillicShare } from './ai/speech';
+import { reasoningFor } from './ai/providers';
+
+describe('язык расшифровки и модели', () => {
+  it('чужой алфавит замечаем, русский и таджикский — нет', () => {
+    expect(cyrillicShare('你好')).toBe(0);
+    expect(cyrillicShare('Hallo!')).toBe(0);
+    expect(cyrillicShare('Барои фардо ба ман вазифа илова кун: ба мизоҷ занг задан')).toBe(1);
+    expect(cyrillicShare('Поставь задачу для Javonon')).toBeGreaterThan(0.6);
+  });
+  it('глубина рассуждения по модели', () => {
+    delete process.env.OPENAI_REASONING;
+    expect(reasoningFor('gpt-5-mini')).toBe('low');
+    expect(reasoningFor('gpt-5.4-mini')).toBe('none');
+    expect(reasoningFor('gpt-6.1-sol')).toBe('none');
+    expect(reasoningFor('gpt-4.1-mini')).toBeUndefined();
   });
 });

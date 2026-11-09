@@ -24,14 +24,17 @@ import { Button, ToolContext, ToolDef, UndoStep } from './tools/types';
 export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS];
 
 const SESSION_TTL_MS = 20 * 60_000;
-const HISTORY_MAX = 8;
+const HISTORY_MAX = 4;
 const UNDO_TTL_MS = 60 * 60_000;
 const PENDING_TTL_MS = 15 * 60_000;
 const RATE_WINDOW_MS = 10 * 60_000;
 const RATE_MAX = 40;
 const MAX_VOICE_SEC = 180;
 
-interface Session { refs: RefTable; history: ChatMessage[]; at: number }
+/** history — короткие строки «просьба → итог». В подсказку ИИ они идут
+ *  отдельным блоком, а не репликами бота: реплики ИИ копировал и писал
+ *  «сделано», ничего не сделав (прогон 09.11.2026). */
+interface Session { refs: RefTable; history: string[]; at: number }
 interface UndoEntry { chatId: number; userId: string; steps: UndoStep[]; at: number }
 interface ConfirmEntry { chatId: number; userId: string; calls: PendingCall[]; refs: ReturnType<RefTable['toJSON']>; utterance: string; at: number }
 interface ChoiceEntry { chatId: number; userId: string; utterance: string; options: string[]; replyTaskId: string | null; at: number }
@@ -187,9 +190,12 @@ export class VoiceAssistantService implements OnModuleInit {
     void this.serial(chatId, async () => {
       const stopTyping = this.typing(chatId);
       try {
-        const ctx = this.context(user, chatId, ch.utterance);
+        // Уточнение — часть сказанного: по нему и ИИ, и инструменты
+        // (например вид перерыва) понимают выбор. Иначе бот спрашивал бы снова.
+        const clarified = `${ch.utterance}\n\n(Человек уточнил кнопкой: «${option}»)`;
+        const ctx = this.context(user, chatId, clarified);
         const snapshot = await buildSnapshot(ctx, ch.replyTaskId);
-        await this.process(chatId, user, ctx, snapshot, `${ch.utterance}\n\n(Человек уточнил кнопкой: «${option}»)`, false, ch.replyTaskId, true);
+        await this.process(chatId, user, ctx, snapshot, clarified, false, ch.replyTaskId, true);
       } catch (e: any) {
         await this.failSoft(chatId, e);
       } finally {
@@ -210,7 +216,7 @@ export class VoiceAssistantService implements OnModuleInit {
     const started = Date.now();
     let result: AgentResult;
     try {
-      result = await runAgent({ ctx, tools, system: systemPrompt(ctx, snapshot as any), history: session.history, userText });
+      result = await runAgent({ ctx, tools, system: systemPrompt(ctx, snapshot as any, session.history), history: [], userText });
     } catch (e: any) {
       if (e instanceof AllChatFailed) {
         this.logger.error(`ИИ не ответил: ${e.message}`);
@@ -221,12 +227,11 @@ export class VoiceAssistantService implements OnModuleInit {
     }
     this.logger.log(
       `[voice] user=${user.id} ${fromVoice ? 'голос' : 'текст'} ${Date.now() - started}мс → ${result.type}`
-      + ` ${result.done.map((d) => `${d.tool}${d.error ? '✗' : '✓'}`).join(',')} «${userText.slice(0, 120)}»`,
+      + ` вызовы=[${(result as any).calls?.join(',') || ''}] ${result.done.map((d) => `${d.tool}${d.error ? '✗' : '✓'}`).join(',')} «${userText.slice(0, 120)}»`,
     );
 
     // История: что сказал человек и что вышло — для «и поставь ей срок на пятницу».
-    session.history.push({ role: 'user', content: userText });
-    session.history.push({ role: 'assistant', content: this.historyNote(result) });
+    session.history.push(`«${userText.slice(0, 300)}» → ${this.historyNote(result)}`);
     while (session.history.length > HISTORY_MAX) session.history.shift();
     session.at = Date.now();
 
@@ -275,11 +280,11 @@ export class VoiceAssistantService implements OnModuleInit {
   }
 
   private historyNote(r: AgentResult): string {
-    const did = r.done.map((d) => (d.outcome ? `сделано: ${d.outcome.summary}` : `ошибка ${d.tool}: ${d.error}`));
-    if (r.type === 'confirm') did.push(`жду подтверждения: ${r.previews.join(' / ')}`);
-    if (r.type === 'choice') did.push(`спросил: ${r.question} (${r.options.join(' / ')})`);
-    if (r.text) did.push(r.text);
-    return did.join('\n').slice(0, 1500) || '—';
+    const did = r.done.map((d) => (d.outcome ? `итог: ${d.outcome.summary}` : `ошибка ${d.tool}: ${d.error}`));
+    if (r.type === 'confirm') did.push(`ждёт подтверждения: ${r.previews.join(' / ')}`);
+    if (r.type === 'choice') did.push(`спросили: ${r.question} (${r.options.join(' / ')})`);
+    if (r.text) did.push(`ответ: ${r.text}`);
+    return did.join('; ').replace(/\s+/g, ' ').slice(0, 600) || 'без действий';
   }
 
   // ─── Служебное ────────────────────────────────────────────────────────

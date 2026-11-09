@@ -322,7 +322,7 @@ export const createTask: ToolDef<CreateArgs> = {
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: 'Суть задачи, 2–8 слов, с большой буквы, без имени исполнителя и без «добавь задачу».' },
+      title: { type: 'string', description: 'Суть задачи как сказано, 2–8 слов, с большой буквы и с глаголом («Сделать три сторис», «Позвонить клиенту Сеченак»). Без имени исполнителя, без «добавь задачу»; проект — в поле project.' },
       assignees: { type: 'array', items: { type: 'string' }, description: 'Метки E… исполнителей по порядку. Пусто или ["me"] — себе.' },
       date: { type: 'string', description: 'Срок, ГГГГ-ММ-ДД. По умолчанию сегодня.' },
       time: { type: 'string', description: 'Время ЧЧ:ММ, если названо.' },
@@ -562,7 +562,7 @@ export const deleteTask: ToolDef<{ task: string; reason?: string }> = {
     type: 'object',
     properties: {
       task: { type: 'string', description: 'Метка задачи T…' },
-      reason: { type: 'string', description: 'Причина удаления.' },
+      reason: { type: 'string', description: 'Причина удаления — только если человек её назвал. Не выдумывай.' },
     },
     required: ['task'],
     additionalProperties: false,

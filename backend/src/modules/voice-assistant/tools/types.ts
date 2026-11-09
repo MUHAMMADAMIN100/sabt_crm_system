@@ -50,6 +50,15 @@ export interface ToolDef<A = any> {
   run: (args: A, ctx: ToolContext) => Promise<any>;
 }
 
+/** Инструмент сам решил, что без уточнения нельзя: бот покажет кнопки,
+ *  выбор перезапустит разбор фразы с этим уточнением. Решает код, а не ИИ —
+ *  чтобы ИИ не мог «додумать» за человека (например вид перерыва). */
+export class NeedChoice extends Error {
+  constructor(readonly question: string, readonly options: string[]) {
+    super(question);
+  }
+}
+
 /** Ошибка, которую стоит показать ИИ (а через него — человеку) как есть. */
 export class ToolError extends Error {
   constructor(message: string, readonly buttons?: Button[][]) {

@@ -57,6 +57,89 @@ export class AllChatFailed extends Error {
 }
 
 async function callProvider(p: ChatProvider, messages: ChatMessage[], tools: ToolSpec[]): Promise<ChatReply> {
+  try {
+    return await callOnce(p, messages, tools);
+  } catch (e: any) {
+    // Новые модели OpenAI (gpt-5.4+) в chat/completions не принимают
+    // reasoning_effort вместе с инструментами — повторяем с 'none'.
+    if (e instanceof AiProviderError && e.status === 400 && /reasoning/i.test(e.message) && !(p as any).noReasoning) {
+      return callOnce({ ...p, reasoning: 'none' as any, noReasoning: true } as any, messages, tools);
+    }
+    throw e;
+  }
+}
+
+/**
+ * OpenAI — через Responses API: там модели gpt-5.x могут рассуждать и
+ * одновременно вызывать инструменты (в chat/completions для gpt-5.4 с
+ * инструментами разрешено только reasoning_effort='none', и модель чаще
+ * ошибается — прогон 09.11.2026). OPENAI_API_MODE=chat — старый путь.
+ */
+async function callResponses(p: ChatProvider, messages: ChatMessage[], tools: ToolSpec[]): Promise<ChatReply> {
+  const instructions = messages.filter((m) => m.role === 'system').map((m) => (m as any).content).join('\n\n');
+  const input: any[] = [];
+  for (const m of messages) {
+    if (m.role === 'user') input.push({ role: 'user', content: m.content });
+    else if (m.role === 'assistant') {
+      if (m.content) input.push({ role: 'assistant', content: m.content });
+      for (const c of m.tool_calls || []) {
+        input.push({ type: 'function_call', call_id: c.id, name: c.function.name, arguments: c.function.arguments || '{}' });
+      }
+    } else if (m.role === 'tool') {
+      input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: m.content });
+    }
+  }
+  const body: Record<string, any> = {
+    model: p.model,
+    instructions,
+    input,
+    max_output_tokens: 4000,
+    store: false,
+  };
+  if (tools.length) {
+    body.tools = tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters, strict: false }));
+    body.tool_choice = 'auto';
+  }
+  const effort = process.env.OPENAI_REASONING || (/^(gpt-5|gpt-6|o\d)/.test(p.model) ? 'low' : '');
+  if (effort && !(p as any).noReasoning) body.reasoning = { effort };
+
+  let res: Response;
+  try {
+    res = await fetch(`${p.baseUrl}/responses`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${p.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e: any) {
+    throw new AiProviderError(p.id, 'network', null, String(e?.message || e));
+  }
+  const raw = await res.text();
+  if (!res.ok) throw new AiProviderError(p.id, classifyAiFailure(res.status, raw), res.status, raw.slice(0, 400));
+  let json: any;
+  try { json = JSON.parse(raw); } catch {
+    throw new AiProviderError(p.id, 'unknown', res.status, `неожиданный ответ: ${raw.slice(0, 120)}`);
+  }
+  const out: any[] = Array.isArray(json?.output) ? json.output : [];
+  const text = out
+    .filter((o) => o?.type === 'message')
+    .flatMap((o) => (Array.isArray(o.content) ? o.content : []))
+    .filter((c: any) => c?.type === 'output_text')
+    .map((c: any) => String(c.text || ''))
+    .join('')
+    .trim();
+  const toolCalls: ToolCall[] = out
+    .filter((o) => o?.type === 'function_call' && o.name)
+    .map((o, i) => ({
+      id: String(o.call_id || o.id || `call_${Date.now().toString(36)}_${i}`),
+      type: 'function' as const,
+      function: { name: String(o.name), arguments: String(o.arguments || '{}') },
+    }));
+  return { content: text || null, toolCalls, provider: p.id };
+}
+
+async function callOnce(p: ChatProvider, messages: ChatMessage[], tools: ToolSpec[]): Promise<ChatReply> {
+  if (p.id === 'openai' && process.env.OPENAI_API_MODE !== 'chat') return callResponses(p, messages, tools);
   const body: Record<string, any> = {
     model: p.model,
     messages,

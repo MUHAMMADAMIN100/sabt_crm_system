@@ -1,7 +1,7 @@
 import { ApiError } from '../internal-api';
 import { checkDate, checkTime, fmtDateRu } from './common';
 import { ensureEmployee } from './people.tools';
-import { ToolDef, ToolError, WriteOutcome } from './types';
+import { NeedChoice, ToolDef, ToolError, WriteOutcome } from './types';
 
 /**
  * Рабочий день — раздел «Смена» на сайте (ShiftButton / ShiftCard):
@@ -25,7 +25,7 @@ function shiftError(err: any): Error {
 export const shiftStatus: ToolDef<{ month?: boolean }> = {
   name: 'shift_status',
   kind: 'read',
-  description: 'Моя смена: идёт ли, на паузе ли, сколько отработано сегодня; month=true — итоги месяца.',
+  description: 'Моя смена: «сколько я сегодня отработал», «во сколько я начал», «я на смене?», «я опоздал?»; month=true — «сколько я отработал за месяц».',
   parameters: {
     type: 'object',
     properties: { month: { type: 'boolean', description: 'Итоги текущего месяца.' } },
@@ -76,21 +76,34 @@ export const shiftStart: ToolDef<Record<string, never>> = {
   },
 };
 
-export const shiftPause: ToolDef<{ kind: 'lunch' | 'work' | 'personal' }> = {
+/** Вид перерыва — только по словам человека. Личное в часы не идёт, обед —
+ *  до часа, по работе — целиком: угадывать тут нельзя, это деньги. */
+const PAUSE_WORDS: Record<'lunch' | 'work' | 'personal', RegExp> = {
+  lunch: /обед|поесть|покушать|кушать|перекус|хӯрок|хурок|наҳор|нахор|таом/i,
+  work: /по работе|съ[её]мк|клиент|выехал|выезжа|на объект|встреч|мизоҷ|мизоч|кори корӣ|бо кор/i,
+  personal: /личн|по делам|по своим|врач|больниц|домой по|шахсӣ|шахси|кори худ/i,
+};
+
+export function pauseKindFromSpeech(text: string): 'lunch' | 'work' | 'personal' | null {
+  const hits = (Object.keys(PAUSE_WORDS) as Array<'lunch' | 'work' | 'personal'>).filter((k) => PAUSE_WORDS[k].test(text));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+export const shiftPause: ToolDef<{ kind?: 'lunch' | 'work' | 'personal' }> = {
   name: 'shift_pause',
   kind: 'write',
   description:
-    'Перерыв в смене. kind: lunch — «обед»; work — «выехал по работе / на съёмку / к клиенту» (время идёт в часы); '
-    + 'personal — личные дела (в часы не идёт). Если причина не названа — уточни через ask_choice (Обед / По работе / Личное).',
+    'Перерыв в смене: «поставь на паузу», «я на обед», «выехал к клиенту». Вид перерыва бот определит сам по словам '
+    + 'человека и при необходимости спросит кнопками — просто вызови инструмент.',
   parameters: {
     type: 'object',
-    properties: { kind: { type: 'string', enum: ['lunch', 'work', 'personal'] } },
-    required: ['kind'],
+    properties: { kind: { type: 'string', enum: ['lunch', 'work', 'personal'], description: 'Только если причина прямо названа.' } },
     additionalProperties: false,
   },
   available: notFounder,
   async run(args, ctx): Promise<WriteOutcome> {
-    const kind = ['lunch', 'work', 'personal'].includes(args.kind) ? args.kind : 'personal';
+    const kind = pauseKindFromSpeech(ctx.utterance);
+    if (!kind) throw new NeedChoice('Какой перерыв?', ['Обед', 'По работе (выехал / на съёмку)', 'Личное']);
     let after: any;
     try { after = await ctx.api.post('/work-shifts/pause', { kind }); } catch (e) { throw shiftError(e); }
     return { summary: `⏸ Перерыв (${PAUSE_RU[kind]}) с ${ctx.nowTime}. Отработано сегодня: ${hm(after?.todayMinutes)}` };

@@ -2,12 +2,17 @@ import { Logger } from '@nestjs/common';
 import { chatStep, ChatMessage, ToolSpec } from './ai/chat';
 import { ProviderId } from './ai/providers';
 import { ApiError } from './internal-api';
-import { Button, ToolContext, ToolDef, ToolError, WriteOutcome } from './tools/types';
+import { Button, NeedChoice, ToolContext, ToolDef, ToolError, WriteOutcome } from './tools/types';
 
 const logger = new Logger('VoiceAgent');
 
 export interface Executed { tool: string; args: any; outcome?: WriteOutcome; error?: string }
 export interface PendingCall { tool: string; args: any }
+
+/** ИИ написал, что действие сделано, но инструмент не вызывал — это неправда. */
+const CLAIMS_ACTION = /^\s*(сделано|готово|выполнено|записано|создан|перенес|отмечен|продолжил|начат|завершен|задача (создана|поставлена|закрыта))|[▶⏸⏹✅💬🗑💰🧾📸]/iu;
+/** После требования выполнить — если ИИ всё ещё пишет «сделано», не верим. */
+const STRONG_CLAIM = /^\s*(сделано|готово|выполнено|записано)|[▶⏸⏹✅]/iu;
 
 export type AgentResult =
   | { type: 'answer'; text: string; done: Executed[]; buttons: Button[][] }
@@ -53,7 +58,7 @@ export async function runAgent(params: {
   system: string;
   history: ChatMessage[];
   userText: string;
-}): Promise<AgentResult & { provider?: ProviderId }> {
+}): Promise<AgentResult & { provider?: ProviderId; calls?: string[] }> {
   const { ctx, tools, system, history, userText } = params;
   const byName = new Map(tools.map((t) => [t.name, t]));
   const specs = [...tools.map(toSpec), ASK_CHOICE];
@@ -61,12 +66,23 @@ export async function runAgent(params: {
   const done: Executed[] = [];
   const buttons: Button[][] = [];
   let provider: ProviderId | undefined;
+  let nudged = false;
+  const calls: string[] = [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const reply = await chatStep(messages, specs, provider);
     provider = reply.provider;
     if (!reply.toolCalls.length) {
-      return { type: 'answer', text: (reply.content || '').trim(), done, buttons, provider };
+      const text = (reply.content || '').trim();
+      // Защита от ложного «сделано»: ни одного вызова — а текст о действии.
+      if (!calls.length && !nudged && CLAIMS_ACTION.test(text)) {
+        nudged = true;
+        logger.warn(`ИИ заявил действие без инструмента: «${text.slice(0, 120)}» — требую выполнить`);
+        messages.push({ role: 'assistant', content: text });
+        messages.push({ role: 'user', content: 'Ты не вызвал ни одного инструмента — значит, ничего не сделано. Выполни просьбу инструментом или ответь, почему это невозможно. Не пиши, что сделано, пока инструмент не вернул ok.' });
+        continue;
+      }
+      return { type: 'answer', text: nudged && STRONG_CLAIM.test(text) && !calls.length ? 'Не получилось выполнить просьбу. Скажите, пожалуйста, ещё раз.' : text, done, buttons, provider, calls };
     }
     messages.push({ role: 'assistant', content: reply.content ?? null, tool_calls: reply.toolCalls });
 
@@ -78,6 +94,7 @@ export async function runAgent(params: {
 
     for (const call of reply.toolCalls) {
       const name = call.function.name;
+      calls.push(name);
       let args: any = {};
       try {
         args = JSON.parse(call.function.arguments || '{}') || {};
@@ -126,6 +143,11 @@ export async function runAgent(params: {
           readsOrErrors++;
         }
       } catch (e: any) {
+        if (e instanceof NeedChoice) {
+          choice = { question: e.question, options: e.options };
+          messages.push(toolResult(call.id, { status: 'нужно уточнение — спрошено кнопками' }));
+          continue;
+        }
         const text = errText(e);
         if (!(e instanceof ToolError) && !(e instanceof ApiError)) {
           logger.error(`tool ${name} упал: ${e?.message || e}`, e?.stack);
@@ -137,9 +159,9 @@ export async function runAgent(params: {
       }
     }
 
-    if (choice) return { type: 'choice', text: (reply.content || '').trim(), done, ...choice, buttons, provider };
-    if (pending.length) return { type: 'confirm', text: (reply.content || '').trim(), done, pending, previews, buttons, provider };
-    if (writesOk > 0 && readsOrErrors === 0) return { type: 'answer', text: '', done, buttons, provider };
+    if (choice) return { type: 'choice', text: (reply.content || '').trim(), done, ...choice, buttons, provider, calls };
+    if (pending.length) return { type: 'confirm', text: (reply.content || '').trim(), done, pending, previews, buttons, provider, calls };
+    if (writesOk > 0 && readsOrErrors === 0) return { type: 'answer', text: '', done, buttons, provider, calls };
   }
   return {
     type: 'answer',

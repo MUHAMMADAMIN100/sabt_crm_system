@@ -21,7 +21,7 @@ export interface ChatProvider {
   key: string;
   model: string;
   /** Модели рассуждения (gpt-5*, gpt-oss) принимают reasoning_effort. */
-  reasoning?: 'minimal' | 'low' | 'medium';
+  reasoning?: 'none' | 'minimal' | 'low' | 'medium';
 }
 
 export interface SpeechProvider {
@@ -39,12 +39,16 @@ const env = (name: string): string => String(process.env[name] || '').trim();
 export function chatProviders(): ChatProvider[] {
   const list: ChatProvider[] = [];
   if (env('OPENAI_API_KEY')) {
-    const model = env('OPENAI_MODEL') || 'gpt-5-mini';
-    list.push({
-      id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1',
-      key: env('OPENAI_API_KEY'), model,
-      reasoning: /^(gpt-5|o\d)/.test(model) ? ((env('OPENAI_REASONING') as any) || 'low') : undefined,
-    });
+    // gpt-5.4-mini выбран по прогону 09.11.2026: быстрее всех (ответ ~3 с)
+    // и разбирает команды без пустых ответов. gpt-5-mini — запасной внутри
+    // OpenAI, если основную модель уберут или переименуют.
+    const primary = env('OPENAI_MODEL') || 'gpt-5.4-mini';
+    for (const model of [...new Set([primary, 'gpt-5-mini'])]) {
+      list.push({
+        id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1',
+        key: env('OPENAI_API_KEY'), model, reasoning: reasoningFor(model),
+      });
+    }
   }
   if (env('GROQ_API_KEY')) {
     const model = env('GROQ_MODEL') || 'openai/gpt-oss-120b';
@@ -61,6 +65,18 @@ export function chatProviders(): ChatProvider[] {
     });
   }
   return list;
+}
+
+/** Глубина рассуждения: gpt-5/-mini/-nano — 'low' (ниже ленятся, выше —
+ *  до 25 с на ответ); gpt-5.x и gpt-6 с инструментами в chat/completions
+ *  принимают только 'none'. OPENAI_REASONING перекрывает. */
+export function reasoningFor(model: string): ChatProvider['reasoning'] {
+  const forced = env('OPENAI_REASONING');
+  if (forced) return forced as ChatProvider['reasoning'];
+  if (/^gpt-5(-mini|-nano)?(-\d{4}-\d{2}-\d{2})?$/.test(model)) return 'low';
+  if (/^(gpt-5\.\d|gpt-6)/.test(model)) return 'none';
+  if (/^o\d/.test(model)) return 'low';
+  return undefined;
 }
 
 export function speechProviders(): SpeechProvider[] {
