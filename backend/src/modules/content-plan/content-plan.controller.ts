@@ -104,8 +104,9 @@ export class ContentPlanController {
    *  только смотрят: у изменяющих ручек ниже их ролей нет. Объявлено ДО
    *  ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
+  // Продюсер (09.11.2026) назначает съёмки здесь же, в умном календаре.
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
-    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
+    UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.PRODUCER)
   smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('projectId') projectId?: string) {
     // Около девяти запросов на ±год — каждый экран СММ просит одно и то же.
     // Короткий кэш (08.11.2026): в ключе смотрящий — от него зависит
@@ -151,9 +152,12 @@ export class ContentPlanController {
   }
 
   @Patch('smart-item/:id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  // Продюсеру — только день, время и место съёмки (проверяет сервис).
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, @Request() req) {
-    return this.service.smartUpdateItem(id, body || {}, { id: req.user?.id, name: req.user?.name });
+    return this.service.smartUpdateItem(id, body || {}, {
+      id: req.user?.id, name: req.user?.name, role: req.user?.role ?? null, secondaryRole: req.user?.secondaryRole ?? null,
+    });
   }
 
   /** История задачи: перенос, закрытие, отмена. Видна всем, кто видит задачу. */

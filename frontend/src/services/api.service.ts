@@ -122,6 +122,8 @@ export interface PublicScript {
   /** О проекте (07.11.2026): куда ехать, кто встретит, у кого уточнять. */
   project?: {
     address: string | null; otherPlace: boolean; mapUrl: string | null
+    /** Где снимаем (09.11.2026): студия, у клиента или другое место. */
+    placeKind?: 'studio' | 'client' | 'other'
     contact: string | null; phone: string | null; pageUrl: string | null
     smm: string | null; preferences: string | null
   } | null

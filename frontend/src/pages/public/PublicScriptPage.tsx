@@ -80,7 +80,7 @@ export default function PublicScriptPage() {
                 <div className="rounded-2xl border border-surface-700 bg-surface-800 px-4 py-1">
                   <dl className="divide-y divide-surface-700/70">
                     {data.projectName && <Row label="Проект" value={data.projectName} />}
-                    <Row label={pr?.otherPlace ? 'Место' : 'Адрес'} value={pr?.address || 'не указан — уточните у СММ'} muted={!pr?.address} />
+                    <Row label={pr?.otherPlace || pr?.placeKind === 'studio' ? 'Место' : 'Адрес'} value={pr?.address || 'не указан — уточните у продюсера'} muted={!pr?.address} />
                   </dl>
                   {(pr?.mapUrl || pr?.phone) && (
                     <div className="flex gap-2 pb-3 pt-0.5">

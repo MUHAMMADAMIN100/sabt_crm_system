@@ -33,6 +33,10 @@ export interface ProducerShoot {
   projectId?: string;
   /** id СММ-специалистов проекта: им — напоминание указать время. */
   smmIds?: string[];
+  /** Где снимаем (09.11.2026): студия, у клиента или другое место. */
+  placeKind?: 'studio' | 'client' | 'other';
+  /** Монтаж этого рилса уже готов — значит, снят он раньше сегодняшнего дня. */
+  edited?: boolean;
 }
 
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -124,10 +128,12 @@ const byTime = (a: ProducerShoot, b: ProducerShoot) =>
 const quoted = (s: ProducerShoot) => (s.title?.trim() ? `«${escapeHtml(s.title.trim())}»` : 'без названия');
 const who = (s: ProducerShoot) => (s.videographer ? escapeHtml(s.videographer) : 'видеограф не назначен');
 
-/** «📍 ул. Айни, 61 · карта» или null, если адреса нет. */
+/** «📍 ул. Айни, 61 · карта» или null, если адреса нет. Студия — без
+ *  карты: дорогу туда знают; у клиента без адреса — так и пишем. */
 const placeLine = (s: ProducerShoot) => {
+  if (s.placeKind === 'studio') return '📍 Студия';
   const addr = s.address?.trim();
-  if (!addr) return null;
+  if (!addr) return s.placeKind === 'client' ? '📍 У клиента — адрес не указан' : null;
   const map = mapLink(s);
   return `📍 ${escapeHtml(addr)}${map ? ` · <a href="${attr(map)}">карта</a>` : ''}`;
 };
@@ -139,17 +145,50 @@ const scriptLine = (s: ProducerShoot, link: (s: ProducerShoot) => string) =>
     ? `<a href="${attr(link(s))}">📄 Сценарий и всё о съёмке</a>`
     : `<a href="${attr(link(s))}">📄 Всё о съёмке</a> · сценария пока нет`;
 
-/** Блок одной съёмки в сообщении «на завтра» и в «время изменилось». */
-function shootBlock(s: ProducerShoot, link: (s: ProducerShoot) => string, opts: MessageOpts): string[] {
+/** Что сказать о съёмке, кроме ссылки: время, место, кто встретит, СММ.
+ *  Время и место с 09.11.2026 ставит продюсер — у него и уточнять. */
+function shootDetails(s: ProducerShoot, opts: MessageOpts): string[] {
   const smm = s.smm?.trim() ? escapeHtml(s.smm.trim()) : null;
   return [
-    s.time ? null : `🕑 время не указано — уточните у СММ${smm ? `: ${smm}` : ''}`,
+    s.time ? null : (opts.own ? '🕑 время не указано — уточните у продюсера' : '🕑 время не указано'),
     placeLine(s),
     s.contact?.trim() ? `👤 На месте: ${escapeHtml(s.contact.trim())}` : null,
-    s.time && smm ? `💬 СММ: ${smm}` : null,
+    smm ? `💬 СММ: ${smm}` : null,
     opts.own ? null : `снимает ${who(s)}`,
-    scriptLine(s, link),
   ].filter((x): x is string => !!x);
+}
+
+/** Блок одной съёмки в сообщении «на завтра» и в «время изменилось». */
+function shootBlock(s: ProducerShoot, link: (s: ProducerShoot) => string, opts: MessageOpts): string[] {
+  return [...shootDetails(s, opts), scriptLine(s, link)];
+}
+
+function plural(n: number, one: string, few: string, many: string) {
+  const d = n % 10, h = n % 100;
+  if (d === 1 && h !== 11) return one;
+  if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few;
+  return many;
+}
+const reels = (n: number) => `${n} ${plural(n, 'рилс', 'рилса', 'рилсов')}`;
+
+/** Съёмки одного проекта в один день, в одно время, в одном месте и у
+ *  одного видеографа — один выезд (09.11.2026): в сообщении это один блок
+ *  «Chrono — 4 рилса», а не четыре одинаковых. Порядок — как во входе. */
+export function groupShoots(list: ProducerShoot[]): ProducerShoot[][] {
+  const groups = new Map<string, ProducerShoot[]>();
+  for (const s of list) {
+    const key = [s.date, s.projectId || s.projectName, s.time || '', s.placeKind || '', (s.address || '').trim(), s.assigneeId || ''].join('|');
+    const g = groups.get(key);
+    if (g) g.push(s); else groups.set(key, [s]);
+  }
+  return [...groups.values()];
+}
+
+/** Ссылки на страницы съёмки — по одной на рилс выезда. */
+function groupLinks(g: ProducerShoot[], link: (s: ProducerShoot) => string): string {
+  const withScript = g.filter(x => x.hasScript).length;
+  const note = withScript === g.length ? '' : withScript === 0 ? ' · сценариев пока нет' : ` · без сценария: ${g.length - withScript}`;
+  return `📄 ${g.map(x => `<a href="${attr(link(x))}">${quoted(x)}</a>`).join(' · ')}${note}`;
 }
 
 /** 18:00 накануне: съёмки на завтра. Нет съёмок — null, пустых сообщений не шлём. */
@@ -158,13 +197,15 @@ export function dailyMessage(
 ): string | null {
   const list = shoots.filter(s => s.date === dateIso && !s.done).sort(byTime);
   if (!list.length) return null;
-  const blocks = list.map(s => [
-    `<b>${s.time ? `${s.time} · ` : 'Время не указано · '}${escapeHtml(s.projectName)}</b>`,
-    quoted(s),
-    ...shootBlock(s, link, opts),
-  ].join('\n'));
+  const groups = groupShoots(list);
+  const blocks = groups.map(g => {
+    const s = g[0];
+    const at = s.time ? `${s.time} · ` : 'Время не указано · ';
+    if (g.length === 1) return [`<b>${at}${escapeHtml(s.projectName)}</b>`, quoted(s), ...shootBlock(s, link, opts)].join('\n');
+    return [`<b>${at}${escapeHtml(s.projectName)} — ${reels(g.length)}</b>`, groupLinks(g, link), ...shootDetails(s, opts)].join('\n');
+  });
   const head = opts.own ? 'Ваши съёмки на завтра' : 'Съёмки на завтра';
-  return `🎬 <b>${head} — ${list.length}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n👉 ${appUrl}/`;
+  return `🎬 <b>${head} — ${groups.length}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n👉 ${appUrl}/`;
 }
 
 /** Суббота, 18:00: съёмки на следующую неделю по дням. Время здесь
@@ -177,17 +218,22 @@ export function weeklyMessage(
   // Неделя у нас пн–сб; воскресенье упоминаем, только если в него есть съёмка.
   const last = list.some(s => s.date === to) ? to : addDays(to, -1);
   const days: string[] = [];
+  let total = 0;
   for (const day of [...new Set(list.map(s => s.date))]) {
-    const lines = list.filter(s => s.date === day).map(s => [
-      `${s.time ? `<b>${s.time}</b> · ` : ''}${escapeHtml(s.projectName)}`,
-      `${quoted(s)}${opts.own ? '' : ` · ${who(s)}`}`,
-      placeLine(s),
-      scriptLine(s, link),
-    ].filter(Boolean).join('\n'));
+    const groups = groupShoots(list.filter(s => s.date === day));
+    total += groups.length;
+    const lines = groups.map(g => {
+      const s = g[0];
+      const head = `${s.time ? `<b>${s.time}</b> · ` : ''}${escapeHtml(s.projectName)}`;
+      if (g.length === 1) {
+        return [head, `${quoted(s)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), scriptLine(s, link)].filter(Boolean).join('\n');
+      }
+      return [`${head} — ${reels(g.length)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), groupLinks(g, link)].filter(Boolean).join('\n');
+    });
     days.push(`<b>${ruShortDay(day)}</b>\n${lines.join('\n\n')}`);
   }
   const head = opts.own ? 'Ваши съёмки на неделю' : 'Съёмки на неделю';
-  return `📅 <b>${head} — ${list.length}</b>\n${ruRange(from, last)}\n\n${days.join('\n\n')}\n\nНакануне в 18:00 придёт напоминание со временем и адресом.\n👉 ${appUrl}/`;
+  return `📅 <b>${head} — ${total}</b>\n${ruRange(from, last)}\n\n${days.join('\n\n')}\n\nНакануне в 18:00 придёт напоминание со временем и адресом.\n👉 ${appUrl}/`;
 }
 
 /** Накануне в 12:00 — СММ-специалисту: у завтрашних съёмок нет времени. */
@@ -200,6 +246,51 @@ export function missingTimeMessage(dateIso: string, shoots: ProducerShoot[], app
   const head = n === 1 ? 'Завтра съёмка без времени' : `Завтра съёмки без времени — ${n}`;
   return `⏰ <b>${head}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n`
     + `Укажите время до 18:00 — в 18:00 видеограф получит сообщение.\n👉 <a href="${attr(`${appUrl}/`)}">Указать время</a>`;
+}
+
+/** Рилс скоро выходит, а съёмки у него нет (отменили или не ставили). */
+export interface NeedShoot {
+  projectName: string;
+  title: string | null;
+  date: string;            // день выхода рилса
+  cancelled: boolean;      // съёмка была, но её отменили
+}
+
+/** 12:00 — продюсеру (09.11.2026): что назначить. Рилсы ближайших дней без
+ *  съёмки и завтрашние съёмки без времени. Нечего назначать — null. */
+export function producerNoonMessage(
+  tomorrow: string, shoots: ProducerShoot[], need: NeedShoot[], appUrl: string,
+): string | null {
+  const noTime = groupShoots(shoots.filter(s => s.date === tomorrow && !s.done && !s.time)
+    .sort((a, b) => a.projectName.localeCompare(b.projectName, 'ru')));
+  if (!noTime.length && !need.length) return null;
+  const parts = [`⏰ <b>Нужно назначить — ${need.length + noTime.length}</b>`];
+  if (need.length) {
+    parts.push(need.map(r => `<b>${escapeHtml(r.projectName)}</b> · ${r.title?.trim() ? `«${escapeHtml(r.title.trim())}»` : 'без названия'}\n`
+      + `выход: ${ruLongDay(r.date)} — ${r.cancelled ? 'съёмку отменили' : 'съёмки нет'}`).join('\n\n'));
+  }
+  if (noTime.length) {
+    parts.push(`<b>Завтра без времени</b> · ${ruLongDay(tomorrow)}\n`
+      + noTime.map(g => `${escapeHtml(g[0].projectName)} · ${g.length > 1 ? reels(g.length) : quoted(g[0])}`).join('\n')
+      + `\nВремя — до 18:00: в 18:00 видеограф получит сообщение.`);
+  }
+  parts.push(`👉 <a href="${attr(`${appUrl}/smm`)}">Открыть умный календарь</a>`);
+  return parts.join('\n\n');
+}
+
+/** 18:00 — продюсеру: как прошли сегодняшние съёмки. Съёмки рилсов, которые
+ *  уже смонтированы, не считаем: их сняли раньше, а закрылись они сегодня
+ *  вместе с монтажом. Съёмок сегодня не было — null. */
+export function todaySummary(today: string, shoots: ProducerShoot[]): string | null {
+  const list = shoots.filter(s => s.date === today && !s.edited);
+  if (!list.length) return null;
+  const byProject = new Map<string, ProducerShoot[]>();
+  for (const s of [...list].sort(byTime)) byProject.set(s.projectName, [...(byProject.get(s.projectName) || []), s]);
+  const lines = [...byProject].map(([name, g]) => {
+    const done = g.filter(s => s.done).length;
+    return `${done === g.length ? '✅' : '⏳'} ${escapeHtml(name)} — снято ${done} из ${g.length}`;
+  });
+  return `📋 <b>Сегодня</b>\n${lines.join('\n')}`;
 }
 
 // ── Съёмка изменилась после рассылки ──────────────────────────────────

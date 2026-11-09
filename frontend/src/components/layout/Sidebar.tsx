@@ -314,7 +314,9 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                   </button>
                   {open && isSecOpen && (
                     <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {SECTION_SUBNAV[item.to].filter(sub => (!sub.perm || userCan(user, sub.perm)) && (!sub.roles || sub.roles.includes(role || ''))).map(sub => (
+                      {SECTION_SUBNAV[item.to].filter(sub => (!sub.perm || userCan(user, sub.perm)) && (!sub.roles || sub.roles.includes(role || ''))
+                        // Продюсеру из «СММ» открыт только «Умный календарь».
+                        && (item.to !== '/smm' || sub.to === '/smm' || canSeeSmmSection(role))).map(sub => (
                         <li key={sub.to}>
                           <NavLink
                             to={sub.to}

@@ -1,4 +1,5 @@
 import { projectListFields } from '../../common/project-list-fields';
+import { shootPlaceKind, shootPlaceLabel } from '../../common/shoot-place';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -49,6 +50,15 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   other: 'Контент',
 };
 
+/** Кто правит контент в умном календаре целиком. */
+const SMM_EDITOR_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
+/** Продюсер без СММ-роли (09.11.2026): в умном календаре назначает съёмки —
+ *  день, время, место — и больше ничего не меняет. */
+export function isShootOrganizerOnly(u: { role?: string | null; secondaryRole?: string | null }): boolean {
+  const roles = [u.role, u.secondaryRole].filter((r): r is string => typeof r === 'string' && !!r);
+  return roles.includes('producer') && !roles.some(r => SMM_EDITOR_ROLES.includes(r));
+}
+
 /** Событие «съёмка изменилась»: id карточки и как было до правки. */
 export const SHOOT_CHANGED = 'content-plan.shoot-changed';
 export interface ShootChangedEvent {
@@ -85,6 +95,41 @@ export class ContentPlanService {
       } as ShootChangedEvent);
     } catch (e) {
       this.logger.warn(`shoot.changed не отправлено: ${(e as Error).message}`);
+    }
+  }
+
+  /** Смонтировано — значит снято (09.11.2026). Монтажёр отметил монтаж, а
+   *  съёмка того же рилса всё ещё «в работе» — видеограф снимает пачками и
+   *  отмечает задним числом, если вообще отмечает. Закрываем её сами, иначе
+   *  ему и продюсеру приходят «съёмки на завтра» по давно снятому. Съёмку с
+   *  будущей датой ставим на сегодня: снята она точно не позже, а будущие
+   *  дни освобождаются. О правке не сообщаем — это не изменение съёмки. */
+  private async closeShootAfterEdit(
+    edit: Pick<ContentPlanItem, 'prepStage' | 'shootForItemId'> | null | undefined,
+    actor?: { id?: string; name?: string } | null,
+  ): Promise<number> {
+    if (!edit || edit.prepStage !== 'edit' || !edit.shootForItemId) return 0;
+    try {
+      const open: ContentPlanItem[] = await this.repo.createQueryBuilder('s')
+        .where('s.shootForItemId = :rid', { rid: edit.shootForItemId })
+        .andWhere(`COALESCE(s.prepStage, 'shoot') = 'shoot'`)
+        .andWhere(`s.status NOT IN ('published', 'cancelled')`)
+        .getMany();
+      if (!open.length) return 0;
+      const today = dushanbeToday();
+      for (const s of open) {
+        const day = this.dayOf(s.publishDate);
+        const set: Partial<ContentPlanItem> = { status: ContentPlanStatus.PUBLISHED };
+        if (day && day > today) set.publishDate = new Date(`${today}T00:00:00`);
+        await this.repo.update(s.id, set);
+        await this.logItemAction(s, ActivityAction.TASK_STATUS,
+          { kind: 'status', from: s.status, to: ContentPlanStatus.PUBLISHED, plannedDate: day, auto: 'edit-done' },
+          actor ?? undefined);
+      }
+      return open.length;
+    } catch (e) {
+      this.logger.warn(`Съёмка после монтажа не закрыта: ${(e as Error).message}`);
+      return 0;
     }
   }
 
@@ -483,6 +528,9 @@ export class ContentPlanService {
     }
     if (!Object.keys(upd).length) return { id, status: item.status };
     await this.repo.update(id, upd);
+    if (upd.status === ContentPlanStatus.PUBLISHED && item.status !== ContentPlanStatus.PUBLISHED) {
+      await this.closeShootAfterEdit(item, { id: userId });
+    }
     this.emitTasksChanged(item.projectId, { actorId: userId });
     return { id, status: upd.status ?? item.status };
   }
@@ -716,6 +764,9 @@ export class ContentPlanService {
     } catch (e) {
       this.logger.warn(`Failed to sync task for plan item ${id}: ${(e as Error).message}`);
     }
+    if (after.status === ContentPlanStatus.PUBLISHED && before.status !== ContentPlanStatus.PUBLISHED) {
+      await this.closeShootAfterEdit(after, updatedById ? { id: updatedById } : null);
+    }
     // Задача появилась/исчезла — меняются счётчики проекта; иначе это правка.
     const hasTask = !!after.taskId;
     this.emitTasksChanged(after.projectId, {
@@ -844,16 +895,34 @@ export class ContentPlanService {
     }));
   }
 
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string; role?: string | null; secondaryRole?: string | null }) {
     const before = await this.repo.findOne({ where: { id } });
     const set: Partial<ContentPlanItem> = {};
+    // Продюсер (09.11.2026) назначает съёмки в «Умном календаре»: у съёмки
+    // меняет день, время и место — и только это. Рилсы, посты и отметки
+    // «снято» остаются за СММ и видеографом. Правило держит сервер.
+    if (actor && isShootOrganizerOnly(actor)) {
+      if (!before || before.prepStage !== 'shoot') throw new ForbiddenException('Продюсер меняет только съёмки');
+      const extra = Object.keys(patch).filter(k => !['publishDate', 'publishTime', 'shootPlace'].includes(k));
+      if (extra.length) throw new ForbiddenException('Продюсер меняет у съёмки только день, время и место');
+      if ('publishDate' in patch) {
+        const d = typeof patch.publishDate === 'string' ? patch.publishDate.slice(0, 10) : '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new BadRequestException('Укажите день съёмки');
+        if (d < dushanbeToday()) throw new BadRequestException('Нельзя поставить съёмку в прошлое');
+        const parent = before.shootForItemId ? await this.repo.findOne({ where: { id: before.shootForItemId } }) : null;
+        const out = this.dayOf(parent?.publishDate);
+        if (out && d > out) throw new BadRequestException(`Нельзя позже дня выхода (${out.slice(8, 10)}.${out.slice(5, 7)})`);
+        // Отменённую съёмку назначили на день — она снова в работе.
+        if (before.status === ContentPlanStatus.CANCELLED) set.status = ContentPlanStatus.PLANNED;
+      }
+    }
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
     // Время съёмки 'HH:MM' (или null — «Весь день»). tz-безопасно, отдельно от даты.
     if ('publishTime' in patch) set.publishTime = (typeof patch.publishTime === 'string' && /^\d{2}:\d{2}$/.test(patch.publishTime)) ? patch.publishTime : null;
     // Длительность в минутах (15..600) или null.
     if ('durationMin' in patch) { const d = Math.trunc(Number(patch.durationMin)); set.durationMin = Number.isFinite(d) && d >= 15 && d <= 600 ? d : null; }
     if ('status' in patch && patch.status) set.status = patch.status;
-    // «Другое место» съёмки; пусто — снимают по адресу проекта.
+    // Место съёмки: пусто — студия, '@client' — адрес клиента, иначе текст.
     if ('shootPlace' in patch) {
       const v = typeof patch.shootPlace === 'string' ? patch.shootPlace.trim().slice(0, 300) : '';
       set.shootPlace = v || null;
@@ -876,6 +945,9 @@ export class ContentPlanService {
       }
     }
     if (Object.keys(set).length) this.shootChanged(before, actor?.id);
+    if (item && before && set.status === ContentPlanStatus.PUBLISHED && before.status !== ContentPlanStatus.PUBLISHED) {
+      await this.closeShootAfterEdit(item, actor);
+    }
     // Перенос/статус/время в умном календаре раньше не слал событий — у
     // остальных карточка стояла на старом месте до перезагрузки (08.11.2026).
     // Пачка переносов у получателей сливается в одно обновление.
@@ -1366,7 +1438,8 @@ export class ContentPlanService {
         fileLink: s.fileLink || null,
         projectId: s.projectId, projectName: nameById.get(s.projectId) || '',
         title: s.reelTopic || null, time: s.time || null,   // название родителя (рилс/пост) = название задачи подготовки
-        location: s.place || null,                          // «Другое место» съёмки; пусто — адрес проекта
+        // Где снимаем (09.11.2026): студия — без подписи, «У клиента» или текст.
+        location: shootPlaceLabel(s.place), placeKind: shootPlaceKind(s.place),
         scriptText: s.reelScript || null, reelDate: s.reelDate || null, parentKind: s.parentType || null, // описание/дата/тип родителя — для модалки
         // Этап подготовки: shoot — съёмка, edit — монтаж, design — макет.
         // Легаси-карточки без этапа: пост → дизайн, остальное → съёмка.

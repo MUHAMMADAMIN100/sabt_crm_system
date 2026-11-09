@@ -1,6 +1,6 @@
 import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
-import {
+import { canSeeSmartCalendar,
   canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, canCheckStories, isDevLead, userCan,
   type Permission,
 } from '@/lib/permissions'
@@ -69,7 +69,7 @@ export function useNavItems(): NavItem[] {
     if (item.to === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(user, 'stories.view')
     // Проверяющему сторис «Панель» не нужна: главная сразу ведёт на его страницу.
     if (item.to === '/') return role !== 'stories_checker'
-    if (item.to === '/smm') return canSeeSmmSection(role)
+    if (item.to === '/smm') return canSeeSmartCalendar(role, secondaryRole)
     if (item.to === '/dev') return canSeeDevSection(role)
     if (item.to === '/tasks') return !isTopExec
     // «Тест новый» — пока только для руководства, это черновой раздел.

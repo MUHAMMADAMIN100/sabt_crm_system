@@ -7,10 +7,11 @@ import { TelegramService } from '../telegram/telegram.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import {
-  ProducerShoot, ShootSnapshot, addDays, changeHead, changeMessage, dailyMessage, handedOverMessage, isAnnounced,
-  mapLink, missingTimeMessage, nextWeek, phoneOf, readScriptToken, ruLongDay, ruRange, scriptToken, takenAwayMessage,
-  weeklyMessage,
+  NeedShoot, ProducerShoot, ShootSnapshot, addDays, changeHead, changeMessage, dailyMessage, groupShoots, handedOverMessage,
+  isAnnounced, mapLink, missingTimeMessage, nextWeek, phoneOf, producerNoonMessage, readScriptToken, ruLongDay, ruRange,
+  scriptToken, takenAwayMessage, todaySummary, weeklyMessage,
 } from './producer.logic';
+import { STUDIO_LABEL, shootPlaceKind } from '../../common/shoot-place';
 
 const TZ = 'Asia/Dushanbe';
 const dushanbeToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
@@ -34,7 +35,10 @@ const SHOOT_SELECT = `
          au.name AS videographer, ci."assigneeId" AS "assigneeId",
          COALESCE(parent.id, ci.id) AS "scriptItemId",
          btrim(COALESCE(CASE WHEN parent.id IS NOT NULL THEN parent."scriptText" ELSE ci."scriptText" END, '')) <> '' AS "hasScript",
-         ci.status::text = 'published' AS done
+         ci.status::text = 'published' AS done,
+         EXISTS (SELECT 1 FROM content_plan_items e
+                  WHERE ci."shootForItemId" IS NOT NULL AND e."shootForItemId" = ci."shootForItemId"
+                    AND e."prepStage" = 'edit' AND e.status::text = 'published') AS edited
     FROM content_plan_items ci
     JOIN projects p ON p.id = ci."projectId"
     LEFT JOIN content_plan_items parent ON parent.id = ci."shootForItemId"
@@ -69,7 +73,7 @@ export class ProducerService implements OnModuleDestroy {
     return `${this.telegram.appUrl}/public/script/${scriptToken(s.scriptItemId, this.secret)}`;
   }
 
-  /** Строки выборки → съёмки: адрес — «Другое место» или адрес проекта,
+  /** Строки выборки → съёмки: место — студия, адрес клиента или «Другое»,
    *  СММ — имена специалистов проекта. */
   private async toShoots(rows: any[]): Promise<ShootRow[]> {
     const idsOf = (sd: any): string[] =>
@@ -85,13 +89,16 @@ export class ProducerService implements OnModuleDestroy {
     return rows.map(r => {
       const sd = r.smmData || {};
       const place = str(r.place);
+      const kind = shootPlaceKind(place);
       const smmIds = idsOf(sd).filter(id => names.has(id));
       return {
         id: r.id, date: r.date, time: r.time || null, projectName: r.projectName || 'Проект',
         title: r.title || null, videographer: r.videographer || null, assigneeId: r.assigneeId || null,
-        scriptItemId: r.scriptItemId, hasScript: !!r.hasScript, done: !!r.done,
-        address: place || str(sd.shootAddress), otherPlace: !!place,
-        mapUrl: str(sd.shootMapUrl), contact: str(sd.shootContact),
+        scriptItemId: r.scriptItemId, hasScript: !!r.hasScript, done: !!r.done, edited: !!r.edited,
+        placeKind: kind,
+        address: kind === 'studio' ? STUDIO_LABEL : kind === 'client' ? str(sd.shootAddress) : place,
+        otherPlace: kind === 'other',
+        mapUrl: kind === 'client' ? str(sd.shootMapUrl) : null, contact: str(sd.shootContact),
         smm: smmIds.map(id => names.get(id)).join(', ') || null,
         projectId: r.projectId, smmIds,
         stage: r.stage || null, parentType: r.parentType || null,
@@ -153,11 +160,11 @@ export class ProducerService implements OnModuleDestroy {
     return rows.map(r => r.id);
   }
 
-  private async deliver(users: string[], text: string, title: string, message: string) {
+  private async deliver(users: string[], text: string, title: string, message: string, link = '/') {
     for (const userId of users) {
       await this.telegram.sendToUser(userId, text);
       try {
-        await this.notifications.create({ userId, type: NotificationType.NEW_TASK, title, message, link: '/' });
+        await this.notifications.create({ userId, type: NotificationType.NEW_TASK, title, message, link });
       } catch (e) {
         this.logger.warn(`Уведомление о съёмках не создано ${userId}: ${(e as Error).message}`);
       }
@@ -175,25 +182,31 @@ export class ProducerService implements OnModuleDestroy {
     }
     for (const [userId, own] of byUser) {
       const text = build(own);
-      if (text) await this.deliver([userId], text, title(own.length), message);
+      if (text) await this.deliver([userId], text, title(groupShoots(own).length), message);
     }
     return byUser.size;
   }
 
-  /** 18:00 накануне: съёмки на завтра — продюсеру все, видеографу свои. */
+  /** 18:00 накануне: съёмки на завтра — продюсеру все, видеографу свои.
+   *  Продюсеру сверху ещё «Сегодня»: какие съёмки отмечены снятыми — он
+   *  организует их, сам не присутствуя (09.11.2026). */
   @Cron('0 18 * * *', { timeZone: TZ })
   async notifyTomorrow() {
     try {
-      const day = addDays(dushanbeToday(), 1);
-      const list = await this.shoots(day, day);
+      const today = dushanbeToday();
+      const day = addDays(today, 1);
+      const both = await this.shoots(today, day);
+      const list = both.filter(s => s.date === day);
       const link = (s: ProducerShoot) => this.scriptUrl(s);
       const text = dailyMessage(day, list, this.telegram.appUrl, link);
-      if (!text) return;
-      const n = list.filter(s => !s.done).length;
+      const summary = todaySummary(today, both);
+      if (!text && !summary) return;
+      const n = groupShoots(list.filter(s => !s.done)).length;
       const producers = await this.producers();
-      await this.deliver(producers, text, `Съёмки на завтра — ${n}`, ruLongDay(day));
-      const crew = await this.deliverOwn(list, own => dailyMessage(day, own, this.telegram.appUrl, link, { own: true }),
-        k => `Ваши съёмки на завтра — ${k}`, ruLongDay(day));
+      const forProducer = [summary, text || '🎬 Съёмок на завтра нет'].filter(Boolean).join('\n\n');
+      await this.deliver(producers, forProducer, text ? `Съёмки на завтра — ${n}` : 'Съёмки за сегодня', ruLongDay(text ? day : today), '/smm');
+      const crew = text ? await this.deliverOwn(list, own => dailyMessage(day, own, this.telegram.appUrl, link, { own: true }),
+        k => `Ваши съёмки на завтра — ${k}`, ruLongDay(day)) : 0;
       this.logger.log(`Съёмки на ${day}: ${n} (продюсеров ${producers.length}, видеографов ${crew})`);
     } catch (e: any) {
       this.logger.warn(`Съёмки на завтра не отправлены: ${String(e?.message || e).slice(0, 160)}`);
@@ -209,10 +222,10 @@ export class ProducerService implements OnModuleDestroy {
       const link = (s: ProducerShoot) => this.scriptUrl(s);
       const text = weeklyMessage(from, to, list, this.telegram.appUrl, link);
       if (!text) return;
-      const n = list.filter(s => !s.done).length;
+      const n = groupShoots(list.filter(s => !s.done)).length;
       const range = ruRange(from, addDays(to, -1));
       const producers = await this.producers();
-      await this.deliver(producers, text, `Съёмки на неделю — ${n}`, range);
+      await this.deliver(producers, text, `Съёмки на неделю — ${n}`, range, '/smm');
       const crew = await this.deliverOwn(list, own => weeklyMessage(from, to, own, this.telegram.appUrl, link, { own: true }),
         k => `Ваши съёмки на неделю — ${k}`, range);
       this.logger.log(`Съёмки на неделю ${from}…${to}: ${n} (продюсеров ${producers.length}, видеографов ${crew})`);
@@ -221,13 +234,51 @@ export class ProducerService implements OnModuleDestroy {
     }
   }
 
-  /** Накануне в 12:00: СММ-специалистам — завтрашние съёмки без времени.
-   *  До 18:00 они успеют договориться с клиентом и поставить время, и
-   *  видеограф получит его вместе с адресом. Время уже стоит — молчим. */
+  /** Рилсы с выходом в ближайшие дни, у которых нет съёмки: её отменили или
+   *  не ставили, а монтаж ещё не готов. Их и нужно назначить продюсеру. */
+  async needShoots(from: string, to: string): Promise<NeedShoot[]> {
+    const rows: any[] = await this.ds.query(
+      `SELECT p.name AS "projectName", r.topic AS title, to_char(r."publishDate"::date, 'YYYY-MM-DD') AS date,
+              EXISTS (SELECT 1 FROM content_plan_items c
+                       WHERE c."shootForItemId" = r.id AND COALESCE(c."prepStage", 'shoot') = 'shoot'
+                         AND c.status::text = 'cancelled') AS cancelled
+         FROM content_plan_items r
+         JOIN projects p ON p.id = r."projectId"
+        WHERE p."projectType" = 'SMM' AND COALESCE(p."isArchived", false) = false
+          AND COALESCE(p.status::text, '') <> 'archived'
+          AND r."shootForItemId" IS NULL AND r."contentType"::text = 'reel'
+          AND r.status::text NOT IN ('published', 'cancelled')
+          AND r."publishDate" IS NOT NULL
+          AND r."publishDate"::date >= ($1)::date AND r."publishDate"::date <= ($2)::date
+          AND NOT EXISTS (SELECT 1 FROM content_plan_items s
+                           WHERE s."shootForItemId" = r.id AND COALESCE(s."prepStage", 'shoot') = 'shoot'
+                             AND s.status::text <> 'cancelled' AND s."publishDate" IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM content_plan_items e
+                           WHERE e."shootForItemId" = r.id AND e."prepStage" = 'edit' AND e.status::text = 'published')
+        ORDER BY r."publishDate" ASC, p.name ASC`,
+      [from, to],
+    );
+    return rows.map(r => ({ projectName: r.projectName || 'Проект', title: r.title || null, date: r.date, cancelled: !!r.cancelled }));
+  }
+
+  /** 12:00: что назначить. С 09.11.2026 съёмки назначает продюсер — ему
+   *  рилсы ближайших трёх дней без съёмки и завтрашние съёмки без времени.
+   *  Продюсера в команде нет — как раньше, СММ-специалистам проекта. */
   @Cron('0 12 * * *', { timeZone: TZ })
   async remindMissingTime() {
     try {
-      const day = addDays(dushanbeToday(), 1);
+      const today = dushanbeToday();
+      const day = addDays(today, 1);
+      const producers = await this.producers();
+      if (producers.length) {
+        const [tomorrow, need] = await Promise.all([this.shoots(day, day), this.needShoots(today, addDays(today, 3))]);
+        const text = producerNoonMessage(day, tomorrow, need, this.telegram.appUrl);
+        if (!text) return;
+        const noTime = groupShoots(tomorrow.filter(s => !s.done && !s.time)).length;
+        await this.deliver(producers, text, `Нужно назначить — ${need.length + noTime}`, ruLongDay(day), '/smm');
+        this.logger.log(`Назначить: без съёмки ${need.length}, без времени ${noTime} (продюсеров ${producers.length})`);
+        return;
+      }
       const list = (await this.shoots(day, day)).filter(s => !s.done && !s.time);
       if (!list.length) return;
       // Кому: СММ-специалисты проекта; нет их — менеджер проекта.
@@ -355,15 +406,18 @@ export class ProducerService implements OnModuleDestroy {
     const smmRows: Array<{ name: string }> = smmIds.length ? await this.ds.query(
       `SELECT name FROM users WHERE id = ANY($1::uuid[]) AND "isActive" = true ORDER BY name`, [smmIds],
     ).catch(() => []) : [];
-    const address = place || str(sd.shootAddress);
+    // Где снимаем (09.11.2026): студия — без карты, у клиента — адрес проекта.
+    const kind = shootPlaceKind(place);
+    const address = kind === 'studio' ? STUDIO_LABEL : kind === 'client' ? str(sd.shootAddress) : place;
     const contact = str(sd.shootContact);
     return {
       title: item.title || null,
       projectName: item.projectName || null,
       project: {
         address,
-        otherPlace: !!place,
-        mapUrl: mapLink({ address, otherPlace: !!place, mapUrl: str(sd.shootMapUrl) }),
+        otherPlace: kind === 'other',
+        placeKind: kind,
+        mapUrl: kind === 'studio' ? null : mapLink({ address, otherPlace: kind === 'other', mapUrl: str(sd.shootMapUrl) }),
         contact,
         phone: phoneOf(contact),
         pageUrl: str(sd.pageUrl),

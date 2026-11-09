@@ -111,6 +111,25 @@ function shootNote(it: Item) {
 }
 const isCancelled = (it: Item) => it.status === 'cancelled'
 
+/** Съёмки одного проекта в один день и в одно время — один выезд
+ *  (09.11.2026): в окне дня и в клетке это одна строка, и одна галочка
+ *  закрывает все. Остальные карточки идут как были, по одной. Порядок —
+ *  как во входе: группа стоит на месте своей первой съёмки. */
+function groupShoots(list: Item[]): Item[][] {
+  const out: Item[][] = []
+  const byKey = new Map<string, Item[]>()
+  for (const it of list) {
+    if (it.stage !== 'shoot' || isCancelled(it)) { out.push([it]); continue }
+    const key = `${it.projectId}|${it.date}|${it.time || ''}`
+    const g = byKey.get(key)
+    if (g) g.push(it)
+    else { const ng = [it]; byKey.set(key, ng); out.push(ng) }
+  }
+  return out
+}
+const groupTitle = (g: Item[]) => g.length === 1 ? titleOf(g[0])
+  : `${g.length} ${plural(g.length, 'рилс', 'рилса', 'рилсов')}: ${g.map(titleOf).join(', ')}`
+
 function plural(n: number, one: string, few: string, many: string) {
   const d = n % 10, h = n % 100
   if (d === 1 && h !== 11) return one
@@ -243,8 +262,10 @@ export default function ProductionDashboard() {
   // Свои задачи считаем вместе с производственными: день у человека один.
   const ownToday = own.of(todayKey)
   const ownTodayLeft = ownToday.filter(t => !t.done).length
-  const todayLeft = todayItems.filter(it => !isDone(it) && !isCancelled(it)).length + ownTodayLeft
-  const todayTotal = todayItems.length + ownToday.length
+  // Съёмки одного проекта за день считаем одной задачей — как в списке дня.
+  const todayGroups = groupShoots(todayItems)
+  const todayLeft = todayGroups.filter(g => g.some(it => !isDone(it) && !isCancelled(it))).length + ownTodayLeft
+  const todayTotal = todayGroups.length + ownToday.length
   const monthDone = items.filter(isDone).length
 
   // Оптимистичные мутации: галочка и перенос меняют кэш СРАЗУ, сервер
@@ -332,24 +353,28 @@ export default function ProductionDashboard() {
   // Строки клетки на компьютере (решение владельца 11.10.2026): задачи дня
   // названиями — съёмка, монтаж, дизайн — и следом свои задачи.
   const cellLines = (key: string): CellLine[] => {
-    const prod = (byDay[key] || [])
+    const prod = groupShoots((byDay[key] || [])
       .filter(it => !isCancelled(it))
       .sort((a, b) => (a.time || '99').localeCompare(b.time || '99')
-        || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id))
-      .map((it): CellLine => ({
-        key: it.id,
-        kind: it.stage || (it.contentType === 'reel' ? 'reel' : 'maket'),
-        proj: it.projectName,
-        text: titleOf(it),
-        state: isDone(it) ? 'done' : it.date < todayKey ? 'late' : 'open',
-      }))
+        || a.projectName.localeCompare(b.projectName, 'ru') || a.id.localeCompare(b.id)))
+      .map((g): CellLine => {
+        const it = g[0]
+        return {
+          key: it.id,
+          kind: it.stage || (it.contentType === 'reel' ? 'reel' : 'maket'),
+          proj: it.projectName,
+          text: g.length > 1 ? `${g.length} ${plural(g.length, 'рилс', 'рилса', 'рилсов')}` : titleOf(it),
+          state: g.every(isDone) ? 'done' : it.date < todayKey ? 'late' : 'open',
+        }
+      })
     return [...prod, ...ownLines(own.of(key))]
   }
   // Подсказка под календарём — только те метки, что есть в этом месяце.
   const legendKinds = (['shoot', 'edit', 'design'] as const).filter(k => items.some(it => it.stage === k))
   const KIND_LABEL = { shoot: 'съёмка', edit: 'монтаж', design: 'дизайн' } as const
-  const selDoneN = selItems.filter(isDone).length + ownSel.filter(t => t.done).length
-  const selTotalN = selItems.length + ownSel.length
+  const selGroups = groupShoots(selItems)
+  const selDoneN = selGroups.filter(g => g.every(isDone)).length + ownSel.filter(t => t.done).length
+  const selTotalN = selGroups.length + ownSel.length
   const openItem = openIdx >= 0 ? navList[openIdx] : null
 
   return (
@@ -524,13 +549,27 @@ export default function ProductionDashboard() {
                   : null
               ) : (
                 <div className="space-y-2">
-                  {selItems.map(it => (
-                    <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
-                      showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
-                      onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
-                      onInfo={() => setOpenId(it.id)}
-                      onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
-                  ))}
+                  {selGroups.map(g => {
+                    const it = g[0]
+                    if (g.length === 1) return (
+                      <TaskRow key={it.id} e={toEvent(it)} canCancel={false} moveWindow={windowOf(it)} note={shootNote(it)}
+                        showAssignee={canManage && it.stage === 'shoot'} assigneeName={it.assigneeName}
+                        onToggle={() => toggle.mutate({ id: it.id, done: !isDone(it) })}
+                        onInfo={() => setOpenId(it.id)}
+                        onMove={d => move.mutate({ id: it.id, date: dk(d) })} />
+                    )
+                    // Выезд на несколько рилсов: одна строка, одна галочка на все.
+                    const allDone = g.every(isDone)
+                    const lastDay = g.map(x => x.parentDate).filter((x): x is string => !!x).sort()[0] ?? null
+                    return (
+                      <TaskRow key={it.id} e={{ ...toEvent(it), title: groupTitle(g), status: allDone ? 'published' : 'planned' }}
+                        canCancel={false} moveWindow={{ min: todayKey, max: lastDay }}
+                        showAssignee={canManage} assigneeName={it.assigneeName}
+                        onToggle={() => g.forEach(x => { if (isDone(x) === allDone) toggle.mutate({ id: x.id, done: !allDone }) })}
+                        onInfo={() => setOpenId(it.id)}
+                        onMove={d => g.forEach(x => move.mutate({ id: x.id, date: dk(d) }))} />
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -598,7 +637,8 @@ export default function ProductionDashboard() {
           canCancel={false}
           showFile={false}
           moveWindow={{ min: todayKey, max: openItem.parentDate }}
-          assign={canGiveItem(openItem) ? {
+          // «Передать» — только когда есть кому: пока видеограф один, кнопки нет.
+          assign={canGiveItem(openItem) && candidates.some(u => u.id !== openItem.assigneeId) ? {
             name: openItem.assigneeName,
             candidates,
             onPick: uid => { setOpenId(null); give.mutate({ id: openItem.id, userId: uid }) },

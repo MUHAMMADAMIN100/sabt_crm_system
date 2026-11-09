@@ -1,6 +1,6 @@
 import {
-  changeHead, changeMessage, dailyMessage, isAnnounced, mapLink, missingTimeMessage, nextWeek, phoneOf, readScriptToken,
-  ruLongDay, ruRange, scriptToken, weeklyMessage, ProducerShoot, ShootSnapshot,
+  changeHead, changeMessage, dailyMessage, groupShoots, isAnnounced, mapLink, missingTimeMessage, nextWeek, phoneOf,
+  producerNoonMessage, readScriptToken, ruLongDay, ruRange, scriptToken, todaySummary, weeklyMessage, ProducerShoot, ShootSnapshot,
 } from './producer.logic';
 
 const ID = '5f0c2a9e-3b1d-4c7a-9e21-0a6b7c8d9e10';
@@ -98,10 +98,66 @@ describe('producer.logic', () => {
     expect(mapLink({ address: null, otherPlace: false, mapUrl: null })).toBeNull();
   });
 
-  it('без времени — «уточните у СММ», строки «СММ» нет', () => {
+  it('без времени — видеографу «уточните у продюсера», СММ строкой ниже', () => {
     const text = dailyMessage('2026-10-30', [shoot({ time: null, smm: 'Нигина' })], 'x', link, { own: true })!;
-    expect(text).toContain('<b>Время не указано · Кофейня Nur</b>\n«5 видов кофе за 30 секунд»\n🕑 время не указано — уточните у СММ: Нигина\n<a href=');
-    expect(text).not.toContain('💬');
+    expect(text).toContain('<b>Время не указано · Кофейня Nur</b>\n«5 видов кофе за 30 секунд»\n🕑 время не указано — уточните у продюсера\n💬 СММ: Нигина\n<a href=');
+    const forProducer = dailyMessage('2026-10-30', [shoot({ time: null })], 'x', link)!;
+    expect(forProducer).toContain('🕑 время не указано\n');
+    expect(forProducer).not.toContain('уточните');
+  });
+
+  it('место: студия без карты, у клиента — адрес или «не указан»', () => {
+    const studio = dailyMessage('2026-10-30', [shoot({ placeKind: 'studio', address: 'Студия' })], 'x', link)!;
+    expect(studio).toContain('\n📍 Студия\n');
+    expect(studio).not.toContain('карта');
+    const client = dailyMessage('2026-10-30', [shoot({ placeKind: 'client', address: null })], 'x', link)!;
+    expect(client).toContain('📍 У клиента — адрес не указан');
+  });
+
+  it('один проект в один день — один блок «N рилса» со ссылками на каждый', () => {
+    const g = (id: string, title: string, hasScript = false) =>
+      shoot({ id, title, hasScript, time: '11:00', projectName: 'Chrono', projectId: 'p1', placeKind: 'studio', address: 'Студия', scriptItemId: id });
+    const list = [g('a', 'Рилс 24'), g('b', 'Рилс 25'), g('c', 'Рилс 26'), g('d', 'Рилс 27'),
+      shoot({ id: 'e', time: '15:00', projectName: 'Tojiron', projectId: 'p2' })];
+    const own = dailyMessage('2026-10-30', list, 'x', link, { own: true })!;
+    expect(own.startsWith('🎬 <b>Ваши съёмки на завтра — 2</b>')).toBe(true);
+    expect(own).toContain('<b>11:00 · Chrono — 4 рилса</b>\n📄 <a href="https://crm.webrand.tj/public/script/a">«Рилс 24»</a> · ');
+    expect(own).toContain('«Рилс 27»</a> · сценариев пока нет\n📍 Студия');
+    expect(own.match(/Chrono/g)!.length).toBe(1);
+    const week = weeklyMessage('2026-10-26', '2026-11-01', list, 'x', link)!;
+    expect(week.startsWith('📅 <b>Съёмки на неделю — 2</b>')).toBe(true);
+    expect(week).toContain('<b>11:00</b> · Chrono — 4 рилса · Бехруз\n📍 Студия\n📄 ');
+  });
+
+  it('разное время или видеограф — разные выезды', () => {
+    const a = shoot({ id: 'a', projectId: 'p1', time: '11:00' });
+    const b = shoot({ id: 'b', projectId: 'p1', time: '15:00' });
+    const c = shoot({ id: 'c', projectId: 'p1', time: '11:00', assigneeId: 'u2' });
+    expect(groupShoots([a, b, c]).length).toBe(3);
+    expect(groupShoots([a, { ...a, id: 'a2' }]).length).toBe(1);
+  });
+
+  it('продюсеру в 12:00: рилс без съёмки и завтра без времени', () => {
+    expect(producerNoonMessage('2026-11-10', [shoot({ date: '2026-11-10' })], [], 'https://crm')).toBeNull();
+    const text = producerNoonMessage('2026-11-10', [
+      shoot({ date: '2026-11-10', time: null, projectName: 'Chrono', projectId: 'p1' }),
+      shoot({ id: 'b', date: '2026-11-10', time: null, projectName: 'Chrono', projectId: 'p1' }),
+    ], [{ projectName: 'Paradise Hall', title: 'Рилс 1', date: '2026-11-10', cancelled: true }], 'https://crm')!;
+    expect(text.startsWith('⏰ <b>Нужно назначить — 2</b>')).toBe(true);
+    expect(text).toContain('<b>Paradise Hall</b> · «Рилс 1»\nвыход: вторник, 10 ноября — съёмку отменили');
+    expect(text).toContain('<b>Завтра без времени</b> · вторник, 10 ноября\nChrono · 2 рилса');
+    expect(text).toContain('<a href="https://crm/smm">Открыть умный календарь</a>');
+  });
+
+  it('продюсеру в 18:00: сегодня снято, смонтированные раньше не считаем', () => {
+    expect(todaySummary('2026-11-30', [shoot({ date: '2026-11-29' })])).toBeNull();
+    const text = todaySummary('2026-11-30', [
+      shoot({ id: 'a', date: '2026-11-30', projectName: 'Chrono', done: true }),
+      shoot({ id: 'b', date: '2026-11-30', projectName: 'Chrono', done: true }),
+      shoot({ id: 'c', date: '2026-11-30', projectName: 'Paradise Hall' }),
+      shoot({ id: 'd', date: '2026-11-30', projectName: 'Webrand', done: true, edited: true }),
+    ])!;
+    expect(text).toBe('📋 <b>Сегодня</b>\n✅ Chrono — снято 2 из 2\n⏳ Paradise Hall — снято 0 из 1');
   });
 
   it('телефон из контакта', () => {

@@ -7,7 +7,7 @@ import { MoreHorizontal, Plus, X, ClipboardCheck, FolderKanban, Image as ImageIc
   Building2, Package, Activity, Settings, Car, Network, Target, Megaphone, Code2, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead, getRoleLabel } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeSmartCalendar, canSeeDevSection, userCan, isDevLead, getRoleLabel } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
@@ -136,7 +136,10 @@ export default function BottomNav() {
   // Подразделы «СММ» для шторки «Ещё»: на телефоне субменю нет, и до
   // «Сторисов», «Проектов» и «Контроля» иначе не добраться.
   const smmLinks = useMemo(() => {
-    if (!canSeeSmmSection(user?.role)) return []
+    // Продюсеру — только «Умный календарь» (09.11.2026).
+    if (!canSeeSmmSection(user?.role)) {
+      return canSeeSmartCalendar(user?.role, user?.secondaryRole) ? [{ to: '/smm', label: 'Умный календарь', icon: CalendarRange }] : []
+    }
     return [
       { to: '/smm', label: 'Умный календарь', icon: CalendarRange },
       { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },

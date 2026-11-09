@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly } from './permissions'
+import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly, isShootOrganizer, canSeeSmartCalendar } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -116,5 +116,28 @@ describe('раздел «Директ»', () => {
   it('личный доступ к клиентам открывает, запрет — закрывает', () => {
     expect(canAccessRoute('designer', '/direct', null, ['clients.view'], [])).toBe(true)
     expect(canAccessRoute('sales_manager_smm', '/direct', null, [], ['clients.view'])).toBe(false)
+  })
+})
+
+// Продюсер (09.11.2026) назначает съёмки в «Умном календаре»: из раздела
+// «СММ» ему открыт только календарь.
+describe('продюсер и «Умный календарь»', () => {
+  it('календарь открыт, сторис, проекты и «Контроль» — нет', () => {
+    expect(canAccessRoute('producer', '/smm')).toBe(true)
+    for (const route of ['/smm/stories', '/smm/projects', '/smm/projects/x', '/smm/control']) {
+      expect(canAccessRoute('producer', route)).toBe(false)
+    }
+    expect(canSeeSmartCalendar('producer')).toBe(true)
+    expect(canSeeSmmSection('producer')).toBe(false)
+  })
+  it('продюсер второй ролью тоже назначает съёмки', () => {
+    expect(isShootOrganizer('videographer', 'producer')).toBe(true)
+    expect(canAccessRoute('videographer', '/smm', 'producer')).toBe(true)
+  })
+  it('у СММ-команды календарь как был — без режима продюсера', () => {
+    expect(isShootOrganizer('smm_specialist')).toBe(false)
+    expect(isShootOrganizer('producer', 'smm_specialist')).toBe(false)
+    expect(canAccessRoute('smm_specialist', '/smm')).toBe(true)
+    expect(canAccessRoute('designer', '/smm')).toBe(false)
   })
 })

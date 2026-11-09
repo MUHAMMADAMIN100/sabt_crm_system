@@ -13,7 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { isSmmViewOnly } from '@/lib/permissions'
+import { isSmmViewOnly, isShootOrganizer } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { useHistoryOverlay } from '@/lib/navMemory'
 import { usePatchUrl } from '@/lib/urlState'
@@ -31,11 +31,40 @@ export type Ev = {
   // Этап подготовки: 'shoot' — съёмка, 'edit' — монтаж, 'design' — макет.
   // У рилса карточек подготовки две (съёмка и монтаж), тип родителя их не различает.
   prepStage?: 'shoot' | 'edit' | 'design' | null
+  // Где снимаем (09.11.2026): студия, у клиента или другое место; location — подпись.
+  placeKind?: PlaceKind | null
 }
 // Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
 export type SDay = 'done' | 'partial' | 'none'
 const SDAY_COLOR: Record<SDay, string> = { done: '#4bc98a', partial: '#e8b04b', none: '#eb5b5b' }
 const SDAY_LABEL: Record<SDay, string> = { done: 'сделано', partial: 'частично', none: 'не сделано' }
+// Где снимаем (09.11.2026): пусто — студия, '@client' — адрес клиента с
+// вкладки «Клиент», иначе — вписанное место. Так же на сервере
+// (backend/src/common/shoot-place.ts).
+const CLIENT_PLACE = '@client'
+type PlaceKind = 'studio' | 'client' | 'other'
+const placeKindOf = (v?: string | null): PlaceKind => {
+  const t = (v || '').trim()
+  return !t ? 'studio' : t === CLIENT_PLACE ? 'client' : 'other'
+}
+/** Подпись и вид места после правки — как их отдаёт календарь. */
+const placePatch = (raw: string | null) => {
+  const k = placeKindOf(raw)
+  return { placeKind: k, location: k === 'studio' ? null : k === 'client' ? 'У клиента' : (raw || '').trim() }
+}
+/** Сохранённое место у события календаря (там подпись и вид). */
+const rawPlaceOf = (e: Ev): string | null => {
+  const k = e.placeKind || (e.location ? 'other' : 'studio')
+  return k === 'client' ? CLIENT_PLACE : k === 'other' ? (e.location || null) : null
+}
+function plural(n: number, one: string, few: string, many: string) {
+  const d = n % 10, h = n % 100
+  if (d === 1 && h !== 11) return one
+  if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few
+  return many
+}
+/** Что меняют у съёмки из её окна: день, время, место. */
+type ShootPatch = { publishDate?: string; publishTime?: string | null; shootPlace?: string | null }
 const DEFAULT_DUR = 60 // длительность съёмки по умолчанию (мин)
 const DUR_OPTIONS = [30, 60, 90, 120, 180] // варианты длительности в модалке
 const fmtDur = (m: number) => m % 60 === 0 ? `${m / 60}ч` : m < 60 ? `${m}м` : `${Math.floor(m / 60)}ч ${m % 60}м`
@@ -245,10 +274,14 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const user = useAuthStore(s => s.user)
   // Менеджер по продажам календарь только смотрит (решение владельца
   // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
-  const readOnly = isSmmViewOnly(user?.role)
-  // Съёмки видят видеографы всегда; остальные — только когда выбран проект (фильтр по плитке).
+  // Продюсер (09.11.2026) назначает съёмки: календарь у него только для
+  // просмотра, а в окне съёмки он меняет день, время и место.
+  const organizer = isShootOrganizer(user?.role, (user as any)?.secondaryRole)
+  const readOnly = isSmmViewOnly(user?.role) || organizer
+  // Съёмки видят видеографы и продюсер всегда; остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_editor'].includes(user?.role ?? '')
     || ['videographer', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
+    || organizer
   const isPhone = useIsPhone()
   // Начальные вид, дата и фильтры — из адреса (см. URL_KEYS), дальше адрес —
   // зеркало состояния (эффект ниже).
@@ -451,7 +484,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // Время и место съёмки из окна съёмки (07.11.2026): накануне СММ ставит
   // время, а если снимают не по адресу проекта — другое место.
   const shootMut = useMutation({
-    mutationFn: ({ itemId, patch }: { itemId: string; patch: { publishTime?: string | null; shootPlace?: string | null } }) =>
+    mutationFn: ({ itemId, patch }: { itemId: string; patch: ShootPatch }) =>
       contentPlanApi.smartUpdate(itemId, patch),
     onMutate: async ({ itemId, patch }) => {
       const key = calKey
@@ -459,8 +492,10 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       const prev = qc.getQueryData<CalData>(key)
       const upd = (e: Ev): Ev => e.itemId !== itemId ? e : {
         ...e,
+        // Отменённую съёмку продюсер назначил на день — она снова в работе (так и на сервере).
+        ...(patch.publishDate ? { date: patch.publishDate, ...(organizer && e.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
         ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
-        ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
+        ...('shootPlace' in patch ? placePatch(patch.shootPlace ?? null) : {}),
       }
       qc.setQueryData<CalData>(key, old => old ? { ...old, events: old.events.map(upd) } : old)
       return { prev, key }
@@ -469,6 +504,39 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
   })
   const shootAddressOf = (pid: string) => rawProjects.find(p => p.id === pid)?.shootAddress ?? null
+  // «Снять вместе» (09.11.2026): другие съёмки проекта — на тот же день,
+  // время и место. Один заход в студию вместо нескольких.
+  const togetherMut = useMutation({
+    mutationFn: async ({ ids, date, time, place }: { ids: string[]; date: string; time: string | null; place: string | null }) => {
+      for (const id of ids) await contentPlanApi.smartUpdate(id, { publishDate: date, publishTime: time, shootPlace: place })
+    },
+    onMutate: async ({ ids, date, time, place }) => {
+      const key = calKey
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<CalData>(key)
+      const set = new Set(ids)
+      qc.setQueryData<CalData>(key, old => old ? {
+        ...old,
+        events: old.events.map(e => e.itemId && set.has(e.itemId) ? { ...e, date, time, ...placePatch(place) } : e),
+      } : old)
+      return { prev, key }
+    },
+    onSuccess: (_d, v) => toast.success(v.ids.length === 1 ? 'Съёмка перенесена' : `Перенесено съёмок: ${v.ids.length}`),
+    onError: (_e: any, _v: any, ctx: any) => { if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev); toast.error('Не удалось перенести съёмки') },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['smm-calendar'] }) },
+  })
+  /** Другие съёмки того же проекта в пределах двух недель, ещё не снятые и
+   *  не позже выхода своего рилса, — их можно снять в тот же день. */
+  const togetherFor = (d: Ev): Ev[] => {
+    if (d.kind !== 'shoot' || !d.itemId || !d.date || prepStageOf(d) !== 'shoot' || d.date < today) return []
+    const base = new Date(`${d.date}T00:00:00`).getTime()
+    return (data?.events ?? []).filter(x => x.kind === 'shoot' && !!x.itemId && x.itemId !== d.itemId
+      && x.projectId === d.projectId && prepStageOf(x) === 'shoot' && !!x.date && x.date !== d.date && x.date >= today
+      && !isDone(x) && x.status !== 'cancelled'
+      && Math.abs(new Date(`${x.date}T00:00:00`).getTime() - base) <= 14 * 864e5
+      && (!x.reelDate || x.reelDate >= d.date))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }
   // Сохранение названия/описания позиции (из окна события) — оптимистично, чтобы
   // подпись на карточке обновилась сразу.
   const saveInfoMut = useMutation({
@@ -493,6 +561,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
+    // Продюсеру карточка проекта закрыта — цикл ведёт СММ-специалист.
+    if (organizer) { toast('Цикл проекта настраивает СММ-специалист'); return }
     // Наблюдателю настройки цикла не открываем — ведём на страницу проекта.
     if (readOnly) { navigate(`/smm/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
@@ -768,6 +838,32 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     return []
   }, [view, cursor])
 
+  // Окно события — одно на телефон и компьютер.
+  const eventModal = detail && (
+    <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
+      canShoot={!readOnly || organizer}
+      onMark={done => markMut.mutate({ ev: detail, done })}
+      onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
+      onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
+      projectAddress={shootAddressOf(detail.projectId)}
+      onShoot={detail.itemId ? (patch => {
+        shootMut.mutate({ itemId: detail.itemId!, patch })
+        setDetail(d => d ? {
+          ...d,
+          ...(patch.publishDate ? { date: patch.publishDate, ...(organizer && d.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
+          ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
+          ...('shootPlace' in patch ? placePatch(patch.shootPlace ?? null) : {}),
+        } : d)
+      }) : undefined}
+      together={togetherFor(detail)} togetherBusy={togetherMut.isPending}
+      onTogether={ids => {
+        if (!detail.date || !ids.length) return
+        togetherMut.mutate({ ids, date: detail.date, time: detail.time ?? null, place: rawPlaceOf(detail) })
+      }}
+      onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
+      onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
+  )
+
   // ── Телефон: вместо сетки-календаря отдельный планировщик (вариант Б,
   //    решение владельца 21.09.2026). Данные, фильтры и мутации те же —
   //    меняется только способ показать и потрогать. ──
@@ -787,23 +883,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
 
       {autoModal}
 
-      {detail && (
-        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
-          onMark={done => markMut.mutate({ ev: detail, done })}
-          onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
-          onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
-          projectAddress={shootAddressOf(detail.projectId)}
-          onShoot={detail.itemId ? (patch => {
-            shootMut.mutate({ itemId: detail.itemId!, patch })
-            setDetail(d => d ? {
-              ...d,
-              ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
-              ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
-            } : d)
-          }) : undefined}
-          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
-          onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
-      )}
+      {eventModal}
 
       {projSettings && (
         <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
@@ -912,23 +992,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         </>
       )}
 
-      {detail && (
-        <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
-          onMark={done => markMut.mutate({ ev: detail, done })}
-          onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
-          onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
-          projectAddress={shootAddressOf(detail.projectId)}
-          onShoot={detail.itemId ? (patch => {
-            shootMut.mutate({ itemId: detail.itemId!, patch })
-            setDetail(d => d ? {
-              ...d,
-              ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
-              ...('shootPlace' in patch ? { location: patch.shootPlace ?? null } : {}),
-            } : d)
-          }) : undefined}
-          onUnschedule={() => { if (detail.date) moveMut.mutate({ ev: detail, dateStr: null }); setDetail(null) }}
-          onOpenParent={detail.reelId && pubByItem.get(detail.reelId) ? () => setDetail(pubByItem.get(detail.reelId!)!) : undefined} />
-      )}
+      {eventModal}
 
       {projSettings && (
         <ProjectCycleModal p={projSettings} saving={cycleMut.isPending} clearing={clearMut.isPending}
@@ -2066,12 +2130,32 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false }: { readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void; onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void; onShoot?: (patch: { publishTime?: string | null; shootPlace?: string | null }) => void; projectAddress?: string | null }) {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false, canShoot = !readOnly, together = [], togetherBusy = false, onTogether }: {
+  readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void
+  onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void
+  onShoot?: (patch: ShootPatch) => void; projectAddress?: string | null
+  /** Может назначать съёмку: день, время, место (СММ и продюсер). */
+  canShoot?: boolean
+  /** «Снять вместе»: другие съёмки проекта, которые можно перенести на этот день. */
+  together?: Ev[]; togetherBusy?: boolean; onTogether?: (itemIds: string[]) => void
+}) {
   const isShoot = e.kind === 'shoot'
-  // Время и место правятся только у съёмки под рилс (не монтаж, не дизайн).
-  const shootEdit = !readOnly && !!onShoot && isShoot && !!e.itemId && prepStageOf(e) === 'shoot'
-  const [place, setPlace] = useState(e.location || '')
-  const savePlace = () => { const v = place.trim(); if (onShoot && v !== (e.location || '')) onShoot({ shootPlace: v || null }) }
+  // День, время и место правятся только у съёмки под рилс (не монтаж, не дизайн).
+  const shootEdit = canShoot && !!onShoot && isShoot && !!e.itemId && prepStageOf(e) === 'shoot'
+  // Где снимаем (09.11.2026): студия по умолчанию, у клиента или другое место.
+  const curKind: PlaceKind = e.placeKind || (e.location ? 'other' : 'studio')
+  const [placeKind, setPlaceKind] = useState<PlaceKind>(curKind)
+  const [place, setPlace] = useState(curKind === 'other' ? (e.location || '') : '')
+  const savePlace = () => { const v = place.trim(); if (onShoot && v && (curKind !== 'other' || v !== (e.location || ''))) onShoot({ shootPlace: v }) }
+  const pickPlace = (k: PlaceKind) => {
+    setPlaceKind(k)
+    if (!onShoot || (k === curKind && k !== 'other')) return
+    if (k === 'studio') onShoot({ shootPlace: null })
+    else if (k === 'client') onShoot({ shootPlace: CLIENT_PLACE })
+    else if (place.trim()) onShoot({ shootPlace: place.trim() })
+  }
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(together.map(x => x.itemId!)))
+  const pickedIds = together.map(x => x.itemId!).filter(id => picked.has(id))
   const type = e.contentType || 'other'
   const done = isDone(e)
   const prep = isShoot ? prepMeta(e) : null
@@ -2154,7 +2238,16 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
             <div className="grid grid-cols-2 gap-2 mt-3">
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{prep?.verb}</div>
-                <div className="text-sm font-bold mt-0.5 tabular-nums">{e.date ? fmtDate(e.date) : '—'}</div>
+                {shootEdit ? (
+                  // День съёмки можно поменять здесь же: продюсеру календарь
+                  // перетаскиванием не доступен (09.11.2026).
+                  <input type="date" value={e.date || ''} min={todayIso()} max={e.reelDate || undefined}
+                    onChange={ev => { const v = ev.target.value; if (v && v !== e.date) onShoot!({ publishDate: v }) }}
+                    aria-label="День съёмки"
+                    className="w-full min-w-0 bg-transparent text-sm font-bold mt-0.5 tabular-nums outline-none cursor-pointer" />
+                ) : (
+                  <div className="text-sm font-bold mt-0.5 tabular-nums">{e.date ? fmtDate(e.date) : '—'}</div>
+                )}
               </div>
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Длительность</div>
@@ -2186,14 +2279,56 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
                   </div>
                 </div>
                 <div>
-                  <p className={lab}>Место съёмки</p>
-                  <input value={place} onChange={ev => setPlace(ev.target.value)} onBlur={savePlace}
-                    onKeyDown={ev => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur() }}
-                    maxLength={300} placeholder={projectAddress ? `По адресу проекта: ${projectAddress}` : 'По адресу проекта'} className={inp} />
+                  <p className={lab}>Где снимаем</p>
+                  <div className="flex gap-1.5">
+                    {(['studio', 'client', 'other'] as const).map(k => (
+                      <button key={k} type="button" onClick={() => pickPlace(k)} aria-pressed={placeKind === k}
+                        className={'flex-1 rounded-lg border py-2 text-[13px] font-semibold transition ' + (placeKind === k
+                          ? 'text-white border-transparent'
+                          : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800')}
+                        style={placeKind === k ? { background: projColor(e.projectId) } : undefined}>
+                        {k === 'studio' ? 'Студия' : k === 'client' ? 'У клиента' : 'Другое'}
+                      </button>
+                    ))}
+                  </div>
+                  {placeKind === 'other' && (
+                    <input value={place} onChange={ev => setPlace(ev.target.value)} onBlur={savePlace} autoFocus={!place}
+                      onKeyDown={ev => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur() }}
+                      maxLength={300} placeholder="Адрес или название места" className={inp + ' mt-2'} />
+                  )}
                   <p className="text-[11.5px] text-gray-400 mt-1">
-                    {projectAddress ? 'Пусто — снимаем по адресу проекта.' : 'Адрес проекта не указан — добавьте его на вкладке «Клиент» или впишите место здесь.'}
+                    {placeKind === 'studio' ? 'Наша студия — адрес не нужен.'
+                      : placeKind === 'client' ? (projectAddress ? `Адрес клиента: ${projectAddress}` : 'Адрес клиента не указан — добавьте его на вкладке «Клиент» проекта.')
+                      : 'Это место видеограф получит в Telegram.'}
                   </p>
                 </div>
+                {together.length > 0 && onTogether && e.date && (
+                  <div>
+                    <p className={lab}>Снять вместе · ещё {together.length} {plural(together.length, 'съёмка', 'съёмки', 'съёмок')} {e.projectName}</p>
+                    <div className="space-y-1.5">
+                      {together.map(x => {
+                        const on = picked.has(x.itemId!)
+                        return (
+                          <button key={x.id} type="button" aria-pressed={on}
+                            onClick={() => setPicked(prev => { const n = new Set(prev); if (n.has(x.itemId!)) n.delete(x.itemId!); else n.add(x.itemId!); return n })}
+                            className="w-full flex items-center gap-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2 text-left">
+                            <span className={'w-5 h-5 rounded-md grid place-items-center shrink-0 ' + (on ? 'bg-[#3f7a58] text-white' : 'border-2 border-gray-300 dark:border-gray-600')}>
+                              {on && <Check size={12} strokeWidth={3} />}
+                            </span>
+                            <span className="text-sm font-semibold flex-1 min-w-0 truncate">{x.title?.trim() || 'Съёмка'}</span>
+                            <span className="text-[12px] text-gray-400 shrink-0">сейчас {fmtDate(x.date)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <button type="button" disabled={!pickedIds.length || togetherBusy} onClick={() => onTogether(pickedIds)}
+                      className="mt-2 w-full rounded-lg py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                      style={{ background: projColor(e.projectId) }}>
+                      {togetherBusy ? 'Переношу…' : `Перенести ${pickedIds.length} ${plural(pickedIds.length, 'съёмку', 'съёмки', 'съёмок')} на ${fmtDate(e.date)}`}
+                    </button>
+                    <p className="text-[11.5px] text-gray-400 mt-1">Время и место — как у этой съёмки.</p>
+                  </div>
+                )}
               </div>
             )}
 
