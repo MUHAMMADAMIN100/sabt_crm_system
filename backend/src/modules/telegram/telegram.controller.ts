@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Post, Body, Inject, forwardRef, Headers, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramService } from './telegram.service';
@@ -7,14 +7,26 @@ import { BotWorkspaceService } from './bot-workspace.service';
 import { Employee } from '../employees/employee.entity';
 import { TasksService } from '../tasks/tasks.service';
 
+interface TgMessageRef {
+  message_id?: number;
+  text?: string;
+  caption?: string;
+  entities?: Array<{ type: string; url?: string }>;
+  reply_markup?: { inline_keyboard?: Array<Array<{ callback_data?: string; url?: string }>> };
+}
+
 interface TelegramUpdate {
   message?: {
     from?: { id: number; username?: string; first_name?: string };
     text?: string;
-    /** Голосовое сообщение: из него основатель ставит себе задачу. */
+    /** Голосовое сообщение: команда или вопрос голосовому помощнику. */
     voice?: { file_id: string; duration?: number };
+    /** Кружок/аудиофайл — тоже голос. */
+    audio?: { file_id: string; duration?: number };
     photo?: Array<{ file_id: string; file_size?: number }>;
     document?: { file_id: string; file_name?: string };
+    /** Ответ на сообщение бота: «готово» в ответ на карточку задачи. */
+    reply_to_message?: TgMessageRef;
   };
   callback_query?: {
     id: string;
@@ -24,8 +36,33 @@ interface TelegramUpdate {
   };
 }
 
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/** Задача, о которой было сообщение бота: по кнопкам карточки или ссылке. */
+export function taskIdFromReply(ref?: TgMessageRef): string | null {
+  if (!ref) return null;
+  for (const row of ref.reply_markup?.inline_keyboard || []) {
+    for (const b of row) {
+      const m = new RegExp(`^(?:t:(?:done|progress)|w:(?:done|prog|cmt|res)):(${UUID})$`, 'i').exec(b.callback_data || '');
+      if (m) return m[1];
+      const u = new RegExp(`/tasks/(${UUID})`, 'i').exec(b.url || '');
+      if (u) return u[1];
+    }
+  }
+  for (const e of ref.entities || []) {
+    const u = new RegExp(`/tasks/(${UUID})`, 'i').exec(e.url || '');
+    if (u) return u[1];
+  }
+  const t = new RegExp(`/tasks/(${UUID})`, 'i').exec(`${ref.text || ''} ${ref.caption || ''}`);
+  return t ? t[1] : null;
+}
+
+const escHtml = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 @Controller('telegram')
 export class TelegramController {
+  private readonly logger = new Logger(TelegramController.name);
+
   constructor(
     private telegramService: TelegramService,
     private voiceTaskService: VoiceTaskService,
@@ -35,12 +72,34 @@ export class TelegramController {
   ) {}
 
   @Post('webhook')
-  async handleWebhook(@Body() update: TelegramUpdate) {
+  async handleWebhook(
+    @Body() update: TelegramUpdate,
+    @Headers('x-telegram-bot-api-secret-token') secret?: string,
+  ) {
+    if (!this.telegramService.verifyWebhook(secret)) {
+      this.logger.warn('telegram webhook: неверная подпись — апдейт отклонён');
+      throw new UnauthorizedException();
+    }
     // ── Нажатие inline-кнопки («Сделал / Не сделал» на карточке) ──────────
     const cq = update?.callback_query;
     if (cq) {
       const chatId = cq.from?.id;
       const data = cq.data || '';
+      // Кнопки голосового помощника: отменить / подтвердить / выбрать.
+      const assistant = this.telegramService.assistant;
+      if (data.startsWith('va:') && chatId && assistant) {
+        const res: { toast: string; append?: string } | null = await assistant.handleCallback(chatId, data).catch((e) => {
+          this.logger.error(`va-кнопка: ${e?.message || e}`);
+          return { toast: 'Не получилось — попробуйте ещё раз' };
+        });
+        await this.telegramService.answerCallbackQuery(cq.id, res?.toast || '');
+        if (res?.append && cq.message?.chat?.id && cq.message?.message_id) {
+          const base = cq.message.text ? `${escHtml(cq.message.text)}\n\n` : '';
+          await this.telegramService.editMessageText(cq.message.chat.id, cq.message.message_id, `${base}${res.append}`)
+            .catch(() => {});
+        }
+        return { ok: true };
+      }
       // Кнопки рабочего места («Готово», «В работу», «Комментарий»,
       // «Результат») — пишутся теми же сервисами, что и веб-интерфейс.
       if (data.startsWith('w:') && chatId) {
@@ -108,13 +167,18 @@ export class TelegramController {
     const firstName = msg.from?.first_name || 'пользователь';
     const text = msg.text?.trim() || '';
 
-    // ── Голосовая постановка задачи ───────────────────────────────────────
-    // Сервис сам решает, доступна ли она этому человеку; если нет — молчим,
-    // как и раньше на любое сообщение кроме /start.
-    if (chatId && msg.voice?.file_id) {
-      await this.voiceTaskService
-        .handleVoice(chatId, msg.voice.file_id, msg.voice.duration || 0)
-        .catch(() => { /* бот не должен падать из-за голосового */ });
+    // ── Голосовой помощник ────────────────────────────────────────────────
+    // Разбор голосового занимает секунды (распознавание + ИИ). Отвечаем
+    // Telegram сразу, а работаем в фоне: иначе он посчитает апдейт
+    // недоставленным, пришлёт повторно — и команда выполнится дважды.
+    const assistant = this.telegramService.assistant;
+    const voice = msg.voice || msg.audio;
+    const replyTaskId = taskIdFromReply(msg.reply_to_message);
+    if (chatId && voice?.file_id) {
+      if (assistant) {
+        void assistant.handleVoice(chatId, voice.file_id, voice.duration || 0, { replyTaskId })
+          .catch((e) => this.logger.error(`голосовое: ${e?.message || e}`));
+      }
       return { ok: true };
     }
 
@@ -149,11 +213,15 @@ export class TelegramController {
       if (handled) return { ok: true };
     }
 
-    // Ждём исправление после кнопки «Изменить» — обычный текст в этот
-    // момент означает правку, а не команду.
-    if (chatId && text && !text.startsWith('/')) {
-      const handled = await this.voiceTaskService.handleEditText(chatId, text).catch(() => false);
-      if (handled) return { ok: true };
+    // Обычный текст от сотрудника — та же просьба, что и голосом:
+    // «задачу Макет — на готово», «какие задачи у Сабрины?».
+    if (chatId && text && !text.startsWith('/') && assistant) {
+      const linked = await this.telegramService.resolveUserIdByChat(chatId).catch(() => null);
+      if (linked) {
+        void assistant.handleText(chatId, text, { replyTaskId })
+          .catch((e) => this.logger.error(`текст боту: ${e?.message || e}`));
+        return { ok: true };
+      }
     }
 
     if (!chatId || !text.startsWith('/start')) return { ok: true };

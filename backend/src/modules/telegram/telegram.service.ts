@@ -2,17 +2,36 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as https from 'https';
+import { createHash, timingSafeEqual } from 'crypto';
 import { Employee } from '../employees/employee.entity';
 import { vacationNow } from '../employees/vacation';
 
 /** Кнопка inline-клавиатуры Telegram. */
 export interface TgButton { text: string; callback_data: string }
 
+/** Голосовой помощник (modules/voice-assistant). Регистрируется сам — так
+ *  модуль бота не зависит от помощника и не образует круг модулей. */
+export interface TelegramAssistant {
+  handleVoice(chatId: number, fileId: string, durationSec: number, meta?: { replyTaskId?: string | null }): Promise<boolean>;
+  handleText(chatId: number, text: string, meta?: { replyTaskId?: string | null }): Promise<boolean>;
+  handleCallback(chatId: number, data: string): Promise<{ toast: string; append?: string } | null>;
+}
+
+/** Секрет webhook — производная от токена бота: новой переменной не нужно,
+ *  а без токена подделать заголовок нельзя. */
+export function webhookSecretFor(token: string): string {
+  return createHash('sha256').update(`sabt-telegram-webhook:${token}`).digest('hex');
+}
+
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
   private readonly token: string | null;
   readonly appUrl: string;
+  private assistantImpl: TelegramAssistant | null = null;
+  /** Секрет включаем в проверку только после того, как Telegram его принял
+   *  (setWebhook ок). Иначе сбой установки оставил бы бот глухим. */
+  private secretActive = false;
 
   constructor(
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -25,9 +44,62 @@ export class TelegramService {
       // Меню команд в чате: без него сотрудник не догадается, что бот
       // умеет показывать задачи. Сбой регистрации не должен ронять старт.
       void this.registerCommands();
+      // Подпись входящих апдейтов (09.11.2026): до этого любой, кто знал
+      // адрес webhook, мог прислать «сообщение» от имени сотрудника. Только
+      // на проде: локальный запуск не должен трогать webhook боевого бота.
+      if (process.env.NODE_ENV === 'production' && process.env.TELEGRAM_WEBHOOK_AUTOSET !== 'false') {
+        void this.ensureWebhookSecret();
+      }
     } else {
       this.logger.warn('TELEGRAM_BOT_TOKEN not set — Telegram notifications disabled');
     }
+  }
+
+  registerAssistant(impl: TelegramAssistant): void {
+    this.assistantImpl = impl;
+  }
+
+  get assistant(): TelegramAssistant | null {
+    return this.assistantImpl;
+  }
+
+  /** Проверка заголовка X-Telegram-Bot-Api-Secret-Token. */
+  verifyWebhook(header: string | undefined | null): boolean {
+    if (!this.secretActive || !this.token) return true;
+    const expected = Buffer.from(webhookSecretFor(this.token));
+    const got = Buffer.from(String(header || ''));
+    return got.length === expected.length && timingSafeEqual(got, expected);
+  }
+
+  /** Переустановить webhook с тем же адресом, но с секретом. Адрес берём у
+   *  самого Telegram — значит, на чужой сервер бот не уедет. */
+  private async ensureWebhookSecret(attempt = 1): Promise<void> {
+    try {
+      const info: any = await this.callApiJson('getWebhookInfo', {});
+      const url = info?.result?.url;
+      if (!url) {
+        this.logger.warn('webhook не установлен — подпись не включаю');
+        return;
+      }
+      const payload: any = { url, secret_token: webhookSecretFor(this.token as string), drop_pending_updates: false };
+      if (Array.isArray(info.result.allowed_updates) && info.result.allowed_updates.length) {
+        payload.allowed_updates = info.result.allowed_updates;
+      }
+      if (info.result.max_connections) payload.max_connections = info.result.max_connections;
+      const res: any = await this.callApiJson('setWebhook', payload);
+      if (!res?.ok) throw new Error(res?.description || 'setWebhook не принят');
+      this.secretActive = true;
+      this.logger.log('webhook Telegram подписан секретом');
+    } catch (e: any) {
+      this.logger.error(`подпись webhook не включена (попытка ${attempt}): ${e?.message || e}`);
+      if (attempt < 5) setTimeout(() => void this.ensureWebhookSecret(attempt + 1), 60_000 * attempt);
+    }
+  }
+
+  /** «Печатает…» в чате — видно, что бот работает над сообщением. */
+  async sendChatAction(chatId: string | number, action: 'typing' = 'typing'): Promise<void> {
+    if (!this.token || !chatId) return;
+    await this.callApi('sendChatAction', { chat_id: chatId, action }).catch(() => undefined);
   }
 
   /** Список команд в кнопке «Меню» у бота. */
