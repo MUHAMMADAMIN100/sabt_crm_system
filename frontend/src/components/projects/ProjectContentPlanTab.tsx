@@ -58,7 +58,8 @@ const APPROVAL_OPTIONS = [
   { value: 'rejected',          label: 'Отказ' },
 ]
 
-const EDIT_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist']
+// Продюсер правит контент-план как СММ-специалист (09.11.2026).
+const EDIT_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer']
 const DELETE_ROLES = ['admin', 'founder', 'smm_director']
 
 export default function ProjectContentPlanTab({ projectId }: { projectId: string }) {

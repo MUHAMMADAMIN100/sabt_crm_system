@@ -20,6 +20,7 @@ const EDIT_ROLES = [
   UserRole.FOUNDER,
   UserRole.SMM_DIRECTOR,
   UserRole.SMM_SPECIALIST,
+  UserRole.PRODUCER,
 ];
 
 @ApiTags('Content Plan')
@@ -104,7 +105,7 @@ export class ContentPlanController {
    *  только смотрят: у изменяющих ручек ниже их ролей нет. Объявлено ДО
    *  ':id', иначе перехватит вайлдкард. */
   @Get('smm-calendar')
-  // Продюсер (09.11.2026) назначает съёмки здесь же, в умном календаре.
+  // Продюсер (09.11.2026) работает в умном календаре как СММ-специалист.
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV, UserRole.PRODUCER)
   smmCalendar(@Request() req, @Query('from') from?: string, @Query('to') to?: string, @Query('projectId') projectId?: string) {
@@ -121,7 +122,7 @@ export class ContentPlanController {
   /** Перенос старой съёмочной сессии (наследие «Доски проектов») по датам —
    *  drag в умном календаре. Литеральный сегмент объявлен ДО ':id'. */
   @Patch('shoot-session/:id')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   updateShootSession(@Param('id') id: string, @Body() body: any) {
     return this.service.updateShootSession(id, body || {});
   }
@@ -129,14 +130,14 @@ export class ContentPlanController {
   /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
    *  в «Не запланировано». Только SMM-роли и только SMM-проекты. */
   @Post('smart-generate')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }) {
     return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
   }
 
   /** Умный календарь: полностью очистить контент проекта (сброс теста). */
   @Post('smart-clear')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   smartClear(@Body() body: { projectId: string }) {
     return this.service.smartClearProject(body?.projectId);
   }
@@ -146,18 +147,15 @@ export class ContentPlanController {
   /** Авторасстановка: сохранить правила проекта (дни, время, съёмка) и
    *  поставить публикации на даты из планировщика. */
   @Post('auto-plan/:projectId')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   applyAutoPlan(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
     return this.service.applyAutoPlan(projectId, body || {}, { id: req.user?.id, name: req.user?.name });
   }
 
   @Patch('smart-item/:id')
-  // Продюсеру — только день, время и место съёмки (проверяет сервис).
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, @Request() req) {
-    return this.service.smartUpdateItem(id, body || {}, {
-      id: req.user?.id, name: req.user?.name, role: req.user?.role ?? null, secondaryRole: req.user?.secondaryRole ?? null,
-    });
+    return this.service.smartUpdateItem(id, body || {}, { id: req.user?.id, name: req.user?.name });
   }
 
   /** История задачи: перенос, закрытие, отмена. Видна всем, кто видит задачу. */

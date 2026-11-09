@@ -50,15 +50,6 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   other: 'Контент',
 };
 
-/** Кто правит контент в умном календаре целиком. */
-const SMM_EDITOR_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
-/** Продюсер без СММ-роли (09.11.2026): в умном календаре назначает съёмки —
- *  день, время, место — и больше ничего не меняет. */
-export function isShootOrganizerOnly(u: { role?: string | null; secondaryRole?: string | null }): boolean {
-  const roles = [u.role, u.secondaryRole].filter((r): r is string => typeof r === 'string' && !!r);
-  return roles.includes('producer') && !roles.some(r => SMM_EDITOR_ROLES.includes(r));
-}
-
 /** Событие «съёмка изменилась»: id карточки и как было до правки. */
 export const SHOOT_CHANGED = 'content-plan.shoot-changed';
 export interface ShootChangedEvent {
@@ -895,27 +886,13 @@ export class ContentPlanService {
     }));
   }
 
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string; role?: string | null; secondaryRole?: string | null }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string }) {
     const before = await this.repo.findOne({ where: { id } });
     const set: Partial<ContentPlanItem> = {};
-    // Продюсер (09.11.2026) назначает съёмки в «Умном календаре»: у съёмки
-    // меняет день, время и место — и только это. Рилсы, посты и отметки
-    // «снято» остаются за СММ и видеографом. Правило держит сервер.
-    if (actor && isShootOrganizerOnly(actor)) {
-      if (!before || before.prepStage !== 'shoot') throw new ForbiddenException('Продюсер меняет только съёмки');
-      const extra = Object.keys(patch).filter(k => !['publishDate', 'publishTime', 'shootPlace'].includes(k));
-      if (extra.length) throw new ForbiddenException('Продюсер меняет у съёмки только день, время и место');
-      if ('publishDate' in patch) {
-        const d = typeof patch.publishDate === 'string' ? patch.publishDate.slice(0, 10) : '';
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new BadRequestException('Укажите день съёмки');
-        if (d < dushanbeToday()) throw new BadRequestException('Нельзя поставить съёмку в прошлое');
-        const parent = before.shootForItemId ? await this.repo.findOne({ where: { id: before.shootForItemId } }) : null;
-        const out = this.dayOf(parent?.publishDate);
-        if (out && d > out) throw new BadRequestException(`Нельзя позже дня выхода (${out.slice(8, 10)}.${out.slice(5, 7)})`);
-        // Отменённую съёмку назначили на день — она снова в работе.
-        if (before.status === ContentPlanStatus.CANCELLED) set.status = ContentPlanStatus.PLANNED;
-      }
-    }
+    // Отменённой съёмке назначили новый день — она снова в работе (09.11.2026):
+    // так съёмку, отменённую клиентом, переназначают, не заводя новую.
+    if (patch.publishDate && !('status' in patch) && before?.prepStage === 'shoot'
+      && before.status === ContentPlanStatus.CANCELLED) set.status = ContentPlanStatus.PLANNED;
     if ('publishDate' in patch) set.publishDate = patch.publishDate ? new Date(patch.publishDate) : null;
     // Время съёмки 'HH:MM' (или null — «Весь день»). tz-безопасно, отдельно от даты.
     if ('publishTime' in patch) set.publishTime = (typeof patch.publishTime === 'string' && /^\d{2}:\d{2}$/.test(patch.publishTime)) ? patch.publishTime : null;

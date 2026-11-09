@@ -33,7 +33,7 @@ export default function TaskSlidePanel({ taskId, onClose }: Props) {
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
   const isPM = PM_ROLES.includes(user?.role || '')
-  const isSMM = user?.role === 'smm_specialist'
+  const isSMM = user?.role === 'smm_specialist' || user?.role === 'producer'
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['task', taskId],

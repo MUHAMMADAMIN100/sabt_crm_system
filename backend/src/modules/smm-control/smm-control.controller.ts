@@ -15,7 +15,7 @@ export class SmmControlController {
   constructor(private service: SmmControlService) {}
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   list(@Query('ym') ym: string, @Request() req) {
     return this.service.list(ym, req.user);
@@ -23,7 +23,7 @@ export class SmmControlController {
 
   /** Отметка: { ym, mood?, moodNote?, contact?, report? }. */
   @Patch(':projectId')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   update(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
     return this.service.update(projectId, body || {}, req.user);

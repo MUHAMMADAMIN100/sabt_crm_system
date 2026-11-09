@@ -24,9 +24,9 @@ export default function ProjectBriefTab({ project }: Props) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const role = user?.role || ''
-  const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist']
+  const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer']
   const canEdit = PM_OR_ADMIN.includes(role) || project?.managerId === user?.id
-  const canDelete = canEdit && role !== 'smm_specialist'
+  const canDelete = canEdit && role !== 'smm_specialist' && role !== 'producer'
 
   // Локальный state с черновиком (чтобы поля не лагали на каждом keystroke).
   const initial = useMemo<BriefDraft>(() => ({

@@ -1,10 +1,9 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { ContentPlanService, isShootOrganizerOnly } from './content-plan.service';
+import { ContentPlanService } from './content-plan.service';
 import { ContentPlanStatus } from './content-plan-item.entity';
 import { dushanbeToday } from '../employees/vacation';
 
-/** Съёмки (09.11.2026): «смонтировано — значит снято» и продюсер в умном
- *  календаре. Сервис без базы: репозиторий — заглушка в памяти. */
+/** Съёмки (09.11.2026): «смонтировано — значит снято», отменённая съёмка.
+ *  Сервис без базы: репозиторий — заглушка в памяти. */
 function make(items: any[]) {
   const byId = new Map(items.map(i => [i.id, { ...i }]));
   const updates: Array<{ id: string; set: any }> = [];
@@ -75,7 +74,7 @@ describe('съёмки: смонтировано — значит снято', (
 
   it('отметка из умного календаря тоже закрывает съёмку', async () => {
     const { svc, byId } = make(base());
-    await svc.smartUpdateItem('edit', { status: ContentPlanStatus.PUBLISHED }, { id: 'u', role: 'smm_specialist' });
+    await svc.smartUpdateItem('edit', { status: ContentPlanStatus.PUBLISHED }, { id: 'u' });
     expect(byId.get('shoot').status).toBe(ContentPlanStatus.PUBLISHED);
   });
 
@@ -88,48 +87,21 @@ describe('съёмки: смонтировано — значит снято', (
   });
 });
 
-describe('продюсер в умном календаре', () => {
-  const producer = { id: 'umrona', role: 'producer', secondaryRole: null };
-  const items = () => [
-    { id: 'reel', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 6)), shootForItemId: null, prepStage: null },
-    { id: 'shoot', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 4)), shootForItemId: 'reel', prepStage: 'shoot' },
-    { id: 'edit', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 5)), shootForItemId: 'reel', prepStage: 'edit' },
-  ];
-
-  it('кто считается продюсером без СММ-прав', () => {
-    expect(isShootOrganizerOnly({ role: 'producer' })).toBe(true);
-    expect(isShootOrganizerOnly({ role: 'videographer', secondaryRole: 'producer' })).toBe(true);
-    expect(isShootOrganizerOnly({ role: 'producer', secondaryRole: 'smm_specialist' })).toBe(false);
-    expect(isShootOrganizerOnly({ role: 'founder' })).toBe(false);
-  });
-
-  it('меняет у съёмки день, время и место', async () => {
-    const { svc, byId } = make(items());
-    const d = addDays(today, 1);
-    await svc.smartUpdateItem('shoot', { publishDate: d, publishTime: '10:00', shootPlace: '@client' }, producer);
-    expect(byId.get('shoot').publishTime).toBe('10:00');
-    expect(byId.get('shoot').shootPlace).toBe('@client');
-  });
-
-  it('рилс, монтаж и отметку «снято» не трогает', async () => {
-    const { svc } = make(items());
-    await expect(svc.smartUpdateItem('reel', { publishDate: addDays(today, 2) }, producer)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.smartUpdateItem('edit', { publishDate: addDays(today, 2) }, producer)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.smartUpdateItem('shoot', { status: ContentPlanStatus.PUBLISHED }, producer)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.smartUpdateItem('shoot', { publishDate: null }, producer)).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('не в прошлое и не позже выхода рилса', async () => {
-    const { svc } = make(items());
-    await expect(svc.smartUpdateItem('shoot', { publishDate: addDays(today, -1) }, producer)).rejects.toBeInstanceOf(BadRequestException);
-    await expect(svc.smartUpdateItem('shoot', { publishDate: addDays(today, 7) }, producer)).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('отменённую съёмку назначили на день — она снова в работе', async () => {
-    const list = items();
-    list[1].status = 'cancelled';
-    const { svc, byId } = make(list);
-    await svc.smartUpdateItem('shoot', { publishDate: addDays(today, 1) }, producer);
+describe('отменённая съёмка', () => {
+  it('ей назначили новый день — она снова в работе', async () => {
+    const { svc, byId } = make([
+      { id: 'reel', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 6)), shootForItemId: null, prepStage: null },
+      { id: 'shoot', projectId: 'p', status: 'cancelled', publishDate: day(addDays(today, -1)), shootForItemId: 'reel', prepStage: 'shoot' },
+    ]);
+    await svc.smartUpdateItem('shoot', { publishDate: addDays(today, 1) }, { id: 'umrona' });
     expect(byId.get('shoot').status).toBe(ContentPlanStatus.PLANNED);
+  });
+
+  it('отменённый рилс от переноса не оживает', async () => {
+    const { svc, byId } = make([
+      { id: 'reel', projectId: 'p', status: 'cancelled', publishDate: day(addDays(today, 6)), shootForItemId: null, prepStage: null },
+    ]);
+    await svc.smartUpdateItem('reel', { publishDate: addDays(today, 7) }, { id: 'u' });
+    expect(byId.get('reel').status).toBe('cancelled');
   });
 });

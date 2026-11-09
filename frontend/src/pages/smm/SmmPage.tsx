@@ -13,7 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { isSmmViewOnly, isShootOrganizer } from '@/lib/permissions'
+import { isSmmViewOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { useHistoryOverlay } from '@/lib/navMemory'
 import { usePatchUrl } from '@/lib/urlState'
@@ -274,14 +274,11 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const user = useAuthStore(s => s.user)
   // Менеджер по продажам календарь только смотрит (решение владельца
   // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
-  // Продюсер (09.11.2026) назначает съёмки: календарь у него только для
-  // просмотра, а в окне съёмки он меняет день, время и место.
-  const organizer = isShootOrganizer(user?.role, (user as any)?.secondaryRole)
-  const readOnly = isSmmViewOnly(user?.role) || organizer
-  // Съёмки видят видеографы и продюсер всегда; остальные — только когда выбран проект (фильтр по плитке).
-  const isVideographer = ['videographer', 'video_editor'].includes(user?.role ?? '')
-    || ['videographer', 'video_editor'].includes((user as any)?.secondaryRole ?? '')
-    || organizer
+  const readOnly = isSmmViewOnly(user?.role)
+  // Съёмки видят видеографы и продюсер всегда (продюсер их организует,
+  // 09.11.2026); остальные — только когда выбран проект (фильтр по плитке).
+  const isVideographer = ['videographer', 'video_editor', 'producer'].includes(user?.role ?? '')
+    || ['videographer', 'video_editor', 'producer'].includes((user as any)?.secondaryRole ?? '')
   const isPhone = useIsPhone()
   // Начальные вид, дата и фильтры — из адреса (см. URL_KEYS), дальше адрес —
   // зеркало состояния (эффект ниже).
@@ -492,8 +489,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
       const prev = qc.getQueryData<CalData>(key)
       const upd = (e: Ev): Ev => e.itemId !== itemId ? e : {
         ...e,
-        // Отменённую съёмку продюсер назначил на день — она снова в работе (так и на сервере).
-        ...(patch.publishDate ? { date: patch.publishDate, ...(organizer && e.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
+        // Отменённой съёмке назначили день — она снова в работе (так и на сервере).
+        ...(patch.publishDate ? { date: patch.publishDate, ...(e.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
         ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
         ...('shootPlace' in patch ? placePatch(patch.shootPlace ?? null) : {}),
       }
@@ -561,8 +558,6 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
-    // Продюсеру карточка проекта закрыта — цикл ведёт СММ-специалист.
-    if (organizer) { toast('Цикл проекта настраивает СММ-специалист'); return }
     // Наблюдателю настройки цикла не открываем — ведём на страницу проекта.
     if (readOnly) { navigate(`/smm/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
@@ -841,7 +836,6 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // Окно события — одно на телефон и компьютер.
   const eventModal = detail && (
     <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
-      canShoot={!readOnly || organizer}
       onMark={done => markMut.mutate({ ev: detail, done })}
       onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
       onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
@@ -850,7 +844,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         shootMut.mutate({ itemId: detail.itemId!, patch })
         setDetail(d => d ? {
           ...d,
-          ...(patch.publishDate ? { date: patch.publishDate, ...(organizer && d.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
+          ...(patch.publishDate ? { date: patch.publishDate, ...(d.status === 'cancelled' ? { status: 'planned' } : {}) } : {}),
           ...('publishTime' in patch ? { time: patch.publishTime ?? null } : {}),
           ...('shootPlace' in patch ? placePatch(patch.shootPlace ?? null) : {}),
         } : d)
@@ -2130,18 +2124,16 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false, canShoot = !readOnly, together = [], togetherBusy = false, onTogether }: {
+function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false, together = [], togetherBusy = false, onTogether }: {
   readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void
   onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void
   onShoot?: (patch: ShootPatch) => void; projectAddress?: string | null
-  /** Может назначать съёмку: день, время, место (СММ и продюсер). */
-  canShoot?: boolean
   /** «Снять вместе»: другие съёмки проекта, которые можно перенести на этот день. */
   together?: Ev[]; togetherBusy?: boolean; onTogether?: (itemIds: string[]) => void
 }) {
   const isShoot = e.kind === 'shoot'
   // День, время и место правятся только у съёмки под рилс (не монтаж, не дизайн).
-  const shootEdit = canShoot && !!onShoot && isShoot && !!e.itemId && prepStageOf(e) === 'shoot'
+  const shootEdit = !readOnly && !!onShoot && isShoot && !!e.itemId && prepStageOf(e) === 'shoot'
   // Где снимаем (09.11.2026): студия по умолчанию, у клиента или другое место.
   const curKind: PlaceKind = e.placeKind || (e.location ? 'other' : 'studio')
   const [placeKind, setPlaceKind] = useState<PlaceKind>(curKind)
@@ -2239,8 +2231,8 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
                 <div className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{prep?.verb}</div>
                 {shootEdit ? (
-                  // День съёмки можно поменять здесь же: продюсеру календарь
-                  // перетаскиванием не доступен (09.11.2026).
+                  // День съёмки можно поменять здесь же — и на телефоне,
+                  // где перетаскивания нет (09.11.2026).
                   <input type="date" value={e.date || ''} min={todayIso()} max={e.reelDate || undefined}
                     onChange={ev => { const v = ev.target.value; if (v && v !== e.date) onShoot!({ publishDate: v }) }}
                     aria-label="День съёмки"

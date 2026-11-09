@@ -142,7 +142,7 @@ export default function SmmControlPage() {
   // SMM-специалист своего проекта.
   const myRole = useAuthStore(s => s.user?.role) || ''
   const canContent = (r: Row) => r.canEditContent
-    ?? (['founder', 'admin', 'smm_director'].includes(myRole) || (myRole === 'smm_specialist' && r.canEdit))
+    ?? (['founder', 'admin', 'smm_director'].includes(myRole) || (['smm_specialist', 'producer'].includes(myRole) && r.canEdit))
 
   const key = ['smm-control', ym]
   const { data, isLoading, isError, refetch } = useQuery<Data>({

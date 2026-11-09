@@ -68,7 +68,7 @@ export default function TasksPage() {
   //  - developer — разработчик, тоже не публикует контент.
   // Admin виджет видит (он сам попросил вернуть).
   const showStoryWidget = !['founder', 'sales_manager_smm', 'sales_manager_dev', 'developer'].includes(user?.role || '')
-  const isSMM = user?.role === 'smm_specialist'
+  const isSMM = user?.role === 'smm_specialist' || user?.role === 'producer'
   const qc = useQueryClient()
   const { t } = useTranslation()
 

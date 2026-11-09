@@ -43,7 +43,8 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   // Ссылка на страницу клиента (видна всем) и можно ли смотреть логин/пароль.
   & { pageUrl?: string | null; canSeeAccess?: boolean }
 
-const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
+// Продюсер — с правами СММ-специалиста (09.11.2026).
+const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
@@ -396,7 +397,7 @@ export default function SmmProjectPage() {
   // Производственная команда проекта: кто снимает, монтирует и рисует. От
   // этого зависит, в чей кабинет попадёт карточка подготовки. Назначает и
   // СММ-специалист — распределить работу по своему проекту его задача.
-  const canAssignCrew = ['admin', 'founder', 'smm_director', 'smm_specialist'].includes((user as any)?.role ?? '')
+  const canAssignCrew = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer'].includes((user as any)?.role ?? '')
   const crewMut = useMutation({
     // Приведение нужно из-за вычисляемого ключа: TS не сопоставляет его с
     // конкретными полями dto, хотя набор ключей ограничен типом CrewField.

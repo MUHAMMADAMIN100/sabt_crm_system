@@ -40,7 +40,7 @@ export class ProjectsController {
    *  и сам СММ-специалист (он ВИДИТ схему, но переставлять проекты не может —
    *  переназначение через setSmmProfile ему запрещено). Объявлено ДО ':id'. */
   @Get('smm-specialist-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmSpecialistLoad() {
     return this.service.smmSpecialistLoad();
@@ -50,7 +50,7 @@ export class ProjectsController {
    *  проекты без менеджера. Видят те же, кто видит «Схему» специалистов.
    *  Объявлено ДО ':id'. */
   @Get('smm-manager-load')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST,
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV)
   smmManagerLoad() {
     return this.service.smmManagerLoad();
@@ -93,7 +93,7 @@ export class ProjectsController {
    *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его.
    *  Только SMM-роли: у проектов разработки циклов и норм нет (14.10.2026). */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
@@ -119,7 +119,7 @@ export class ProjectsController {
   /** Редактируют SMM-команда и владелец/руководство. Клиент проекта
    *  разработки хранится отдельно (clientInfo, PATCH /projects/:id). */
   @Patch(':id/smm-profile')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   setSmmProfile(
     @Param('id') id: string,
     @Body() body: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
@@ -225,6 +225,7 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER,
     UserRole.SMM_DIRECTOR,
     UserRole.SMM_SPECIALIST,
+    UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {

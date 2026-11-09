@@ -390,7 +390,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = PM_OR_ADMIN.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -426,7 +426,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
+    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = ADMIN_PM.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -933,7 +933,8 @@ export class ProjectsService implements OnModuleInit {
         qb.andWhere('p.projectType IN (:...salesTypes)', {
           salesTypes: getSalesSegment(role)!.projectTypes,
         });
-      } else if (role === 'smm_director' || role === 'smm_specialist') {
+      } else if (role === 'smm_director' || role === 'smm_specialist' || role === 'producer') {
+        // Продюсер (09.11.2026) работает с СММ-проектами как СММ-специалист.
         // smm_specialist видит ВСЕ SMM-проекты (решение владельца, сент. 2026); отмечать сторис
         // может только по своим — это проверяет StoriesService.upsert.
         // Руководитель SMM видит ВСЕ SMM-проекты компании. Проекты
@@ -2140,8 +2141,9 @@ export class ProjectsService implements OnModuleInit {
     // Назначенные SMM-специалисты проекта. Принимаем только id пользователей с
     // ролью smm_specialist (защита «в выборе только специалисты») и руководителя
     // SMM — он ведёт свои проекты как специалист (30.10.2026), дедуп, cap 10.
-    // Сам СММ-специалист переставлять проекты НЕ может — игнорируем это поле от него.
-    if ('smmSpecialistIds' in dto && user?.role !== UserRole.SMM_SPECIALIST) {
+    // Сам СММ-специалист (и продюсер — у него те же права) переставлять
+    // проекты НЕ может — игнорируем это поле от них.
+    if ('smmSpecialistIds' in dto && user?.role !== UserRole.SMM_SPECIALIST && user?.role !== UserRole.PRODUCER) {
       const raw = Array.isArray(dto.smmSpecialistIds) ? dto.smmSpecialistIds.filter(x => typeof x === 'string') : [];
       const uniq = [...new Set(raw)].slice(0, 10);
       let valid: string[] = [];

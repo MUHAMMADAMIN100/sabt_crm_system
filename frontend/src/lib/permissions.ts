@@ -239,12 +239,16 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
-  // Продюсер (29.10.2026) — отвечает за съёмки и почти не заходит в CRM:
-  // съёмки приходят в Telegram. На панели — календарь съёмок для просмотра.
+  // Продюсер — организует съёмки. С 09.11.2026 работает в разделе «СММ»
+  // с правами СММ-специалиста (решение владельца): правит контент-план,
+  // ставит задачи. Сторис не отмечает — их ведут СММ-специалисты.
   producer: [
-    'dashboard',
-    'tasks.view', 'tasks.edit',
-    'notifications.view', 'profile.view',
+    'dashboard', 'projects.view', 'projects.create',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'reports.view', 'reports.create',
+    'files.view', 'files.upload',
+    'notifications.view', 'profile.view', 'stories.view', 'time-tracker.use', 'notes.use',
+    'ai.chat',
   ],
   // Таргетолог — запуск рекламы (этап «Реклама»).
   targetologist: [
@@ -341,20 +345,7 @@ export function canCheckStories(role?: string | null, secondaryRole?: string | n
  *  но только смотрят — см. isSmmViewOnly). Команде разработки раздел закрыт.
  *  Роли совпадают с бэкендом (эндпоинт smm-calendar). */
 export function canSeeSmmSection(role?: string | null): boolean {
-  return ['founder', 'admin', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'].includes(role || '')
-}
-
-/** Продюсер (09.11.2026) назначает съёмки в «Умном календаре»: из раздела
- *  «СММ» ему открыт только календарь, и правит он в нём только съёмки —
- *  день, время, место. Сторис, проекты и «Контроль» ему не нужны. */
-export function isShootOrganizer(role?: string | null, secondaryRole?: string | null): boolean {
-  const smm = canSeeSmmSection(role) || canSeeSmmSection(secondaryRole)
-  return !smm && (role === 'producer' || secondaryRole === 'producer')
-}
-
-/** «Умный календарь» (/smm): СММ-раздел целиком или продюсер. */
-export function canSeeSmartCalendar(role?: string | null, secondaryRole?: string | null): boolean {
-  return canSeeSmmSection(role) || isShootOrganizer(role, secondaryRole)
+  return ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'].includes(role || '')
 }
 
 /** Менеджеры по продажам в разделе «СММ» — наблюдатели: календарь, сторис
@@ -487,8 +478,7 @@ export function canAccessRoute(
   // персональным запретом (userCan), тогда страница закрывается.
   if (route === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(u, 'stories.view')
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
-  if (route === '/smm') return canSeeSmartCalendar(role, secondaryRole)
-  if (route.startsWith('/smm/')) return canSeeSmmSection(role)
+  if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
   // «Разработка» и подстраницы (Умный календарь / Проекты) — dev-команда + топ.
   // Алиасы доски идут по тем же грантам, что каноника /dev-board* (иначе
   // два URL одной страницы имели бы разный гард): board/kpi — view, reports — manage.

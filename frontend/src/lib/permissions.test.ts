@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly, isShootOrganizer, canSeeSmartCalendar } from './permissions'
+import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -119,25 +119,24 @@ describe('раздел «Директ»', () => {
   })
 })
 
-// Продюсер (09.11.2026) назначает съёмки в «Умном календаре»: из раздела
-// «СММ» ему открыт только календарь.
-describe('продюсер и «Умный календарь»', () => {
-  it('календарь открыт, сторис, проекты и «Контроль» — нет', () => {
-    expect(canAccessRoute('producer', '/smm')).toBe(true)
-    for (const route of ['/smm/stories', '/smm/projects', '/smm/projects/x', '/smm/control']) {
-      expect(canAccessRoute('producer', route)).toBe(false)
+// Продюсер (09.11.2026) работает в разделе «СММ» с правами СММ-специалиста:
+// правит контент-план и ставит задачи. Сторис отмечают только СММ-специалисты.
+describe('продюсер — права СММ-специалиста', () => {
+  it('раздел «СММ» целиком открыт и не только на просмотр', () => {
+    for (const route of ['/smm', '/smm/stories', '/smm/projects', '/smm/projects/x', '/smm/control']) {
+      expect(canAccessRoute('producer', route)).toBe(true)
     }
-    expect(canSeeSmartCalendar('producer')).toBe(true)
-    expect(canSeeSmmSection('producer')).toBe(false)
+    expect(canSeeSmmSection('producer')).toBe(true)
+    expect(isSmmViewOnly('producer')).toBe(false)
   })
-  it('продюсер второй ролью тоже назначает съёмки', () => {
-    expect(isShootOrganizer('videographer', 'producer')).toBe(true)
-    expect(canAccessRoute('videographer', '/smm', 'producer')).toBe(true)
+  it('ставит задачи и правит, как СММ-специалист', () => {
+    for (const perm of ['tasks.create', 'tasks.edit', 'projects.create', 'reports.create'] as const) {
+      expect(hasPermission('producer', perm)).toBe(hasPermission('smm_specialist', perm))
+      expect(hasPermission('producer', perm)).toBe(true)
+    }
   })
-  it('у СММ-команды календарь как был — без режима продюсера', () => {
-    expect(isShootOrganizer('smm_specialist')).toBe(false)
-    expect(isShootOrganizer('producer', 'smm_specialist')).toBe(false)
-    expect(canAccessRoute('smm_specialist', '/smm')).toBe(true)
-    expect(canAccessRoute('designer', '/smm')).toBe(false)
+  it('сторис не отмечает — только смотрит', () => {
+    expect(hasPermission('producer', 'stories.manage')).toBe(false)
+    expect(hasPermission('producer', 'stories.view')).toBe(true)
   })
 })
