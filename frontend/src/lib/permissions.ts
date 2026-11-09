@@ -239,11 +239,12 @@ const PERMISSIONS: Record<UserRole, Permission[]> = {
     'notifications.view', 'profile.view', 'time-tracker.use', 'notes.use',
     'ai.chat',
   ],
-  // Продюсер — организует съёмки. С 09.11.2026 работает в разделе «СММ»
-  // с правами СММ-специалиста (решение владельца): правит контент-план,
-  // ставит задачи. Сторис не отмечает — их ведут СММ-специалисты.
+  // Продюсер — организует съёмки. С 09.11.2026 (решение владельца) в разделе
+  // «СММ» у него права СММ-специалиста по производству: съёмки, монтаж,
+  // дизайн, адрес съёмок и команда проекта; ставит задачи. Публикации,
+  // бриф, рекламу и «Контроль» только смотрит, сторис не отмечает.
   producer: [
-    'dashboard', 'projects.view', 'projects.create',
+    'dashboard', 'projects.view',
     'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
     'reports.view', 'reports.create',
     'files.view', 'files.upload',
@@ -346,6 +347,14 @@ export function canCheckStories(role?: string | null, secondaryRole?: string | n
  *  Роли совпадают с бэкендом (эндпоинт smm-calendar). */
 export function canSeeSmmSection(role?: string | null): boolean {
   return ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'].includes(role || '')
+}
+
+/** Продюсер без СММ-роли (09.11.2026): в разделе «СММ» правит только
+ *  производство — съёмки, монтаж, дизайн; публикации смотрит. Так же на
+ *  сервере (content-plan.service, isProductionOnly). */
+export function isProductionOnly(role?: string | null, secondaryRole?: string | null): boolean {
+  const roles = [role, secondaryRole].filter(Boolean) as string[]
+  return roles.includes('producer') && !roles.some(r => ['admin', 'founder', 'smm_director', 'smm_specialist'].includes(r))
 }
 
 /** Менеджеры по продажам в разделе «СММ» — наблюдатели: календарь, сторис

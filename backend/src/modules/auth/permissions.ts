@@ -38,7 +38,7 @@ const ALL_ROLES = [
 export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Проекты ───────────────────────────────────────────────────────
   'projects.view':   { label: 'Проекты — просмотр',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev', 'smm_specialist', 'producer'] },
+  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev', 'smm_specialist'] },
   'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
   // Архив/восстановление проектов. Нативно — те же роли, что были в @Roles
   // эндпоинта; грантом можно выдать другим (напр. проект-менеджеру по
@@ -47,7 +47,7 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'], danger: true },
   'projects.payments.view':    { label: 'Оплаты проекта — просмотр',  category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev', 'smm_director', 'dev_director'] },
   'projects.payments.request': { label: 'Оплаты проекта — запрос',    category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'] },
+  'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.brief.clear':      { label: 'Бриф проекта — очистка',     category: 'Проекты', roles: [...TOP, 'smm_director'], danger: true },
   'projects.launch.manage':    { label: 'Чек-лист запуска — отметки', category: 'Проекты', roles: [...TOP, 'smm_director'] },
 
@@ -57,8 +57,8 @@ export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Доска проектов и контент-план ─────────────────────────────────
   'board.view':          { label: 'Доска проектов — просмотр (все статусы)',      category: 'Доска проектов', roles: [...TOP, 'smm_director'] },
   'content-plan.manage': { label: 'Доска проектов — полное управление (все этапы)', category: 'Доска проектов', roles: [...TOP, 'smm_director'] },
-  'content-plan.create': { label: 'Контент-план — добавление',     category: 'Доска проектов', roles: [...TOP, 'smm_director', 'smm_specialist', 'producer'] },
-  'content-plan.edit':   { label: 'Контент-план — редактирование', category: 'Доска проектов', roles: [...TOP, 'smm_director', 'smm_specialist', 'producer'] },
+  'content-plan.create': { label: 'Контент-план — добавление',     category: 'Доска проектов', roles: [...TOP, 'smm_director', 'smm_specialist'] },
+  'content-plan.edit':   { label: 'Контент-план — редактирование', category: 'Доска проектов', roles: [...TOP, 'smm_director', 'smm_specialist'] },
   'content-plan.delete': { label: 'Контент-план — удаление',       category: 'Доска проектов', roles: [...TOP, 'smm_director'], danger: true },
 
   // ─── Задачи ────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import ClientPaymentRow from './ClientPaymentRow'
 import ClientAccountCard from './ClientAccountCard'
 import { BackLink } from '@/lib/navMemory'
 import { useUrlState } from '@/lib/urlState'
+import { isProductionOnly } from '@/lib/permissions'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -43,8 +44,7 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   // Ссылка на страницу клиента (видна всем) и можно ли смотреть логин/пароль.
   & { pageUrl?: string | null; canSeeAccess?: boolean }
 
-// Продюсер — с правами СММ-специалиста (09.11.2026).
-const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer']
+const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
@@ -208,6 +208,9 @@ export default function SmmProjectPage() {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
   const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
+  // Продюсер (09.11.2026) правит в карточке «О клиенте» только то, что для
+  // съёмок: адрес, карту и контакт на месте. Остальное — СММ-специалиста.
+  const canEditShootInfo = canEdit || isProductionOnly((user as any)?.role, (user as any)?.secondaryRole)
   // Переименование проекта идёт через общий PATCH /projects/:id (право projects.edit),
   // где smm_specialist не проходит — поэтому у имени более узкий набор ролей.
   const canRename = ['admin', 'founder', 'smm_director'].includes((user as any)?.role ?? '')
@@ -297,10 +300,11 @@ export default function SmmProjectPage() {
     // Ссылку на карту часто вставляют без https:// — дописываем сами.
     const map = draft.shootMapUrl.trim()
     const mapUrl = map && !/^https?:\/\//i.test(map) ? `https://${map}` : map
-    saveMut.mutate({
+    const shoot = { shootAddress: draft.shootAddress.trim() || null, shootMapUrl: mapUrl || null, shootContact: draft.shootContact.trim() || null }
+    saveMut.mutate(canEdit ? {
       ownerName: draft.ownerName || null, keyDate: draft.keyDate || null, keyDateNote: draft.keyDateNote || null, collabSince: draft.collabSince || null, preferences: draft.preferences || null,
-      shootAddress: draft.shootAddress.trim() || null, shootMapUrl: mapUrl || null, shootContact: draft.shootContact.trim() || null,
-    })
+      ...shoot,
+    } : shoot)
     setCliEditing(false)
   }
 
@@ -483,7 +487,7 @@ export default function SmmProjectPage() {
     return <span className={'inline-flex items-center gap-0.5 text-[11px] font-bold ' + (up ? 'text-emerald-600' : 'text-red-500')}>{up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{(up ? '+' : '−') + fmtNum(Math.abs(d))} за месяц</span>
   }
 
-  const editBtn = (onEdit: () => void) => canEdit ? (
+  const editBtn = (onEdit: () => void, allowed = canEdit) => allowed ? (
     <button onClick={onEdit} className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"><Pencil size={13} /> Изменить</button>
   ) : null
   const editActions = (onSave: () => void, onCancel: () => void) => (
@@ -796,21 +800,21 @@ export default function SmmProjectPage() {
         <div className={card}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className={secLabel}>О клиенте</h2>
-            {cliEditing ? editActions(saveClient, () => setCliEditing(false)) : editBtn(() => setCliEditing(true))}
+            {cliEditing ? editActions(saveClient, () => setCliEditing(false)) : editBtn(() => setCliEditing(true), canEditShootInfo)}
           </div>
           <div>
             <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Владелец бизнеса</span>
-              {cliEditing
+              {cliEditing && canEdit
                 ? <input value={draft.ownerName} onChange={e => setDraft(d => ({ ...d, ownerName: e.target.value }))} placeholder="Имя" className={editIn + ' w-52 text-right'} />
                 : <span className="text-sm font-semibold text-right">{profile?.ownerName || '—'}</span>}
             </div>
             <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Значимый день</span>
-              {cliEditing
+              {cliEditing && canEdit
                 ? <span className="flex items-center gap-2 flex-1 min-w-0 justify-end"><DatePicker value={draft.keyDate} onChange={v => setDraft(d => ({ ...d, keyDate: v }))} placeholder="дата" className="w-[150px] shrink-0" /><input value={draft.keyDateNote} onChange={e => setDraft(d => ({ ...d, keyDateNote: e.target.value }))} placeholder="Комментарий" className={editIn + ' flex-1 min-w-0'} /></span>
                 : <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-right">{profile?.keyDate ? <><Gift size={14} style={{ color }} />{fmtDate(profile.keyDate)}{profile.keyDateNote ? ` · ${profile.keyDateNote}` : ''}</> : '—'}</span>}
             </div>
             <div className={fRow}><span className="text-sm text-gray-500 shrink-0">Сотрудничаем с</span>
-              {cliEditing
+              {cliEditing && canEdit
                 ? <DatePicker value={draft.collabSince} onChange={v => setDraft(d => ({ ...d, collabSince: v }))} placeholder="дата" className="w-[170px]" />
                 : <span className="text-sm font-semibold text-right">{fmtDate(profile?.collabSince)}</span>}
             </div>
@@ -836,7 +840,7 @@ export default function SmmProjectPage() {
             </div>
             <div className="h-[112px] pt-2.5 flex flex-col gap-1.5">
               <span className="text-sm text-gray-500">Предпочтения</span>
-              {cliEditing
+              {cliEditing && canEdit
                 ? <textarea value={draft.preferences} onChange={e => setDraft(d => ({ ...d, preferences: e.target.value }))} placeholder="Тон, что любят/не любят, правила согласования…" className={inp + ' flex-1 w-full resize-none leading-relaxed'} />
                 : (profile?.preferences ? <p className="flex-1 overflow-auto text-sm leading-relaxed whitespace-pre-wrap">{profile.preferences}</p> : <p className="flex-1 text-sm text-gray-400">—</p>)}
             </div>

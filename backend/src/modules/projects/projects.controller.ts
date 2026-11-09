@@ -93,7 +93,7 @@ export class ProjectsController {
    *  (1..31) + норма за цикл (рилсы/посты). null у поля — сбросить его.
    *  Только SMM-роли: у проектов разработки циклов и норм нет (14.10.2026). */
   @Patch(':id/smm-cycle')
-  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
+  @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   setSmmCycle(
     @Param('id') id: string,
     @Body() body: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null },
@@ -119,6 +119,7 @@ export class ProjectsController {
   /** Редактируют SMM-команда и владелец/руководство. Клиент проекта
    *  разработки хранится отдельно (clientInfo, PATCH /projects/:id). */
   @Patch(':id/smm-profile')
+  // Продюсеру — только производство: адрес съёмок и команда (проверяет сервис).
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
   setSmmProfile(
     @Param('id') id: string,
@@ -225,7 +226,6 @@ export class ProjectsController {
     UserRole.ADMIN, UserRole.FOUNDER,
     UserRole.SMM_DIRECTOR,
     UserRole.SMM_SPECIALIST,
-    UserRole.PRODUCER,
     UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
   )
   async briefShareLink(@Param('id') id: string, @Request() req) {

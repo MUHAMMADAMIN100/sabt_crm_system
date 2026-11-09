@@ -16,7 +16,7 @@ import SmmManagerBoard from './SmmManagerBoard'
 // Кто может создавать SMM-проекты (как на основной странице «Проекты»).
 // СММ-специалист тоже может добавлять проект (по просьбе владельца).
 // У раздела «Разработка» своя страница проектов — pages/dev.
-const CREATE_ROLES = ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'smm_specialist', 'producer']
+const CREATE_ROLES = ['admin', 'founder', 'smm_director', 'sales_manager_smm', 'smm_specialist']
 // Кто видит схему нагрузки СММ (кто ведёт какие проекты). Специалист её ВИДИТ,
 // но переставлять проекты не может (DnD-переназначение отключено в доске).
 // Схемы видят и менеджеры по продажам (смотрят; переставлять не могут).

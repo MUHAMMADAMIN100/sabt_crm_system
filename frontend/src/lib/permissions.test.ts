@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly } from './permissions'
+import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly, isProductionOnly } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -119,24 +119,28 @@ describe('раздел «Директ»', () => {
   })
 })
 
-// Продюсер (09.11.2026) работает в разделе «СММ» с правами СММ-специалиста:
-// правит контент-план и ставит задачи. Сторис отмечают только СММ-специалисты.
-describe('продюсер — права СММ-специалиста', () => {
-  it('раздел «СММ» целиком открыт и не только на просмотр', () => {
+// Продюсер (09.11.2026): в разделе «СММ» — права СММ-специалиста по
+// производству (съёмки, монтаж, дизайн), ставит задачи; публикации, бриф,
+// рекламу и «Контроль» смотрит, сторис не отмечает.
+describe('продюсер — производство как у СММ-специалиста', () => {
+  it('раздел «СММ» открыт целиком', () => {
     for (const route of ['/smm', '/smm/stories', '/smm/projects', '/smm/projects/x', '/smm/control']) {
       expect(canAccessRoute('producer', route)).toBe(true)
     }
     expect(canSeeSmmSection('producer')).toBe(true)
     expect(isSmmViewOnly('producer')).toBe(false)
   })
-  it('ставит задачи и правит, как СММ-специалист', () => {
-    for (const perm of ['tasks.create', 'tasks.edit', 'projects.create', 'reports.create'] as const) {
-      expect(hasPermission('producer', perm)).toBe(hasPermission('smm_specialist', perm))
+  it('правит только производство', () => {
+    expect(isProductionOnly('producer')).toBe(true)
+    expect(isProductionOnly('videographer', 'producer')).toBe(true)
+    expect(isProductionOnly('producer', 'smm_specialist')).toBe(false)
+    expect(isProductionOnly('smm_specialist')).toBe(false)
+  })
+  it('ставит задачи, но не заводит проекты и не отмечает сторис', () => {
+    for (const perm of ['tasks.create', 'tasks.edit', 'reports.create'] as const) {
       expect(hasPermission('producer', perm)).toBe(true)
     }
-  })
-  it('сторис не отмечает — только смотрит', () => {
+    expect(hasPermission('producer', 'projects.create')).toBe(false)
     expect(hasPermission('producer', 'stories.manage')).toBe(false)
-    expect(hasPermission('producer', 'stories.view')).toBe(true)
   })
 })

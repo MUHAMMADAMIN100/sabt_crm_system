@@ -13,7 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { isSmmViewOnly } from '@/lib/permissions'
+import { isSmmViewOnly, isProductionOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { useHistoryOverlay } from '@/lib/navMemory'
 import { usePatchUrl } from '@/lib/urlState'
@@ -275,6 +275,11 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // Менеджер по продажам календарь только смотрит (решение владельца
   // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
   const readOnly = isSmmViewOnly(user?.role)
+  // Продюсер (09.11.2026): производство — съёмки и дизайн — двигает и правит
+  // как СММ-специалист, публикации (рилсы, посты) только смотрит. Сервер
+  // держит то же правило.
+  const prodOnly = isProductionOnly(user?.role, (user as any)?.secondaryRole)
+  const canEditEv = (e: Ev) => !readOnly && (!prodOnly || e.kind === 'shoot')
   // Съёмки видят видеографы и продюсер всегда (продюсер их организует,
   // 09.11.2026); остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_editor', 'producer'].includes(user?.role ?? '')
@@ -558,8 +563,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
-    // Наблюдателю настройки цикла не открываем — ведём на страницу проекта.
-    if (readOnly) { navigate(`/smm/projects/${id}`); return }
+    // Наблюдателю и продюсеру настройки цикла не открываем — ведём на страницу проекта.
+    if (readOnly || prodOnly) { navigate(`/smm/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
     if (p) setProjSettings(p)
   }
@@ -835,7 +840,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
 
   // Окно события — одно на телефон и компьютер.
   const eventModal = detail && (
-    <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={readOnly}
+    <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={!canEditEv(detail)}
       onMark={done => markMut.mutate({ ev: detail, done })}
       onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
       onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
@@ -872,7 +877,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         onMove={(e, dateStr) => moveMut.mutate({ ev: e, dateStr, time: null })}
         cycleOf={cycleFor}
         onSettings={openProjSettings}
-        autoNeed={readOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj} readOnly={readOnly}
+        autoNeed={readOnly || prodOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj} readOnly={readOnly} canEdit={canEditEv}
         scope={scope} setScope={setScope} showScope={showScope} />
 
       {autoModal}
@@ -894,7 +899,12 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     // свободное место, чтобы при сворачивании бэклога снизу не оставалось пустоты. Сторисы — обычный поток.
     <div
       // Наблюдатель карточки не перетаскивает: гасим начало любого drag внутри страницы.
-      onDragStartCapture={readOnly ? (ev => ev.preventDefault()) : undefined}
+      // Продюсеру — только карточки производства (съёмки, дизайн).
+      onDragStartCapture={readOnly ? (ev => ev.preventDefault()) : prodOnly ? (ev => {
+        const id = (ev.target as HTMLElement).closest?.('[data-ev]')?.getAttribute('data-ev')
+        const e = id ? allEvents.find(x => x.id === id) : null
+        if (!e || !canEditEv(e)) ev.preventDefault()
+      }) : undefined}
       className={view === 'stories' ? 'space-y-5' : ('flex flex-col gap-5 min-h-0 ' + (embeddedProjectId ? 'h-[calc(100vh-15rem)] min-h-[540px]' : 'h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]'))}>
       {/* Навигация по разделу «Разработка» — в сайдбаре (DEV_SUBNAV),
           in-page полосы табов нет (убрана как дубль). */}
@@ -959,7 +969,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         <>
           <BacklogPanel groups={backlogGroups} activeIds={selProjects} onPick={toggleProject}
             onSettings={openProjSettings} wide={!!embeddedProjectId}
-            autoNeed={readOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj}
+            autoNeed={readOnly || prodOnly ? NO_AUTO : autoNeed} onAuto={setAutoProj}
             scope={scope} setScope={setScope} showScope={showScope}
             onDragStart={onDragStartEv} onDrop={onDropBacklog}
             over={dragOverKey === 'backlog'} setOver={v => setDragOverKey(v ? 'backlog' : null)} />
@@ -2384,10 +2394,12 @@ function MobilePlanner({
   cursor, setCursor, cells, byDate, today, backlogGroups,
   selTypes, toggleType, clearTypes, loading,
   onOpen, onMark, onMove, cycleOf, onSettings,
-  autoNeed, onAuto, scope, setScope, showScope, readOnly = false,
+  autoNeed, onAuto, scope, setScope, showScope, readOnly = false, canEdit,
 }: {
   /** Наблюдатель: без отметок и переноса. */
   readOnly?: boolean
+  /** Можно ли двигать и отмечать эту карточку (продюсеру — только производство). */
+  canEdit?: (e: Ev) => boolean
   cursor: Date; setCursor: (f: (d: Date) => Date) => void
   cells: { label: number; inMonth: boolean; iso: string | null }[]
   byDate: Map<string, Ev[]>; today: string
@@ -2450,8 +2462,9 @@ function MobilePlanner({
   // поэтому после срабатывания долгого нажатия гасим следующий клик.
   const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const firedRef = useRef(false)
+  const canEditEv = (e: Ev) => (canEdit ? canEdit(e) : !readOnly)
   const pressStart = (e: Ev) => {
-    if (readOnly) return
+    if (!canEditEv(e)) return
     firedRef.current = false
     pressRef.current = setTimeout(() => {
       firedRef.current = true
@@ -2498,7 +2511,7 @@ function MobilePlanner({
             {e.kind === 'shoot' && e.reelDate ? ` · выход ${e.reelDate.slice(8, 10)}.${e.reelDate.slice(5, 7)}` : ''}
           </span>
         </span>
-        {e.itemId && !readOnly && (
+        {e.itemId && canEditEv(e) && (
           <button
             onClick={ev => { ev.stopPropagation(); onMark(e, !done) }}
             aria-label={done ? 'Снять отметку' : 'Отметить выполненной'}
@@ -2685,7 +2698,7 @@ function MobilePlanner({
                     const Icon = IconOf(b)
                     const color = projColor(b.projectId)
                     return (
-                      <button key={b.id} onClick={() => { if (readOnly) return; setMoving(b); setPending(null); setSheet('none') }}
+                      <button key={b.id} onClick={() => { if (!canEditEv(b)) return; setMoving(b); setPending(null); setSheet('none') }}
                         className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 min-h-[60px] text-left">
                         <span className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center"
                           style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}>

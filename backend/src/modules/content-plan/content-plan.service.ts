@@ -50,6 +50,16 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   other: 'Контент',
 };
 
+/** Кто правит контент умного календаря целиком. */
+const SMM_EDITOR_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
+/** Продюсер без СММ-роли (09.11.2026): в умном календаре у него полный доступ
+ *  к производству — съёмки, монтаж, дизайн: день, время, место, длительность,
+ *  «готово». Публикации (рилсы, посты) и их тексты правит СММ. */
+export function isProductionOnly(u: { role?: string | null; secondaryRole?: string | null }): boolean {
+  const roles = [u.role, u.secondaryRole].filter((r): r is string => typeof r === 'string' && !!r);
+  return roles.includes('producer') && !roles.some(r => SMM_EDITOR_ROLES.includes(r));
+}
+
 /** Событие «съёмка изменилась»: id карточки и как было до правки. */
 export const SHOOT_CHANGED = 'content-plan.shoot-changed';
 export interface ShootChangedEvent {
@@ -886,8 +896,11 @@ export class ContentPlanService {
     }));
   }
 
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string; role?: string | null; secondaryRole?: string | null }) {
     const before = await this.repo.findOne({ where: { id } });
+    if (actor && isProductionOnly(actor) && !before?.shootForItemId) {
+      throw new ForbiddenException('Продюсер правит производство: съёмки, монтаж и дизайн. Публикации ведёт СММ-специалист');
+    }
     const set: Partial<ContentPlanItem> = {};
     // Отменённой съёмке назначили новый день — она снова в работе (09.11.2026):
     // так съёмку, отменённую клиентом, переназначают, не заводя новую.

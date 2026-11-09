@@ -205,7 +205,7 @@ export class SmmControlService {
       // и руководитель СММ — везде, SMM-специалист — в своих проектах.
       // Менеджеры по продажам только смотрят.
       const canEditContent = roles.some(r => MANAGE_ROLES.includes(r))
-        || ((roles.includes('smm_specialist') || roles.includes('producer')) && isMine);
+        || (roles.includes('smm_specialist') && isMine);
       return {
         id: p.id, name: p.name,
         specialists: spec.map(id => ({ id, name: userName.get(id) || 'Сотрудник' })),
@@ -282,7 +282,7 @@ export class SmmControlService {
       const mine = project.managerId === actor.id
         || (project.members || []).some(x => x.id === actor.id)
         || spec.includes(actor.id);
-      if (!(roles.includes('smm_specialist') || roles.includes('producer')) || !mine) {
+      if (!roles.includes('smm_specialist') || !mine) {
         throw new ForbiddenException('Отмечать можно только по своим проектам');
       }
     }

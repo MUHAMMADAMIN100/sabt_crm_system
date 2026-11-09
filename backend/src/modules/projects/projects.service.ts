@@ -390,7 +390,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'];
+    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = PM_OR_ADMIN.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -426,7 +426,7 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'];
+    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
     const isAllowed = ADMIN_PM.includes(user.role)
       || project.managerId === user.id
       || (project as any).salesManagerId === user.id;
@@ -934,7 +934,7 @@ export class ProjectsService implements OnModuleInit {
           salesTypes: getSalesSegment(role)!.projectTypes,
         });
       } else if (role === 'smm_director' || role === 'smm_specialist' || role === 'producer') {
-        // Продюсер (09.11.2026) работает с СММ-проектами как СММ-специалист.
+        // Продюсер (09.11.2026) ведёт производство всех СММ-проектов.
         // smm_specialist видит ВСЕ SMM-проекты (решение владельца, сент. 2026); отмечать сторис
         // может только по своим — это проверяет StoriesService.upsert.
         // Руководитель SMM видит ВСЕ SMM-проекты компании. Проекты
@@ -2120,6 +2120,12 @@ export class ProjectsService implements OnModuleInit {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
     if (project.projectType !== 'SMM') throw new BadRequestException('Профиль применим только к SMM-проектам');
+    // Продюсер (09.11.2026) правит в профиле только производство: где снимать
+    // и кто снимает, монтирует, рисует. Остальное — СММ-специалиста.
+    if (user?.role === UserRole.PRODUCER) {
+      const PRODUCTION_KEYS = ['shootAddress', 'shootMapUrl', 'shootContact', 'videographerIds', 'videoEditorIds', 'designerIds'];
+      dto = Object.fromEntries(Object.entries(dto || {}).filter(([k]) => PRODUCTION_KEYS.includes(k))) as typeof dto;
+    }
     const smmData = { ...(project.smmData || {}) };
     const str = (v: any, max: number): string | null => { if (v == null) return null; const s = String(v).trim(); return s ? s.slice(0, max) : null; };
     const dateOr = (v: any): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null;

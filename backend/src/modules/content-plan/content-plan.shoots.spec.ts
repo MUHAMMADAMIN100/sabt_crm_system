@@ -1,4 +1,5 @@
-import { ContentPlanService } from './content-plan.service';
+import { ForbiddenException } from '@nestjs/common';
+import { ContentPlanService, isProductionOnly } from './content-plan.service';
 import { ContentPlanStatus } from './content-plan-item.entity';
 import { dushanbeToday } from '../employees/vacation';
 
@@ -103,5 +104,37 @@ describe('отменённая съёмка', () => {
     ]);
     await svc.smartUpdateItem('reel', { publishDate: addDays(today, 7) }, { id: 'u' });
     expect(byId.get('reel').status).toBe('cancelled');
+  });
+});
+
+describe('продюсер — полный доступ к производству', () => {
+  const producer = { id: 'umrona', role: 'producer', secondaryRole: null };
+  const items = () => [
+    { id: 'reel', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 6)), shootForItemId: null, prepStage: null },
+    { id: 'shoot', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 4)), shootForItemId: 'reel', prepStage: 'shoot' },
+    { id: 'post', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 5)), shootForItemId: null, prepStage: null },
+    { id: 'design', projectId: 'p', status: 'planned', publishDate: day(addDays(today, 4)), shootForItemId: 'post', prepStage: 'design' },
+  ];
+
+  it('кто считается продюсером без СММ-прав', () => {
+    expect(isProductionOnly({ role: 'producer' })).toBe(true);
+    expect(isProductionOnly({ role: 'videographer', secondaryRole: 'producer' })).toBe(true);
+    expect(isProductionOnly({ role: 'producer', secondaryRole: 'smm_specialist' })).toBe(false);
+    expect(isProductionOnly({ role: 'smm_specialist' })).toBe(false);
+  });
+
+  it('съёмку и дизайн двигает, меняет время, длительность, отмечает готовой', async () => {
+    const { svc, byId } = make(items());
+    await svc.smartUpdateItem('shoot', { publishDate: addDays(today, 1), publishTime: '10:00', durationMin: 240 }, producer);
+    expect(byId.get('shoot').publishTime).toBe('10:00');
+    expect(byId.get('shoot').durationMin).toBe(240);
+    await svc.smartUpdateItem('design', { status: ContentPlanStatus.PUBLISHED }, producer);
+    expect(byId.get('design').status).toBe(ContentPlanStatus.PUBLISHED);
+  });
+
+  it('публикации — рилсы и посты — не трогает', async () => {
+    const { svc } = make(items());
+    await expect(svc.smartUpdateItem('reel', { publishDate: addDays(today, 2) }, producer)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.smartUpdateItem('post', { status: ContentPlanStatus.PUBLISHED }, producer)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
