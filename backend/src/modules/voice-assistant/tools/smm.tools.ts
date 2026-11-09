@@ -19,8 +19,10 @@ import { ToolContext, ToolDef, ToolError, WriteOutcome } from './types';
 const apiErr = (e: any) => (e instanceof ApiError ? new ToolError(e.message) : e);
 const hasRole = (u: any, list: string[]) => roles(u).some((r) => list.includes(r));
 
-const CALENDAR_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
-const CONTENT_EDIT_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
+// Как @Roles на сайте (09.11.2026: продюсер ведёт производство в «Умном календаре»).
+const CALENDAR_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev', 'producer'];
+// Продюсер правит только съёмки/монтаж/дизайн — публикации сервер ему не даст.
+const CONTENT_EDIT_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer'];
 const STORY_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
 
 const CONTENT_STATUS_RU: Record<string, string> = {
