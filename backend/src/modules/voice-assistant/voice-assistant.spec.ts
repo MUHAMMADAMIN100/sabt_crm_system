@@ -407,3 +407,38 @@ describe('зарплата: штраф, премия, защита от подм
       .rejects.toThrow(/зарплату сотрудника/);
   });
 });
+
+import { checkReadOnlySql, scrubRows, dbQuery } from './tools/db.tools';
+
+describe('чтение базы основателем — только чтение', () => {
+  it('пропускает обычные SELECT/WITH', () => {
+    expect(checkReadOnlySql('SELECT name, "createdAt" FROM client_leads WHERE status = \'new\';')).toMatch(/^SELECT/);
+    expect(checkReadOnlySql('with t as (select * from tasks) select count(*) from t')).toMatch(/^with/);
+    expect(checkReadOnlySql("select comment from finance_transactions where comment = 'Создать лид'")).toBeTruthy();
+  });
+  it('не пропускает запись, вторую команду, служебные функции и секреты', () => {
+    for (const bad of [
+      'DELETE FROM tasks',
+      'select 1; drop table tasks',
+      'update users set role = \'admin\'',
+      'select pg_sleep(10)',
+      'select password from users',
+      'select "resetPasswordToken" from users',
+      'select * from refresh_tokens',
+      'with x as (delete from tasks returning *) select * from x',
+    ]) {
+      expect(() => checkReadOnlySql(bad)).toThrow();
+    }
+  });
+  it('комментарий с командой вырезается — выполняется только чтение', () => {
+    expect(checkReadOnlySql('select 1 -- ; delete from tasks')).toBe('select 1');
+  });
+  it('вырезает пароли из результата «select *»', () => {
+    expect(scrubRows([{ id: 1, name: 'A', password: 'x', twoFactorSecret: 'y', fcmTokens: ['z'] }])).toEqual([{ id: 1, name: 'A' }]);
+  });
+  it('доступно только основателю', () => {
+    expect(dbQuery.available!({ role: 'founder' } as any)).toBe(true);
+    expect(dbQuery.available!({ role: 'admin' } as any)).toBe(false);
+    expect(dbQuery.available!({ role: 'smm_director', secondaryRole: null } as any)).toBe(false);
+  });
+});

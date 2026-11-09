@@ -43,7 +43,7 @@ export function toSpec(t: ToolDef): ToolSpec {
   return { type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } };
 }
 
-const MAX_STEPS = 6;
+const MAX_STEPS = 8;
 const MAX_RESULT_CHARS = 14_000;
 
 /**

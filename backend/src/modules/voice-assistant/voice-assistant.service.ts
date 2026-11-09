@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AllChatFailed, ChatMessage } from './ai/chat';
@@ -19,10 +19,11 @@ import { CLIENT_TOOLS } from './tools/clients.tools';
 import { SMM_TOOLS } from './tools/smm.tools';
 import { FINANCE_TOOLS } from './tools/finance.tools';
 import { SALARY_TOOLS } from './tools/salary.tools';
+import { DB_TOOLS, DbRunner } from './tools/db.tools';
 import { Button, ToolContext, ToolDef, UndoStep } from './tools/types';
 
 /** Все инструменты. Кому какие видны — решает available(user). */
-export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS, ...SALARY_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS, ...SALARY_TOOLS, ...DB_TOOLS];
 
 const SESSION_TTL_MS = 20 * 60_000;
 const HISTORY_MAX = 4;
@@ -68,7 +69,23 @@ export class VoiceAssistantService implements OnModuleInit {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly telegram: TelegramService,
     private readonly jwt: JwtService,
+    @InjectDataSource() private readonly ds: DataSource,
   ) {}
+
+  /** Чтение базы для основателя: транзакция READ ONLY + таймаут 8 с —
+   *  записать что-либо невозможно на уровне самой БД. */
+  private readonly dbRead: DbRunner = async (sql: string) => {
+    const qr = this.ds.createQueryRunner();
+    await qr.connect();
+    try {
+      await qr.query('BEGIN READ ONLY');
+      await qr.query("SET LOCAL statement_timeout = '8000'");
+      return await qr.query(sql);
+    } finally {
+      await qr.query('ROLLBACK').catch(() => undefined);
+      await qr.release();
+    }
+  };
 
   onModuleInit(): void {
     this.telegram.registerAssistant(this);
@@ -315,7 +332,9 @@ export class VoiceAssistantService implements OnModuleInit {
       today: todayDushanbe(),
       nowTime: nowTimeDushanbe(),
       utterance,
-    };
+      // Чтение базы — только основателю (решение владельца 09.11.2026).
+      ...(user.role === 'founder' || user.secondaryRole === 'founder' ? { db: this.dbRead } : {}),
+    } as ToolContext;
   }
 
   private session(chatId: number, refs: RefTable): Session {
