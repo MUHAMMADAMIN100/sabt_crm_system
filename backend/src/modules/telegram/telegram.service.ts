@@ -11,7 +11,16 @@ export interface TgButton { text: string; callback_data: string }
 
 /** Голосовой помощник (modules/voice-assistant). Регистрируется сам — так
  *  модуль бота не зависит от помощника и не образует круг модулей. */
+/** Фото или документ, присланные боту. */
+export interface IncomingFile {
+  fileId: string;
+  name: string;
+  mime: string;
+  kind: 'photo' | 'document';
+}
+
 export interface TelegramAssistant {
+  handleFile(chatId: number, file: IncomingFile, caption: string, meta?: { replyTaskId?: string | null }): Promise<boolean>;
   handleVoice(chatId: number, fileId: string, durationSec: number, meta?: { replyTaskId?: string | null }): Promise<boolean>;
   handleText(chatId: number, text: string, meta?: { replyTaskId?: string | null }): Promise<boolean>;
   handleCallback(chatId: number, data: string): Promise<{ toast: string; append?: string } | null>;

@@ -63,6 +63,20 @@ export class UserApi {
   }
 
   async request<T>(method: string, path: string, body?: any, query?: Record<string, any>): Promise<T> {
+    return this.send<T>(method, path, query, body !== undefined ? JSON.stringify(body) : undefined,
+      body !== undefined ? { 'Content-Type': 'application/json' } : {});
+  }
+
+  /** Загрузка файла (multipart) — как форма на сайте. Content-Type с границей
+   *  выставляет сам fetch. */
+  upload<T = any>(path: string, form: FormData, query?: Record<string, any>): Promise<T> {
+    return this.send<T>('POST', path, query, form, {});
+  }
+
+  private async send<T>(
+    method: string, path: string, query: Record<string, any> | undefined,
+    body: string | FormData | undefined, extraHeaders: Record<string, string>,
+  ): Promise<T> {
     const qs = query
       ? '?' + Object.entries(query)
         .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -77,11 +91,11 @@ export class UserApi {
         headers: {
           Authorization: `Bearer ${this.bearer()}`,
           Accept: 'application/json',
-          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...extraHeaders,
           'User-Agent': 'SabtTelegramVoice/1.0',
           'X-Sabt-Client': 'telegram-voice',
         },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body,
         signal: AbortSignal.timeout(30_000),
       });
     } catch (e: any) {

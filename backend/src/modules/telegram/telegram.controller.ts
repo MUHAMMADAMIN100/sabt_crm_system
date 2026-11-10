@@ -1,7 +1,7 @@
 import { Controller, Post, Body, Inject, forwardRef, Headers, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { TelegramService } from './telegram.service';
+import { IncomingFile, TelegramService } from './telegram.service';
 import { VoiceTaskService } from './voice-task.service';
 import { BotWorkspaceService } from './bot-workspace.service';
 import { Employee } from '../employees/employee.entity';
@@ -19,12 +19,13 @@ interface TelegramUpdate {
   message?: {
     from?: { id: number; username?: string; first_name?: string };
     text?: string;
+    caption?: string;
     /** Голосовое сообщение: команда или вопрос голосовому помощнику. */
     voice?: { file_id: string; duration?: number };
     /** Кружок/аудиофайл — тоже голос. */
     audio?: { file_id: string; duration?: number };
     photo?: Array<{ file_id: string; file_size?: number }>;
-    document?: { file_id: string; file_name?: string };
+    document?: { file_id: string; file_name?: string; mime_type?: string };
     /** Ответ на сообщение бота: «готово» в ответ на карточку задачи. */
     reply_to_message?: TgMessageRef;
   };
@@ -189,6 +190,23 @@ export class TelegramController {
       await this.botWorkspace.handleFile(chatId, fileId, msg.document?.file_name)
         .catch(() => { /* бот не должен падать из-за файла */ });
       return { ok: true };
+    }
+
+    // Иначе файл — просьба помощнику: с подписью разбираем её, без подписи
+    // спрашиваем, к чему приложить.
+    if (chatId && fileId && assistant) {
+      const linked = await this.telegramService.resolveUserIdByChat(chatId).catch(() => null);
+      if (linked) {
+        const file: IncomingFile = msg.document
+          ? {
+            fileId: msg.document.file_id, kind: 'document',
+            name: msg.document.file_name || 'document', mime: msg.document.mime_type || 'application/octet-stream',
+          }
+          : { fileId, kind: 'photo', name: 'photo.jpg', mime: 'image/jpeg' };
+        void assistant.handleFile(chatId, file, (msg.caption || '').trim(), { replyTaskId })
+          .catch((e) => this.logger.error(`файл боту: ${e?.message || e}`));
+        return { ok: true };
+      }
     }
 
     // Команды рабочего места.

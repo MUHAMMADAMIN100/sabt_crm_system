@@ -5,6 +5,15 @@ import { RefTable } from '../refs';
 /** Кнопка Telegram (повтор TgButton, чтобы не тянуть модуль бота в тесты). */
 export interface Button { text: string; callback_data: string }
 
+/** Файл, присланный человеком в чат бота (фото или документ). */
+export interface AttachedFile {
+  name: string;
+  mime: string;
+  kind: 'photo' | 'document';
+  /** Скачать содержимое из Telegram. */
+  download: () => Promise<Buffer>;
+}
+
 export interface ToolContext {
   user: User;
   api: UserApi;
@@ -15,11 +24,13 @@ export interface ToolContext {
   nowTime: string;
   /** Что человек сказал (расшифровка) — пишем в описание созданной задачи. */
   utterance: string;
+  /** Файл, присланный вместе с просьбой (или перед ней). Нет — файла нет. */
+  file?: AttachedFile;
 }
 
 /** Обратная операция для «↩ Отменить» — вызов API от того же человека. */
 export interface UndoStep {
-  method: 'PATCH' | 'POST' | 'DELETE';
+  method: 'PATCH' | 'POST' | 'DELETE' | 'PUT';
   path: string;
   body?: any;
 }
