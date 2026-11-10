@@ -5,15 +5,17 @@
  * выбирает из того, что ему показали, а мы переводим метку обратно в id —
  * и всё, чего не показывали, отбрасываем.
  */
-/** T задача, E сотрудник (userId), P проект, C клиент/лид, I карточка контент-плана, F клиент в финансах, S сотрудник в зарплатной ведомости. */
-export type RefKind = 'T' | 'E' | 'P' | 'C' | 'I' | 'F' | 'S';
+/** T задача, E сотрудник (userId), P проект, C клиент/лид, I карточка контент-плана, F клиент в финансах, S сотрудник ведомости,
+ *  D карточка доски разработки, N заметка, K пункт чек-листа, R заявка на транспорт, M чат Директа, B долг/подписка/рассрочка,
+ *  V отпуск, L опоздание/предупреждение/правка смены, A реклама проекта, X прочее (операция финансов и т.п.). */
+export type RefKind = 'T' | 'E' | 'P' | 'C' | 'I' | 'F' | 'S' | 'D' | 'N' | 'K' | 'R' | 'M' | 'B' | 'V' | 'L' | 'A' | 'X';
 
 export interface RefEntry { kind: RefKind; id: string; label: string }
 
 export class RefTable {
   private byRef = new Map<string, RefEntry>();
   private byId = new Map<string, string>();
-  private counters: Record<RefKind, number> = { T: 0, E: 0, P: 0, C: 0, I: 0, F: 0, S: 0 };
+  private counters: Record<RefKind, number> = { T: 0, E: 0, P: 0, C: 0, I: 0, F: 0, S: 0, D: 0, N: 0, K: 0, R: 0, M: 0, B: 0, V: 0, L: 0, A: 0, X: 0 };
 
   add(kind: RefKind, id: string, label: string): string {
     const key = `${kind}:${id}`;
@@ -50,7 +52,7 @@ export class RefTable {
       t.byRef.set(ref, e);
       t.byId.set(`${e.kind}:${e.id}`, ref);
     }
-    t.counters = { T: 0, E: 0, P: 0, C: 0, I: 0, F: 0, S: 0, ...data.counters };
+    t.counters = { T: 0, E: 0, P: 0, C: 0, I: 0, F: 0, S: 0, D: 0, N: 0, K: 0, R: 0, M: 0, B: 0, V: 0, L: 0, A: 0, X: 0, ...data.counters };
     return t;
   }
 }

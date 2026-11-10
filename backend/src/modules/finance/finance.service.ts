@@ -4290,7 +4290,7 @@ export class FinanceService implements OnModuleInit {
               COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."floating" END, c."floating", false) AS floating,
               COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."workdays" END, c."workdays", '1,2,3,4,5,6') AS workdays,
               EXISTS (SELECT 1 FROM late_notices n
-                       WHERE n."userId" = s."employeeId" AND n."date" = s."date"
+                       WHERE n."userId"::text = s."employeeId"::text AND n."date" = $1::date
                          AND n."status" = 'approved') AS excused
          FROM work_shifts s
          JOIN users u ON u.id = s."employeeId"
@@ -4312,7 +4312,7 @@ export class FinanceService implements OnModuleInit {
         WHERE s."date" = $1
           AND NOT EXISTS (
             SELECT 1 FROM shift_absences a
-             WHERE a."employeeId" = s."employeeId" AND a."date" = s."date")
+             WHERE a."employeeId"::text = s."employeeId"::text AND a."date" = s."date")
         GROUP BY s."employeeId", u."name", u."role",
                  p."startTime", p."graceMinutes", p."floating", p."workdays", p."followsCompany",
                  c."startTime", c."graceMinutes", c."floating", c."workdays"`,

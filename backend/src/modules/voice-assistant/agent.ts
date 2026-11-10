@@ -56,12 +56,33 @@ export async function runAgent(params: {
   ctx: ToolContext;
   tools: ToolDef[];
   system: string;
+  /** Разделы, которые ИИ может открыть сам (open_section): имя → описание и инструменты. */
+  sections?: Record<string, { title: string; tools: ToolDef[] }>;
   history: ChatMessage[];
   userText: string;
 }): Promise<AgentResult & { provider?: ProviderId; calls?: string[] }> {
-  const { ctx, tools, system, history, userText } = params;
+  const { ctx, tools, system, history, userText, sections = {} } = params;
   const byName = new Map(tools.map((t) => [t.name, t]));
   const specs = [...tools.map(toSpec), ASK_CHOICE];
+  // У OpenAI не больше 128 инструментов за запрос, а у основателя их ~155:
+  // часть разделов подключается по словам заранее, остальные ИИ открывает сам.
+  const closed = Object.entries(sections).filter(([, sec]) => sec.tools.some((t) => !byName.has(t.name)));
+  if (closed.length) {
+    specs.push({
+      type: 'function',
+      function: {
+        name: 'open_section',
+        description: 'Открыть раздел CRM, если нужного инструмента нет в списке. Разделы: '
+          + closed.map(([k, sec]) => `${k} — ${sec.title}`).join('; ') + '. После открытия инструменты раздела станут доступны.',
+        parameters: {
+          type: 'object',
+          properties: { section: { type: 'string', enum: closed.map(([k]) => k) } },
+          required: ['section'],
+          additionalProperties: false,
+        },
+      },
+    });
+  }
   const messages: ChatMessage[] = [{ role: 'system', content: system }, ...history, { role: 'user', content: userText }];
   const done: Executed[] = [];
   const buttons: Button[][] = [];
@@ -100,6 +121,17 @@ export async function runAgent(params: {
         args = JSON.parse(call.function.arguments || '{}') || {};
       } catch {
         messages.push(toolResult(call.id, { error: 'Аргументы не разобраны: нужен корректный JSON.' }));
+        readsOrErrors++;
+        continue;
+      }
+
+      if (name === 'open_section') {
+        const sec = sections[String(args.section)];
+        const added = sec ? sec.tools.filter((t) => !byName.has(t.name)) : [];
+        for (const t of added) { byName.set(t.name, t); specs.splice(specs.length - 1, 0, toSpec(t)); }
+        messages.push(toolResult(call.id, sec
+          ? { opened: args.section, tools: added.map((t) => t.name) }
+          : { error: 'Нет такого раздела.' }));
         readsOrErrors++;
         continue;
       }

@@ -20,10 +20,45 @@ import { SMM_TOOLS } from './tools/smm.tools';
 import { FINANCE_TOOLS } from './tools/finance.tools';
 import { SALARY_TOOLS } from './tools/salary.tools';
 import { DB_TOOLS, DbRunner } from './tools/db.tools';
+import { ATTENDANCE_TOOLS } from './tools/attendance.tools';
+import { PROJECTS_TOOLS } from './tools/projects.tools';
+import { CONTENT_TOOLS } from './tools/content.tools';
+import { FINANCE2_TOOLS } from './tools/finance2.tools';
+import { DEV_TOOLS } from './tools/dev.tools';
+import { DIRECT_TOOLS } from './tools/direct.tools';
+import { ADMIN_TOOLS } from './tools/admin.tools';
 import { Button, ToolContext, ToolDef, UndoStep } from './tools/types';
 
 /** Все инструменты. Кому какие видны — решает available(user). */
-export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS, ...SALARY_TOOLS, ...DB_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...CLIENT_TOOLS, ...SMM_TOOLS, ...FINANCE_TOOLS, ...SALARY_TOOLS, ...DB_TOOLS,
+  ...ATTENDANCE_TOOLS,
+  // set_dev_stage из проектов дублирует set_dev_project_stage доски «Разработка».
+  ...PROJECTS_TOOLS.filter((t) => t.name !== 'set_dev_stage'),
+  ...CONTENT_TOOLS, ...FINANCE2_TOOLS, ...DEV_TOOLS, ...DIRECT_TOOLS, ...ADMIN_TOOLS,
+];
+
+/** Разделы помощника. У OpenAI не больше 128 инструментов за запрос, а всего
+ *  их ~160: ядро (задачи, люди, смена, база) — всегда, разделы — по словам
+ *  просьбы и недавнего разговора, остальные ИИ открывает сам (open_section). */
+const CORE_TOOLS: ToolDef[] = [...TASK_TOOLS, ...PEOPLE_TOOLS, ...SHIFT_TOOLS, ...DB_TOOLS];
+const SECTIONS: Array<{ key: string; title: string; tools: ToolDef[]; words: RegExp }> = [
+  { key: 'finance', title: 'финансы: операции, баланс, долги, подписки, зарплата (штраф, премия, аванс), транспорт',
+    tools: [...FINANCE_TOOLS, ...FINANCE2_TOOLS, ...SALARY_TOOLS],
+    words: /штраф|оштраф|ашраф|преми|бонус|аванс|зарплат|расход|доход|оплат|баланс|сч[её]т|долг|подписк|рассроч|сомони|деньг|финанс|транспорт|такси|ведомост|ҷарима|чарима|маош|пул/i },
+  { key: 'attendance', title: 'опоздания и штрафы за них, отпуска, графики работы, просьбы «приду позже» и правки смен, табель',
+    tools: ATTENDANCE_TOOLS, words: /опозд|отпуск|график|табел|приду позже|правк|отгул|прост[иь]|дер омад/i },
+  { key: 'clients', title: 'клиенты и лиды, Директ Instagram (чаты, ответы клиентам)',
+    tools: [...CLIENT_TOOLS, ...DIRECT_TOOLS], words: /лид|клиент|директ|инстаграм|instagram|чат|переговор|договор|мизоҷ|мизоч/i },
+  { key: 'smm', title: 'контент-план, публикации, рилсы, съёмки и видеографы, сторис, СММ-контроль, реклама проектов',
+    tools: [...SMM_TOOLS, ...CONTENT_TOOLS], words: /рилс|сторис|пост|публикац|съ[её]мк|контент|монтаж|видеограф|реклам|таргет|продюсер|смм|smm|сценари/i },
+  { key: 'projects', title: 'проекты: карточка, создать, статус, архив, участники, объявления, бриф, оплата проекта',
+    tools: PROJECTS_TOOLS.filter((t) => t.name !== 'set_dev_stage'), words: /проект|архив|объявлен|бриф|лойиҳа|лойиха/i },
+  { key: 'dev', title: 'доска «Разработка»: карточки, этапы, исполнители',
+    tools: DEV_TOOLS, words: /карточк|доск|разработ|этап|баг|dev/i },
+  { key: 'admin', title: 'сотрудники и их карточки, доступы, блокировка, чек-листы задач, заметки, уведомления, календарь, мои отчёты',
+    tools: ADMIN_TOOLS, words: /сотрудник|доступ|заблок|разблок|чек-?лист|пункт|заметк|уведомлен|календар|отч[её]т|должност|на работу/i },
+];
+const MAX_TOOLS = 120;
 
 const SESSION_TTL_MS = 20 * 60_000;
 const HISTORY_MAX = 4;
@@ -232,11 +267,28 @@ export class VoiceAssistantService implements OnModuleInit {
     fromVoice: boolean, replyTaskId: string | null, isClarification = false,
   ): Promise<void> {
     const session = this.session(chatId, ctx.refs);
-    const tools = ALL_TOOLS.filter((t) => !t.available || t.available(user));
+    const can = (t: ToolDef) => !t.available || t.available(user);
+    const tools: ToolDef[] = CORE_TOOLS.filter(can);
+    const sections: Record<string, { title: string; tools: ToolDef[] }> = {};
+    for (const sec of SECTIONS) {
+      const own = sec.tools.filter(can);
+      if (own.length) sections[sec.key] = { title: sec.title, tools: own };
+    }
+    // Сначала — разделы по словам ТЕКУЩЕЙ просьбы, потом по недавнему
+    // разговору, пока влезает: иначе «счёт» из прошлой фразы вытеснял
+    // «заметку» из нынешней (прогон 10.11.2026).
+    for (const text of [userText, session.history.join(' ')]) {
+      for (const sec of SECTIONS) {
+        const own = sections[sec.key]?.tools;
+        if (!own || !sec.words.test(text) || own.every((t) => tools.includes(t))) continue;
+        const fresh = own.filter((t) => !tools.includes(t));
+        if (tools.length + fresh.length <= MAX_TOOLS) tools.push(...fresh);
+      }
+    }
     const started = Date.now();
     let result: AgentResult;
     try {
-      result = await runAgent({ ctx, tools, system: systemPrompt(ctx, snapshot as any, session.history), history: [], userText });
+      result = await runAgent({ ctx, tools, system: systemPrompt(ctx, snapshot as any, session.history), history: [], userText, sections });
     } catch (e: any) {
       if (e instanceof AllChatFailed) {
         this.logger.error(`ИИ не ответил: ${e.message}`);
