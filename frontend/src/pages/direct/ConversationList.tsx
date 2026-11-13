@@ -7,7 +7,8 @@ import {
 import { directApi, type DirectConversation, type DirectFilters, type DirectView } from '@/services/direct.api'
 import { Spinner } from '@/components/ui'
 import ContactAvatar from './ContactAvatar'
-import { duration, listTime, clockTime, dayLabel } from './directTime'
+import { duration, listTime, clockTime, dayLabel, shortAgo } from './directTime'
+import { useMedia } from './useMedia'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocketConnected } from '@/lib/socketState'
 import { isSalesUser, isTopUser, shortName } from './directAccess'
@@ -64,6 +65,8 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
   const [filters, setFilters] = useState<DirectFilters>({})
+  // Телефон — список как в Instagram (13.11.2026).
+  const phone = useMedia('(max-width: 639px)')
   // Аккаунт Instagram — свой переключатель над вкладками (13.11.2026).
   const [account, setAccount] = useState<string | null>(null)
   const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, staleTime: 60_000 })
@@ -219,7 +222,7 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
           </div>
         )}
         {/* Вкладки переносятся строкой ниже, а не уезжают за край. */}
-        <div className="flex flex-wrap gap-1.5" role="tablist">
+        <div className={clsx('flex gap-1.5', phone ? '-mx-3 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : 'flex-wrap')} role="tablist">
           {views.map(v => (
             <button
               key={v.key}
@@ -273,6 +276,7 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
                 showAssignee={view !== 'mine' && view !== 'free' && !assigneeId}
                 reminder={reminderOf.get(c.id) ?? null}
                 via={multi && !account ? (accountName.get(c.accountId) ?? 'отключён') : null}
+                phone={phone}
                 onMenu={anchor => setRowMenu({ c, anchor })} />
             ))}
           </ul>
@@ -398,7 +402,7 @@ function AssigneeChip({ c, me }: { c: DirectConversation; me: string | undefined
   )
 }
 
-function Row({ c, active, onSelect, showAssignee, reminder, via, onMenu }: {
+function Row({ c, active, onSelect, showAssignee, reminder, via, onMenu, phone = false }: {
   c: DirectConversation
   active: boolean
   onSelect: (c: DirectConversation) => void
@@ -406,6 +410,8 @@ function Row({ c, active, onSelect, showAssignee, reminder, via, onMenu }: {
   reminder: { remindAt: string; note: string | null } | null
   /** Через какой аккаунт Instagram написал клиент — когда их несколько. */
   via: string | null
+  /** Телефон: строка как в Instagram. */
+  phone?: boolean
   onMenu: (anchor: MenuAnchor) => void
 }) {
   const me = useAuthStore(s => s.user?.id)
@@ -425,6 +431,67 @@ function Row({ c, active, onSelect, showAssignee, reminder, via, onMenu }: {
   const showDraft = !!draft && !active
 
   const cancelPress = () => { if (press.current) clearTimeout(press.current.timer) }
+  const pressHandlers = {
+    onClick: () => {
+      if (press.current?.fired) { press.current = null; return }
+      onSelect(c)
+    },
+    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); onMenu({ x: e.clientX, y: e.clientY, above: e.clientY }) },
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0]
+      const point = { x: t.clientX, y: t.clientY }
+      press.current = { fired: false, timer: setTimeout(() => {
+        if (press.current) press.current.fired = true
+        navigator.vibrate?.(15)
+        onMenu({ ...point, above: point.y })
+      }, 500) }
+    },
+    onTouchMove: cancelPress,
+    onTouchEnd: cancelPress,
+  }
+
+  // Телефон: как в Instagram — крупный аватар, имя, «текст · 5 мин», точка
+  // непрочитанного; служебное (ждёт, кто ведёт, метки) — мелко одной строкой.
+  if (phone) {
+    const bold = unread || c.markedUnread
+    const meta: { key: string; node: ReactNode }[] = []
+    if (via) meta.push({ key: 'via', node: <span className="text-surface-400">@{via}</span> })
+    if (c.waitingSince) meta.push({ key: 'wait', node: <span className="font-medium text-amber-700 dark:text-amber-300">ждёт {duration(waitingMs)}</span> })
+    if (reminder) meta.push({ key: 'rem', node: <span className={clsx('inline-flex items-center gap-0.5', due ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-surface-500')}><BellRing size={11} />{due ? 'пора' : remindLabel(reminder.remindAt)}</span> })
+    if (showAssignee) meta.push({ key: 'who', node: <span className="text-surface-500">{c.assignee ? (c.assignee.id === me ? 'ведёте вы' : shortName(c.assignee.name)) : 'свободный'}</span> })
+    for (const l of c.labels.slice(0, 2)) meta.push({ key: l.id, node: <span className="inline-flex items-center gap-1 text-surface-500"><span className={clsx('h-1.5 w-1.5 rounded-full', labelColor(l.color).dot)} />{l.name}</span> })
+    return (
+      <li className="relative">
+        <button type="button" {...pressHandlers}
+          className={clsx('direct-phone-bubble flex w-full items-center gap-3 px-4 py-2 text-left active:bg-surface-100 dark:active:bg-surface-800',
+            active && 'bg-surface-100 dark:bg-surface-800')}>
+          <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={56} />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1">
+              <span className={clsx('truncate text-[15px]', bold ? 'font-semibold text-surface-900 dark:text-white' : 'text-surface-900 dark:text-surface-100')}>{c.contact.label}</span>
+              {c.pinned && <Pin size={12} className="shrink-0 text-surface-400" aria-label="Закреплён" />}
+              {c.lead && <span className="shrink-0 rounded bg-surface-200 px-1 text-[9.5px] font-semibold uppercase text-surface-600 dark:bg-surface-700 dark:text-surface-300">лид</span>}
+            </span>
+            <span className={clsx('flex min-w-0 items-center text-[14px]', bold ? 'font-semibold text-surface-900 dark:text-white' : 'text-surface-500 dark:text-surface-400')}>
+              {last?.status === 'failed' && !showDraft && <AlertCircle size={13} className="mr-1 shrink-0 text-red-500" aria-label="Не доставлено" />}
+              <span className="min-w-0 truncate">
+                {showDraft
+                  ? <><span className="text-primary-700 dark:text-primary-300">{draft!.mode === 'note' ? 'Черновик заметки: ' : 'Черновик: '}</span>{draft!.text.replace(/\s+/g, ' ')}</>
+                  : last ? `${who}${last.preview}` : 'Нет сообщений'}
+              </span>
+              <span className="shrink-0 font-normal text-surface-400">&nbsp;· {shortAgo(c.lastMessageAt)}</span>
+            </span>
+            {meta.length > 0 && (
+              <span className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12px]">
+                {meta.map((x, i) => <span key={x.key} className="inline-flex shrink-0 items-center gap-1.5">{i > 0 && <span className="text-surface-300 dark:text-surface-600">·</span>}{x.node}</span>)}
+              </span>
+            )}
+          </span>
+          {(unread || c.markedUnread) && <span className="h-3 w-3 shrink-0 rounded-full bg-primary-500" aria-label={unread ? `Непрочитанных: ${c.unreadCount}` : 'Помечен непрочитанным'} />}
+        </button>
+      </li>
+    )
+  }
 
   return (
     <li className="group relative">

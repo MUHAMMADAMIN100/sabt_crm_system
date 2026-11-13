@@ -49,6 +49,16 @@ export function duration(ms: number): string {
   return h ? `${d} д ${h} ч` : `${d} д`
 }
 
+/** Как в Instagram: «сейчас», «5 мин», «3 ч», «2 д», «4 нед». */
+export function shortAgo(iso: string, now = Date.now()): string {
+  const ms = Math.max(0, now - new Date(iso).getTime())
+  if (ms < MINUTE) return 'сейчас'
+  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} мин`
+  if (ms < DAY) return `${Math.floor(ms / HOUR)} ч`
+  if (ms < 7 * DAY) return `${Math.floor(ms / DAY)} д`
+  return `${Math.floor(ms / (7 * DAY))} нед`
+}
+
 /** Секунды из статистики — коротко. */
 export function seconds(value: number | null | undefined): string {
   if (value == null) return '—'

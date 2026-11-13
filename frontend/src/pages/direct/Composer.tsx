@@ -1,9 +1,10 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import {
-  CornerUpLeft, ExternalLink, FileText, Film, Lock, Mic, Paperclip, Send, Settings2, Smile, Square, StickyNote, Trash2, X, Zap,
+  Camera, CornerUpLeft, ExternalLink, FileText, Film, Image as ImageIcon, Lock, Mic, Paperclip, Plus, Send, Settings2, Smile, Square,
+  StickyNote, Trash2, X, Zap,
 } from 'lucide-react'
 import { directApi, type DirectMessage, type DirectPerson, type DirectTemplate } from '@/services/direct.api'
 import { useAuthStore } from '@/store/auth.store'
@@ -99,6 +100,15 @@ const Composer = forwardRef<ComposerHandle, {
   const user = useAuthStore(s => s.user)
   const top = isTopUser(user)
   const roomy = useMedia('(min-width: 640px)')
+  // Телефон — поле как в Instagram (13.11.2026).
+  const phone = !roomy
+  const [plusOpen, setPlusOpen] = useState(false)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const galleryInput = useRef<HTMLInputElement>(null)
+  const pdfInput = useRef<HTMLInputElement>(null)
+  const plusBox = useRef<HTMLDivElement>(null)
+  /** Голосовое удержанием: где начали, отпустили ли, отменили ли свайпом. */
+  const hold = useRef<{ x: number; started: number; released: boolean; cancelled: boolean } | null>(null)
   const initial = useMemo(() => getDraft(user?.id, conversationId), [user?.id, conversationId])
   const [chosen, setMode] = useState<Mode>(initial?.mode ?? 'message')
   // Чужой закреплённый чат — только заметки.
@@ -373,10 +383,10 @@ const Composer = forwardRef<ComposerHandle, {
   }
 
   // ─── Голосовое ───────────────────────────────────────────────────
-  async function startRecording() {
-    if (blocked || recording || mode !== 'message') return
+  async function startRecording(): Promise<boolean> {
+    if (blocked || recording || mode !== 'message') return false
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      toast.error('Этот браузер не умеет записывать голос'); return
+      toast.error('Этот браузер не умеет записывать голос'); return false
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -396,11 +406,60 @@ const Composer = forwardRef<ComposerHandle, {
       rec.start(250)
       setElapsed(0)
       setRecording({ started: Date.now() })
+      return true
     } catch (e: any) {
       const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
       toast.error(denied ? 'Нет доступа к микрофону — разрешите его в настройках браузера' : 'Микрофон не найден')
+      return false
     }
   }
+
+  // ─── Голосовое удержанием (телефон): держишь — запись, отпустил —
+  // отправилось, увёл палец влево — отмена. ─────────────────────────
+  const micDown = async (e: ReactPointerEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    if (blocked || recording) return
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* не страшно */ }
+    hold.current = { x: e.clientX, started: Date.now(), released: false, cancelled: false }
+    const ok = await startRecording()
+    // Палец отпустили, пока браузер спрашивал разрешение на микрофон.
+    if (ok && hold.current?.released) {
+      stopRecording(true)
+      toast('Удерживайте микрофон, пока говорите')
+    }
+  }
+  const micMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const h = hold.current
+    if (!h || h.cancelled || !recorder.current) return
+    if (e.clientX - h.x < -70) {
+      h.cancelled = true
+      stopRecording(true)
+      toast('Запись отменена')
+    }
+  }
+  const micUp = () => {
+    const h = hold.current
+    if (!h) return
+    h.released = true
+    if (h.cancelled || !recorder.current) return
+    if (Date.now() - h.started < 700) {
+      stopRecording(true)
+      toast('Удерживайте микрофон, пока говорите')
+    } else {
+      stopRecording(false)
+    }
+  }
+
+  // Меню «+» закрывается касанием мимо.
+  useEffect(() => {
+    if (!plusOpen) return
+    const onDown = (e: Event) => {
+      if ((e.target as Element | null)?.closest?.('[data-plus-toggle]')) return
+      if (plusBox.current && !plusBox.current.contains(e.target as Node)) setPlusOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [plusOpen])
 
   function stopRecording(cancel: boolean) {
     const r = recorder.current
@@ -417,6 +476,220 @@ const Composer = forwardRef<ComposerHandle, {
   const parts = Math.max(1, Math.ceil(bytes / 1000))
   const showReply = !!replyTo && mode === 'message' && !blocked
   const canSend = mode === 'note' ? !!text.trim() : (!!text.trim() || files.length > 0) && !preparing
+
+  const replyBar = (<>{showReply && replyTo && (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border-l-[3px] border-primary-500 bg-white py-1.5 pl-2.5 pr-1.5 dark:bg-surface-900">
+              <CornerUpLeft size={15} className="shrink-0 text-primary-600 dark:text-primary-300" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-semibold text-primary-700 dark:text-primary-300">
+                  Ответ на сообщение {replyTo.direction === 'in' ? 'клиента' : replyTo.author?.id === user?.id ? '(ваше)' : replyTo.author ? `· ${replyTo.author.name}` : ''}
+                </div>
+                <div className="truncate text-[12.5px] text-surface-600 dark:text-surface-300">{quoteOf(replyTo)}</div>
+              </div>
+              <button type="button" onClick={onCancelReply} className="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-700" aria-label="Не отвечать на сообщение" title="Отменить ответ (Esc)">
+                <X size={15} />
+              </button>
+            </div>
+          )}</>)
+  const filesStrip = (<>{(files.length > 0 || preparing > 0) && mode === 'message' && (
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Прикреплённые файлы">
+              {files.map(f => (
+                <div key={f.id} className="relative shrink-0">
+                  {f.kind === 'image' && f.preview ? (
+                    <img src={f.preview} alt={f.file.name} className="h-16 w-16 rounded-lg border border-surface-200 object-cover dark:border-surface-600" />
+                  ) : (
+                    <div className="flex h-16 w-28 flex-col justify-center gap-0.5 rounded-lg border border-surface-200 bg-white px-2 dark:border-surface-600 dark:bg-surface-900" title={f.file.name}>
+                      {f.kind === 'video' ? <Film size={16} className="text-surface-500" /> : <FileText size={16} className="text-surface-500" />}
+                      <span className="truncate text-[11px] text-surface-700 dark:text-surface-200">{f.file.name}</span>
+                      <span className="text-[10px] text-surface-400">{(f.file.size / MB).toFixed(1).replace('.', ',')} МБ</span>
+                    </div>
+                  )}
+                  <button type="button" onClick={() => removeFile(f.id)}
+                    className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-surface-200 bg-white text-surface-600 shadow-sm hover:text-surface-900 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-300"
+                    aria-label={`Убрать файл ${f.file.name}`}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {preparing > 0 && (
+                <div className="flex h-16 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-surface-300 text-[11px] text-surface-500 dark:border-surface-600">
+                  Готовлю фото…
+                </div>
+              )}
+            </div>
+          )}</>)
+  const popovers = (<>{picker?.kind === 'templates' && (
+              <TemplatesPopover
+                items={templateItems}
+                total={(templates ?? []).length}
+                active={pickIndex}
+                onHover={setPickIndex}
+                onPick={insertTemplate}
+                onManage={() => { setPicker(null); setManageTemplates(true) }}
+                search={picker.source === 'button' ? pickerSearch : null}
+                onSearch={setPickerSearch}
+                onSearchKey={e => { pickerKey(e) }}
+                onClose={closePicker}
+              />
+            )}
+            {picker?.kind === 'mentions' && mentionItems.length > 0 && (
+              <div className="absolute bottom-full left-0 z-30 mb-2 w-[min(280px,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-surface-200 bg-white py-1 shadow-modal dark:border-surface-600 dark:bg-surface-800" role="listbox" aria-label="Упомянуть коллегу">
+                {mentionItems.map((p, i) => (
+                  <button key={p.id} type="button" role="option" aria-selected={i === pickIndex}
+                    onMouseDown={e => { e.preventDefault(); insertMention(p) }} onMouseEnter={() => setPickIndex(i)}
+                    className={clsx('flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]', i === pickIndex ? 'bg-surface-100 dark:bg-surface-700' : '')}>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-200">{p.name[0]}</span>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showEmoji && <EmojiPicker onPick={e => insertAtCaret(e)} onClose={() => setShowEmoji(false)} />}</>)
+  const textarea = (<textarea
+                ref={area}
+                rows={1}
+                value={text}
+                maxLength={MAX_CHARS}
+                onChange={e => onChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                onClick={e => recomputePicker(text, e.currentTarget.selectionStart ?? text.length)}
+                onPaste={e => {
+                  const pasted = Array.from(e.clipboardData?.files ?? [])
+                  if (!pasted.length) return
+                  e.preventDefault()
+                  if (mode === 'note') { toast.error('К заметке файл не прикрепить — переключитесь на «Ответ клиенту»'); return }
+                  void addFiles(pasted)
+                }}
+                onKeyDown={e => {
+                  if (pickerKey(e)) return
+                  if (e.key === 'Escape' && showReply) { e.preventDefault(); e.stopPropagation(); onCancelReply(); return }
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
+                }}
+                placeholder={mode === 'note'
+                  ? (roomy ? 'Заметка видна только команде · @ — упомянуть коллегу' : 'Заметка для команды')
+                  : files.length ? 'Подпись (необязательно)' : roomy ? 'Сообщение клиенту · «/» — шаблоны' : 'Сообщение…'}
+                className="max-h-40 min-h-[36px] min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug outline-none placeholder:text-surface-400"
+                aria-label={mode === 'note' ? 'Заметка для команды' : 'Сообщение клиенту'}
+              />)
+
+  if (phone) {
+    const hasContent = !!text.trim() || files.length > 0
+    const pickFiles = (e: React.ChangeEvent<HTMLInputElement>) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = '' }
+    return (
+      <div className="border-t border-surface-200 bg-white px-2 pt-2 dark:border-surface-700 dark:bg-surface-900" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+        <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickFiles} />
+        <input ref={galleryInput} type="file" multiple accept="image/*,video/mp4,video/quicktime" className="hidden" onChange={pickFiles} />
+        <input ref={pdfInput} type="file" multiple accept=".pdf,application/pdf" className="hidden" onChange={pickFiles} />
+        {readOnlyReason ? (
+          <div className="mb-1.5 flex items-start gap-1.5 px-1 text-[12.5px] leading-snug text-surface-600 dark:text-surface-300">
+            <Lock size={13} className="mt-0.5 shrink-0 text-surface-400" />
+            <span>{readOnlyReason}</span>
+          </div>
+        ) : mode === 'note' && (
+          <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12.5px] font-medium text-amber-700 dark:text-amber-300">
+            <StickyNote size={13} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate">Заметка для команды — клиент её не увидит</span>
+            <button type="button" onClick={() => setMode('message')} className="shrink-0 rounded-full px-2 py-1 text-surface-500 active:bg-surface-100 dark:active:bg-surface-800">
+              Ответ клиенту
+            </button>
+          </div>
+        )}
+        {blocked ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+            {blockedReason}
+            <div className="mt-2 flex gap-2">
+              <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary flex-1 justify-center !py-2 text-xs"><ExternalLink size={13} /> В Instagram</a>
+              <button type="button" onClick={() => setMode('note')} className="btn-secondary flex-1 justify-center !py-2 text-xs"><StickyNote size={13} /> Заметка</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {replyBar}
+            {filesStrip}
+            <div className="relative">
+              {popovers}
+              {plusOpen && (
+                <div ref={plusBox} className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-2xl border border-surface-200 bg-white py-1 shadow-modal dark:border-surface-600 dark:bg-surface-800" role="menu" aria-label="Ещё">
+                  {!readOnlyReason && (
+                    <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); setMode(mode === 'note' ? 'message' : 'note'); area.current?.focus() }}
+                      className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
+                      <StickyNote size={18} className="text-amber-600" /> {mode === 'note' ? 'Ответ клиенту' : 'Заметка для команды'}
+                    </button>
+                  )}
+                  {mode === 'message' && (
+                    <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); pdfInput.current?.click() }}
+                      className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
+                      <FileText size={18} className="text-surface-500" /> Документ PDF
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="flex items-end gap-2">
+                {mode === 'message' && !recording && (
+                  <button type="button" onClick={() => cameraInput.current?.click()}
+                    className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white active:bg-primary-700"
+                    aria-label="Снять фото" title="Снять фото">
+                    <Camera size={20} />
+                  </button>
+                )}
+                <div className={clsx('flex min-h-[44px] min-w-0 flex-1 items-end rounded-[22px] border pl-3.5 pr-1',
+                  mode === 'note' ? 'border-amber-300 bg-amber-50/50 dark:border-amber-500/40 dark:bg-amber-500/5'
+                    : recording ? 'border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/10'
+                      : 'border-surface-200 bg-surface-50 dark:border-surface-600 dark:bg-surface-800')}>
+                  {recording ? (
+                    <div className="flex min-h-[42px] min-w-0 flex-1 items-center gap-2 text-[15px] text-surface-800 dark:text-surface-100" aria-live="polite">
+                      <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-500" aria-hidden />
+                      <span className="tabular-nums">{clock}</span>
+                      <span className="min-w-0 truncate text-[13px] text-surface-400">‹ влево — отмена</span>
+                    </div>
+                  ) : textarea}
+                  {hasContent && !recording ? (
+                    <button type="button" onClick={submit} disabled={!canSend}
+                      className="mb-1.5 shrink-0 rounded-full px-2.5 py-1 text-[15px] font-semibold text-primary-600 disabled:opacity-40 dark:text-primary-300">
+                      Отправить
+                    </button>
+                  ) : (
+                    <div className="flex shrink-0 items-center pb-[3px]">
+                      {mode === 'message' && !recording ? (
+                        <>
+                          <button type="button" onClick={() => galleryInput.current?.click()}
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-surface-600 active:bg-surface-200 dark:text-surface-300 dark:active:bg-surface-700" aria-label="Фото и видео из галереи">
+                            <ImageIcon size={21} />
+                          </button>
+                          <button type="button" data-picker-toggle
+                            onClick={() => { setPlusOpen(false); setPickerSearch(''); setPicker(picker?.kind === 'templates' ? null : { kind: 'templates', query: '', source: 'button' }) }}
+                            className={clsx('flex h-9 w-9 items-center justify-center rounded-full active:bg-surface-200 dark:active:bg-surface-700', picker?.kind === 'templates' ? 'text-primary-600 dark:text-primary-300' : 'text-surface-600 dark:text-surface-300')}
+                            aria-label="Шаблоны быстрых ответов" aria-expanded={picker?.kind === 'templates'}>
+                            <Zap size={21} />
+                          </button>
+                        </>
+                      ) : null}
+                      {!recording ? (
+                        <button type="button" data-plus-toggle onClick={() => { setPicker(null); setPlusOpen(v => !v) }}
+                          className={clsx('flex h-9 w-9 items-center justify-center rounded-full active:bg-surface-200 dark:active:bg-surface-700', plusOpen ? 'text-primary-600 dark:text-primary-300' : 'text-surface-600 dark:text-surface-300')}
+                          aria-label="Ещё: заметка для команды, документ" aria-expanded={plusOpen}>
+                          <Plus size={22} />
+                        </button>
+                      ) : null}
+                      {mode === 'message' ? (
+                        <button type="button" onPointerDown={micDown} onPointerMove={micMove} onPointerUp={micUp} onPointerCancel={micUp}
+                          onContextMenu={e => e.preventDefault()} disabled={preparing > 0}
+                          className={clsx('direct-phone-bubble flex h-9 w-9 items-center justify-center rounded-full transition-transform',
+                            recording ? 'scale-125 bg-amber-500 text-white' : 'text-surface-600 active:bg-surface-200 dark:text-surface-300 dark:active:bg-surface-700')}
+                          aria-label="Голосовое: удерживайте, чтобы записать" title="Удерживайте, чтобы записать">
+                          <Mic size={21} />
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+        {manageTemplates && <TemplatesManager isTop={top} onClose={() => { setManageTemplates(false); area.current?.focus() }} />}
+      </div>
+    )
+  }
 
   return (
     <div className="border-t border-surface-200 bg-surface-50 p-2.5 dark:border-surface-700 dark:bg-surface-800">
@@ -460,77 +733,12 @@ const Composer = forwardRef<ComposerHandle, {
         </div>
       ) : (
         <>
-          {showReply && replyTo && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border-l-[3px] border-primary-500 bg-white py-1.5 pl-2.5 pr-1.5 dark:bg-surface-900">
-              <CornerUpLeft size={15} className="shrink-0 text-primary-600 dark:text-primary-300" />
-              <div className="min-w-0 flex-1">
-                <div className="text-[11.5px] font-semibold text-primary-700 dark:text-primary-300">
-                  Ответ на сообщение {replyTo.direction === 'in' ? 'клиента' : replyTo.author?.id === user?.id ? '(ваше)' : replyTo.author ? `· ${replyTo.author.name}` : ''}
-                </div>
-                <div className="truncate text-[12.5px] text-surface-600 dark:text-surface-300">{quoteOf(replyTo)}</div>
-              </div>
-              <button type="button" onClick={onCancelReply} className="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-700" aria-label="Не отвечать на сообщение" title="Отменить ответ (Esc)">
-                <X size={15} />
-              </button>
-            </div>
-          )}
+          {replyBar}
 
-          {(files.length > 0 || preparing > 0) && mode === 'message' && (
-            <div className="mb-2 flex gap-2 overflow-x-auto pb-1" aria-label="Прикреплённые файлы">
-              {files.map(f => (
-                <div key={f.id} className="relative shrink-0">
-                  {f.kind === 'image' && f.preview ? (
-                    <img src={f.preview} alt={f.file.name} className="h-16 w-16 rounded-lg border border-surface-200 object-cover dark:border-surface-600" />
-                  ) : (
-                    <div className="flex h-16 w-28 flex-col justify-center gap-0.5 rounded-lg border border-surface-200 bg-white px-2 dark:border-surface-600 dark:bg-surface-900" title={f.file.name}>
-                      {f.kind === 'video' ? <Film size={16} className="text-surface-500" /> : <FileText size={16} className="text-surface-500" />}
-                      <span className="truncate text-[11px] text-surface-700 dark:text-surface-200">{f.file.name}</span>
-                      <span className="text-[10px] text-surface-400">{(f.file.size / MB).toFixed(1).replace('.', ',')} МБ</span>
-                    </div>
-                  )}
-                  <button type="button" onClick={() => removeFile(f.id)}
-                    className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-surface-200 bg-white text-surface-600 shadow-sm hover:text-surface-900 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-300"
-                    aria-label={`Убрать файл ${f.file.name}`}>
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-              {preparing > 0 && (
-                <div className="flex h-16 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-surface-300 text-[11px] text-surface-500 dark:border-surface-600">
-                  Готовлю фото…
-                </div>
-              )}
-            </div>
-          )}
+          {filesStrip}
 
           <div className="relative">
-            {picker?.kind === 'templates' && (
-              <TemplatesPopover
-                items={templateItems}
-                total={(templates ?? []).length}
-                active={pickIndex}
-                onHover={setPickIndex}
-                onPick={insertTemplate}
-                onManage={() => { setPicker(null); setManageTemplates(true) }}
-                search={picker.source === 'button' ? pickerSearch : null}
-                onSearch={setPickerSearch}
-                onSearchKey={e => { pickerKey(e) }}
-                onClose={closePicker}
-              />
-            )}
-            {picker?.kind === 'mentions' && mentionItems.length > 0 && (
-              <div className="absolute bottom-full left-0 z-30 mb-2 w-[min(280px,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-surface-200 bg-white py-1 shadow-modal dark:border-surface-600 dark:bg-surface-800" role="listbox" aria-label="Упомянуть коллегу">
-                {mentionItems.map((p, i) => (
-                  <button key={p.id} type="button" role="option" aria-selected={i === pickIndex}
-                    onMouseDown={e => { e.preventDefault(); insertMention(p) }} onMouseEnter={() => setPickIndex(i)}
-                    className={clsx('flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]', i === pickIndex ? 'bg-surface-100 dark:bg-surface-700' : '')}>
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-200">{p.name[0]}</span>
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {showEmoji && <EmojiPicker onPick={e => insertAtCaret(e)} onClose={() => setShowEmoji(false)} />}
+            {popovers}
 
             <div className={clsx('flex items-end gap-0.5 rounded-xl border bg-white px-1.5 py-1.5 dark:bg-surface-900',
               mode === 'note' ? 'border-amber-300 dark:border-amber-500/40' : 'border-surface-200 dark:border-surface-600')}>
@@ -555,31 +763,7 @@ const Composer = forwardRef<ComposerHandle, {
                 aria-label="Эмодзи" aria-expanded={showEmoji}>
                 <Smile size={18} />
               </button>
-              <textarea
-                ref={area}
-                rows={1}
-                value={text}
-                maxLength={MAX_CHARS}
-                onChange={e => onChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
-                onClick={e => recomputePicker(text, e.currentTarget.selectionStart ?? text.length)}
-                onPaste={e => {
-                  const pasted = Array.from(e.clipboardData?.files ?? [])
-                  if (!pasted.length) return
-                  e.preventDefault()
-                  if (mode === 'note') { toast.error('К заметке файл не прикрепить — переключитесь на «Ответ клиенту»'); return }
-                  void addFiles(pasted)
-                }}
-                onKeyDown={e => {
-                  if (pickerKey(e)) return
-                  if (e.key === 'Escape' && showReply) { e.preventDefault(); e.stopPropagation(); onCancelReply(); return }
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
-                }}
-                placeholder={mode === 'note'
-                  ? (roomy ? 'Заметка видна только команде · @ — упомянуть коллегу' : 'Заметка для команды')
-                  : files.length ? 'Подпись (необязательно)' : roomy ? 'Сообщение клиенту · «/» — шаблоны' : 'Сообщение…'}
-                className="max-h-40 min-h-[36px] min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug outline-none placeholder:text-surface-400"
-                aria-label={mode === 'note' ? 'Заметка для команды' : 'Сообщение клиенту'}
-              />
+              {textarea}
               {mode === 'message' && !text.trim() && !files.length ? (
                 <button type="button" onClick={startRecording} disabled={preparing > 0}
                   className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 disabled:opacity-50 dark:hover:bg-surface-700" aria-label="Записать голосовое" title="Записать голосовое">

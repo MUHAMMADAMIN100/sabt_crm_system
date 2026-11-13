@@ -1161,7 +1161,25 @@ aside {
    уходит под панель браузера. Браузеры без dvh остаются на 100vh (h-screen). */
 .app-shell.direct-shell {
   height: 100dvh;
+  /* С клавиатурой — высота видимой части экрана (useKeyboardViewport). */
+  height: var(--direct-vh, 100dvh);
 }
+
+/* Телефонный чат «Директа» (13.11.2026): без выделения текста и системного
+   меню при долгом нажатии на пузырь — там своё меню; без двойного зума. */
+.direct-phone-bubble {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.direct-feed-phone { touch-action: pan-y; overflow-x: hidden; }
+/* Свайп ленты влево показывает время: строка сдвигается, время выезжает справа. */
+.direct-feed-phone [data-shift] {
+  transform: translateX(calc(-1 * var(--reveal, 0px)));
+  transition: transform 0.25s ease;
+}
+.direct-feed-phone.revealing [data-shift] { transition: none; }
 
 /* «Вы были здесь» (08.11.2026): вернулись «Назад» из карточки — строка, из
    которой ушли, на секунду подсвечивается. */

@@ -59,17 +59,22 @@ export function FloatingMenu({ anchor, onClose, children, width = 260, label }: 
   useEffect(() => {
     const onDown = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose() } }
-    const onScroll = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
+    // Закрываемся, когда человек сам листает (палец, колёсико), а не от
+    // прокрутки, которую делает страница: лента докручивается, пока грузятся
+    // фото, — меню исчезало сразу после нажатия.
+    const onUserScroll = (e: Event) => { if (box.current && !box.current.contains(e.target as Node)) onClose() }
     const t = setTimeout(() => {
       document.addEventListener('pointerdown', onDown)
-      document.addEventListener('scroll', onScroll, true)
+      document.addEventListener('wheel', onUserScroll, { capture: true, passive: true })
+      document.addEventListener('touchmove', onUserScroll, { capture: true, passive: true })
     }, 0)
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('resize', onClose)
     return () => {
       clearTimeout(t)
       document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('scroll', onScroll, true)
+      document.removeEventListener('wheel', onUserScroll, { capture: true })
+      document.removeEventListener('touchmove', onUserScroll, { capture: true })
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('resize', onClose)
     }

@@ -11,6 +11,7 @@ import ChatPane from './ChatPane'
 import AnalyticsView from './AnalyticsView'
 import ConnectionPanel from './ConnectionPanel'
 import DirectModal from './DirectModal'
+import { useKeyboardViewport } from './useKeyboardViewport'
 
 type Tab = 'chats' | 'analytics'
 
@@ -45,6 +46,7 @@ export default function DirectPage() {
   const searchRef = useRef<HTMLInputElement | null>(null)
   const order = useRef<string[]>([])
   const onOrder = useCallback((ids: string[]) => { order.current = ids }, [])
+  useKeyboardViewport()
 
   const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, refetchInterval: 120_000 })
   const connected = status?.connected ?? true

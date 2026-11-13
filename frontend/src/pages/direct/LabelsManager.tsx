@@ -45,11 +45,11 @@ export default function LabelsManager({ onClose }: { onClose: () => void }) {
   return (
     <DirectModal title="Метки чатов" onClose={onClose} width={480}>
       <div className="space-y-4 p-4">
-        <form className="space-y-2" onSubmit={e => { e.preventDefault(); if (name.trim()) create.mutate({ name: name.trim(), color }) }}>
+        <form className="space-y-2" onSubmit={e => { e.preventDefault(); if (name.trim() && !create.isPending) create.mutate({ name: name.trim(), color }) }}>
           <label className="label" htmlFor="new-label">Новая метка</label>
           <div className="flex gap-2">
             <input id="new-label" className="input min-w-0 flex-1" maxLength={40} value={name} onChange={e => setName(e.target.value)} placeholder="Например: Горячий" />
-            <button type="submit" className="btn-primary shrink-0" disabled={!name.trim()}><Plus size={15} /> Добавить</button>
+            <button type="submit" className="btn-primary shrink-0" disabled={!name.trim() || create.isPending}><Plus size={15} /> Добавить</button>
           </div>
           <ColorRow value={color} onChange={setColor} />
         </form>

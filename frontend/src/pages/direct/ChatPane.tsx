@@ -25,6 +25,9 @@ import Lightbox, { type LightboxItem } from './Lightbox'
 import { remindLabel, useMyReminders } from './chatActions'
 import { labelColor } from './labelColors'
 import { useMedia } from './useMedia'
+import { useFeedGestures } from './useFeedGestures'
+import MessageSheet from './MessageSheet'
+import { canQuote } from './MessageItem'
 
 /** Сообщение, которое уже видно в ленте, но сервер его ещё не подтвердил. */
 type Pending = {
@@ -55,6 +58,28 @@ const fileKind = (f: File): 'image' | 'video' | 'file' => {
 
 const PANEL_KEY = 'direct-panel'
 
+/** Подряд идущие сообщения одной стороны (до 5 минут между ними) — одна группа. */
+function sameGroup(a: DirectMessage | undefined, b: DirectMessage | undefined, dividerId: string | null): boolean {
+  if (!a || !b || a.direction !== b.direction || (a.direction !== 'in' && a.direction !== 'out')) return false
+  if (b.id === dividerId) return false
+  if (a.direction === 'out' && (a.fromApp !== b.fromApp || a.author?.id !== b.author?.id)) return false
+  if (dayKey(a.sentAt) !== dayKey(b.sentAt)) return false
+  return Math.abs(new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()) < 5 * 60_000
+}
+
+function groupOf(items: DirectMessage[], i: number, dividerId: string | null) {
+  return { first: !sameGroup(items[i - 1], items[i], dividerId), last: !sameGroup(items[i], items[i + 1], dividerId) }
+}
+
+/** «Просмотрено», «Отправлено · Мадина» — под последним нашим сообщением. */
+function statusCaption(m: DirectMessage, meId: string | undefined): string | null {
+  if (m.status === 'failed') return null
+  const state = m.status === 'read' ? 'Просмотрено' : m.status === 'sent' ? 'Отправлено' : m.status === 'sending' ? 'Отправляется…' : null
+  if (!state) return null
+  const who = m.fromApp ? 'из приложения' : m.author && m.author.id !== meId ? m.author.name.split(' ')[0] : null
+  return who ? `${state} · ${who}` : state
+}
+
 /** Первое непрочитанное: столько-то последних сообщений клиента. */
 function firstUnreadOf(messages: DirectMessage[], unread: number): string | null {
   if (unread <= 0) return null
@@ -81,6 +106,11 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   const user = useAuthStore(s => s.user)
   const live = useSocketConnected()
   const wide = useMedia('(min-width: 1280px)')
+  // Телефон — чат как в Instagram: группы, жесты, меню долгим нажатием (13.11.2026).
+  const phone = useMedia('(max-width: 639px)')
+  const [sheet, setSheet] = useState<{ m: DirectMessage; rect: DOMRect } | null>(null)
+  /** Можно ли сейчас отвечать и ставить ❤️ — для жестов (они живут вне перерисовок). */
+  const actRef = useRef(false)
   const isTop = user?.role === 'admin' || user?.role === 'founder'
   // Кто заводит лиды — как на сервере (clients.create): руководство и
   // менеджеры продаж по роли, остальные — по личному доступу; запрет сильнее.
@@ -207,6 +237,32 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
     return true
   }, [])
   useEffect(() => () => clearTimeout(highlightTimer.current), [])
+
+  // Клавиатура открылась (лента стала ниже) — последнее сообщение остаётся на виду.
+  const loaded = !!conversation.data
+  useEffect(() => {
+    const el = scroller.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let last = el.clientHeight
+    const ro = new ResizeObserver(() => {
+      const h = el.clientHeight
+      if (h < last && nearBottom.current) el.scrollTop = el.scrollHeight
+      last = h
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loaded])
+
+  const findMessage = (id: string) => messagesRef.current.find(x => x.id === id)
+  useFeedGestures(scroller, phone && loaded, {
+    canReply: id => { const m = findMessage(id); return !!m && actRef.current && canQuote(m) },
+    onReply: id => { const m = findMessage(id); if (m) setReplyTo(m) },
+    onLongPress: (id, rect) => { const m = findMessage(id); if (m && !m.deleted) setSheet({ m, rect }) },
+    onDoubleTap: id => {
+      const m = findMessage(id)
+      if (m && actRef.current && m.direction === 'in' && !m.deleted) react.mutate({ m, on: !m.ourReaction })
+    },
+  })
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -446,6 +502,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
         ? 'Прошло больше 24 часов после последнего сообщения клиента. Ответьте из приложения Instagram — ответ всё равно появится здесь.'
         : null
   const canAct = canReplyHere && !blockedReason
+  actRef.current = canAct
   const myReminder = myReminders?.find(r => r.conversationId === c.id) ?? null
 
   const prefill = {
@@ -487,6 +544,12 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
     }
   })
   const feedItems = [...messages, ...pendingMessages]
+  // Под последним нашим сообщением на телефоне — «Просмотрено» / «Отправлено».
+  let lastOutId: string | null = null
+  for (let k = feedItems.length - 1; k >= 0; k--) {
+    if (feedItems[k].direction === 'in') break
+    if (feedItems[k].direction === 'out') { lastOutId = feedItems[k].id; break }
+  }
 
   const sendFiles = (files: File[], text: string) => {
     const reply = replyTo
@@ -610,7 +673,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
           )}
           {/* «Последним ответил» — только если это не тот, кто ведёт: иначе повтор. */}
           {c.lastReply && (!c.lastReply.by || c.lastReply.by.id !== c.assignee?.id) && (
-            <span>Последним ответил{c.lastReply.by ? `: ${c.lastReply.by.id === user?.id ? 'вы' : c.lastReply.by.name}` : ' из приложения Instagram'}</span>
+            <span className="max-sm:hidden">Последним ответил{c.lastReply.by ? `: ${c.lastReply.by.id === user?.id ? 'вы' : c.lastReply.by.name}` : ' из приложения Instagram'}</span>
           )}
           {myReminder && (
             <button type="button" onClick={e => setMenu(anchorOf(e.currentTarget))}
@@ -653,7 +716,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
               // Долистали до верха — подгружаем раньше сами.
               if (el.scrollTop < 60 && feed.hasNextPage && !feed.isFetchingNextPage) loadOlder()
             }}
-            className="h-full space-y-2 overflow-y-auto bg-white px-3 py-3 dark:bg-surface-900 sm:px-5"
+            className={clsx('h-full overflow-y-auto bg-white dark:bg-surface-900', phone ? 'direct-feed-phone px-3 pb-2 pt-1' : 'space-y-2 px-3 py-3 sm:px-5')}
           >
             {feed.hasNextPage && (
               <div className="flex justify-center pb-1">
@@ -694,6 +757,10 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
                   onOpenMedia={openMedia}
                   highlighted={highlight === m.id}
                   mentionNames={mentionNames}
+                  phone={phone}
+                  group={phone ? groupOf(feedItems, i, dividerId) : undefined}
+                  avatar={phone ? <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={28} /> : undefined}
+                  caption={phone && m.id === lastOutId ? statusCaption(m, user?.id) : null}
                 />
               </Fragment>
             ))}
@@ -747,6 +814,19 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
       )}
 
       {menu && <ChatMenu c={c} anchor={menu} onClose={() => setMenu(null)} onMarkedUnread={onBack} onOpenCard={wide ? undefined : () => setDrawer(true)} />}
+      {sheet && (
+        <MessageSheet m={sheet.m} rect={sheet.rect}
+          canHeart={canAct && sheet.m.direction === 'in' && !sheet.m.id.startsWith('pending:')}
+          canQuote={canAct && canQuote(sheet.m)}
+          canDelete={false}
+          onHeart={() => react.mutate({ m: sheet.m, on: !sheet.m.ourReaction })}
+          onReply={() => setReplyTo(sheet.m)}
+          onCopy={() => {
+            navigator.clipboard?.writeText(sheet.m.text || '').then(() => toast.success('Текст скопирован'), () => toast.error('Не удалось скопировать'))
+          }}
+          onDelete={() => undefined}
+          onClose={() => setSheet(null)} />
+      )}
       {lightbox && <Lightbox items={lightbox.items} index={lightbox.index} onIndex={i => setLightbox(l => (l ? { ...l, index: i } : l))} onClose={() => setLightbox(null)} />}
 
       {showLead && (

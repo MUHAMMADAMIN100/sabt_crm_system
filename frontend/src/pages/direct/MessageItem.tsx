@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import {
@@ -95,6 +95,7 @@ export const canQuote = (m: DirectMessage) =>
 function MessageItem({
   m, meId, canDeleteNote, canRetry = true, onRetry, onDismiss, onDeleteNote, retrying,
   canAct = false, onReply, onReact, onJump, onOpenMedia, highlighted, mentionNames,
+  phone = false, group, avatar, caption,
 }: {
   m: DirectMessage
   meId?: string
@@ -117,6 +118,14 @@ function MessageItem({
   highlighted?: boolean
   /** Имена коллег — подсветка @упоминаний в заметках. */
   mentionNames?: string[]
+  /** Телефон: вид как в Instagram — группы, время по свайпу, жесты (useFeedGestures). */
+  phone?: boolean
+  /** Место в группе подряд идущих сообщений одной стороны. */
+  group?: { first: boolean; last: boolean }
+  /** Аватар клиента — у последнего сообщения его группы. */
+  avatar?: ReactNode
+  /** Подпись под сообщением: «Просмотрено», кто написал. */
+  caption?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -191,6 +200,10 @@ function MessageItem({
 
   const mine = m.direction === 'out'
   const failed = m.status === 'failed'
+  if (phone) {
+    return <PhoneMessage m={m} meId={meId} mine={mine} failed={failed} group={group ?? { first: true, last: true }} avatar={avatar}
+      caption={caption} highlighted={highlighted} onJump={onJump} onOpenMedia={onOpenMedia} failedRow={failedRow} />
+  }
   const quote = canQuote(m) && canAct && !!onReply
   const heart = m.direction === 'in' && !m.deleted && canAct && !!onReact && !m.id.startsWith('pending:')
   const copy = !!m.text && !m.deleted
@@ -276,6 +289,93 @@ function MessageItem({
         )}
       </div>
       {!mine && actions}
+    </div>
+  )
+}
+
+/**
+ * Сообщение на телефоне — как в Instagram: подряд идущие слиты в группу
+ * (скруглённые пузыри, у стыков углы мягче), аватар клиента у последнего,
+ * время выезжает свайпом ленты влево, под последним нашим — «Просмотрено».
+ * Жесты (ответ свайпом, меню долгим нажатием, ❤️ двойным тапом) — в
+ * useFeedGestures по атрибутам data-mid / data-swipe / data-bubble.
+ */
+function PhoneMessage({ m, meId, mine, failed, group, avatar, caption, highlighted, onJump, onOpenMedia, failedRow }: {
+  m: DirectMessage
+  meId?: string
+  mine: boolean
+  failed: boolean
+  group: { first: boolean; last: boolean }
+  avatar?: ReactNode
+  caption?: string | null
+  highlighted?: boolean
+  onJump?: (messageId: string) => void
+  onOpenMedia?: (attachmentId: string) => void
+  failedRow: (text: string, retryable: boolean) => ReactNode
+}) {
+  const reactions = [m.reaction, m.ourReaction].filter(Boolean) as string[]
+  const picturesOnly = !m.deleted && !m.text && !m.replyTo && m.attachments.length > 0 && m.attachments.every(isPictureAttachment)
+  // Подпись автора — только если писал не я (коллега или из приложения), как в Instagram.
+  const who = mine ? (m.fromApp ? 'из приложения' : m.author && m.author.id !== meId ? m.author.name.split(' ')[0] : null) : null
+  const replyWho = m.replyTo
+    ? m.replyTo.direction === 'in' ? 'Клиент' : m.replyTo.direction === 'out' ? (m.replyTo.author || 'Агентство') : 'Сообщение'
+    : ''
+  const corners = mine
+    ? clsx(!group.first && 'rounded-tr-[6px]', !group.last && 'rounded-br-[6px]')
+    : clsx(!group.first && 'rounded-tl-[6px]', !group.last && 'rounded-bl-[6px]')
+
+  return (
+    <div data-mid={m.id} className={clsx(group.first ? 'mt-3' : 'mt-0.5', reactions.length > 0 && 'mb-3')}>
+      <div data-shift className={clsx('relative flex items-end gap-1.5', mine ? 'justify-end' : 'justify-start')}>
+        {!mine && <div className="w-7 shrink-0">{group.last ? avatar : null}</div>}
+        <div data-swipe className="relative max-w-[78%]">
+          <CornerUpLeft size={18} aria-hidden style={{ opacity: 'var(--pull, 0)' }}
+            className="pointer-events-none absolute -left-8 top-1/2 -translate-y-1/2 text-surface-400" />
+          <div data-bubble
+            className={clsx('direct-phone-bubble relative transition-shadow',
+              picturesOnly ? 'overflow-hidden rounded-[18px]' : clsx('rounded-[20px] px-3.5 py-2 text-[15px] leading-snug', corners,
+                mine ? failed
+                  ? 'border border-red-300 bg-red-50 text-surface-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-surface-100'
+                  : 'bg-primary-600 text-white'
+                  : 'bg-surface-100 text-surface-900 dark:bg-surface-700 dark:text-surface-50'),
+              highlighted && 'ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-surface-900')}>
+            {m.replyTo && !m.deleted && (
+              <button type="button" disabled={!m.replyTo.id || !onJump}
+                onClick={e => { e.stopPropagation(); if (m.replyTo?.id) onJump?.(m.replyTo.id) }}
+                className={clsx('mb-1.5 block w-full min-w-[120px] rounded-xl border-l-[3px] px-2 py-1 text-left text-[12.5px] leading-snug',
+                  mine && !failed ? 'border-white/70 bg-white/15' : 'border-primary-500 bg-white/70 dark:bg-surface-800/70')}>
+                <span className="block font-semibold opacity-90">{replyWho}</span>
+                <span className="line-clamp-2 opacity-80">{m.replyTo.preview}</span>
+              </button>
+            )}
+            {m.deleted ? (
+              <p className="italic opacity-70">Клиент удалил сообщение</p>
+            ) : (
+              <div className={clsx(!picturesOnly && 'space-y-1.5')}>
+                {m.attachments.map(a => <Attachment key={a.id} a={a} mine={mine && !failed} onOpen={onOpenMedia} />)}
+                {m.text && <p className="whitespace-pre-wrap break-words"><RichText text={m.text} onLight={mine && !failed} /></p>}
+              </div>
+            )}
+          </div>
+          {reactions.length > 0 && (
+            <span className={clsx('absolute -bottom-3 rounded-full border border-surface-200 bg-white px-1 text-[13px] leading-5 shadow-sm dark:border-surface-600 dark:bg-surface-800', mine ? 'left-2' : 'right-2')}>
+              {reactions.join('')}
+            </span>
+          )}
+        </div>
+        {/* Время — за правым краем; свайп ленты влево вытягивает его. */}
+        <span className="pointer-events-none absolute top-1/2 w-14 -translate-y-1/2 text-left text-[11px] tabular-nums text-surface-400" style={{ right: -72 }}>
+          {clockTime(m.sentAt)}
+        </span>
+      </div>
+      {mine && m.status === 'sending' && !caption && (
+        <p className="mt-0.5 flex items-center justify-end gap-1 pr-1 text-[11px] text-surface-400"><Clock size={11} /> отправляется</p>
+      )}
+      {caption && <p className={clsx('mt-1 text-[11px] text-surface-400', mine ? 'pr-1 text-right' : 'pl-9')}>{caption}</p>}
+      {mine && who && !caption && group.last && !failed && m.status !== 'sending' && (
+        <p className="mt-0.5 pr-1 text-right text-[11px] text-surface-400">{who}</p>
+      )}
+      {failed && failedRow(`Не доставлено: ${m.errorText || FAILURE_TEXT[m.error || ''] || FAILURE_TEXT.REJECTED}`, m.error !== 'WINDOW_CLOSED' && m.error !== 'UNAVAILABLE')}
     </div>
   )
 }

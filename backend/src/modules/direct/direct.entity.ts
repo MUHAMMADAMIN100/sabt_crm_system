@@ -298,8 +298,11 @@ export class DirectReply {
   seconds: number;
 }
 
-/** Метка чата («горячий», «SMM», «сайт»…). Справочник ведёт руководство. */
+/** Метка чата («горячий», «SMM», «сайт»…). Справочник ведёт руководство.
+ *  Уникальность без учёта регистра — индекс по lower(name) из миграции
+ *  1829000000000 (synchronize его не трогает). */
 @Entity('direct_labels')
+@Index('UQ_direct_labels_name_ci', { synchronize: false })
 export class DirectLabel {
   @PrimaryGeneratedColumn('uuid')
   id: string;
