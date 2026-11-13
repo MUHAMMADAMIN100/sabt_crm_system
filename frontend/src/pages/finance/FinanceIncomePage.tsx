@@ -7,6 +7,7 @@ import FinIcon, { CatIcon } from './FinIcon';
 import BreakdownHover from './BreakdownHover';
 import MonthNav from './MonthNav';
 import { keepMonth, FinLoading, FinLoadError } from './FinKit';
+import { IncomeLineChart } from './ExpenseLineChart';
 import { financeApi } from '@/services/api.service';
 
 export default function FinanceIncomePage() {
@@ -19,7 +20,11 @@ export default function FinanceIncomePage() {
     queryFn: () => financeApi.incomeDirections(ym),
     ...keepMonth,
   });
-  const prefetch = (m: string) => qc.prefetchQuery({ queryKey: ['finance', 'income-directions', m], queryFn: () => financeApi.incomeDirections(m) });
+  // Соседний месяц заранее — карточки и график.
+  const prefetch = (m: string) => {
+    qc.prefetchQuery({ queryKey: ['finance', 'income-directions', m], queryFn: () => financeApi.incomeDirections(m) });
+    qc.prefetchQuery({ queryKey: ['finance', 'incomeChart', m], queryFn: () => financeApi.incomeChart(m) });
+  };
 
   return (
     <div className={'fin-root' + (isPlaceholderData ? ' fin-stale' : '')}>
@@ -58,6 +63,9 @@ export default function FinanceIncomePage() {
       <p className="mini muted" style={{ marginTop: 14 }}>
         {monthLabel(ym, true)} — суммы считаются по доходным операциям выбранного месяца.
       </p>
+
+      {/* График — как на «Расходе» (13.11.2026); грузится вместе с карточками. */}
+      {!isError && <IncomeLineChart ym={ym} />}
     </div>
   );
 }

@@ -362,6 +362,51 @@ describe('FinanceService correctness', () => {
     }
   });
 
+  it('income chart: past — received, current — received + waiting, future — plan by the calendar rules', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-13T07:00:00Z'));
+    try {
+      const smm = {
+        id: 'p-smm', name: 'Chrono', direction: 'smm', tariff: 5_000, contractDate: '2026-06-05',
+        cycleAnchor: null, archived: false, status: 'active', retentionMonths: null,
+      };
+      const dev = {
+        id: 'p-dev', name: 'Сайт', direction: 'development', tariff: 30_000, contractDate: '2026-10-01',
+        cycleAnchor: null, archived: false, status: 'active', retentionMonths: null,
+      };
+      const paused = { ...smm, id: 'p-pause', name: 'Пауза', status: 'paused' };
+      jest.spyOn(service as any, 'maps').mockResolvedValue({
+        ...emptyMaps, projects: [smm, dev, paused],
+        proj: new Map<string, any>([[smm.id, smm], [dev.id, dev], [paused.id, paused]]),
+      });
+      txRepo.find.mockResolvedValue([
+        transaction({ type: FinanceTxType.INCOME, amount: 5_000, date: '2026-10-05', projectId: 'p-smm' }),
+        transaction({ type: FinanceTxType.INCOME, amount: 10_000, date: '2026-11-02', projectId: 'p-dev' }),
+        // Отменённая не считается.
+        transaction({ type: FinanceTxType.INCOME, amount: 99_000, date: '2026-11-03', projectId: 'p-dev', status: FinanceTxStatus.CANCELLED }),
+        // Будущая дата — ещё не пришла, но ждём.
+        transaction({ type: FinanceTxType.INCOME, amount: 7_000, date: '2026-11-25', projectId: 'p-dev' }),
+      ]);
+      plannedPaymentRepo.find.mockResolvedValue([
+        { id: 'pp1', projectId: 'p-dev', ym: '2026-12', partNo: 2, status: 'expected', dueDate: '2026-12-10', amount: 13_000, receivedTxId: null },
+      ]);
+
+      const res = await service.incomeChart('2026-11');
+      const row = (ym: string) => res.rows.find((r: any) => r.ym === ym)!;
+
+      expect(res.from).toBe('2026-10'); // раньше первого дохода CRM не начинаем
+      expect(res.rows).toHaveLength(12);
+      expect(row('2026-10')).toMatchObject({ kind: 'fact', fact: { smm: 5_000, development: 0 }, left: { smm: 0 } });
+      // Ноябрь: разработка пришла 10 000 и ждём 7 000; SMM — прогноз по тарифу (срок 5-го прошёл).
+      expect(row('2026-11')).toMatchObject({
+        kind: 'current', fact: { smm: 0, development: 10_000 }, left: { smm: 5_000, development: 7_000 },
+      });
+      // Декабрь: плановая оплата разработки и тариф SMM; проект на паузе не прогнозируем.
+      expect(row('2026-12')).toMatchObject({ kind: 'plan', fact: { smm: 0 }, left: { smm: 5_000, development: 13_000, design: 0, maintenance: 0 } });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('uses salaryHistory instead of a legacy snapshot amount in a closed payroll row', async () => {
     employeeRepo.find.mockResolvedValue([{
       id: 'employee-1', name: 'Сотрудник', salary: 5_000,

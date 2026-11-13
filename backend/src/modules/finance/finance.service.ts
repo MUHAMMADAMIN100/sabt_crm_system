@@ -37,7 +37,7 @@ import {
   ReportBank, ReportInstallment, ReportSubscription, ReportAsset, ReportActivity,
 } from './finance-report';
 import { TelegramService } from '../telegram/telegram.service';
-import { paymentItems as smmPaymentItems } from '../smm-control/smm-payments.logic';
+import { calendarPays, FinPlan, FinTx, paymentItems as smmPaymentItems } from '../smm-control/smm-payments.logic';
 import {
   isEarningFinanceProject as isEarning,
   isPostedFinanceTransaction,
@@ -2693,7 +2693,88 @@ export class FinanceService implements OnModuleInit {
     return { from, months: count, current: cur, rows };
   }
 
-  /** Первый месяц CRM с расходами (с июня 2026 — до него архив Notion). */
+  /** График «Дохода» (13.11.2026, как у «Расхода»): линия на каждое
+   *  направление. Прошлые месяцы — сколько пришло; текущий — пришло и сколько
+   *  ещё ждём; будущие — план по правилам календаря «Планирования»
+   *  (calendarPays: плановые оплаты, у SMM и обслуживания без плана — тариф).
+   *  12 месяцев вокруг выбранного, не раньше первого месяца CRM. */
+  async incomeChart(ymRaw?: string, role?: string) {
+    const [m, txRaw, plannedRaw] = await Promise.all([
+      this.maps(),
+      this.txRepo.find({ where: { type: FinanceTxType.INCOME } as any }),
+      this.ppRepo.find(),
+    ]);
+    // Проведённые, включая датированные будущим: «пришло» — по сегодня, как
+    // на карточках; будущие — в «ждём» через календарь.
+    const postedTx = this.scopeIncomeTx(this.posted(txRaw), m, role);
+    const incomeTx = this.active(postedTx);
+    const planned = this.scopePlanned(plannedRaw, m, role);
+    const cur = currentYm();
+    const today = todayISO();
+    const ym = YM_RE.test(ymRaw || '') ? ymRaw! : cur;
+    const crmStart = this.crmFirstYm(incomeTx) ?? cur;
+    let from = shiftYm(ym, -5);
+    if (from < crmStart) from = crmStart;
+    const count = 12;
+    const last = shiftYm(from, count - 1);
+    const dirs = ['smm', 'development', 'design', 'maintenance'];
+    const zero = (): Record<string, number> => Object.fromEntries(dirs.map(d => [d, 0]));
+    const fact = new Map<string, Record<string, number>>();
+    const left = new Map<string, Record<string, number>>();
+    const add = (map: Map<string, Record<string, number>>, key: string, dir: string, amount: number) => {
+      const row = map.get(key) ?? zero();
+      row[dir] = r2(row[dir] + amount);
+      map.set(key, row);
+    };
+
+    // Пришло — те же операции, что «получено» на карточках направлений.
+    for (const t of incomeTx) {
+      const tym = ymOf(String(t.date));
+      const dir = this.directionOf(t, m);
+      if (tym < from || tym > last || !dir || !dirs.includes(dir)) continue;
+      add(fact, tym, dir, Number(t.amount) || 0);
+    }
+
+    // Ждём — ещё не полученные оплаты текущего и будущих месяцев по дате в
+    // календаре: плановые, прогноз по тарифу и операции с будущей датой.
+    if (last >= cur) {
+      const plans: FinPlan[] = planned.filter(p => p.projectId).map(p => ({
+        id: p.id, projectId: p.projectId!, ym: p.ym, partNo: Number(p.partNo) || 1, status: p.status,
+        dueDate: p.dueDate ? String(p.dueDate).slice(0, 10) : null, amount: Number(p.amount) || 0,
+        paidAt: null, receivedTxId: p.receivedTxId ?? null,
+      }));
+      const txs: FinTx[] = postedTx.filter(t => t.projectId).map(t => ({
+        id: t.id, projectId: t.projectId!, date: String(t.date).slice(0, 10), amount: Number(t.amount) || 0,
+        plain: !t.employeeId && !t.subscriptionId && !t.debtId,
+      }));
+      const winTo = monthRange(last).to;
+      const projects = this.scopeProjects(m.projects.filter(p => dirs.includes(p.direction) && isEarning(p)), role);
+      for (const p of projects) {
+        const client = {
+          id: p.id, name: p.name, direction: p.direction, tariff: Number(p.tariff) || 0,
+          contractDate: p.contractDate ? String(p.contractDate).slice(0, 10) : null,
+          cycleAnchor: p.cycleAnchor ? String(p.cycleAnchor).slice(0, 10) : null,
+          archived: !!p.archived, status: p.status ?? null, retentionMonths: p.retentionMonths ?? null,
+        };
+        for (const it of calendarPays(client, plans, txs, `${cur}-01`, winTo, today)) {
+          const iym = ymOf(it.date);
+          if (it.state === 'paid' || iym < cur || iym > last) continue;
+          add(left, iym, p.direction, it.amount);
+        }
+      }
+    }
+
+    const rows = Array.from({ length: count }, (_, i) => {
+      const key = shiftYm(from, i);
+      return {
+        ym: key, kind: key < cur ? 'fact' : key === cur ? 'current' : 'plan',
+        fact: fact.get(key) ?? zero(), left: left.get(key) ?? zero(),
+      };
+    });
+    return { from, months: count, current: cur, rows };
+  }
+
+  /** Первый месяц CRM с операциями (с июня 2026 — до него архив Notion). */
   private crmFirstYm(allExp: FinanceTransaction[]): string | null {
     return allExp
       .map(t => String(t.date).slice(0, 7))

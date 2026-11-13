@@ -72,6 +72,10 @@ export class FinanceController {
   @Get('income/directions')
   incomeDirections(@Query('ym') ym: string, @Request() req) { return this.service.incomeDirections(ym || currentYm(), req.user?.role); }
 
+  /** График «Дохода»: линия на каждое направление, факт и план (13.11.2026). */
+  @Get('income/chart')
+  incomeChart(@Query('ym') ym: string, @Request() req) { return this.service.incomeChart(ym, req.user?.role); }
+
   @Get('income/directions/:direction')
   incomeDirectionDetail(@Param('direction') direction: string, @Query('ym') ym: string, @Request() req, @Query('start') start?: string) {
     return this.service.incomeDirectionDetail(direction, ym || currentYm(), start, req.user?.role);

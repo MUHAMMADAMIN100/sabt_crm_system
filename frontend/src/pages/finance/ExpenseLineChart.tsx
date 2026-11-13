@@ -9,18 +9,34 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { money, moneyBare, monthLabel } from './finlib';
 
-type Key = 'salary' | 'rent' | 'debts' | 'installments' | 'other';
+// 13.11.2026: тот же график на «Доходе» — линия на каждое направление.
+// Код один, у «Расхода» и «Дохода» свои ряды, запрос и подписи (ChartKind).
+type Key = string;
 type Vals = Record<Key, number>;
-type ChartRow = { ym: string; kind: 'fact' | 'current' | 'plan'; fact: Vals; left: Vals; otherSource: 'plan' | 'avg' | null };
+type ChartRow = { ym: string; kind: 'fact' | 'current' | 'plan'; fact: Vals; left: Vals; otherSource?: 'plan' | 'avg' | null };
+type Series = { key: Key; label: string; color: string };
 
 // Цвета проверены на различимость (в т. ч. при дальтонизме) на светлом и
 // тёмном фоне; «Прочее» сиреневое — серое сливалось с «Рассрочками».
-export const SERIES: Array<{ key: Key; label: string; color: string }> = [
+const EXPENSE_SERIES: Series[] = [
   { key: 'salary', label: 'Зарплата', color: '#c97c0a' },
   { key: 'rent', label: 'Аренда и подписки', color: '#7173ee' },
   { key: 'debts', label: 'Долги', color: '#de4b59' },
   { key: 'installments', label: 'Рассрочки банкам', color: '#0b978a' },
   { key: 'other', label: 'Прочее', color: '#b06fc8' },
+];
+/** Ряды «Расхода» — ими же раскрашена таблица периода на странице. */
+export const SERIES = EXPENSE_SERIES;
+
+// Направления дохода. Цвета карточек (#20b965, #5f7dff, #9b77d8, #47aaa4)
+// линиями не различались: Development и Design сливались, бирюзовое
+// «Обслуживание» — с зелёным SMM. Оттенки те же, кроме «Обслуживания»
+// (янтарное); набор проверен валидатором на светлом и тёмном фоне.
+const INCOME_SERIES: Series[] = [
+  { key: 'smm', label: 'SMM', color: '#49a46e' },
+  { key: 'development', label: 'Development', color: '#4f8afb' },
+  { key: 'design', label: 'Design', color: '#be4daa' },
+  { key: 'maintenance', label: 'Обслуживание', color: '#a35e16' },
 ];
 
 const H = 380;
@@ -77,10 +93,43 @@ function smoothPath(pts: Array<[number, number]>): string {
   return d;
 }
 
+type ChartKind = 'expense' | 'income';
+const TEXT = {
+  expense: {
+    title: 'Расход по месяцам', aria: 'График расхода по месяцам', svgAria: 'Расход по месяцам',
+    plotAria: 'Линии по статьям расхода; стрелки влево и вправо — месяцы',
+    legendAria: 'Статьи на графике: нажмите, чтобы скрыть или показать',
+    empty: 'Расходов за эти месяцы нет',
+    hint: 'Сколько уходит в каждом месяце по статьям.', periodHint: 'Сколько осталось отдать в каждом месяце.',
+    tip: { fact: 'ушло', current: 'ушло и осталось', currentPeriod: 'осталось', plan: 'план' },
+  },
+  income: {
+    title: 'Доход по месяцам', aria: 'График дохода по месяцам', svgAria: 'Доход по месяцам',
+    plotAria: 'Линии по направлениям дохода; стрелки влево и вправо — месяцы',
+    legendAria: 'Направления на графике: нажмите, чтобы скрыть или показать',
+    empty: 'Доходов за эти месяцы нет',
+    hint: 'Сколько приходит в каждом месяце по направлениям.', periodHint: '',
+    tip: { fact: 'пришло', current: 'пришло и ждём', currentPeriod: 'ждём', plan: 'план' },
+  },
+} as const;
+
 export default function ExpenseLineChart({ ym, period }: { ym: string; period: number }) {
+  return <MonthLinesChart kind="expense" ym={ym} period={period} />;
+}
+
+/** «Доход по месяцам» — под карточками направлений на «Доходе». */
+export function IncomeLineChart({ ym }: { ym: string }) {
+  return <MonthLinesChart kind="income" ym={ym} period={0} />;
+}
+
+function MonthLinesChart({ kind, ym, period }: { kind: ChartKind; ym: string; period: number }) {
+  const SERIES = kind === 'income' ? INCOME_SERIES : EXPENSE_SERIES;
+  const tx = TEXT[kind];
   const { data, isLoading } = useQuery({
-    queryKey: ['finance', 'expenseChart', period ? `p${period}` : ym],
-    queryFn: () => financeApi.expenseChart(ym, period),
+    queryKey: kind === 'income'
+      ? ['finance', 'incomeChart', ym]
+      : ['finance', 'expenseChart', period ? `p${period}` : ym],
+    queryFn: () => (kind === 'income' ? financeApi.incomeChart(ym) : financeApi.expenseChart(ym, period)),
     placeholderData: keepPreviousData,
   });
   const [ref, width] = useWidth();
@@ -117,7 +166,17 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
   const focusRow = curIdx >= 0 ? rows[curIdx] : rows[rows.length - 1];
   const topCat = focusRow ? [...SERIES].sort((a, b) => valueOf(focusRow, b.key) - valueOf(focusRow, a.key))[0] : null;
   const peak = rows.reduce<ChartRow | null>((best, r) => (!best || totalOf(r) > totalOf(best) ? r : best), null);
-  const summary = !hasData ? '' : period
+  const share = (r: ChartRow, k: Key) => Math.round((100 * valueOf(r, k)) / Math.max(1, totalOf(r)));
+  // Доход: прошлый месяц — «пришло», текущий — «придёт (уже пришло …)», дальше — «по плану».
+  const incomeHead = (r: ChartRow) => {
+    const got = SERIES.reduce((sum, x) => sum + (r.fact[x.key] || 0), 0);
+    return r.kind === 'fact' ? `В ${prepOf(r.ym)} пришло ${money(totalOf(r))}`
+      : r.kind === 'current' ? `В ${prepOf(r.ym)} придёт ${money(totalOf(r))}${got > 0 && got < totalOf(r) ? ` (уже пришло ${money(got)})` : ''}`
+        : `В ${prepOf(r.ym)} по плану придёт ${money(totalOf(r))}`;
+  };
+  const summary = !hasData ? '' : kind === 'income'
+    ? (focusRow && topCat ? `${incomeHead(focusRow)}, больше всего — ${topCat.label} (${share(focusRow, topCat.key)}%). Лучший месяц — ${peak ? monthLabel(peak.ym, true) : ''}: ${money(peak ? totalOf(peak) : 0)}` : '')
+    : period
     ? `За ${n === 12 ? 'год' : `${n} мес.`} — ${money(sumAll)}, в среднем ${money(Math.round(sumAll / Math.max(1, n)))} в месяц. Больше всего уйдёт в ${peak ? prepOf(peak.ym) : ''}: ${money(peak ? totalOf(peak) : 0)}`
     : focusRow && topCat
       ? `В ${prepOf(focusRow.ym)} уходит ${money(totalOf(focusRow))}, больше всего — ${topCat.label.toLowerCase()} (${Math.round((100 * valueOf(focusRow, topCat.key)) / Math.max(1, totalOf(focusRow)))}%). Самый дорогой месяц — ${peak ? monthLabel(peak.ym, true) : ''}: ${money(peak ? totalOf(peak) : 0)}`
@@ -145,16 +204,16 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
   const dim = (k: Key) => (focus && focus !== k ? 0.14 : 1);
 
   return (
-    <section className="card fin-exp-chart" aria-label="График расхода по месяцам">
+    <section className="card fin-exp-chart" aria-label={tx.aria}>
       <div className="head">
         <div>
-          <h2>Расход по месяцам</h2>
-          <p>{summary || (period ? 'Сколько осталось отдать в каждом месяце.' : 'Сколько уходит в каждом месяце по статьям.')}</p>
+          <h2>{tx.title}</h2>
+          <p>{summary || (period ? tx.periodHint : tx.hint)}</p>
         </div>
         {range && <span className="range">{range}{period ? ' · план' : ''}</span>}
       </div>
       <div ref={ref} className="plot" tabIndex={0} role="group"
-        aria-label="Линии по статьям расхода; стрелки влево и вправо — месяцы"
+        aria-label={tx.plotAria}
         onFocus={() => setHover((h) => h ?? Math.max(0, curIdx))}
         onBlur={() => setHover(null)}
         onMouseLeave={() => setHover(null)}
@@ -164,13 +223,13 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
           if (e.key === 'ArrowLeft') { e.preventDefault(); setHover((h) => Math.max(0, (h ?? n) - 1)); }
         }}>
         {isLoading || !width ? <div className="fin-exp-chart-empty" style={{ height: H }}>Загружаю…</div>
-          : !hasData ? <div className="fin-exp-chart-empty" style={{ height: H }}>Расходов за эти месяцы нет</div> : (
+          : !hasData ? <div className="fin-exp-chart-empty" style={{ height: H }}>{tx.empty}</div> : (
           <>
             <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img"
-              aria-label={`Расход по месяцам: ${rows.map((r) => `${monthLabel(r.ym)} — ${moneyBare(totalOf(r))}`).join(', ')}`}>
+              aria-label={`${tx.svgAria}: ${rows.map((r) => `${monthLabel(r.ym)} — ${moneyBare(totalOf(r))}`).join(', ')}`}>
               <defs>
                 {SERIES.map((s) => (
-                  <linearGradient key={s.key} id={`fin-exp-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient key={s.key} id={`fin-${kind}-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={s.color} stopOpacity={0.32} />
                     <stop offset="100%" stopColor={s.color} stopOpacity={0} />
                   </linearGradient>
@@ -208,7 +267,7 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
               )}
               {hover != null && <line className="cross" x1={X(hover)} x2={X(hover)} y1={PAD.t} y2={base} aria-hidden="true" />}
               {focus && !hidden.has(focus) && (
-                <path aria-hidden="true" fill={`url(#fin-exp-grad-${focus})`}
+                <path aria-hidden="true" fill={`url(#fin-${kind}-grad-${focus})`}
                   d={`${smoothPath(rows.map((r, i) => [X(i), Y(valueOf(r, focus))]))} L${X(n - 1).toFixed(1)},${base} L${X(0).toFixed(1)},${base} Z`} />
               )}
               {shown.map((s) => (
@@ -237,7 +296,7 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
               <div className="tip" style={{ left: tipLeft, top: PAD.t }} role="status">
                 <div className="tip-h">
                   <b>{cap(monthLabel(tipRow.ym, true))}</b>
-                  <span>{tipRow.kind === 'fact' ? 'ушло' : tipRow.kind === 'current' ? (period ? 'осталось' : 'ушло и осталось') : 'план'}</span>
+                  <span>{tipRow.kind === 'fact' ? tx.tip.fact : tipRow.kind === 'current' ? (period ? tx.tip.currentPeriod : tx.tip.current) : tx.tip.plan}</span>
                 </div>
                 {[...shown].sort((a, b) => valueOf(tipRow, b.key) - valueOf(tipRow, a.key)).map((s) => {
                   const v = valueOf(tipRow, s.key);
@@ -255,7 +314,7 @@ export default function ExpenseLineChart({ ym, period }: { ym: string; period: n
           </>
         )}
       </div>
-      <div className="legend" role="group" aria-label="Статьи на графике: нажмите, чтобы скрыть или показать">
+      <div className={`legend n${SERIES.length}`} role="group" aria-label={tx.legendAria}>
         {SERIES.map((s) => {
           const sum = rows.reduce((acc, r) => acc + valueOf(r, s.key), 0);
           return (

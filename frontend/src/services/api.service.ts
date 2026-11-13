@@ -652,6 +652,8 @@ export const financeApi = {
   // Дашборды / расчёты
   overview: (ym: string) => api.get('/finance/overview', { params: { ym } }).then(r => r.data),
   incomeDirections: (ym: string) => api.get('/finance/income/directions', { params: { ym } }).then(r => r.data),
+  // График «Дохода»: направления по месяцам, факт и план (13.11.2026).
+  incomeChart: (ym: string) => api.get('/finance/income/chart', { params: { ym } }).then(r => r.data),
   incomeDirectionDetail: (direction: string, ym: string, start?: string) =>
     api.get(`/finance/income/directions/${direction}`, { params: { ym, start } }).then(r => r.data),
   expenseSummary: (ym: string) => api.get('/finance/expense/summary', { params: { ym } }).then(r => r.data),
