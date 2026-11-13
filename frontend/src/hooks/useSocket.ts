@@ -233,6 +233,12 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['direct', 'list'] })
       if (payload?.conversationId) qc.invalidateQueries({ queryKey: ['direct', 'details', payload.conversationId] })
     })
+    // Руководство подключило или отключило аккаунт Instagram.
+    socket.on('direct:status', () => {
+      qc.invalidateQueries({ queryKey: ['direct', 'status'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'list'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'counts'] })
+    })
     // Справочник меток изменился (руководство добавило, переименовало, удалило).
     socket.on('direct:labels', () => {
       qc.invalidateQueries({ queryKey: ['direct', 'labels'] })

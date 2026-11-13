@@ -4,6 +4,7 @@ import { isMediaLink, signedByMeta, MessengerError } from './meta-http';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { DirectFiles } from './direct-files';
 import { snippetOf } from './direct.service';
+import { openToken, sealToken } from './instagram.api';
 import { bindsOnReply, canLead, canReply, canTransfer, isSalesManager, isTop } from './direct-access';
 
 const ACCOUNT = '17841400000000001';
@@ -289,5 +290,22 @@ describe('инструменты чата (13.11.2026)', () => {
       { sender: { id: CLIENT }, recipient: { id: ACCOUNT }, timestamp: 1, message: { mid: 'm10', text: 'А что входит?', reply_to: { mid: 'm5' } } },
     ]));
     expect(event).toMatchObject({ kind: 'message', replyToId: 'm5' });
+  });
+});
+
+describe('ключи дополнительных аккаунтов Instagram', () => {
+  it('шифруются и читаются обратно; в базе не видно самого ключа', () => {
+    const sealed = sealToken('IGAAtest-token-123');
+    expect(sealed).not.toContain('IGAAtest');
+    expect(openToken(sealed)).toBe('IGAAtest-token-123');
+    expect(sealToken('IGAAtest-token-123')).not.toBe(sealed); // каждый раз свой IV
+  });
+  it('испорченный или чужой ключ не читается — аккаунт просит переподключения', () => {
+    const sealed = sealToken('secret');
+    const parts = sealed.split('.');
+    parts[3] = Buffer.from('другое').toString('base64url');
+    expect(openToken(parts.join('.'))).toBeNull();
+    expect(openToken('мусор')).toBeNull();
+    expect(openToken(null)).toBeNull();
   });
 });

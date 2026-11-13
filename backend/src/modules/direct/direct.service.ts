@@ -11,7 +11,7 @@ import {
 import type { DirectEvent, IncomingAttachment } from './instagram-events';
 import { DirectFiles, MAX_AVATAR_SIZE, MAX_INCOMING_SIZE, type OpenedFile, type OutgoingFile, type UploadedFile } from './direct-files';
 import { AudioConverter } from './audio-converter';
-import { InstagramApi, instagramEnv } from './instagram.api';
+import { InstagramApi, instagramEnv, type InstagramAccount } from './instagram.api';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { User } from '../users/user.entity';
 import { hasGrant } from '../auth/permissions';
@@ -57,6 +57,9 @@ const INTERRUPTED_ECHO_MS = 36 * 60 * 60 * 1000;
 /** Сколько раз пробуем скачать файл сообщения, прежде чем оставить только ссылку. */
 const MAX_FETCH_ATTEMPTS = 5;
 
+/** Последнее событие по каждому аккаунту Instagram: { accountId: время }. */
+const ACCOUNT_EVENTS_KEY = 'instagram_events';
+
 /** Переход к сообщению: сколько сообщений от него до свежего показываем самое большее. */
 const MAX_JUMP_MESSAGES = 1000;
 /** И сколько раньше него — для контекста. */
@@ -74,7 +77,7 @@ const REACTION_FAILURE: Record<string, string> = {
 };
 
 /** Фильтры списка поверх вкладки. */
-export type ListFilters = { search?: string; assigneeId?: string; labelId?: string; lead?: 'with' | 'without'; reminder?: '1' };
+export type ListFilters = { search?: string; assigneeId?: string; labelId?: string; lead?: 'with' | 'without'; reminder?: '1'; account?: string };
 
 /** Цитата в ленте: на что ответили. */
 type ReplyPreview = { id: string | null; direction: string | null; preview: string; author: string | null };
@@ -93,6 +96,8 @@ export class DirectService implements OnApplicationBootstrap {
   private readonly profileAttempts = new Map<string, number>();
   /** Когда последний раз слали «печатает» в чат. */
   private readonly typingAt = new Map<string, number>();
+  /** Когда последний раз записали событие аккаунта. */
+  private readonly accountTouchedAt = new Map<string, number>();
   private lastWebhookSavedAt = 0;
 
   constructor(
@@ -116,18 +121,23 @@ export class DirectService implements OnApplicationBootstrap {
    *  повторная доставка ничего не меняет; сбой поднимается наверх — Meta повторит. */
   async receive(events: DirectEvent[]): Promise<void> {
     this.touchWebhook();
-    const state = await this.instagram.state();
+    const accounts = await this.instagram.accounts();
     for (const event of events) {
-      // Аккаунт известен — чужие события пропускаем. Не узнали ещё (нет
-      // ответа /me) — принимаем: подпись уже доказала, что это наша Meta.
-      if (state?.accountId && event.accountId !== state.accountId) {
-        this.logger.warn(`Событие другого аккаунта Instagram ${event.accountId} пропущено`);
+      // Подключённые аккаунты (основной и добавленные в CRM) — принимаем;
+      // чужие пропускаем. Основной, не узнавший ещё свой id (нет ответа
+      // /me), берёт событие себе: подпись уже доказала, что это наша Meta.
+      let account = accounts.find(a => a.accountId === event.accountId);
+      const primary = accounts.find(a => a.primary);
+      if (!account && primary && !primary.accountId) {
+        await this.instagram.update({ accountId: event.accountId });
+        primary.accountId = event.accountId;
+        account = primary;
+      }
+      if (!account) {
+        this.logger.warn(`Событие неподключённого аккаунта Instagram ${event.accountId} пропущено`);
         continue;
       }
-      if (state && !state.accountId) {
-        await this.instagram.update({ accountId: event.accountId });
-        state.accountId = event.accountId;
-      }
+      this.touchAccount(event.accountId);
       if (event.kind === 'message') await (event.outgoing ? this.applyEcho(event) : this.applyIncoming(event));
       else if (event.kind === 'deleted') await this.applyDeleted(event.externalId);
       else if (event.kind === 'reaction') await this.applyReaction(event.externalId, event.emoji, event.byContact);
@@ -324,7 +334,9 @@ export class DirectService implements OnApplicationBootstrap {
     const conversation = await this.conversations.findOne({ where: { id: conversationId } });
     if (!conversation) return;
     try {
-      const profile = await this.instagram.profile(conversation.contactId);
+      const account = await this.instagram.account(conversation.accountId);
+      if (!account || account.invalid) return;
+      const profile = await this.instagram.profile(account, conversation.contactId);
       await this.conversations.update(conversation.id, {
         contactName: profile.name ? profile.name.slice(0, 200) : conversation.contactName,
         contactUsername: profile.username ? profile.username.slice(0, 200) : conversation.contactUsername,
@@ -387,7 +399,7 @@ export class DirectService implements OnApplicationBootstrap {
   async sweep(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
     await this.failInterrupted().catch(e => this.logger.warn(`Подчистка отправок не удалась: ${e?.message || e}`));
-    if (!this.instagram.connected) return;
+    if (!(await this.instagram.accounts()).length) return;
     const rows: { id: string; conversationId: string }[] = await this.attachments.query(
       `SELECT a.id, m."conversationId" FROM direct_attachments a
          JOIN direct_messages m ON m.id = a."messageId"
@@ -859,12 +871,13 @@ export class DirectService implements OnApplicationBootstrap {
     if (!message || message.direction !== 'in') throw new NotFoundException('Сообщение не найдено');
     if (!message.externalId || message.deletedAt) throw new ConflictException('На это сообщение реакцию поставить нельзя');
     const conversation = await this.writable(user, message.conversationId);
+    const account = await this.accountOf(conversation);
     try {
-      await this.instagram.react(conversation.contactId, message.externalId, on);
+      await this.instagram.react(account, conversation.contactId, message.externalId, on);
     } catch (error) {
       const failure = failureOf(error);
       this.logger.warn(`Реакция в Instagram не ушла (${failure}): ${String(error)}`);
-      if (failure === 'TOKEN_INVALID') await this.markToken(true);
+      if (failure === 'TOKEN_INVALID') await this.markToken(account, true);
       throw new ConflictException(REACTION_FAILURE[failure] ?? REACTION_FAILURE.REJECTED);
     }
     await this.messagesRepo.update(message.id, { ourReaction: on ? '❤️' : null });
@@ -883,7 +896,9 @@ export class DirectService implements OnApplicationBootstrap {
     if (this.typingAt.size > 500) {
       for (const [key, at] of this.typingAt) if (Date.now() - at > 60_000) this.typingAt.delete(key);
     }
-    await this.instagram.typing(conversation.contactId)
+    const account = await this.instagram.account(conversation.accountId);
+    if (!account) return;
+    await this.instagram.typing(account, conversation.contactId)
       .catch(e => this.logger.debug(`«Печатает» не ушло: ${e?.message || e}`));
   }
 
@@ -1115,16 +1130,19 @@ export class DirectService implements OnApplicationBootstrap {
     const message = await this.messagesRepo.findOneOrFail({ where: { id: messageId }, relations: ['author'] });
     const [file] = await this.attachments.find({ where: { messageId } });
     let delivered = false;
+    let account: InstagramAccount | null = null;
     try {
+      // Ответ уходит с того аккаунта, куда написал клиент.
+      account = await this.accountOf(conversation);
       const to = conversation.contactId;
       let externalId: string;
       const replyTo = message.replyToExternalId;
       if (file?.storedName) {
         const link = `${publicBase}/api/public/direct-files/${file.storedName}`;
         const type = file.kind === 'audio' || file.kind === 'image' || file.kind === 'video' ? file.kind : 'file';
-        externalId = await this.instagram.sendAttachment(to, type, link, replyTo);
+        externalId = await this.instagram.sendAttachment(account, to, type, link, replyTo);
       } else {
-        externalId = await this.instagram.sendText(to, message.text ?? '', replyTo);
+        externalId = await this.instagram.sendText(account, to, message.text ?? '', replyTo);
       }
       // Эхо могло прийти раньше ответа и записаться как сообщение из
       // приложения — это то же сообщение.
@@ -1136,12 +1154,12 @@ export class DirectService implements OnApplicationBootstrap {
         [message.id, externalId],
       );
       await this.answered(conversation.id, message.authorId, new Date());
-      await this.markToken(false);
+      await this.markToken(account, false);
       delivered = true;
     } catch (error) {
       const failure = failureOf(error);
       this.logger.warn(`Сообщение в Instagram не ушло (${failure}): ${String(error)}`);
-      if (failure === 'TOKEN_INVALID') await this.markToken(true);
+      if (failure === 'TOKEN_INVALID' && account) await this.markToken(account, true);
       await this.messagesRepo.update(message.id, { status: 'failed', error: failure });
     }
     // Закрепление — после отправки и отдельно от неё: его сбой не должен
@@ -1223,9 +1241,21 @@ export class DirectService implements OnApplicationBootstrap {
     return true;
   }
 
-  private async markToken(invalid: boolean): Promise<void> {
-    const state = await this.instagram.state();
-    if (state && state.invalid !== invalid) await this.instagram.update({ invalid });
+  private async markToken(account: InstagramAccount, invalid: boolean): Promise<void> {
+    if (account.invalid !== invalid) {
+      await this.instagram.updateAccount(account, { invalid });
+      account.invalid = invalid;
+    }
+  }
+
+  /** Аккаунт Instagram, через который идёт чат. Отключён или ключ не
+   *  читается — писать из CRM нельзя. */
+  private async accountOf(conversation: DirectConversation): Promise<InstagramAccount> {
+    const account = await this.instagram.account(conversation.accountId);
+    if (!account || !account.token) {
+      throw new ConflictException('Аккаунт Instagram этого чата отключён от CRM — ответьте из приложения Instagram');
+    }
+    return account;
   }
 
   /** Можно ли сейчас написать в чат: Instagram подключён, окно 24 часов
@@ -1237,7 +1267,7 @@ export class DirectService implements OnApplicationBootstrap {
     if (!canReply(user, conversation.assigneeId)) {
       throw new ForbiddenException(`Чат ведёт ${conversation.assignee?.name || 'другой менеджер'} — клиенту отвечает закреплённый менеджер или руководство`);
     }
-    if (!this.instagram.connected) throw new ConflictException('Instagram ещё не подключён к CRM');
+    await this.accountOf(conversation);
     const until = replyUntil(conversation);
     if (!until) throw new ConflictException('Клиент ещё не писал — Instagram не даёт написать первым');
     if (until.getTime() <= Date.now()) {
@@ -1286,8 +1316,24 @@ export class DirectService implements OnApplicationBootstrap {
     const env = instagramEnv();
     const state = await this.instagram.state();
     const webhook = await this.settings.findOne({ where: { key: 'instagram_webhook' } });
+    const events = await this.settings.findOne({ where: { key: ACCOUNT_EVENTS_KEY } });
+    const accounts = await this.instagram.accounts(true);
+    const chats: { accountId: string; count: number }[] = await this.conversations.query(
+      `SELECT "accountId", count(*)::int AS count FROM direct_conversations GROUP BY "accountId"`,
+    );
     return {
-      connected: env.connected,
+      connected: accounts.length > 0,
+      /** Все аккаунты Instagram «Директа»: основной из Railway и подключённые в CRM. */
+      accounts: accounts.map(a => ({
+        accountId: a.accountId,
+        username: a.username,
+        primary: a.primary,
+        tokenInvalid: a.invalid,
+        tokenExpiresAt: a.expiresAt,
+        connectedAt: a.connectedAt ?? null,
+        lastEventAt: (a.accountId && events?.value?.[a.accountId]) || null,
+        chats: chats.find(c => c.accountId === a.accountId)?.count ?? 0,
+      })),
       configured: { token: !!env.accessToken, secret: !!env.appSecret, verifyToken: !!env.verifyToken },
       account: state?.username ?? null,
       accountId: state?.accountId ?? null,
@@ -1404,27 +1450,80 @@ export class DirectService implements OnApplicationBootstrap {
     }
   }
 
-  /** Раз в сутки: меняем маркер на свежий за месяц до конца его 60 дней. */
+  /** Раз в сутки: меняем маркер каждого аккаунта на свежий за месяц до конца его 60 дней. */
   @Cron('0 4 * * *', { timeZone: 'Asia/Dushanbe' })
   async refreshToken(now: Date = new Date()): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    const state = await this.instagram.state();
-    if (!state) return;
-    if (state.expiresAt && new Date(state.expiresAt).getTime() - now.getTime() > REFRESH_BEFORE_MS) return;
-    if (state.refreshedAt && now.getTime() - new Date(state.refreshedAt).getTime() < MIN_TOKEN_AGE_MS) return;
-    try {
-      const fresh = await this.instagram.refreshToken(state.token);
-      await this.instagram.update({
-        token: fresh.token,
-        expiresAt: new Date(now.getTime() + fresh.expiresIn * 1000).toISOString(),
-        refreshedAt: now.toISOString(),
-        invalid: false,
-      });
-      this.logger.log('Маркер Instagram продлён на 60 дней');
-    } catch (error) {
-      this.logger.warn(`Маркер Instagram не продлён: ${String(error)}`);
-      if (failureOf(error) === 'TOKEN_INVALID') await this.instagram.update({ invalid: true });
+    for (const account of await this.instagram.accounts(true)) {
+      if (!account.token) continue;
+      if (account.expiresAt && new Date(account.expiresAt).getTime() - now.getTime() > REFRESH_BEFORE_MS) continue;
+      if (account.refreshedAt && now.getTime() - new Date(account.refreshedAt).getTime() < MIN_TOKEN_AGE_MS) continue;
+      const name = account.username ? `@${account.username}` : 'Instagram';
+      try {
+        const fresh = await this.instagram.refreshToken(account.token);
+        await this.instagram.updateAccount(account, {
+          token: fresh.token,
+          expiresAt: new Date(now.getTime() + fresh.expiresIn * 1000).toISOString(),
+          refreshedAt: now.toISOString(),
+          invalid: false,
+        });
+        this.logger.log(`Маркер ${name} продлён на 60 дней`);
+      } catch (error) {
+        this.logger.warn(`Маркер ${name} не продлён: ${String(error)}`);
+        if (failureOf(error) === 'TOKEN_INVALID') await this.instagram.updateAccount(account, { invalid: true });
+      }
     }
+  }
+
+  /**
+   * Подключить ещё один аккаунт Instagram по маркеру из кабинета Meta
+   * (только руководство). Аккаунт должен быть в том же приложении Meta:
+   * вебхук и его секрет общие.
+   */
+  async connectAccount(user: User, token: string) {
+    if (!isTop(user)) throw new ForbiddenException('Подключать аккаунты Instagram может только руководство');
+    const clean = token.trim();
+    if (/\s/.test(clean)) throw new BadRequestException('В маркере не должно быть пробелов — скопируйте его целиком ещё раз');
+    try {
+      const result = await this.instagram.connect(clean, user.name);
+      this.logger.log(`Аккаунт Instagram @${result.account.username} ${result.renewed ? 'переподключён' : 'подключён'} (${user.name})`);
+      this.broadcastStatus();
+      return {
+        accountId: result.account.accountId,
+        username: result.account.username,
+        renewed: result.renewed,
+        webhooks: result.webhooks,
+        webhookError: result.webhookError,
+      };
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      const failure = failureOf(error);
+      this.logger.warn(`Аккаунт Instagram не подключён (${failure}): ${String(error)}`);
+      throw new BadRequestException(failure === 'TOKEN_INVALID'
+        ? 'Instagram не принял маркер: он неверный, просрочен или выпущен не для «Instagram API с входом через Instagram»'
+        : failure === 'NETWORK' ? 'Нет связи с Instagram — попробуйте ещё раз' : 'Instagram не принял маркер — сгенерируйте новый в кабинете Meta');
+    }
+  }
+
+  /** Отключить дополнительный аккаунт. Переписка остаётся в CRM, отвечать из CRM нельзя. */
+  async disconnectAccount(user: User, accountId: string) {
+    if (!isTop(user)) throw new ForbiddenException('Отключать аккаунты Instagram может только руководство');
+    const account = (await this.instagram.accounts(true)).find(a => a.accountId === accountId);
+    if (!account) throw new NotFoundException('Такой аккаунт не подключён');
+    if (account.primary) throw new BadRequestException('Основной аккаунт задан в Railway — его отключают там');
+    await this.instagram.disconnect(accountId);
+    this.logger.log(`Аккаунт Instagram @${account.username} отключён (${user.name})`);
+    this.broadcastStatus();
+    return { ok: true };
+  }
+
+  /** Список аккаунтов поменялся — страницы перечитывают состояние подключения. */
+  private broadcastStatus(): void {
+    this.audience()
+      .then(({ all }) => {
+        for (const userId of all) this.gateway.notifyUser(userId, 'direct:status', {});
+      })
+      .catch(() => { /* живое обновление — не главное */ });
   }
 
   /** Время последнего уведомления от Meta — видно в настройках, доходит ли вебхук. */
@@ -1435,10 +1534,23 @@ export class DirectService implements OnApplicationBootstrap {
       .catch(() => { /* не мешаем приёму */ });
   }
 
+  /** Последнее событие по каждому аккаунту — в настройках видно, что вебхук
+   *  этого аккаунта доходит. Пишем не чаще раза в минуту на аккаунт. */
+  private touchAccount(accountId: string): void {
+    const now = Date.now();
+    if (now - (this.accountTouchedAt.get(accountId) ?? 0) < 60_000) return;
+    this.accountTouchedAt.set(accountId, now);
+    this.settings.query(
+      `INSERT INTO direct_settings (key, value, "updatedAt") VALUES ($1, jsonb_build_object($2::text, $3::text), now())
+       ON CONFLICT (key) DO UPDATE SET value = direct_settings.value || jsonb_build_object($2::text, $3::text), "updatedAt" = now()`,
+      [ACCOUNT_EVENTS_KEY, accountId, new Date(now).toISOString()],
+    ).catch(() => { /* не мешаем приёму */ });
+  }
+
   // ─── Сборка ответов ─────────────────────────────────────────────────
 
   private filtered(view: string | undefined, user: User, filters: ListFilters = {}) {
-    const { search, assigneeId, labelId, lead, reminder } = filters;
+    const { search, assigneeId, labelId, lead, reminder, account } = filters;
     const qb = this.conversations.createQueryBuilder('c');
     const searching = !!(search || '').trim();
     // Архив — своя вкладка; поиск во «Всех» находит и архивные (как в Telegram).
@@ -1454,6 +1566,7 @@ export class DirectService implements OnApplicationBootstrap {
     if (view === 'mine') qb.andWhere('c.assigneeId = :me', { me: user.id });
     if (view === 'free') qb.andWhere('c.assigneeId IS NULL');
     if (assigneeId) qb.andWhere('c.assigneeId = :aid', { aid: assigneeId });
+    if (account) qb.andWhere('c.accountId = :acc', { acc: account });
     if (labelId) {
       qb.andWhere(`EXISTS (SELECT 1 FROM direct_conversation_labels fl WHERE fl."conversationId" = c.id AND fl."labelId" = :labelId)`, { labelId });
     }
@@ -1552,6 +1665,8 @@ export class DirectService implements OnApplicationBootstrap {
     const viewers = this.viewerIds(row.id).filter(id => id !== meId).map(id => ({ id, name: names.get(id) ?? 'Сотрудник' }));
     return {
       id: row.id,
+      /** Аккаунт агентства, через который идёт переписка (id в Instagram). */
+      accountId: row.accountId,
       contact: {
         name: row.contactName,
         username: row.contactUsername,

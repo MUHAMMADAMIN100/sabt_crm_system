@@ -113,6 +113,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   })
   const { data: team } = useQuery({ queryKey: ['direct', 'team'], queryFn: directApi.team, staleTime: 10 * 60_000 })
   const { data: myReminders } = useMyReminders()
+  const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, staleTime: 60_000 })
 
   // Переход к сообщению: первая страница ленты — от него до свежего.
   const anchor = useRef<string | null>(focusMessageId ?? null)
@@ -430,8 +431,15 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
     : `Чат ведёт ${c.assignee?.name || 'другой менеджер'} — клиенту отвечает закреплённый менеджер или руководство. Вы можете оставить заметку для команды.`
   const igLink = c.contact.username ? `https://ig.me/m/${c.contact.username}` : 'https://www.instagram.com/direct/inbox/'
   const left = c.replyUntil ? new Date(c.replyUntil).getTime() - Date.now() : null
+  // Несколько аккаунтов: ответ уходит с того, куда написал клиент.
+  const linked = (status?.accounts ?? []).filter(a => a.accountId)
+  const chatAccount = linked.find(a => a.accountId === c.accountId) ?? null
+  const viaName = linked.length > 1 ? (chatAccount?.username ?? null) : null
+  const accountGone = !!status && linked.length > 0 && !chatAccount
   const blockedReason = !connected
     ? 'Instagram ещё не подключён к CRM — отвечайте из приложения Instagram.'
+    : accountGone
+      ? 'Аккаунт Instagram этого чата отключён от CRM — ответьте из приложения Instagram.'
     : left === null
       ? 'Клиент ещё не писал — Instagram не даёт написать первым.'
       : left <= 0
@@ -550,6 +558,9 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
                 <a href={`https://www.instagram.com/${c.contact.username}/`} target="_blank" rel="noreferrer" className="hidden items-center gap-0.5 hover:text-surface-800 dark:hover:text-surface-200 sm:inline-flex">
                   @{c.contact.username} <ExternalLink size={11} />
                 </a>
+              )}
+              {viaName && (
+                <span className="whitespace-nowrap" title={`Клиент написал в @${viaName} — ответ уйдёт оттуда же`}>через @{viaName}</span>
               )}
               {left !== null && left > 0 && (
                 <span className={clsx('whitespace-nowrap', left < 60 * 60 * 1000 && 'font-medium text-amber-700 dark:text-amber-300')}

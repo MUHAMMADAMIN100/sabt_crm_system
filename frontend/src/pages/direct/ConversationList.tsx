@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type React
 import { useInfiniteQuery, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  AlertCircle, Archive, BellRing, Check, Eye, Inbox, MoreHorizontal, Pin, Search, SlidersHorizontal, User as UserIcon, X,
+  AlertCircle, Archive, AtSign, BellRing, Check, Eye, Inbox, MoreHorizontal, Pin, Search, SlidersHorizontal, User as UserIcon, X,
 } from 'lucide-react'
 import { directApi, type DirectConversation, type DirectFilters, type DirectView } from '@/services/direct.api'
 import { Spinner } from '@/components/ui'
@@ -38,7 +38,7 @@ const EMPTY: Record<DirectView, string> = {
 const PAGE = 50
 
 /** Ключ фильтров для кэша: пустая строка — фильтров нет. */
-const filtersKey = (f: DirectFilters) => [f.labelId || '', f.lead || '', f.reminder ? '1' : ''].join('|').replace(/^\|\|$/, '')
+const filtersKey = (f: DirectFilters) => [f.labelId || '', f.lead || '', f.reminder ? '1' : '', f.account || ''].join('|').replace(/^\|\|\|$/, '')
 
 /** Список чатов «Директа»: поиск по именам и по переписке, вкладки с числами,
  *  фильтры (метка, лид, напоминание), закреплённые сверху, меню у строки.
@@ -64,6 +64,15 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
   const [search, setSearch] = useState('')
   const [debounced, setDebounced] = useState('')
   const [filters, setFilters] = useState<DirectFilters>({})
+  // Аккаунт Instagram — свой переключатель над вкладками (13.11.2026).
+  const [account, setAccount] = useState<string | null>(null)
+  const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, staleTime: 60_000 })
+  const accounts = useMemo(() => (status?.accounts ?? []).filter(a => a.accountId), [status])
+  const multi = accounts.length > 1
+  const accountName = useMemo(() => new Map(accounts.map(a => [a.accountId!, a.username || 'Instagram'])), [accounts])
+  // Аккаунт отключили — переключатель возвращается на «Все».
+  useEffect(() => { if (account && status && !accounts.some(a => a.accountId === account)) setAccount(null) }, [account, status, accounts])
+  const query = useMemo<DirectFilters>(() => ({ ...filters, account: account || undefined }), [filters, account])
   const [filtersMenu, setFiltersMenu] = useState<MenuAnchor | null>(null)
   const [rowMenu, setRowMenu] = useState<{ c: DirectConversation; anchor: MenuAnchor } | null>(null)
   useEffect(() => {
@@ -96,13 +105,13 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
   const { data: reminders } = useMyReminders()
   const reminderOf = useMemo(() => new Map((reminders ?? []).map(r => [r.conversationId, r])), [reminders])
   const filterName = assigneeId ? managers?.find(m => m.id === assigneeId)?.name : undefined
-  const fKey = filtersKey(filters)
+  const fKey = filtersKey(query)
   const activeFilters = (filters.labelId ? 1 : 0) + (filters.lead ? 1 : 0) + (filters.reminder ? 1 : 0)
   const filterLabel = filters.labelId ? labels?.find(l => l.id === filters.labelId) : undefined
 
   const { data: counts } = useQuery({
     queryKey: ['direct', 'counts', debounced, assigneeId || '', fKey],
-    queryFn: () => directApi.counts({ search: debounced || undefined, assigneeId: assigneeId || undefined, ...filters }),
+    queryFn: () => directApi.counts({ search: debounced || undefined, assigneeId: assigneeId || undefined, ...query }),
     placeholderData: keepPreviousData,
   })
 
@@ -110,7 +119,7 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
     // Порядок важен: directCache разбирает ключ так же.
     queryKey: ['direct', 'list', view, debounced, assigneeId || '', fKey],
     queryFn: ({ pageParam }) => directApi.list({
-      view, search: debounced || undefined, assigneeId: assigneeId || undefined, limit: PAGE, offset: pageParam, ...filters,
+      view, search: debounced || undefined, assigneeId: assigneeId || undefined, limit: PAGE, offset: pageParam, ...query,
     }),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
@@ -197,6 +206,18 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
             </button>
           </div>
         )}
+        {/* Несколько аккаунтов Instagram — чьи чаты показывать. */}
+        {multi && (
+          <div className="flex gap-1 overflow-x-auto rounded-lg bg-surface-100 p-0.5 dark:bg-surface-800" role="radiogroup" aria-label="Аккаунт Instagram">
+            {[{ id: null as string | null, label: 'Все аккаунты' }, ...accounts.map(a => ({ id: a.accountId as string | null, label: `@${a.username || 'Instagram'}` }))].map(o => (
+              <button key={o.id || 'all'} type="button" role="radio" aria-checked={account === o.id} onClick={() => setAccount(o.id)}
+                className={clsx('min-h-[30px] shrink-0 truncate rounded-md px-2.5 text-xs font-medium transition-colors',
+                  account === o.id ? 'bg-white text-surface-900 shadow-sm dark:bg-surface-600 dark:text-white' : 'text-surface-500 hover:text-surface-800 dark:hover:text-surface-200')}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Вкладки переносятся строкой ниже, а не уезжают за край. */}
         <div className="flex flex-wrap gap-1.5" role="tablist">
           {views.map(v => (
@@ -251,6 +272,7 @@ export default function ConversationList({ selectedId, onSelect, onOpenMessage, 
               <Row key={c.id} c={c} active={c.id === selectedId} onSelect={select}
                 showAssignee={view !== 'mine' && view !== 'free' && !assigneeId}
                 reminder={reminderOf.get(c.id) ?? null}
+                via={multi && !account ? (accountName.get(c.accountId) ?? 'отключён') : null}
                 onMenu={anchor => setRowMenu({ c, anchor })} />
             ))}
           </ul>
@@ -376,12 +398,14 @@ function AssigneeChip({ c, me }: { c: DirectConversation; me: string | undefined
   )
 }
 
-function Row({ c, active, onSelect, showAssignee, reminder, onMenu }: {
+function Row({ c, active, onSelect, showAssignee, reminder, via, onMenu }: {
   c: DirectConversation
   active: boolean
   onSelect: (c: DirectConversation) => void
   showAssignee: boolean
   reminder: { remindAt: string; note: string | null } | null
+  /** Через какой аккаунт Instagram написал клиент — когда их несколько. */
+  via: string | null
   onMenu: (anchor: MenuAnchor) => void
 }) {
   const me = useAuthStore(s => s.user?.id)
@@ -461,8 +485,13 @@ function Row({ c, active, onSelect, showAssignee, reminder, onMenu }: {
               <span className="h-3 w-3 shrink-0 rounded-full bg-primary-600" aria-label="Помечен непрочитанным" title="Помечен непрочитанным" />
             ) : null}
           </span>
-          {(showAssignee || c.waitingSince || viewers.length > 0 || reminder || c.labels.length > 0) && (
+          {(via || showAssignee || c.waitingSince || viewers.length > 0 || reminder || c.labels.length > 0) && (
             <span className="mt-1 flex flex-wrap items-center gap-1.5">
+              {via && (
+                <span className="inline-flex max-w-[140px] items-center gap-0.5 rounded-full border border-surface-200 px-1.5 py-px text-[11px] text-surface-500 dark:border-surface-600 dark:text-surface-400" title={`Клиент написал в @${via}`}>
+                  <AtSign size={10} className="shrink-0" /><span className="truncate">{via}</span>
+                </span>
+              )}
               {showAssignee && <AssigneeChip c={c} me={me} />}
               {c.waitingSince && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">

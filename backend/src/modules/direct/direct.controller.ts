@@ -11,7 +11,7 @@ import { DirectService } from './direct.service';
 import { DirectToolsService } from './direct-tools.service';
 import { MAX_DOCUMENT_SIZE, MAX_VOICE_SIZE } from './direct-files';
 import {
-  DirectAssignDto, DirectCountsQueryDto, DirectLabelDto, DirectLabelUpdateDto, DirectListQueryDto, DirectMessagesQueryDto,
+  DirectAssignDto, DirectConnectAccountDto, DirectCountsQueryDto, DirectLabelDto, DirectLabelUpdateDto, DirectListQueryDto, DirectMessagesQueryDto,
   DirectNoteDto, DirectReminderDto, DirectSearchQueryDto, DirectSendFileDto, DirectSendTextDto, DirectSendVoiceDto,
   DirectSetLabelsDto, DirectStatsQueryDto, DirectTemplateDto, DirectTemplateUpdateDto, DirectToggleDto,
 } from './direct.dto';
@@ -41,6 +41,19 @@ export class DirectController {
   @RequirePerm('clients.view')
   status(@Request() req: ExpressRequest) {
     return this.direct.status(publicBase(req));
+  }
+
+  /** Подключить ещё один аккаунт Instagram (руководство — проверяет сервис). */
+  @Post('accounts')
+  @RequirePerm('clients.view')
+  connectAccount(@Request() req, @Body() body: DirectConnectAccountDto) {
+    return this.direct.connectAccount(req.user, body.token);
+  }
+
+  @Delete('accounts/:accountId')
+  @RequirePerm('clients.view')
+  disconnectAccount(@Request() req, @Param('accountId') accountId: string) {
+    return this.direct.disconnectAccount(req.user, accountId);
   }
 
   @Get('unread')

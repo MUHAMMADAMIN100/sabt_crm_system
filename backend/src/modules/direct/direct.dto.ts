@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength,
+  Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength,
 } from 'class-validator';
 import { MAX_COMPOSE_CHARS } from './direct-text';
 
@@ -35,6 +35,10 @@ class DirectFiltersQuery extends CacheBustQuery {
   /** 1 — только чаты, где у меня есть напоминание. */
   @IsOptional() @IsIn(['1'])
   reminder?: '1';
+
+  /** Чаты одного аккаунта Instagram (id аккаунта). */
+  @IsOptional() @Matches(/^\d{1,32}$/)
+  account?: string;
 }
 
 export class DirectListQueryDto extends DirectFiltersQuery {
@@ -189,4 +193,10 @@ export class DirectSearchQueryDto extends CacheBustQuery {
   /** Искать только в этом чате. */
   @IsOptional() @IsUUID()
   conversationId?: string;
+}
+
+/** Подключить аккаунт Instagram: маркер из кабинета Meta. */
+export class DirectConnectAccountDto {
+  @IsString() @MinLength(20) @MaxLength(1000)
+  token: string;
 }

@@ -153,9 +153,12 @@ export default function DirectPage() {
       <div ref={panel} className={clsx('relative z-20 flex-wrap items-center gap-x-2 gap-y-1 border-b border-surface-200 px-3 py-1.5 dark:border-surface-700 sm:px-4', hideOnPhone)}>
         <MessageCircle size={17} className="shrink-0 text-surface-500" aria-hidden />
         <h1 className="text-[15px] font-semibold text-surface-900 dark:text-white">Директ</h1>
-        {status?.account && (
+        {(status?.accounts ?? []).some(a => a.username) && (
           <span className="hidden min-w-0 truncate text-xs text-surface-500 sm:inline">
-            Instagram <b className="font-medium text-surface-700 dark:text-surface-200">@{status.account}</b> · клиент закрепляется за менеджером, который ответил первым
+            Instagram{' '}
+            <b className="font-medium text-surface-700 dark:text-surface-200">
+              {(status?.accounts ?? []).filter(a => a.username).map(a => `@${a.username}`).join(', ')}
+            </b> · клиент закрепляется за менеджером, который ответил первым
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -194,11 +197,14 @@ export default function DirectPage() {
 
       {/* Предупреждения — тонкими полосами, чтобы не съедать место чата */}
       <div className={clsx('flex-col', hideOnPhone)}>
-        {status?.tokenInvalid && (
-          <div className="border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-            Instagram не принимает ключ доступа — сообщения из CRM не уходят. {isTop ? 'Сгенерируйте новый маркер в кабинете Meta и замените INSTAGRAM_ACCESS_TOKEN в Railway.' : 'Сообщите администратору.'}
+        {(status?.accounts ?? []).filter(a => a.tokenInvalid).map(a => (
+          <div key={a.accountId || 'primary'} className="border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            Instagram не принимает ключ{a.username ? ` @${a.username}` : ''} — сообщения из CRM через него не уходят.{' '}
+            {!isTop ? 'Сообщите администратору.' : a.primary
+              ? 'Сгенерируйте новый маркер в кабинете Meta и замените INSTAGRAM_ACCESS_TOKEN в Railway.'
+              : 'Сгенерируйте новый маркер в кабинете Meta и вставьте его: шестерёнка → «Добавить аккаунт».'}
           </div>
-        )}
+        ))}
         {status && !status.connected && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
             Instagram ещё не подключён к CRM. {isTop ? 'Нажмите на шестерёнку справа — там видно, чего не хватает.' : 'Как только администратор его подключит, сюда начнут приходить сообщения клиентов.'}

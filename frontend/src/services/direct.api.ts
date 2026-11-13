@@ -12,6 +12,8 @@ export interface DirectFilters {
   lead?: 'with' | 'without'
   /** Только чаты, где у меня стоит напоминание. */
   reminder?: boolean
+  /** Чаты одного аккаунта Instagram (id аккаунта). */
+  account?: string
 }
 
 export interface DirectLabel { id: string; name: string; color: string; sortOrder?: number }
@@ -23,6 +25,8 @@ export interface DirectManager { id: string; name: string; role: string }
 
 export interface DirectConversation {
   id: string
+  /** Аккаунт агентства, через который идёт переписка. */
+  accountId: string
   contact: { name: string | null; username: string | null; label: string; picture: string | null }
   lastMessage: {
     preview: string
@@ -142,6 +146,21 @@ export interface DirectStatusInfo {
   lastWebhookAt: string | null
   storagePersistent: boolean | null
   webhookUrl: string
+  /** Аккаунты Instagram «Директа»: основной из Railway и подключённые в CRM. */
+  accounts: DirectAccount[]
+}
+
+export interface DirectAccount {
+  accountId: string | null
+  username: string | null
+  /** Основной — его маркер в Railway. */
+  primary: boolean
+  tokenInvalid: boolean
+  tokenExpiresAt: string | null
+  connectedAt: string | null
+  /** Последнее событие по этому аккаунту. */
+  lastEventAt: string | null
+  chats: number
 }
 
 export interface DirectStatsRow {
@@ -223,6 +242,9 @@ export const directApi = {
   createLead: (id: string, data: any) => api.post<{ leadId: string }>(`/direct/conversations/${id}/lead`, data).then(r => r.data),
   stats: (params: { from?: string; to?: string }) => api.get<DirectStats>('/direct/stats', { params }).then(r => r.data),
 
+  connectAccount: (token: string) =>
+    api.post<{ accountId: string; username: string; renewed: boolean; webhooks: boolean; webhookError: string | null }>('/direct/accounts', { token }).then(r => r.data),
+  disconnectAccount: (accountId: string) => api.delete(`/direct/accounts/${accountId}`).then(r => r.data),
   details: (id: string) => api.get<DirectDetails>(`/direct/conversations/${id}/details`).then(r => r.data),
   pin: (id: string, on: boolean) => api.post<DirectConversation>(`/direct/conversations/${id}/pin`, { on }).then(r => r.data),
   archive: (id: string, on: boolean) => api.post<DirectConversation>(`/direct/conversations/${id}/archive`, { on }).then(r => r.data),
