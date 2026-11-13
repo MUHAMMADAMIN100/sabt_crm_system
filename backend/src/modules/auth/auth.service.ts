@@ -568,62 +568,25 @@ export class AuthService implements OnModuleInit {
   // ─── «Войти как» (13.11.2026) ─────────────────────────────────────
   /** Выдать основателю/админу вход в кабинет сотрудника. Свой вход у него
    *  не трогаем: токен сотрудника живёт в отдельной куке поверх основной,
-   *  и «Вернуться» просто её убирает. Правило — impersonationDenial. */
-  async impersonate(actorId: string, targetId: string, req?: Request | null) {
+   *  и «Вернуться» просто её убирает. Правило — impersonationDenial.
+   *  Следов не оставляем нигде — ни входа, ни отказа (решение владельца). */
+  async impersonate(actorId: string, targetId: string) {
     const actor = await this.userRepo.findOne({ where: { id: actorId } });
     if (!actor) throw new UnauthorizedException();
     const target = await this.userRepo.findOne({ where: { id: targetId } });
     if (!target) throw new NotFoundException('Сотрудник не найден');
     const targetEmp = await this.employeeRepo.findOne({ where: { userId: target.id } });
     const denial = impersonationDenial(actor, target, targetEmp);
-    if (denial) {
-      await this.audit.log({
-        type: SecurityEventType.FORBIDDEN_ACCESS, userId: actor.id, email: actor.email, req,
-        details: { path: 'auth/impersonate', targetId: target.id, reason: denial },
-      });
-      throw new ForbiddenException(denial);
-    }
+    if (denial) throw new ForbiddenException(denial);
     const token = this.jwtService.sign(
       { sub: target.id, email: target.email, role: target.role, imp: actor.id },
       { expiresIn: IMPERSONATION_TTL },
     );
-    const mark = { id: actor.id, name: actor.name, role: actor.role };
-    await this.activityLog.log({
-      userId: target.id, userName: target.name, action: ActivityAction.LOGIN,
-      entity: 'user', entityId: target.id, entityName: target.name,
-      details: { impersonation: 'start', impersonatedBy: mark },
-    });
-    await this.audit.log({
-      type: SecurityEventType.IMPERSONATION_START, userId: actor.id, email: actor.email, req,
-      details: { targetId: target.id, targetName: target.name, targetRole: target.role },
-    });
     const me = await this.getMe(target.id);
-    return { token, user: { ...me, impersonator: mark, canImpersonate: false } };
-  }
-
-  /** Записать выход из кабинета сотрудника. Токен читаем сами: «Вернуться»
-   *  должно срабатывать и тогда, когда вход уже недействителен (истёк,
-   *  входившего заблокировали) — иначе человек застрял бы в чужом кабинете. */
-  async endImpersonation(rawToken: string | null, req?: Request | null) {
-    if (!rawToken) return;
-    let payload: { sub?: string; imp?: string } | null = null;
-    try { payload = this.jwtService.verify(rawToken, { ignoreExpiration: true }); } catch { return; }
-    if (!payload?.imp || !payload.sub) return;
-    const [actor, target] = await Promise.all([
-      this.userRepo.findOne({ where: { id: payload.imp } }),
-      this.userRepo.findOne({ where: { id: payload.sub } }),
-    ]);
-    if (!actor || !target) return;
-    const mark = { id: actor.id, name: actor.name, role: actor.role };
-    await this.activityLog.log({
-      userId: target.id, userName: target.name, action: ActivityAction.LOGOUT,
-      entity: 'user', entityId: target.id, entityName: target.name,
-      details: { impersonation: 'end', impersonatedBy: mark },
-    });
-    await this.audit.log({
-      type: SecurityEventType.IMPERSONATION_END, userId: actor.id, email: actor.email, req,
-      details: { targetId: target.id, targetName: target.name },
-    });
+    return {
+      token,
+      user: { ...me, impersonator: { id: actor.id, name: actor.name, role: actor.role }, canImpersonate: false },
+    };
   }
 
   async getMe(userId: string) {

@@ -55,7 +55,6 @@ export default function ImpersonationBanner() {
       <div className="flex-1 min-w-0 text-sm leading-snug">
         <span className="font-semibold">Вы вошли как {user.name}</span>
         {user.role && <span className="opacity-80"> · {getRoleLabel(user.role)}</span>}
-        <span className="hidden sm:inline opacity-80"> — всё, что вы делаете, записывается в журнал от вашего имени ({user.impersonator.name})</span>
       </div>
       <button
         type="button"

@@ -11,8 +11,9 @@ import { SetMetadata } from '@nestjs/common';
  *    выше своих);
  *  - внутри работает всё, кроме начала/конца смены — табель должен отражать
  *    реальное время человека;
- *  - сотрудник ничего не узнаёт, но каждое действие пишется в журнал
- *    с пометкой, кто его сделал на самом деле.
+ *  - сотрудник ничего не узнаёт; «Войти как» не оставляет следов нигде
+ *    (13.11.2026): ни входа/выхода, ни действий изнутри — ни в «Ленте
+ *    событий», ни в журнале безопасности, ни в базе.
  *
  * Токен входа — обычный JWT сотрудника с полем `imp` (id того, кто вошёл).
  * Каждый запрос заново сверяет оба аккаунта с базой (jwt.strategy): если
@@ -67,26 +68,14 @@ export function impersonationDenial(
   return null;
 }
 
-/** Контекст запроса, сделанного «от имени»: журналы читают его, чтобы
- *  пометить запись настоящим автором. Живёт ровно один запрос. */
+/** Запрос сделан «от имени» сотрудника. Журналы проверяют этот контекст и
+ *  ничего не пишут — «Войти как» не оставляет следов. Живёт один запрос. */
 export interface ImpersonationContext {
   actorId: string;
-  actorName: string;
-  actorRole: string;
   targetId: string;
-  targetName: string;
-  /** Сколько записей журнала уже сделал сам обработчик — если ни одной,
-   *  перехватчик допишет общую «действие в кабинете сотрудника». */
-  logged: number;
 }
 
 export const impersonationStore = new AsyncLocalStorage<ImpersonationContext>();
-
-/** Пометка для журнала: кто на самом деле сделал действие. */
-export function impersonationMark(): { id: string; name: string; role: string } | null {
-  const ctx = impersonationStore.getStore();
-  return ctx ? { id: ctx.actorId, name: ctx.actorName, role: ctx.actorRole } : null;
-}
 
 /** Действие недоступно, пока вошли за сотрудника (смена, пароль, 2FA…). */
 export const NO_IMPERSONATION = 'noImpersonation';

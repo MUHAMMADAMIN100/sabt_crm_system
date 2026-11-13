@@ -33,7 +33,6 @@ const ACTION_LABELS: Record<string, string> = {
   PROFILE_UPDATE: 'Обновил профиль', AVATAR_UPDATE: 'Сменил аватар',
   USER_ACTIVATE: 'Активировал пользователя', USER_DEACTIVATE: 'Деактивировал пользователя',
   LEAD_PROGRESS: 'Продвинул лида по воронке',
-  IMPERSONATED_ACTION: 'Действие в кабинете сотрудника',
 }
 
 type Item = {
@@ -90,9 +89,6 @@ const money = (n: any) => Number(n || 0).toLocaleString('ru-RU')
 
 function actionLabel(item: Item): string {
   if (item.source === 'finance') return String(item.action || '').replace(/\s*\(финансы\)\s*$/i, '').replace(/\s*\(ЗП\)\s*$/i, '')
-  // «Войти как»: вход и выход основателя/админа в кабинет сотрудника.
-  if (item.details?.impersonation === 'start') return 'Открыт кабинет сотрудника («Войти как»)'
-  if (item.details?.impersonation === 'end') return 'Закрыт кабинет сотрудника («Войти как»)'
   return ACTION_LABELS[item.action] || item.action || 'Действие'
 }
 
@@ -322,14 +318,6 @@ export default function TeamActivityPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm">{it.userName || 'Система'}</span>
-                          {it.details?.impersonatedBy?.name && (
-                            <span
-                              className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                              title={`На самом деле это сделал(а) ${it.details.impersonatedBy.name} из кабинета сотрудника`}
-                            >
-                              {it.details.impersonatedBy.name} · «Войти как»
-                            </span>
-                          )}
                           <span className="text-[11px] font-semibold text-gray-400">
                             {getRoleLabel(it.userRole)}
                           </span>

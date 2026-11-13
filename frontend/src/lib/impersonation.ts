@@ -25,7 +25,7 @@ export async function startImpersonation(target: { userId: string; name: string 
 }
 
 export async function stopImpersonation(path = '/employees') {
-  // Сначала сервер убирает куку входа и пишет выход в журнал, потом свои
+  // Сначала сервер убирает куку входа (ничего не записывая), потом свои
   // токены — на место. Даже если сервер не ответил, токены вернём: иначе
   // основатель застрял бы в чужом кабинете.
   try { await api.post('/auth/impersonate/stop') } catch { /* ignore */ }

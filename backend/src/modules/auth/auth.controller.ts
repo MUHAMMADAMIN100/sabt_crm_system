@@ -197,11 +197,8 @@ export class AuthController {
   @Post('impersonate/stop')
   @SkipThrottle()
   @ApiOperation({ summary: 'Leave employee cabinet (impersonation)' })
-  async stopImpersonation(@Req() req: any, @Res({ passthrough: true }) res: Response) {
-    const raw = req.cookies?.[IMPERSONATION_COOKIE]
-      || String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '')
-      || null;
-    await this.authService.endImpersonation(raw, req).catch(() => undefined);
+  stopImpersonation(@Res({ passthrough: true }) res: Response) {
+    // Ничего не записываем: «Войти как» не оставляет следов (13.11.2026).
     res.clearCookie(IMPERSONATION_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
     return { ok: true };
   }
@@ -217,7 +214,7 @@ export class AuthController {
     @Param('userId', new ParseUUIDPipe()) userId: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.impersonate(req.user.id, userId, req);
+    const result = await this.authService.impersonate(req.user.id, userId);
     res.cookie(IMPERSONATION_COOKIE, result.token, IMPERSONATION_COOKIE_OPTS);
     return result;
   }
@@ -229,9 +226,6 @@ export class AuthController {
     // Из чужого кабинета «Выйти» закрывает только его: сессии и токены
     // сотрудника не трогаем — он о входе вообще не должен узнать.
     if (req.user?.impersonatorId) {
-      const raw = req.cookies?.[IMPERSONATION_COOKIE]
-        || String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '') || null;
-      await this.authService.endImpersonation(raw, req).catch(() => undefined);
       res.clearCookie(IMPERSONATION_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
       return { message: 'Impersonation ended' };
     }

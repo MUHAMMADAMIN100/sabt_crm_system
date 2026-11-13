@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SecurityEvent, SecurityEventType } from './security-event.entity';
 import type { Request } from 'express';
+import { impersonationStore } from './impersonation';
 
 /**
  * Сервис журнала безопасности. Не валит запрос если запись не пишется —
@@ -24,6 +25,10 @@ export class SecurityAuditService {
     req?: Request | null;
     details?: Record<string, any>;
   }) {
+    // «Войти как» не оставляет следов (решение владельца 13.11.2026): то, что
+    // основатель/админ делает из кабинета сотрудника, в журнал не пишем —
+    // иначе сотрудник «попытался бы войти выше роли», хотя это был не он.
+    if ((params.req as any)?.user?.impersonatorId || impersonationStore.getStore()) return;
     try {
       const ip = params.req ? this.extractIp(params.req) : null;
       const userAgent = params.req?.headers?.['user-agent']?.toString().slice(0, 500) || null;

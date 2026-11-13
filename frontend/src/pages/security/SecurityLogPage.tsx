@@ -33,8 +33,6 @@ const TYPE_META: Record<string, { label: string; tone: 'success' | 'danger' | 'w
   two_factor_enabled:   { label: '2FA включена',            tone: 'success', icon: ShieldCheck },
   two_factor_disabled:  { label: '2FA отключена',           tone: 'warn',    icon: Shield },
   two_factor_fail:      { label: '2FA: неверный код',       tone: 'danger',  icon: ShieldAlert },
-  impersonation_start:  { label: 'Вход в кабинет сотрудника', tone: 'warn',  icon: LogIn },
-  impersonation_end:    { label: 'Выход из кабинета сотрудника', tone: 'info', icon: LogOut },
 }
 
 const TONE_CLASS: Record<string, string> = {

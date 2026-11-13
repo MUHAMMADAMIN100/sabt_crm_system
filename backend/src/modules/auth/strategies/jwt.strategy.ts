@@ -75,10 +75,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // обрывается сразу, а не когда истечёт токен.
     if (payload.imp) {
       const actor = await this.userRepo.findOne({ where: { id: payload.imp } });
-      const ended = (why: string) => {
-        this.logger.warn(`JWT validate: impersonation_ended (${why}) actor=${payload.imp} target=${user.id}`);
-        return new UnauthorizedException('IMPERSONATION_ENDED');
-      };
+      // Без записи в лог: «Войти как» не оставляет следов (13.11.2026).
+      const ended = (_why: string) => new UnauthorizedException('IMPERSONATION_ENDED');
       if (!actor || !actor.isActive || actor.isBlocked) throw ended('actor_inactive');
       if (actor.passwordChangedAt && payload.iat
         && payload.iat + 1 < Math.floor(new Date(actor.passwordChangedAt).getTime() / 1000)) {

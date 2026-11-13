@@ -183,13 +183,7 @@ export class FinanceActivityInterceptor implements NestInterceptor {
         userId: req?.user?.id ?? null,
         action: labelFor(method, url),
         route: `${method} ${url}`.slice(0, 200),
-        details: {
-          ...(this.detailPayload(req, before, after, response) as Record<string, any>),
-          // «Войти как»: действие из кабинета сотрудника сделал основатель.
-          ...(req?.user?.impersonatorId
-            ? { impersonatedBy: { id: req.user.impersonatorId, name: req.user.impersonatorName, role: req.user.impersonatorRole } }
-            : {}),
-        },
+        details: this.detailPayload(req, before, after, response),
       }));
     } catch (error: any) {
       this.logger.warn(`finance activity log failed: ${error?.message || error}`);
@@ -200,6 +194,9 @@ export class FinanceActivityInterceptor implements NestInterceptor {
     const req = ctx.switchToHttp().getRequest();
     const method = String(req?.method || '');
     if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return next.handle();
+    // «Войти как» не оставляет следов (13.11.2026): действия из кабинета
+    // сотрудника в финансовый журнал не пишем.
+    if (req?.user?.impersonatorId) return next.handle();
 
     // Сначала фиксируем «до», затем пропускаем запрос. Ошибка снимка не должна
     // мешать финансовой операции — в этом случае журнал сохранит доступные поля.

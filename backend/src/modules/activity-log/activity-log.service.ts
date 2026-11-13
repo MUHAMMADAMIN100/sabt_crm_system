@@ -25,16 +25,10 @@ export class ActivityLogService {
 
   async log(dto: LogDto): Promise<void> {
     try {
-      // Запрос сделан «от имени» сотрудника (основатель/админ вошёл в его
-      // кабинет) — помечаем запись настоящим автором. Имя оставляем
-      // сотрудника: историю задачи видит и он сам, а знать о входе ему не
-      // нужно (решение владельца); пометку показывает журнал команды.
-      const imp = impersonationStore.getStore();
-      if (imp) {
-        imp.logged += 1;
-        const mark = { id: imp.actorId, name: imp.actorName, role: imp.actorRole };
-        dto = { ...dto, details: { ...(dto.details || {}), impersonatedBy: dto.details?.impersonatedBy || mark } };
-      }
+      // Запрос сделан из кабинета сотрудника («Войти как»). Решение владельца
+      // (13.11.2026): никаких следов — ни отметки, ни записи. Действия
+      // основателя/админа внутри чужого кабинета в журнал не пишем вовсе.
+      if (impersonationStore.getStore()) return;
       const entry = this.repo.create(dto);
       await this.repo.save(entry);
     } catch (e) {
