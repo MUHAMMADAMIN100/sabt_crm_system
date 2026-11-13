@@ -1171,3 +1171,20 @@ aside {
   100%    { background-color: transparent; box-shadow: inset 3px 0 0 transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .nav-was-here { animation: none; outline: 2px solid rgb(var(--prim-500) / 0.5); } }
+
+/* iPhone и iPad увеличивают страницу, когда нажимают на поле со шрифтом
+   мельче 16px (решение владельца 13.11.2026: на телефоне все поля — 16px,
+   масштаб пальцами не запрещаем). Правило выше живёт в слое компонентов,
+   и любой класс размера у поля его перебивал (поле ответа в «Директе» —
+   14px). Здесь — вне слоёв и с !important, только для сенсорных экранов:
+   на компьютере размеры прежние. max(…, 1em) не уменьшает крупные поля. */
+/* :not(.\#) — для веса селектора: правило должно перебивать и классы
+   размера с !important (например, «!text-[12px]»). */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]):not(.\#),
+  textarea:not(.\#),
+  select:not(.\#),
+  [contenteditable="true"]:not(.\#) {
+    font-size: max(16px, 1em) !important;
+  }
+}
