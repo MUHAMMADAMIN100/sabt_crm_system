@@ -3,6 +3,7 @@ import { describeWebhook, parseInstagramWebhook } from './instagram-events';
 import { isMediaLink, signedByMeta, MessengerError } from './meta-http';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { DirectFiles } from './direct-files';
+import { snippetOf } from './direct.service';
 import { bindsOnReply, canLead, canReply, canTransfer, isSalesManager, isTop } from './direct-access';
 
 const ACCOUNT = '17841400000000001';
@@ -253,5 +254,40 @@ describe('кто ведёт чат — правила закрепления (р
     expect(canLead({ ...smm, deniedPermissions: ['clients.view'] })).toBe(false); // доступ к Базе клиентов отняли
     expect(canLead(designer)).toBe(false);
     expect(canLead(admin)).toBe(false);
+  });
+});
+
+describe('инструменты чата (13.11.2026)', () => {
+  const files = new DirectFiles();
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(16)]);
+
+  it('видео MP4 и MOV принимаются как видео, подделка — нет', () => {
+    expect(files.checkOutgoing({ originalname: 'ролик.mp4', size: mp4.length, buffer: mp4 })).toMatchObject({ kind: 'video', extension: '.mp4' });
+    expect(files.checkOutgoing({ originalname: 'clip.MOV', size: mp4.length, buffer: mp4 })).toMatchObject({ kind: 'video', extension: '.mov' });
+    expect(() => files.checkOutgoing({ originalname: 'fake.mp4', size: 5, buffer: Buffer.from('hello') })).toThrow();
+    expect(() => files.checkOutgoing({ originalname: 'big.mp4', size: 26 * 1024 * 1024, buffer: mp4 })).toThrow(/25 МБ/);
+  });
+
+  it('кусок текста вокруг найденного: с многоточиями, без лишних пробелов', () => {
+    const long = `${'а'.repeat(100)} нужен   прайс на таргет ${'б'.repeat(100)}`;
+    const s = snippetOf(long, 'прайс', 20);
+    expect(s.startsWith('…')).toBe(true);
+    expect(s.endsWith('…')).toBe(true);
+    expect(s).toContain('нужен прайс на таргет');
+    expect(snippetOf('коротко про прайс', 'ПРАЙС')).toBe('коротко про прайс');
+  });
+
+  it('реакция агентства (эхо из приложения) разбирается, а не теряется', () => {
+    const [event] = parseInstagramWebhook(envelope([
+      { sender: { id: ACCOUNT }, recipient: { id: CLIENT }, timestamp: 1, reaction: { mid: 'm9', action: 'react', reaction: 'love', emoji: '❤️' } },
+    ]));
+    expect(event).toMatchObject({ kind: 'reaction', externalId: 'm9', emoji: '❤️', byContact: false, contactId: CLIENT });
+  });
+
+  it('цитата клиента: на какое сообщение ответил', () => {
+    const [event] = parseInstagramWebhook(envelope([
+      { sender: { id: CLIENT }, recipient: { id: ACCOUNT }, timestamp: 1, message: { mid: 'm10', text: 'А что входит?', reply_to: { mid: 'm5' } } },
+    ]));
+    expect(event).toMatchObject({ kind: 'message', replyToId: 'm5' });
   });
 });

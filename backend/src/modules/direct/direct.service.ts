@@ -57,6 +57,28 @@ const INTERRUPTED_ECHO_MS = 36 * 60 * 60 * 1000;
 /** Сколько раз пробуем скачать файл сообщения, прежде чем оставить только ссылку. */
 const MAX_FETCH_ATTEMPTS = 5;
 
+/** Переход к сообщению: сколько сообщений от него до свежего показываем самое большее. */
+const MAX_JUMP_MESSAGES = 1000;
+/** И сколько раньше него — для контекста. */
+const JUMP_CONTEXT = 20;
+/** «Печатает…» в Instagram — не чаще раза в столько. */
+const TYPING_EVERY_MS = 5000;
+
+/** Почему реакция не ушла — по-человечески. */
+const REACTION_FAILURE: Record<string, string> = {
+  TOKEN_INVALID: 'Ключ Instagram больше не действует — сообщите администратору',
+  WINDOW_CLOSED: 'Прошло 24 часа после сообщения клиента — реакцию можно поставить только в приложении Instagram',
+  UNAVAILABLE: 'Клиент недоступен: заблокировал аккаунт или удалил свой',
+  NETWORK: 'Сбой связи с Instagram — попробуйте ещё раз',
+  REJECTED: 'Instagram не принял реакцию',
+};
+
+/** Фильтры списка поверх вкладки. */
+export type ListFilters = { search?: string; assigneeId?: string; labelId?: string; lead?: 'with' | 'without'; reminder?: '1' };
+
+/** Цитата в ленте: на что ответили. */
+type ReplyPreview = { id: string | null; direction: string | null; preview: string; author: string | null };
+
 /** Первая строка ответа query(): у UPDATE/DELETE TypeORM отдаёт [строки, число], у SELECT/INSERT — строки. */
 const firstRow = (res: any): any => (Array.isArray(res?.[0]) ? res[0][0] : res?.[0]);
 const isUniqueViolation = (error: any) => error?.code === '23505' || error?.driverError?.code === '23505';
@@ -69,6 +91,8 @@ export class DirectService implements OnApplicationBootstrap {
   /** Кто имеет доступ к «Директу» — кэш на минуту. */
   private audienceCache: { at: number; all: string[]; push: string[] } | null = null;
   private readonly profileAttempts = new Map<string, number>();
+  /** Когда последний раз слали «печатает» в чат. */
+  private readonly typingAt = new Map<string, number>();
   private lastWebhookSavedAt = 0;
 
   constructor(
@@ -106,7 +130,7 @@ export class DirectService implements OnApplicationBootstrap {
       }
       if (event.kind === 'message') await (event.outgoing ? this.applyEcho(event) : this.applyIncoming(event));
       else if (event.kind === 'deleted') await this.applyDeleted(event.externalId);
-      else if (event.kind === 'reaction') await this.applyReaction(event.externalId, event.byContact ? event.emoji : undefined);
+      else if (event.kind === 'reaction') await this.applyReaction(event.externalId, event.emoji, event.byContact);
       else await this.applyRead(event.accountId, event.contactId, event.externalId);
     }
   }
@@ -138,6 +162,8 @@ export class DirectService implements OnApplicationBootstrap {
                   "lastMessageAt" = GREATEST("lastMessageAt", $2),
                   "lastIncomingAt" = GREATEST(COALESCE("lastIncomingAt", $2), $2),
                   "waitingSince" = COALESCE("waitingSince", $2),
+                  -- Клиент написал снова — чат возвращается из архива.
+                  "archivedAt" = NULL, "archivedById" = NULL,
                   "updatedAt" = now()
             WHERE id = $1
             RETURNING "unreadCount"`,
@@ -243,13 +269,13 @@ export class DirectService implements OnApplicationBootstrap {
     this.changed(message.conversationId);
   }
 
-  /** Реакция клиента. undefined — реагировало агентство, это не храним. */
-  private async applyReaction(externalId: string, emoji: string | null | undefined): Promise<void> {
-    if (emoji === undefined) return;
+  /** Реакция клиента или агентства (из CRM или из приложения Instagram). null — сняли. */
+  private async applyReaction(externalId: string, emoji: string | null, byContact: boolean): Promise<void> {
     const message = await this.messagesRepo.findOne({ where: { externalId }, select: ['id', 'conversationId'] });
     if (!message) return;
-    await this.messagesRepo.update(message.id, { contactReaction: emoji ? emoji.slice(0, 16) : null });
-    this.changed(message.conversationId);
+    const value = emoji ? emoji.slice(0, 16) : null;
+    await this.messagesRepo.update(message.id, byContact ? { contactReaction: value } : { ourReaction: value });
+    await this.pushMessage(message.conversationId, message.id, undefined, false);
   }
 
   /** Клиент прочитал переписку до этого сообщения. */
@@ -424,6 +450,15 @@ export class DirectService implements OnApplicationBootstrap {
     return this.audienceCache;
   }
 
+  /** Справочник меток изменился — страницы перечитывают метки и списки. */
+  broadcastChanged(): void {
+    this.audience()
+      .then(({ all }) => {
+        for (const userId of all) this.gateway.notifyUser(userId, 'direct:labels', {});
+      })
+      .catch(() => { /* живое обновление — не главное */ });
+  }
+
   /** Говорит открытым страницам CRM, что чат изменился. */
   private changed(conversationId: string): void {
     this.audience()
@@ -436,12 +471,12 @@ export class DirectService implements OnApplicationBootstrap {
   /** Шлёт открытым страницам само сообщение: лента и список обновляются
    *  сразу, без повторного запроса к серверу. clientId — метка временного
    *  пузыря на странице отправителя: по ней он заменяется настоящим. */
-  private async pushMessage(conversationId: string, messageId: string, clientId?: string): Promise<void> {
+  private async pushMessage(conversationId: string, messageId: string, clientId?: string, withConversation = true): Promise<void> {
     try {
       const message = await this.messagesRepo.findOne({ where: { id: messageId }, relations: ['author'] });
       if (message) {
         const files = await this.attachments.find({ where: { messageId }, order: { createdAt: 'ASC' } });
-        const dto = this.messageDto(message, files, clientId);
+        const dto = this.messageDto(message, files, clientId, await this.replyPreviews([message]));
         const { all } = await this.audience();
         // Кто ведёт чат — страница по нему решает, звенеть ли: менеджеру
         // звенят только его чаты и свободные.
@@ -452,18 +487,16 @@ export class DirectService implements OnApplicationBootstrap {
     } catch (e: any) {
       this.logger.warn(`Живое обновление сообщения не ушло: ${e?.message || e}`);
     }
-    await this.pushConversation(conversationId);
+    if (withConversation) await this.pushConversation(conversationId);
   }
 
   /** Шлёт обновлённую строку чата: превью, непрочитанные, «ждёт ответа»,
    *  кто ответил последним. Кто сейчас в чате — все, страница уберёт себя сама. */
-  private async pushConversation(conversationId: string): Promise<void> {
+  async pushConversation(conversationId: string): Promise<void> {
     try {
       const row = await this.conversations.findOne({ where: { id: conversationId }, relations: ['lead', 'lastReplyBy', 'assignee'] });
       if (!row) return;
-      const last = await this.lastMessages([row.id]);
-      const names = await this.namesOf(this.uniq([...this.viewerIds(row.id), ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[]]));
-      const conversation = this.summary(row, last.get(row.id) ?? null, names, '');
+      const [conversation] = await this.decorate([row], '');
       const { all } = await this.audience();
       for (const userId of all) this.gateway.notifyUser(userId, 'direct:conversation', { conversationId, conversation });
     } catch (e: any) {
@@ -539,31 +572,42 @@ export class DirectService implements OnApplicationBootstrap {
 
   // ─── Что читает CRM ─────────────────────────────────────────────────
 
-  async list(user: User, query: { view?: string; search?: string; assigneeId?: string; limit?: number; offset?: number }) {
+  /**
+   * Список чатов. Порядок: закреплённые, потом чаты, где у меня сработало
+   * напоминание, потом по последнему сообщению. Сначала выбираем id нужной
+   * страницы (сортировка по выражениям), потом сами чаты.
+   */
+  async list(user: User, query: ListFilters & { view?: string; limit?: number; offset?: number }) {
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 100);
     const offset = Math.max(Number(query.offset) || 0, 0);
-    const qb = this.filtered(query.view, query.search, user, query.assigneeId)
-      .leftJoinAndSelect('c.lead', 'lead')
-      .leftJoinAndSelect('c.lastReplyBy', 'replier')
-      .leftJoinAndSelect('c.assignee', 'assignee')
-      .orderBy('c.lastMessageAt', 'DESC')
+    const total = await this.filtered(query.view, user, query).getCount();
+    const ids: string[] = (await this.filtered(query.view, user, query)
+      .select('c.id', 'id')
+      .addSelect('CASE WHEN c.pinnedAt IS NULL THEN 1 ELSE 0 END', 'pin_rank')
+      .addSelect(
+        `CASE WHEN EXISTS (SELECT 1 FROM direct_reminders dr WHERE dr."conversationId" = c.id AND dr."userId" = :sortMe
+           AND dr."doneAt" IS NULL AND dr."remindAt" <= now()) THEN 0 ELSE 1 END`,
+        'due_rank',
+      )
+      .setParameter('sortMe', user.id)
+      .orderBy('pin_rank', 'ASC')
+      .addOrderBy('due_rank', 'ASC')
+      .addOrderBy('c.lastMessageAt', 'DESC')
       .addOrderBy('c.id', 'DESC')
-      .take(limit)
-      .skip(offset);
-    const [rows, total] = await qb.getManyAndCount();
-    const last = await this.lastMessages(rows.map(r => r.id));
-    const names = await this.namesOf(this.uniq([
-      ...rows.flatMap(r => this.viewerIds(r.id)),
-      ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[],
-    ]));
-    return { items: rows.map(r => this.summary(r, last.get(r.id) ?? null, names, user.id)), total };
+      .limit(limit)
+      .offset(offset)
+      .getRawMany()).map(r => r.id);
+    if (!ids.length) return { items: [], total };
+    const rows = await this.conversations.find({ where: { id: In(ids) }, relations: ['lead', 'lastReplyBy', 'assignee'] });
+    const order = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return { items: await this.decorate(rows, user.id), total };
   }
 
-  async counts(user: User, search?: string, assigneeId?: string) {
-    const [all, mine, free, unread, waiting] = await Promise.all(
-      ['all', 'mine', 'free', 'unread', 'waiting'].map(view => this.filtered(view, search, user, assigneeId).getCount()),
-    );
-    return { all, mine, free, unread, waiting };
+  async counts(user: User, filters: ListFilters = {}) {
+    const views = ['all', 'mine', 'free', 'unread', 'waiting', 'archived'] as const;
+    const numbers = await Promise.all(views.map(view => this.filtered(view, user, filters).getCount()));
+    return Object.fromEntries(views.map((view, i) => [view, numbers[i]])) as Record<typeof views[number], number>;
   }
 
   /** Менеджеры продаж — кому можно передать чат и по кому фильтровать список. */
@@ -638,7 +682,9 @@ export class DirectService implements OnApplicationBootstrap {
 
   /** Сколько чатов с непрочитанным — число у «Директа» в меню. */
   async unreadTotal(user: User): Promise<{ count: number }> {
-    const qb = this.conversations.createQueryBuilder('c').where('c.unreadCount > 0');
+    const qb = this.conversations.createQueryBuilder('c')
+      .where('(c.unreadCount > 0 OR c.markedUnread = true)')
+      .andWhere('c.archivedAt IS NULL');
     // Менеджеру — его чаты и свободные; руководство видит все.
     if (!isTop(user)) qb.andWhere('(c.assigneeId IS NULL OR c.assigneeId = :me)', { me: user.id });
     return { count: await qb.getCount() };
@@ -651,30 +697,57 @@ export class DirectService implements OnApplicationBootstrap {
       row = await this.conversations.findOne({ where: { id }, relations: ['lead', 'lastReplyBy', 'assignee'] });
       if (!row) throw new NotFoundException('Чат не найден');
     }
-    const last = await this.lastMessages([row.id]);
-    const names = await this.namesOf(this.uniq([...this.viewerIds(row.id), ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[]]));
-    return this.summary(row, last.get(row.id) ?? null, names, user.id);
+    const [summary] = await this.decorate([row], user.id);
+    return summary;
   }
 
-  async messages(id: string, query: { before?: string; limit?: number }) {
+  /**
+   * Страница переписки. before — более ранние, чем это сообщение. until —
+   * переход к сообщению (поиск, цитата): всё от него до самого свежего и
+   * немного раньше для контекста; если оно слишком далеко — обычная страница.
+   */
+  async messages(id: string, query: { before?: string; until?: string; limit?: number }) {
     await this.conversation(id);
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 100);
-    const before = query.before
-      ? await this.messagesRepo.findOne({ where: { id: query.before, conversationId: id }, select: ['id', 'sentAt'] })
-      : null;
-    const qb = this.messagesRepo.createQueryBuilder('m')
-      .leftJoinAndSelect('m.author', 'author')
-      .where('m.conversationId = :id', { id })
-      .orderBy('m.sentAt', 'DESC')
-      .addOrderBy('m.id', 'DESC')
-      .take(limit + 1);
-    if (before) qb.andWhere('(m.sentAt < :at OR (m.sentAt = :at AND m.id < :mid))', { at: before.sentAt, mid: before.id });
-    const rows = await qb.getMany();
-    const page = rows.slice(0, limit).reverse();
-    const files = page.length ? await this.attachments.find({ where: { messageId: In(page.map(m => m.id)) }, order: { createdAt: 'ASC' } }) : [];
+    const page = (query.until && await this.pageUntil(id, query.until)) || await this.pageBefore(id, query.before, limit);
+    const files = page.items.length ? await this.attachments.find({ where: { messageId: In(page.items.map(m => m.id)) }, order: { createdAt: 'ASC' } }) : [];
     const byMessage = new Map<string, DirectAttachment[]>();
     for (const f of files) byMessage.set(f.messageId, [...(byMessage.get(f.messageId) ?? []), f]);
-    return { items: page.map(m => this.messageDto(m, byMessage.get(m.id) ?? [])), hasMore: rows.length > limit };
+    const replies = await this.replyPreviews(page.items);
+    return { items: page.items.map(m => this.messageDto(m, byMessage.get(m.id) ?? [], undefined, replies)), hasMore: page.hasMore };
+  }
+
+  private feedQuery(id: string) {
+    return this.messagesRepo.createQueryBuilder('m')
+      .leftJoinAndSelect('m.author', 'author')
+      .where('m.conversationId = :id', { id });
+  }
+
+  private async pageBefore(id: string, beforeId: string | undefined, limit: number): Promise<{ items: DirectMessage[]; hasMore: boolean }> {
+    const before = beforeId
+      ? await this.messagesRepo.findOne({ where: { id: beforeId, conversationId: id }, select: ['id', 'sentAt'] })
+      : null;
+    const qb = this.feedQuery(id).orderBy('m.sentAt', 'DESC').addOrderBy('m.id', 'DESC').take(limit + 1);
+    if (before) qb.andWhere('(m.sentAt < :at OR (m.sentAt = :at AND m.id < :mid))', { at: before.sentAt, mid: before.id });
+    const rows = await qb.getMany();
+    return { items: rows.slice(0, limit).reverse(), hasMore: rows.length > limit };
+  }
+
+  private async pageUntil(id: string, targetId: string): Promise<{ items: DirectMessage[]; hasMore: boolean } | null> {
+    const target = await this.messagesRepo.findOne({ where: { id: targetId, conversationId: id }, select: ['id', 'sentAt'] });
+    if (!target) return null;
+    const newer = await this.feedQuery(id)
+      .andWhere('(m.sentAt > :at OR (m.sentAt = :at AND m.id >= :mid))', { at: target.sentAt, mid: target.id })
+      .orderBy('m.sentAt', 'DESC').addOrderBy('m.id', 'DESC')
+      .take(MAX_JUMP_MESSAGES + 1)
+      .getMany();
+    if (newer.length > MAX_JUMP_MESSAGES) return null;
+    const older = await this.feedQuery(id)
+      .andWhere('(m.sentAt < :at OR (m.sentAt = :at AND m.id < :mid))', { at: target.sentAt, mid: target.id })
+      .orderBy('m.sentAt', 'DESC').addOrderBy('m.id', 'DESC')
+      .take(JUMP_CONTEXT + 1)
+      .getMany();
+    return { items: [...older.slice(0, JUMP_CONTEXT).reverse(), ...newer.reverse()], hasMore: older.length > JUMP_CONTEXT };
   }
 
   /** Сотрудник открыл чат: сообщения прочитаны, его уведомления о чате — тоже. */
@@ -687,8 +760,8 @@ export class DirectService implements OnApplicationBootstrap {
     // Тот, кто ведёт, больше не может вести клиентов — как свободный.
     const owner = conversation.assignee;
     const mayClear = !owner || owner.id === user.id || !canLead(owner);
-    if (conversation.unreadCount > 0 && mayClear) {
-      await this.conversations.update(id, { unreadCount: 0 });
+    if ((conversation.unreadCount > 0 || conversation.markedUnread) && mayClear) {
+      await this.conversations.update(id, { unreadCount: 0, markedUnread: false });
       await this.pushConversation(id);
     }
     await this.notifications.markReadByLink(user.id, `/direct?c=${id}`).catch(() => 0);
@@ -696,18 +769,29 @@ export class DirectService implements OnApplicationBootstrap {
 
   // ─── Что пишет CRM ──────────────────────────────────────────────────
 
-  async sendText(user: User, id: string, text: string, publicBase: string, clientId?: string) {
+  async sendText(user: User, id: string, text: string, publicBase: string, clientId?: string, replyToId?: string) {
     const conversation = await this.writable(user, id);
-    return this.sendTexts(user, conversation, text, publicBase, clientId);
+    const replyTo = await this.replyTarget(conversation.id, replyToId);
+    return this.sendTexts(user, conversation, text, publicBase, clientId, replyTo);
   }
 
-  async sendFile(user: User, id: string, upload: UploadedFile | undefined, text: string | undefined, publicBase: string, clientId?: string) {
+  async sendFile(user: User, id: string, upload: UploadedFile | undefined, text: string | undefined, publicBase: string, clientId?: string, replyToId?: string) {
     const conversation = await this.writable(user, id);
+    const replyTo = await this.replyTarget(conversation.id, replyToId);
     const file = this.files.checkOutgoing(upload);
     const stored = await this.files.saveOutgoing(file);
-    const first = await this.deliver(user, conversation, { file: { ...file, ...stored } }, publicBase, clientId);
+    const first = await this.deliver(user, conversation, { file: { ...file, ...stored } }, publicBase, clientId, replyTo);
     const rest = text?.trim() && first.status !== 'failed' ? await this.sendTexts(user, conversation, text, publicBase, clientId) : [];
     return [first, ...rest];
+  }
+
+  /** На что отвечаем: сообщение этого чата, которое Instagram знает (есть mid). */
+  private async replyTarget(conversationId: string, replyToId: string | undefined): Promise<string | null> {
+    if (!replyToId) return null;
+    const target = await this.messagesRepo.findOne({ where: { id: replyToId, conversationId }, select: ['id', 'externalId', 'direction', 'deletedAt'] });
+    if (!target || (target.direction !== 'in' && target.direction !== 'out')) throw new BadRequestException('Сообщение для ответа не найдено');
+    if (!target.externalId || target.deletedAt) throw new BadRequestException('На это сообщение ответить цитатой нельзя');
+    return target.externalId;
   }
 
   async sendVoice(user: User, id: string, upload: UploadedFile | undefined, publicBase: string, clientId?: string) {
@@ -742,13 +826,219 @@ export class DirectService implements OnApplicationBootstrap {
     return this.transmit(conversation, message.id, publicBase);
   }
 
-  async addNote(user: User, id: string, text: string, clientId?: string) {
-    await this.conversation(id);
+  async addNote(user: User, id: string, text: string, clientId?: string, mentions?: string[]) {
+    const conversation = await this.conversation(id);
     const note = await this.messagesRepo.save(this.messagesRepo.create({
       conversationId: id, direction: 'note', text: text.trim(), authorId: user.id, sentAt: new Date(),
     }));
     await this.pushMessage(id, note.id, clientId);
+    if (mentions?.length) this.background(this.notifyMentions(user, conversation, note, mentions));
     return this.messageDto({ ...note, author: user } as DirectMessage, [], clientId);
+  }
+
+  /** @Имя в заметке — коллеге уведомление (только тем, кто видит «Директ»). */
+  private async notifyMentions(author: User, conversation: DirectConversation, note: DirectMessage, ids: string[]): Promise<void> {
+    const { all } = await this.audience();
+    const targets = this.uniq(ids).filter(id => id !== author.id && all.includes(id));
+    for (const userId of targets) {
+      await this.notifications.create({
+        userId,
+        type: NotificationType.DIRECT_MENTION,
+        title: `${author.name} упомянул(а) вас в Директе: ${contactLabel(conversation)}`,
+        message: (note.text || '').slice(0, 300),
+        link: `/direct?c=${conversation.id}`,
+        data: { conversationId: conversation.id, messageId: note.id },
+      }).catch(e => this.logger.warn(`Уведомление об упоминании не создано: ${e?.message || e}`));
+    }
+  }
+
+  /** Реакция ❤️ на сообщение клиента (или снять её). Как ответ: только в
+   *  своём или свободном чате и пока открыто окно 24 часов. */
+  async react(user: User, messageId: string, on: boolean) {
+    const message = await this.messagesRepo.findOne({ where: { id: messageId } });
+    if (!message || message.direction !== 'in') throw new NotFoundException('Сообщение не найдено');
+    if (!message.externalId || message.deletedAt) throw new ConflictException('На это сообщение реакцию поставить нельзя');
+    const conversation = await this.writable(user, message.conversationId);
+    try {
+      await this.instagram.react(conversation.contactId, message.externalId, on);
+    } catch (error) {
+      const failure = failureOf(error);
+      this.logger.warn(`Реакция в Instagram не ушла (${failure}): ${String(error)}`);
+      if (failure === 'TOKEN_INVALID') await this.markToken(true);
+      throw new ConflictException(REACTION_FAILURE[failure] ?? REACTION_FAILURE.REJECTED);
+    }
+    await this.messagesRepo.update(message.id, { ourReaction: on ? '❤️' : null });
+    await this.pushMessage(conversation.id, message.id, undefined, false);
+    const fresh = await this.messagesRepo.findOneOrFail({ where: { id: message.id }, relations: ['author'] });
+    return this.messageDto(fresh, await this.attachments.find({ where: { messageId: message.id } }), undefined, await this.replyPreviews([fresh]));
+  }
+
+  /** «Печатает…» у клиента, пока сотрудник набирает ответ. Тихо: не вышло — не беда. */
+  async typing(user: User, id: string): Promise<void> {
+    const last = this.typingAt.get(id) ?? 0;
+    if (Date.now() - last < TYPING_EVERY_MS) return;
+    const conversation = await this.writable(user, id).catch(() => null);
+    if (!conversation) return;
+    this.typingAt.set(id, Date.now());
+    if (this.typingAt.size > 500) {
+      for (const [key, at] of this.typingAt) if (Date.now() - at > 60_000) this.typingAt.delete(key);
+    }
+    await this.instagram.typing(conversation.contactId)
+      .catch(e => this.logger.debug(`«Печатает» не ушло: ${e?.message || e}`));
+  }
+
+  // ─── Закреп, архив, «непрочитанное», метки ──────────────────────────
+
+  /** Менять закреп, архив, метки чата может тот, кто вправе в нём отвечать:
+   *  ведущий менеджер и руководство; свободный чат — любой с доступом. */
+  private async manageable(user: User, id: string): Promise<DirectConversation> {
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['assignee'] });
+    if (!conversation) throw new NotFoundException('Чат не найден');
+    if (!canReply(user, conversation.assigneeId)) {
+      throw new ForbiddenException(`Чат ведёт ${conversation.assignee?.name || 'другой менеджер'} — закреп, архив и метки меняет он или руководство`);
+    }
+    return conversation;
+  }
+
+  async setPinned(user: User, id: string, on: boolean) {
+    await this.manageable(user, id);
+    await this.conversations.update(id, on ? { pinnedAt: new Date(), pinnedById: user.id } : { pinnedAt: null, pinnedById: null });
+    await this.pushConversation(id);
+    return this.get(user, id);
+  }
+
+  /** В архив — у всей команды; закреп при этом снимается. */
+  async setArchived(user: User, id: string, on: boolean) {
+    await this.manageable(user, id);
+    await this.conversations.update(id, on
+      ? { archivedAt: new Date(), archivedById: user.id, pinnedAt: null, pinnedById: null }
+      : { archivedAt: null, archivedById: null });
+    await this.pushConversation(id);
+    return this.get(user, id);
+  }
+
+  async setMarkedUnread(user: User, id: string, on: boolean) {
+    await this.manageable(user, id);
+    await this.conversations.update(id, { markedUnread: on });
+    await this.pushConversation(id);
+    return this.get(user, id);
+  }
+
+  async setLabels(user: User, id: string, labelIds: string[]) {
+    await this.manageable(user, id);
+    const wanted = this.uniq(labelIds);
+    if (wanted.length) {
+      const [{ count }] = await this.conversations.query(`SELECT count(*)::int AS count FROM direct_labels WHERE id = ANY($1::uuid[])`, [wanted]);
+      if (count !== wanted.length) throw new BadRequestException('Такой метки нет — обновите страницу');
+    }
+    await this.conversations.manager.transaction(async (em) => {
+      await em.query(`DELETE FROM direct_conversation_labels WHERE "conversationId" = $1 AND NOT ("labelId" = ANY($2::uuid[]))`, [id, wanted]);
+      for (const labelId of wanted) {
+        await em.query(
+          `INSERT INTO direct_conversation_labels ("conversationId", "labelId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, labelId],
+        );
+      }
+    });
+    await this.pushConversation(id);
+    return this.get(user, id);
+  }
+
+  // ─── Карточка клиента, команда, поиск ───────────────────────────────
+
+  /** Правая панель чата: лид с контактами, фото и файлы, заметки, напоминания. */
+  async details(user: User, id: string) {
+    const conversation = await this.conversations.findOne({ where: { id }, relations: ['lead'] });
+    if (!conversation) throw new NotFoundException('Чат не найден');
+    const media: any[] = await this.attachments.query(
+      `SELECT a.id, a.kind, a."mimeType", a.name, a.size, a."messageId", m."sentAt", m.direction
+         FROM direct_attachments a JOIN direct_messages m ON m.id = a."messageId"
+        WHERE m."conversationId" = $1 AND a."storedName" IS NOT NULL AND m."deletedAt" IS NULL
+        ORDER BY m."sentAt" DESC, a."createdAt" DESC LIMIT 120`,
+      [id],
+    );
+    const notes = await this.messagesRepo.find({
+      where: { conversationId: id, direction: 'note' }, relations: ['author'], order: { sentAt: 'DESC' }, take: 30,
+    });
+    const reminders: any[] = await this.conversations.query(
+      `SELECT r.id, r."remindAt", r.note, r."firedAt", r."userId", u.name
+         FROM direct_reminders r LEFT JOIN users u ON u.id = r."userId"
+        WHERE r."conversationId" = $1 AND r."doneAt" IS NULL
+        ORDER BY r."remindAt"`,
+      [id],
+    );
+    const lead = conversation.lead;
+    const ownerName = lead?.ownerId ? (await this.namesOf([lead.ownerId])).get(lead.ownerId) ?? null : null;
+    const visual = (a: any) => /^(image|video)\//.test(a.mimeType || '') && a.kind !== 'file' && a.kind !== 'audio';
+    return {
+      lead: lead ? {
+        id: lead.id, name: lead.name, status: lead.status,
+        phone: lead.contactPhone || null, email: lead.contactEmail || null, instagram: lead.contactInstagram || null,
+        contactPerson: lead.contactPerson || null, sphere: lead.sphere || null, nextStep: lead.nextStep || null,
+        nextContactAt: lead.nextContactAt ?? null, dealPotential: lead.dealPotential ?? null,
+        owner: lead.ownerId ? { id: lead.ownerId, name: ownerName ?? 'Сотрудник' } : null,
+      } : null,
+      media: media.filter(visual).slice(0, 60).map(a => ({
+        id: a.id, kind: a.kind, mimeType: a.mimeType, messageId: a.messageId, sentAt: a.sentAt,
+        url: this.files.signedPath('media', a.id),
+      })),
+      files: media.filter(a => a.kind === 'file').slice(0, 30).map(a => ({
+        id: a.id, name: a.name, size: a.size, messageId: a.messageId, sentAt: a.sentAt, url: this.files.signedPath('media', a.id),
+      })),
+      notes: notes.map(n => ({
+        id: n.id, text: n.text, sentAt: n.sentAt,
+        author: n.author ? { id: n.author.id, name: n.author.name } : null,
+      })),
+      reminders: reminders.map(r => ({
+        id: r.id, remindAt: r.remindAt, note: r.note, fired: !!r.firedAt,
+        user: { id: r.userId, name: r.name ?? 'Сотрудник' }, mine: r.userId === user.id,
+      })),
+    };
+  }
+
+  /** Кто видит «Директ» — для @упоминаний в заметках. */
+  async team(): Promise<{ id: string; name: string }[]> {
+    const { all } = await this.audience();
+    const names = await this.namesOf(all);
+    return [...names.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }
+
+  /** Поиск по тексту сообщений и заметок — во всех чатах или в одном. */
+  async search(q: string, conversationId?: string) {
+    const words = q.trim().replace(/\s+/g, ' ').slice(0, 100);
+    if (words.length < 2) return { items: [] };
+    const like = `%${words.replace(/[\\%_]/g, m => `\\${m}`)}%`;
+    const rows: any[] = await this.messagesRepo.query(
+      `SELECT m.id, m."conversationId", m.direction, m.text, m."sentAt", m."authorId"
+         FROM direct_messages m
+        WHERE m.direction IN ('in', 'out', 'note') AND m."deletedAt" IS NULL AND m.text ILIKE $1
+          ${conversationId ? 'AND m."conversationId" = $2' : ''}
+        ORDER BY m."sentAt" DESC LIMIT 40`,
+      conversationId ? [like, conversationId] : [like],
+    );
+    if (!rows.length) return { items: [] };
+    const chats = await this.conversations.find({ where: { id: In(this.uniq(rows.map(r => r.conversationId))) } });
+    const byId = new Map(chats.map(c => [c.id, c]));
+    const names = await this.namesOf(this.uniq(rows.map(r => r.authorId).filter(Boolean)));
+    return {
+      items: rows.filter(r => byId.has(r.conversationId)).map(r => {
+        const chat = byId.get(r.conversationId)!;
+        return {
+          messageId: r.id,
+          conversationId: r.conversationId,
+          direction: r.direction,
+          sentAt: r.sentAt,
+          snippet: snippetOf(r.text || '', words),
+          author: r.authorId ? { id: r.authorId, name: names.get(r.authorId) ?? 'Сотрудник' } : null,
+          contact: {
+            label: contactLabel(chat),
+            username: chat.contactUsername,
+            picture: chat.contactPicture ? this.files.signedPath('avatar', chat.id) : null,
+          },
+          archived: !!chat.archivedAt,
+        };
+      }),
+    };
   }
 
   async deleteNote(user: User, noteId: string): Promise<void> {
@@ -780,10 +1070,11 @@ export class DirectService implements OnApplicationBootstrap {
     return { leadId: lead.id };
   }
 
-  private async sendTexts(user: User, conversation: DirectConversation, text: string, publicBase: string, clientId?: string) {
+  private async sendTexts(user: User, conversation: DirectConversation, text: string, publicBase: string, clientId?: string, replyTo: string | null = null) {
     const sent: any[] = [];
-    for (const part of splitText(text)) {
-      const message = await this.deliver(user, conversation, { text: part }, publicBase, clientId);
+    for (const [i, part] of splitText(text).entries()) {
+      // Цитата — только у первой части длинного текста.
+      const message = await this.deliver(user, conversation, { text: part }, publicBase, clientId, i === 0 ? replyTo : null);
       sent.push(message);
       if (message.status === 'failed') break;
     }
@@ -791,7 +1082,7 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   /** Сначала пишем сообщение в переписку, потом отдаём Instagram: эхо найдёт его ждущим. */
-  private async deliver(user: User, conversation: DirectConversation, content: Content, publicBase: string, clientId?: string) {
+  private async deliver(user: User, conversation: DirectConversation, content: Content, publicBase: string, clientId?: string, replyTo: string | null = null) {
     const sentAt = new Date();
     const message = await this.messagesRepo.save(this.messagesRepo.create({
       conversationId: conversation.id,
@@ -800,10 +1091,11 @@ export class DirectService implements OnApplicationBootstrap {
       authorId: user.id,
       sentAt,
       text: 'text' in content ? content.text : null,
+      replyToExternalId: replyTo,
     }));
     if ('file' in content) {
       await this.attachments.save(this.attachments.create({
-        messageId: message.id, kind: content.file.kind === 'image' ? 'image' : 'file',
+        messageId: message.id, kind: content.file.kind,
         storedName: content.file.storedName, mimeType: content.file.mimeType, size: content.file.size,
         name: content.file.name, isPublic: true,
       }));
@@ -826,12 +1118,13 @@ export class DirectService implements OnApplicationBootstrap {
     try {
       const to = conversation.contactId;
       let externalId: string;
+      const replyTo = message.replyToExternalId;
       if (file?.storedName) {
         const link = `${publicBase}/api/public/direct-files/${file.storedName}`;
-        const type = file.kind === 'audio' ? 'audio' : file.kind === 'image' ? 'image' : 'file';
-        externalId = await this.instagram.sendAttachment(to, type, link);
+        const type = file.kind === 'audio' || file.kind === 'image' || file.kind === 'video' ? file.kind : 'file';
+        externalId = await this.instagram.sendAttachment(to, type, link, replyTo);
       } else {
-        externalId = await this.instagram.sendText(to, message.text ?? '');
+        externalId = await this.instagram.sendText(to, message.text ?? '', replyTo);
       }
       // Эхо могло прийти раньше ответа и записаться как сообщение из
       // приложения — это то же сообщение.
@@ -854,9 +1147,26 @@ export class DirectService implements OnApplicationBootstrap {
     // Закрепление — после отправки и отдельно от неё: его сбой не должен
     // превращать дошедшее сообщение в «не доставлено» (и в повторную отправку).
     if (delivered && message.author) await this.bindOnReplySafe(conversation.id, message.author);
+    if (delivered && message.authorId) await this.closeAnsweredReminders(conversation.id, message.authorId);
     await this.pushMessage(conversation.id, messageId, clientId);
     const fresh = await this.messagesRepo.findOneOrFail({ where: { id: messageId }, relations: ['author'] });
-    return this.messageDto(fresh, await this.attachments.find({ where: { messageId } }), clientId);
+    return this.messageDto(fresh, await this.attachments.find({ where: { messageId } }), clientId, await this.replyPreviews([fresh]));
+  }
+
+  /** Ответил клиенту после срока напоминания — оно выполнено. */
+  private async closeAnsweredReminders(conversationId: string, userId: string): Promise<void> {
+    try {
+      const res = await this.messagesRepo.query(
+        `UPDATE direct_reminders SET "doneAt" = now()
+          WHERE "conversationId" = $1 AND "userId" = $2 AND "doneAt" IS NULL AND "remindAt" <= now()
+          RETURNING id`,
+        [conversationId, userId],
+      );
+      const rows = Array.isArray(res?.[0]) ? res[0] : [];
+      if (rows.length) this.gateway.notifyUser(userId, 'direct:reminders', { conversationId });
+    } catch (e: any) {
+      this.logger.warn(`Напоминание не закрыто: ${e?.message || e}`);
+    }
   }
 
   /** Закрепление по ответу без права уронить то, что уже сделано (отправку, эхо). */
@@ -1127,9 +1437,14 @@ export class DirectService implements OnApplicationBootstrap {
 
   // ─── Сборка ответов ─────────────────────────────────────────────────
 
-  private filtered(view: string | undefined, search: string | undefined, user: User, assigneeId?: string) {
+  private filtered(view: string | undefined, user: User, filters: ListFilters = {}) {
+    const { search, assigneeId, labelId, lead, reminder } = filters;
     const qb = this.conversations.createQueryBuilder('c');
-    if (view === 'unread') qb.andWhere('c.unreadCount > 0');
+    const searching = !!(search || '').trim();
+    // Архив — своя вкладка; поиск во «Всех» находит и архивные (как в Telegram).
+    if (view === 'archived') qb.andWhere('c.archivedAt IS NOT NULL');
+    else if (!(searching && (!view || view === 'all'))) qb.andWhere('c.archivedAt IS NULL');
+    if (view === 'unread') qb.andWhere('(c.unreadCount > 0 OR c.markedUnread = true)');
     if (view === 'waiting') qb.andWhere('c.waitingSince IS NOT NULL');
     // «Непрочитанные» и «Ждут ответа» — очередь работы: менеджеру — его чаты
     // и свободные (чужие он не прочитает и не ответит), руководству — все.
@@ -1139,6 +1454,14 @@ export class DirectService implements OnApplicationBootstrap {
     if (view === 'mine') qb.andWhere('c.assigneeId = :me', { me: user.id });
     if (view === 'free') qb.andWhere('c.assigneeId IS NULL');
     if (assigneeId) qb.andWhere('c.assigneeId = :aid', { aid: assigneeId });
+    if (labelId) {
+      qb.andWhere(`EXISTS (SELECT 1 FROM direct_conversation_labels fl WHERE fl."conversationId" = c.id AND fl."labelId" = :labelId)`, { labelId });
+    }
+    if (lead === 'with') qb.andWhere('c.leadId IS NOT NULL');
+    if (lead === 'without') qb.andWhere('c.leadId IS NULL');
+    if (reminder) {
+      qb.andWhere(`EXISTS (SELECT 1 FROM direct_reminders fr WHERE fr."conversationId" = c.id AND fr."userId" = :remMe AND fr."doneAt" IS NULL)`, { remMe: user.id });
+    }
     const words = (search || '').trim().replace(/^@/, '').slice(0, 100);
     if (words) {
       const like = `%${words.replace(/[\\%_]/g, m => `\\${m}`)}%`;
@@ -1174,7 +1497,58 @@ export class DirectService implements OnApplicationBootstrap {
     return [...new Set(ids.filter(Boolean))];
   }
 
-  private summary(row: DirectConversation, last: any | null, names: Map<string, string>, meId: string) {
+  /** Метки чатов: conversationId → метки по порядку справочника. */
+  private async labelsOf(ids: string[]): Promise<Map<string, { id: string; name: string; color: string }[]>> {
+    const map = new Map<string, { id: string; name: string; color: string }[]>();
+    if (!ids.length) return map;
+    const rows: any[] = await this.conversations.query(
+      `SELECT cl."conversationId", l.id, l.name, l.color
+         FROM direct_conversation_labels cl JOIN direct_labels l ON l.id = cl."labelId"
+        WHERE cl."conversationId" = ANY($1::uuid[])
+        ORDER BY l."sortOrder", l.name`,
+      [ids],
+    );
+    for (const r of rows) map.set(r.conversationId, [...(map.get(r.conversationId) ?? []), { id: r.id, name: r.name, color: r.color }]);
+    return map;
+  }
+
+  /** Строки чатов для страницы: последнее сообщение, имена, метки. */
+  private async decorate(rows: DirectConversation[], meId: string) {
+    if (!rows.length) return [];
+    const ids = rows.map(r => r.id);
+    const [last, labels] = await Promise.all([this.lastMessages(ids), this.labelsOf(ids)]);
+    const names = await this.namesOf(this.uniq([
+      ...rows.flatMap(r => this.viewerIds(r.id)),
+      ...rows.map(r => r.archivedById).filter(Boolean) as string[],
+      ...[...last.values()].map(m => m.authorId).filter(Boolean) as string[],
+    ]));
+    return rows.map(r => this.summary(r, last.get(r.id) ?? null, names, meId, labels.get(r.id) ?? []));
+  }
+
+  /** Как выглядят цитаты: mid → короткое описание сообщения, на которое ответили. */
+  private async replyPreviews(messages: Pick<DirectMessage, 'replyToExternalId'>[]): Promise<Map<string, ReplyPreview>> {
+    const mids = this.uniq(messages.map(m => m.replyToExternalId).filter(Boolean) as string[]);
+    const map = new Map<string, ReplyPreview>();
+    if (!mids.length) return map;
+    const rows: any[] = await this.messagesRepo.query(
+      `SELECT m.id, m."externalId", m.direction, m.text, m."authorId", m."deletedAt",
+              (SELECT a.kind FROM direct_attachments a WHERE a."messageId" = m.id ORDER BY a."createdAt" LIMIT 1) AS kind
+         FROM direct_messages m WHERE m."externalId" = ANY($1::varchar[])`,
+      [mids],
+    );
+    const names = await this.namesOf(this.uniq(rows.map(r => r.authorId).filter(Boolean)));
+    for (const r of rows) {
+      map.set(r.externalId, {
+        id: r.id,
+        direction: r.direction,
+        preview: messagePreview({ text: r.text, deletedAt: r.deletedAt }, r.kind ? [r.kind] : []),
+        author: r.direction === 'out' ? (r.authorId ? names.get(r.authorId) ?? 'Сотрудник' : 'Instagram') : null,
+      });
+    }
+    return map;
+  }
+
+  private summary(row: DirectConversation, last: any | null, names: Map<string, string>, meId: string, labels: { id: string; name: string; color: string }[] = []) {
     const viewers = this.viewerIds(row.id).filter(id => id !== meId).map(id => ({ id, name: names.get(id) ?? 'Сотрудник' }));
     return {
       id: row.id,
@@ -1204,10 +1578,17 @@ export class DirectService implements OnApplicationBootstrap {
       assignee: row.assignee ? { id: row.assignee.id, name: row.assignee.name } : null,
       assignedAt: row.assignedAt,
       viewers,
+      /** Закреплён сверху у всей команды. */
+      pinned: !!row.pinnedAt,
+      /** В архиве — когда и кто убрал. */
+      archived: row.archivedAt ? { at: row.archivedAt, by: row.archivedById ? names.get(row.archivedById) ?? null : null } : null,
+      /** «Пометили непрочитанным». */
+      markedUnread: !!row.markedUnread,
+      labels,
     };
   }
 
-  private messageDto(m: DirectMessage, files: DirectAttachment[], clientId?: string) {
+  private messageDto(m: DirectMessage, files: DirectAttachment[], clientId?: string, replies: Map<string, ReplyPreview> = new Map()) {
     return {
       id: m.id,
       /** Метка временного пузыря отправителя (не хранится в базе). */
@@ -1222,6 +1603,12 @@ export class DirectService implements OnApplicationBootstrap {
       sentAt: m.sentAt,
       deleted: !!m.deletedAt,
       reaction: m.contactReaction,
+      /** Реакция агентства (❤️ из CRM или из приложения). */
+      ourReaction: m.ourReaction ?? null,
+      /** Цитата: на какое сообщение это ответ. id null — оригинала нет в CRM. */
+      replyTo: m.replyToExternalId
+        ? (replies.get(m.replyToExternalId) ?? { id: null, direction: null, preview: 'Сообщение', author: null })
+        : null,
       attachments: files.map(f => ({
         id: f.id,
         kind: f.kind,
@@ -1234,6 +1621,16 @@ export class DirectService implements OnApplicationBootstrap {
       })),
     };
   }
+}
+
+/** Кусок текста вокруг найденного — для выдачи поиска. */
+export function snippetOf(text: string, words: string, around = 60): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const at = flat.toLowerCase().indexOf(words.toLowerCase());
+  if (at < 0 || flat.length <= around * 2 + words.length) return flat.slice(0, around * 2 + words.length);
+  const start = Math.max(0, at - around);
+  const end = Math.min(flat.length, at + words.length + around);
+  return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
 }
 
 /** Как CRM называет человека: по имени, по @нику, иначе — «Клиент Instagram». */

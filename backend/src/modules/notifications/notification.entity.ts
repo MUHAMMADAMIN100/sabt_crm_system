@@ -38,6 +38,10 @@ export enum NotificationType {
   DIRECT_NEW_CHAT         = 'direct_new_chat',
   /** «Директ»: новое сообщение в чате, который уже прочитали. */
   DIRECT_MESSAGE          = 'direct_message',
+  /** «Директ»: коллега упомянул в заметке (миграция 1828000000000). */
+  DIRECT_MENTION          = 'direct_mention',
+  /** «Директ»: сработало напоминание «вернуться к клиенту». */
+  DIRECT_REMINDER         = 'direct_reminder',
 }
 
 @Entity('notifications')

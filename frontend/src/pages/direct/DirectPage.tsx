@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bell, BellOff, MessageCircle, Settings2 } from 'lucide-react'
+import { Bell, BellOff, Keyboard, MessageCircle, Settings2 } from 'lucide-react'
 import { directApi } from '@/services/direct.api'
 import { useAuthStore } from '@/store/auth.store'
 import { directSoundEnabled, playDirectChime, setDirectSound } from '@/lib/directSound'
@@ -10,6 +10,7 @@ import ConversationList from './ConversationList'
 import ChatPane from './ChatPane'
 import AnalyticsView from './AnalyticsView'
 import ConnectionPanel from './ConnectionPanel'
+import DirectModal from './DirectModal'
 
 type Tab = 'chats' | 'analytics'
 
@@ -28,6 +29,8 @@ export default function DirectPage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const selected = params.get('c')
+  const focusParam = params.get('msg')
+  const focusMessageId = focusParam && UUID.test(focusParam) ? focusParam : null
   const role = useAuthStore(s => s.user?.role)
   const isTop = role === 'admin' || role === 'founder'
   // tab=speed — старый адрес «Скорости ответа», теперь это «Аналитика».
@@ -37,7 +40,11 @@ export default function DirectPage() {
   const assigneeId = managerParam && UUID.test(managerParam) ? managerParam : null
   const [sound, setSound] = useState(directSoundEnabled())
   const [showConnection, setShowConnection] = useState(false)
+  const [showKeys, setShowKeys] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const order = useRef<string[]>([])
+  const onOrder = useCallback((ids: string[]) => { order.current = ids }, [])
 
   const { data: status } = useQuery({ queryKey: ['direct', 'status'], queryFn: directApi.status, refetchInterval: 120_000 })
   const connected = status?.connected ?? true
@@ -63,13 +70,15 @@ export default function DirectPage() {
   // другой чат шагов не копит, а «‹» в чате снимает свой шаг, а не добавляет
   // новый: раньше на телефоне «‹», а потом системный «Назад» снова открывали чат.
   const chatPushed = useRef(false)
-  const go = (next: { c?: string | null; tab?: Tab; m?: string | null }) => {
+  const go = (next: { c?: string | null; tab?: Tab; m?: string | null; msg?: string | null }) => {
     if (next.c === null && next.tab === undefined && next.m === undefined && chatPushed.current) {
       chatPushed.current = false
       navigate(-1)
       return
     }
     const p = new URLSearchParams(params)
+    // Переход к сообщению — разовый: в адресе он только до открытия.
+    if (next.msg) p.set('msg', next.msg); else p.delete('msg')
     if (next.tab !== undefined) { if (next.tab === 'analytics') p.set('tab', 'analytics'); else p.delete('tab') }
     if (next.c !== undefined) { if (next.c) p.set('c', next.c); else p.delete('c') }
     if (next.m !== undefined) { if (next.m) p.set('m', next.m); else p.delete('m') }
@@ -85,6 +94,48 @@ export default function DirectPage() {
   }
   // Ушли со «шага чата» системным «Назад» — шаг уже снят.
   useEffect(() => { if (!selected) chatPushed.current = false }, [selected])
+
+  // Горячие клавиши (13.11.2026): Esc — закрыть чат, Alt+↑/↓ — соседний чат,
+  // Ctrl+K — поиск, «?» — подсказка. Окна и меню ловят Esc раньше и гасят его.
+  const goRef = useRef(go)
+  goRef.current = go
+  useEffect(() => {
+    if (tab !== 'chats') return
+    const typing = (el: EventTarget | null) => {
+      const node = el as HTMLElement | null
+      return !!node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.isContentEditable)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK')) {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+        return
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        const ids = order.current
+        if (!ids.length) return
+        e.preventDefault()
+        const at = selected ? ids.indexOf(selected) : -1
+        const next = at < 0 ? (e.key === 'ArrowDown' ? 0 : ids.length - 1) : at + (e.key === 'ArrowDown' ? 1 : -1)
+        if (next >= 0 && next < ids.length) goRef.current({ c: ids[next] })
+        return
+      }
+      if (e.key === 'Escape' && selected && !document.querySelector('[role="dialog"],[role="menu"]')) {
+        e.preventDefault()
+        if (typing(e.target)) (e.target as HTMLElement).blur()
+        goRef.current({ c: null })
+        return
+      }
+      if (e.key === '?' && !typing(e.target) && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        setShowKeys(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tab, selected])
 
   const toggleSound = () => {
     const next = !sound
@@ -120,6 +171,9 @@ export default function DirectPage() {
               ))}
             </div>
           )}
+          <button type="button" onClick={() => setShowKeys(true)} className="btn-ghost hidden !p-1.5 lg:inline-flex" title="Горячие клавиши (?)" aria-label="Горячие клавиши">
+            <Keyboard size={17} />
+          </button>
           <button type="button" onClick={toggleSound} className="btn-ghost !p-2 sm:!p-1.5" aria-pressed={sound}
             title={sound ? 'Звук новых сообщений включён' : 'Звук новых сообщений выключен'} aria-label="Звук новых сообщений">
             {sound ? <Bell size={17} /> : <BellOff size={17} />}
@@ -167,22 +221,63 @@ export default function DirectPage() {
             {/* grid-cols-1 = minmax(0, 1fr): без него колонка на телефоне растягивалась
                 по самому широкому элементу чата (375 px на экране 320). */}
             <div className={clsx('min-h-0 border-surface-200 dark:border-surface-700 lg:border-r', selected ? 'hidden lg:block' : 'block')}>
-              <ConversationList selectedId={selected} onSelect={id => go({ c: id })}
-                assigneeId={assigneeId} onAssigneeChange={m => go({ m })} />
+              <ConversationList selectedId={selected} onSelect={id => go({ c: id || null })}
+                onOpenMessage={(c, msg) => go({ c, msg })}
+                assigneeId={assigneeId} onAssigneeChange={m => go({ m })}
+                searchRef={searchRef} onOrder={onOrder} />
             </div>
             <div className={clsx('min-h-0', selected ? 'block' : 'hidden lg:block')}>
               {selected ? (
-                <ChatPane key={selected} id={selected} connected={connected} onBack={() => go({ c: null })} />
+                <ChatPane key={selected} id={selected} connected={connected} onBack={() => go({ c: null })}
+                  focusMessageId={focusMessageId}
+                  onFocusDone={() => { const p = new URLSearchParams(params); p.delete('msg'); setParams(p, { replace: true }) }} />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-surface-500">
                   <MessageCircle size={32} className="text-surface-300" />
                   Выберите чат слева
+                  <button type="button" onClick={() => setShowKeys(true)} className="mt-2 inline-flex items-center gap-1.5 text-xs text-surface-400 hover:text-surface-700 dark:hover:text-surface-200">
+                    <Keyboard size={13} /> Горячие клавиши — нажмите «?»
+                  </button>
                 </div>
               )}
             </div>
           </div>
         )}
       </div>
+      {showKeys && <HotkeysHelp onClose={() => setShowKeys(false)} />}
     </div>
+  )
+}
+
+const KEYS: [string[], string][] = [
+  [['Ctrl', 'K'], 'Поиск по чатам и сообщениям'],
+  [['Alt', '↓'], 'Следующий чат'],
+  [['Alt', '↑'], 'Предыдущий чат'],
+  [['Esc'], 'Закрыть чат, отменить ответ на сообщение'],
+  [['Enter'], 'Отправить'],
+  [['Shift', 'Enter'], 'Новая строка'],
+  [['/'], 'Шаблоны быстрых ответов (в начале строки)'],
+  [['@'], 'Упомянуть коллегу в заметке'],
+  [['Ctrl', 'V'], 'Вставить скриншот или фото в ответ'],
+  [['?'], 'Эта подсказка'],
+]
+
+function HotkeysHelp({ onClose }: { onClose: () => void }) {
+  return (
+    <DirectModal title="Горячие клавиши Директа" onClose={onClose} width={440}>
+      <ul className="divide-y divide-surface-100 px-4 py-2 dark:divide-surface-700">
+        {KEYS.map(([keys, what]) => (
+          <li key={what} className="flex items-center gap-3 py-2 text-[13.5px]">
+            <span className="flex w-[120px] shrink-0 items-center gap-1">
+              {keys.map(k => (
+                <kbd key={k} className="rounded-md border border-surface-300 bg-surface-50 px-1.5 py-0.5 font-sans text-[12px] font-semibold text-surface-700 shadow-[0_1px_0_rgba(0,0,0,0.08)] dark:border-surface-600 dark:bg-surface-700 dark:text-surface-100">{k}</kbd>
+              ))}
+            </span>
+            <span className="text-surface-700 dark:text-surface-200">{what}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="px-4 pb-4 text-[12px] text-surface-500">Ещё: двойной щелчок по сообщению клиента — ❤️; файлы можно перетащить прямо в чат; правый щелчок по чату в списке — меню.</p>
+    </DirectModal>
   )
 }

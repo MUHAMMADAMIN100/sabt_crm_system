@@ -3,7 +3,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DirectSetting } from './direct.entity';
-import { fetchFile, graphRequest, type DownloadedFile } from './meta-http';
+import { fetchFile, graphRequest, MessengerError, type DownloadedFile } from './meta-http';
 
 /**
  * Единственное место, где CRM ходит в Instagram по сети (тесты подменяют
@@ -82,21 +82,46 @@ export class InstagramApi {
     await this.settings.save({ key: TOKEN_KEY, value: { ...current, ...change } });
   }
 
-  async sendText(recipientId: string, text: string): Promise<string> {
-    const answer = await this.request<{ message_id: string }>('me/messages', {
-      method: 'POST',
-      body: { recipient: { id: recipientId }, message: { text } },
-    });
-    return answer.message_id;
+  /** replyTo — mid сообщения, на которое отвечаем (цитата в Instagram). */
+  async sendText(recipientId: string, text: string, replyTo?: string | null): Promise<string> {
+    return this.sendMessage(recipientId, { text }, replyTo);
   }
 
-  /** Фото, PDF или голосовое. Instagram скачивает файл по ссылке сам. */
-  async sendAttachment(recipientId: string, type: 'image' | 'file' | 'audio', url: string): Promise<string> {
-    const answer = await this.request<{ message_id: string }>('me/messages', {
+  /** Фото, видео, PDF или голосовое. Instagram скачивает файл по ссылке сам. */
+  async sendAttachment(recipientId: string, type: 'image' | 'video' | 'file' | 'audio', url: string, replyTo?: string | null): Promise<string> {
+    return this.sendMessage(recipientId, { attachment: { type, payload: { url } } }, replyTo);
+  }
+
+  /** «Печатает…» у клиента. */
+  async typing(recipientId: string): Promise<void> {
+    await this.request('me/messages', { method: 'POST', body: { recipient: { id: recipientId }, sender_action: 'typing_on' } });
+  }
+
+  /** Реакция ❤️ на сообщение клиента или её снятие. Instagram даёт только «love». */
+  async react(recipientId: string, messageId: string, on: boolean): Promise<void> {
+    await this.request('me/messages', {
       method: 'POST',
-      body: { recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } } },
+      body: on
+        ? { recipient: { id: recipientId }, sender_action: 'react', payload: { message_id: messageId, reaction: 'love' } }
+        : { recipient: { id: recipientId }, sender_action: 'unreact', payload: { message_id: messageId } },
     });
-    return answer.message_id;
+  }
+
+  /**
+   * Отправка с цитатой: если Instagram не примет поле reply_to (неверный
+   * параметр — код 100), сообщение уходит без него: ответ важнее цитаты.
+   */
+  private async sendMessage(recipientId: string, message: Record<string, unknown>, replyTo?: string | null): Promise<string> {
+    const send = (withReply: boolean) => this.request<{ message_id: string }>('me/messages', {
+      method: 'POST',
+      body: { recipient: { id: recipientId }, message: withReply && replyTo ? { ...message, reply_to: { mid: replyTo } } : message },
+    });
+    try {
+      return (await send(true)).message_id;
+    } catch (error) {
+      if (!replyTo || !(error instanceof MessengerError) || error.code !== 100) throw error;
+      return (await send(false)).message_id;
+    }
   }
 
   async profile(contactId: string): Promise<InstagramProfile> {

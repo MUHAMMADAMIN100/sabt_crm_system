@@ -1,5 +1,5 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
-import type { DirectConversation, DirectMessage } from '@/services/direct.api'
+import type { DirectConversation, DirectMessage, DirectReminder } from '@/services/direct.api'
 import { useAuthStore } from '@/store/auth.store'
 import { isTopUser } from './directAccess'
 
@@ -39,14 +39,29 @@ export function upsertDirectMessage(qc: QueryClient, conversationId: string, mes
 }
 
 /** Как фильтрует сервер: «Непрочитанные» и «Ждут ответа» у менеджера — его
- *  чаты и свободные, у руководства — все. */
+ *  чаты и свободные, у руководства — все. Архив — только во вкладке «Архив». */
 const matchesView = (c: DirectConversation, view: string, me: string | undefined, top: boolean) => {
+  if (view === 'archived') return !!c.archived
+  if (c.archived) return false
   const myWork = top || !c.assignee || c.assignee.id === me
-  return view === 'unread' ? c.unreadCount > 0 && myWork
+  return view === 'unread' ? (c.unreadCount > 0 || c.markedUnread) && myWork
     : view === 'waiting' ? !!c.waitingSince && myWork
       : view === 'mine' ? !!me && c.assignee?.id === me
         : view === 'free' ? !c.assignee
           : true
+}
+
+/**
+ * Порядок списка — как на сервере: закреплённые, потом чаты, где моё
+ * напоминание уже сработало, потом по последнему сообщению.
+ */
+export function compareChats(reminders: DirectReminder[] | undefined, now = Date.now()) {
+  const due = new Set((reminders ?? []).filter(r => new Date(r.remindAt).getTime() <= now).map(r => r.conversationId))
+  return (a: DirectConversation, b: DirectConversation) =>
+    Number(b.pinned) - Number(a.pinned)
+    || Number(due.has(b.id)) - Number(due.has(a.id))
+    || new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    || (a.id < b.id ? 1 : -1)
 }
 
 const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -68,11 +83,12 @@ export function applyDirectConversation(qc: QueryClient, conversation: DirectCon
   const user = useAuthStore.getState().user
   const me = user?.id
   const top = isTopUser(user)
+  const order = compareChats(qc.getQueryData<DirectReminder[]>(['direct', 'reminders']))
   for (const [key, data] of qc.getQueriesData<InfiniteData<ListPage>>({ queryKey: ['direct', 'list'] })) {
-    // Ключ списка: ['direct', 'list', вкладка, поиск, менеджер].
-    const [, , view = 'all', search = '', assigneeId = ''] = key as [string, string, string?, string?, string?]
-    // Поиск фильтрует на сервере — такой список просто перечитываем.
-    if (!data?.pages?.length || search) {
+    // Ключ списка: ['direct', 'list', вкладка, поиск, менеджер, фильтры].
+    const [, , view = 'all', search = '', assigneeId = '', filters = ''] = key as [string, string, string?, string?, string?, string?]
+    // Поиск и фильтры (метка, лид, напоминание) считает сервер — такой список перечитываем.
+    if (!data?.pages?.length || search || filters) {
       qc.invalidateQueries({ queryKey: key, exact: true })
       continue
     }
@@ -80,13 +96,8 @@ export function applyDirectConversation(qc: QueryClient, conversation: DirectCon
     const fits = matchesView(conversation, view, me, top) && (!assigneeId || conversation.assignee?.id === assigneeId)
     const pages = data.pages.map(p => ({ ...p, items: p.items.filter(c => c.id !== conversation.id) }))
     if (fits) {
-      // Свежий чат — наверх: список идёт по времени последнего сообщения.
-      pages[0] = {
-        ...pages[0],
-        items: [conversation, ...pages[0].items].sort(
-          (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
-        ),
-      }
+      // Свежий чат — на своё место: закреплённые, напоминания, по времени.
+      pages[0] = { ...pages[0], items: [conversation, ...pages[0].items].sort(order) }
     }
     const delta = (fits ? 1 : 0) - (wasThere ? 1 : 0)
     qc.setQueryData<InfiniteData<ListPage>>(key, {

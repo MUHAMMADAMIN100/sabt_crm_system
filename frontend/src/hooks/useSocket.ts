@@ -223,6 +223,21 @@ export function useSocket(authMarker: string | null) {
       if (!id || !message?.id) return
       upsertDirectMessage(qc, id, message)
       if (message.direction === 'in' && !message.deleted) playDirectChime(id, payload?.assigneeId)
+      // Карточка клиента справа: новые фото, файлы, заметки.
+      if (message.direction === 'note' || message.attachments?.length) qc.invalidateQueries({ queryKey: ['direct', 'details', id] })
+    })
+    // Мои напоминания поменялись (сработало, снято ответом клиенту) — список
+    // пересобирается: сработавшее поднимается наверх.
+    socket.on('direct:reminders', (payload: any) => {
+      qc.invalidateQueries({ queryKey: ['direct', 'reminders'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'list'] })
+      if (payload?.conversationId) qc.invalidateQueries({ queryKey: ['direct', 'details', payload.conversationId] })
+    })
+    // Справочник меток изменился (руководство добавило, переименовало, удалило).
+    socket.on('direct:labels', () => {
+      qc.invalidateQueries({ queryKey: ['direct', 'labels'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'list'] })
+      qc.invalidateQueries({ queryKey: ['direct', 'conversation'] })
     })
     // direct:conversation — строка чата: превью, непрочитанные, «ждёт ответа».
     socket.on('direct:conversation', (payload: any) => {

@@ -64,13 +64,24 @@ const looksLikeSound = (bytes: Buffer): boolean =>
   bytes.subarray(4, 8).toString('latin1') === 'ftyp' ||
   (bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WAVE');
 
-/** Что принимает Instagram: JPG и PNG как фото, PDF как документ. Тип
- *  проверяем по первым байтам, а не только по расширению. */
-const OUTGOING: Record<string, { kind: 'image' | 'file'; maxSize: number; looksRight: (bytes: Buffer) => boolean }> = {
+/** Видео MP4/MOV: контейнер ISO с меткой ftyp на пятом байте. */
+const looksLikeVideo = (bytes: Buffer): boolean => bytes.subarray(4, 8).toString('latin1') === 'ftyp';
+
+/** Что принимает Instagram: JPG и PNG как фото, MP4 и MOV как видео, PDF как
+ *  документ. Тип проверяем по первым байтам, а не только по расширению. */
+const OUTGOING: Record<string, { kind: 'image' | 'video' | 'file'; maxSize: number; looksRight: (bytes: Buffer) => boolean }> = {
   '.jpg': { kind: 'image', maxSize: MAX_PICTURE_SIZE, looksRight: (bytes) => startsWith(bytes, 0xff, 0xd8, 0xff) },
   '.jpeg': { kind: 'image', maxSize: MAX_PICTURE_SIZE, looksRight: (bytes) => startsWith(bytes, 0xff, 0xd8, 0xff) },
   '.png': { kind: 'image', maxSize: MAX_PICTURE_SIZE, looksRight: (bytes) => startsWith(bytes, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) },
+  '.mp4': { kind: 'video', maxSize: MAX_DOCUMENT_SIZE, looksRight: looksLikeVideo },
+  '.mov': { kind: 'video', maxSize: MAX_DOCUMENT_SIZE, looksRight: looksLikeVideo },
   '.pdf': { kind: 'file', maxSize: MAX_DOCUMENT_SIZE, looksRight: (bytes) => bytes.subarray(0, 5).toString('latin1') === '%PDF-' },
+};
+
+const TOO_BIG: Record<'image' | 'video' | 'file', string> = {
+  image: 'Фото больше 8 МБ — Instagram его не примет',
+  video: 'Видео больше 25 МБ — Instagram его не примет',
+  file: 'PDF больше 25 МБ — Instagram его не примет',
 };
 
 export interface UploadedFile {
@@ -93,7 +104,7 @@ export interface OpenedFile {
 }
 
 export interface OutgoingFile {
-  kind: 'image' | 'file';
+  kind: 'image' | 'video' | 'file';
   name: string;
   bytes: Buffer;
   extension: string;
@@ -146,11 +157,9 @@ export class DirectFiles {
     const extension = extname(name).toLowerCase();
     const rule = OUTGOING[extension];
     if (!rule || !rule.looksRight(file.buffer)) {
-      throw new BadRequestException('Instagram принимает только фото JPG и PNG и документы PDF');
+      throw new BadRequestException('Instagram принимает только фото JPG и PNG, видео MP4 и MOV и документы PDF');
     }
-    if (file.size > rule.maxSize) {
-      throw new BadRequestException(rule.kind === 'image' ? 'Фото больше 8 МБ — Instagram его не примет' : 'PDF больше 25 МБ — Instagram его не примет');
-    }
+    if (file.size > rule.maxSize) throw new BadRequestException(TOO_BIG[rule.kind]);
     return { kind: rule.kind, name, bytes: file.buffer, extension: extension === '.jpeg' ? '.jpg' : extension };
   }
 

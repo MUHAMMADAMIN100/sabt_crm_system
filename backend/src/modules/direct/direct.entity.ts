@@ -115,6 +115,25 @@ export class DirectConversation {
   @Column({ type: 'uuid', nullable: true })
   leadId: string | null;
 
+  /** Закреплён сверху списка — у всей команды (13.11.2026). */
+  @Column({ type: 'timestamptz', nullable: true })
+  pinnedAt: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  pinnedById: string | null;
+
+  /** В архиве — у всей команды. Новое сообщение клиента возвращает чат. */
+  @Column({ type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  archivedById: string | null;
+
+  /** «Пометить непрочитанным»: вернуться к чату позже. Снимается, когда
+   *  чат открыл тот, кто вправе снять непрочитанное (см. markRead). */
+  @Column({ type: 'boolean', default: false })
+  markedUnread: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
@@ -172,6 +191,10 @@ export class DirectMessage {
   /** Реакция клиента на сообщение. */
   @Column({ type: 'varchar', length: 16, nullable: true })
   contactReaction: string | null;
+
+  /** Реакция агентства (из CRM или из приложения Instagram). */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  ourReaction: string | null;
 
   /** Клиент удалил сообщение: текста и файлов больше нет. */
   @Column({ type: 'timestamptz', nullable: true })
@@ -273,4 +296,117 @@ export class DirectReply {
   /** Сколько клиент ждал, в секундах. */
   @Column({ type: 'int' })
   seconds: number;
+}
+
+/** Метка чата («горячий», «SMM», «сайт»…). Справочник ведёт руководство. */
+@Entity('direct_labels')
+export class DirectLabel {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 40, unique: true })
+  name: string;
+
+  /** Ключ цвета из палитры страницы (amber, sky, violet…). */
+  @Column({ type: 'varchar', length: 16, default: 'sky' })
+  color: string;
+
+  @Column({ type: 'int', default: 0 })
+  sortOrder: number;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
+}
+
+/** Какие метки стоят на чате. */
+@Entity('direct_conversation_labels')
+export class DirectConversationLabel {
+  @PrimaryColumn({ type: 'uuid' })
+  conversationId: string;
+
+  @PrimaryColumn({ type: 'uuid' })
+  labelId: string;
+
+  @ManyToOne(() => DirectConversation, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'conversationId' })
+  conversation: DirectConversation;
+
+  @Index('IDX_direct_conversation_labels_label')
+  @ManyToOne(() => DirectLabel, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'labelId' })
+  label: DirectLabel;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
+}
+
+/** Шаблон быстрого ответа. ownerId NULL — общий (ведёт руководство), иначе личный. */
+@Entity('direct_templates')
+export class DirectTemplate {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index('IDX_direct_templates_owner')
+  @ManyToOne(() => User, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'ownerId' })
+  owner: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  ownerId: string | null;
+
+  @Column({ type: 'varchar', length: 80 })
+  title: string;
+
+  @Column({ type: 'text' })
+  text: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  createdById: string | null;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt: Date;
+}
+
+/** Напоминание «вернуться к клиенту» — личное: получает тот, кто поставил. */
+@Entity('direct_reminders')
+@Index('IDX_direct_reminders_due', ['doneAt', 'remindAt'])
+export class DirectReminder {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index('IDX_direct_reminders_conversation')
+  @ManyToOne(() => DirectConversation, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'conversationId' })
+  conversation: DirectConversation;
+
+  @Column({ type: 'uuid' })
+  conversationId: string;
+
+  @Index('IDX_direct_reminders_user')
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user: User;
+
+  @Column({ type: 'uuid' })
+  userId: string;
+
+  @Column({ type: 'timestamptz' })
+  remindAt: Date;
+
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  note: string | null;
+
+  /** Когда ушло уведомление. */
+  @Column({ type: 'timestamptz', nullable: true })
+  firedAt: Date | null;
+
+  /** Снято: «Готово» или ответ клиенту после срока. */
+  @Column({ type: 'timestamptz', nullable: true })
+  doneAt: Date | null;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
 }

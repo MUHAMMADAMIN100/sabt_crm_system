@@ -15,7 +15,13 @@ type Me = { id: string; name: string; role?: string | null; secondaryRole?: stri
  * Передать или освободить может руководство (любой чат, свободный — закрепить)
  * и сам менеджер (свой чат). В ленте после этого появляется отметка.
  */
-export default function AssigneeControl({ c, me, onChanged }: { c: DirectConversation; me: Me; onChanged: () => void }) {
+export default function AssigneeControl({ c, me, onChanged, wrap = false }: {
+  c: DirectConversation
+  me: Me
+  onChanged: () => void
+  /** Узкая колонка (карточка клиента): текст переносится, а не обрезается. */
+  wrap?: boolean
+}) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -60,10 +66,10 @@ export default function AssigneeControl({ c, me, onChanged }: { c: DirectConvers
   const others = (managers ?? []).filter(m => m.id !== assignee?.id)
 
   return (
-    <div ref={box} className="relative inline-flex min-w-0 max-w-full items-center gap-1.5">
+    <div ref={box} className={clsx('relative min-w-0 max-w-full items-center gap-1.5', wrap ? 'flex flex-wrap' : 'inline-flex')}>
       <UserIcon size={13} className="shrink-0" aria-hidden />
-      <span className={clsx('min-w-0 truncate', assignee && 'font-medium text-surface-700 dark:text-surface-200')}>{label}</span>
-      {hint && <span className="hidden min-w-0 truncate text-surface-400 sm:inline">— {hint}</span>}
+      <span className={clsx('min-w-0', !wrap && 'truncate', assignee && 'font-medium text-surface-700 dark:text-surface-200')}>{label}</span>
+      {hint && <span className={clsx('min-w-0 text-surface-400', wrap ? 'basis-full pl-5' : 'hidden truncate sm:inline')}>{wrap ? hint : `— ${hint}`}</span>}
       {can && (
         <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} aria-haspopup="menu"
           className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-1 font-medium text-primary-700 hover:bg-primary-50 dark:text-primary-300 dark:hover:bg-primary-500/10 sm:py-0.5">
