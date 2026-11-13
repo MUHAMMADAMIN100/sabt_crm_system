@@ -37,7 +37,8 @@ describe('списки отдают проект без денег', () => {
     await run('stories.all', () => stories.getAll('2026-11-01', '2026-11-30'))
     await run('stories.my', () => stories.getByEmployee('u', '2026-11-01', '2026-11-30'))
     await run('contentPlan.findAll', () => plan.findAll({ from: '2026-11-01' }))
-  })
+    // Загрузка всех моделей через ts-jest в общем прогоне идёт дольше 5 с.
+  }, 60_000)
 
   afterAll(() => { (SelectQueryBuilder.prototype as any).getMany = original })
 

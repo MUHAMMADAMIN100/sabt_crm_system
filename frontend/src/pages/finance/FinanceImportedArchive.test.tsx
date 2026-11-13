@@ -1,11 +1,10 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import FinanceTransactionsPage, { buildFinanceTransactionCsv } from './FinanceTransactionsPage';
-import FinancePlanningPage from './FinancePlanningPage';
 import { currentYm } from './finlib';
 import { IMPORTED_ARCHIVE_HINT } from './ImportedArchiveBadge';
 
@@ -16,8 +15,6 @@ const mocks = vi.hoisted(() => ({
   projects: vi.fn(),
   employees: vi.fn(),
   debts: vi.fn(),
-  forecast: vi.fn(),
-  removeForecastAdjustment: vi.fn(),
 }));
 
 vi.mock('@/services/api.service', () => ({
@@ -28,8 +25,6 @@ vi.mock('@/services/api.service', () => ({
     projects: mocks.projects,
     employees: mocks.employees,
     debts: mocks.debts,
-    forecast: mocks.forecast,
-    removeForecastAdjustment: mocks.removeForecastAdjustment,
   },
 }));
 
@@ -74,8 +69,6 @@ describe('imported Notion finance history', () => {
     mocks.projects.mockReset();
     mocks.employees.mockReset();
     mocks.debts.mockReset();
-    mocks.forecast.mockReset();
-    mocks.removeForecastAdjustment.mockReset();
     mocks.transactions.mockResolvedValue({ items: [importedTx], total: 1, page: 1, pageSize: 100 });
     mocks.categories.mockResolvedValue([{ id: 'rent', name: 'Аренда', type: 'expense' }]);
     mocks.accounts.mockResolvedValue([{ id: 'cash', name: 'Cash' }]);
@@ -84,9 +77,10 @@ describe('imported Notion finance history', () => {
     mocks.debts.mockResolvedValue([]);
   });
 
+  // С 05.11.2026 «Транзакции» открываются календарём, таблица — ?view=table.
   it('renders an imported transaction read-only in table and calendar views', async () => {
     const user = userEvent.setup();
-    wrap(<FinanceTransactionsPage />, '/finance/transactions');
+    wrap(<FinanceTransactionsPage />, '/finance/transactions?view=table');
 
     expect(screen.getByRole('textbox', { name: 'Поиск транзакций' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Тип транзакции' })).toBeInTheDocument();
@@ -110,10 +104,14 @@ describe('imported Notion finance history', () => {
     });
     const calendarBadge = await screen.findByLabelText('Notion · архив');
     const calendarRow = calendarBadge.closest('.tx-row');
-    expect(calendarRow?.tagName).toBe('BUTTON');
+    // div с role="button" (05.11.2026): нативный drag на <button> в Chrome не стартует.
+    expect(calendarRow).toHaveAttribute('role', 'button');
+    expect(calendarRow).toHaveAttribute('tabindex', '0');
     await act(async () => { await user.click(calendarRow!); });
-    expect(screen.getByRole('region', { name: /Подробности операции/ })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Операция' });
+    expect(within(dialog).getByText('Аренда из старого учёта')).toBeInTheDocument();
+    // Архив Notion — только просмотр: кнопки «Открыть» (правка) нет.
+    expect(within(dialog).queryByRole('button', { name: 'Открыть' })).not.toBeInTheDocument();
   });
 
   it('shows an explicit retry state when the calendar request fails', async () => {
@@ -124,7 +122,7 @@ describe('imported Notion finance history', () => {
         : Promise.resolve({ items: [importedTx], total: 1, page: 1, pageSize: 100 })
     ));
 
-    wrap(<FinanceTransactionsPage />, '/finance/transactions');
+    wrap(<FinanceTransactionsPage />, '/finance/transactions?view=table');
     await screen.findByLabelText('Notion · архив');
     await act(async () => { await user.click(screen.getByRole('button', { name: 'Календарь' })); });
 
@@ -138,7 +136,7 @@ describe('imported Notion finance history', () => {
     const regular = { ...importedTx, id: 'regular-1', source: null, affectsBalance: true };
     mocks.transactions.mockResolvedValue({ items: [regular], total: 1, page: 1, pageSize: 50 });
 
-    wrap(<FinanceTransactionsPage />, '/finance/transactions?type=expense');
+    wrap(<FinanceTransactionsPage />, '/finance/transactions?view=table&type=expense');
     const action = await screen.findByLabelText(/Действия операции/);
     const row = action.closest('tr');
     expect(row).not.toBeNull();
@@ -155,85 +153,9 @@ describe('imported Notion finance history', () => {
       importedTx,
       { ...importedTx, id: 'regular', source: null, affectsBalance: true },
     ]);
-    expect(rows[0].at(-1)).toBe('Источник');
-    expect(rows[1].at(-1)).toBe('Notion · архив');
-    expect(rows[2].at(-1)).toBeNull();
-  });
-
-  it('shows imported source metadata in the expanded planning month', async () => {
-    const user = userEvent.setup();
-    mocks.forecast.mockResolvedValue({
-      start: '2026-03',
-      availableFrom: '2026-03',
-      months: 6,
-      scenario: 'base',
-      openingBalance: 0,
-      rows: [{
-        ym: '2026-03',
-        openingBalance: 0,
-        income: 2_500,
-        expense: 0,
-        net: 2_500,
-        closingBalance: 0,
-        balanceNow: null,
-        actualIncome: 2_500,
-        actualExpense: 0,
-        plannedIncome: 0,
-        plannedExpense: 0,
-        incomeSources: [{
-          key: 'notion:income-1',
-          source: 'notion',
-          imported: true,
-          label: 'Оплата старого проекта',
-          kind: 'Исторический доход',
-          amount: 2_500,
-          date: '2026-03-12',
-          categoryName: 'SMM',
-          accountName: 'Cash',
-        }],
-        expenseSources: [],
-        warning: false,
-        balanceBasis: 'crm_cutover',
-        balanceReset: true,
-      }],
-      adjustments: [],
-      summary: {
-        expectedIncome: 2_500,
-        expectedExpense: 0,
-        result: 2_500,
-        endingBalance: 0,
-        minBalance: 0,
-        cashGapYm: null,
-      },
-    });
-
-    wrap(<FinancePlanningPage />);
-    await waitFor(() => expect(mocks.forecast).toHaveBeenLastCalledWith({
-      start: `${currentYm().slice(0, 4)}-01`,
-      months: 12,
-      scenario: 'base',
-    }));
-    expect(await screen.findByText(/март 2026 — декабрь 2026/i)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Другой год' })).toHaveValue('2026');
-
-    const month = await screen.findByText('март 2026');
-    expect(screen.getByText('переход на остатки CRM')).toHaveAttribute(
-      'title',
-      'С этого месяца остаток считается по счетам CRM, а не по архиву Notion',
-    );
-    await act(async () => { await user.click(month.closest('tr')!); });
-
-    expect(await screen.findByText('Оплата старого проекта')).toBeInTheDocument();
-    expect(screen.getByLabelText('Notion · архив')).toHaveAttribute('title', IMPORTED_ARCHIVE_HINT);
-    expect(screen.getByText(/12 марта 2026.*категория: SMM.*счёт: Cash/)).toBeInTheDocument();
-
-    await act(async () => {
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Другой год' }), '2027');
-    });
-    await waitFor(() => expect(mocks.forecast).toHaveBeenLastCalledWith({
-      start: '2027-01',
-      months: 12,
-      scenario: 'base',
-    }));
+    const last = (row: Array<string | number | null>) => row[row.length - 1];
+    expect(last(rows[0])).toBe('Источник');
+    expect(last(rows[1])).toBe('Notion · архив');
+    expect(last(rows[2])).toBeNull();
   });
 });

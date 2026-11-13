@@ -51,6 +51,9 @@ function useWidth() {
     const el = ref.current;
     if (!el) return;
     setW(el.clientWidth);
+    // Без ResizeObserver (старый браузер, тесты) ширина берётся один раз —
+    // иначе падала бы вся страница «Расхода»/«Дохода».
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)));
     ro.observe(el);
     return () => ro.disconnect();

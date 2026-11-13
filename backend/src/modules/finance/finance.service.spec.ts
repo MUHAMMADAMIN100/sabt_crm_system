@@ -30,16 +30,20 @@ import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustmen
 import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
 
+// Как maps() в сервисе: долги без банковских — realDebts, подписки — sub.
 const emptyMaps = {
   accounts: [],
   categories: [],
   projects: [],
   employees: [],
+  subscriptions: [],
   debts: [],
+  realDebts: [],
   acc: new Map(),
   cat: new Map(),
   proj: new Map(),
   emp: new Map(),
+  sub: new Map(),
   debt: new Map(),
 };
 
@@ -227,6 +231,7 @@ describe('FinanceService correctness', () => {
     jest.spyOn(service as any, 'maps').mockResolvedValue({
       ...emptyMaps,
       debts: [debt],
+      realDebts: [debt],
       debt: new Map([[debt.id, debt]]),
     });
     jest.spyOn(service as any, 'salaryTxForMonth').mockResolvedValue([]);
@@ -1150,6 +1155,22 @@ describe('FinanceService correctness', () => {
     });
     expect(result.periods[0]).toMatchObject({
       salary: 5_000, bonus: 500, bonusPaid: 500, fine: 200,
+      accrued: 5_300, totalPaid: 5_300, remaining: 0, salaryDelta: 0,
+    });
+  });
+
+  it('takes a journal premium (since 03.09.2026) paid together with salary', async () => {
+    const result = await payoutHistory({
+      bonuses: { '2026-07': 500 }, fines: { '2026-07': 200 },
+    }, [
+      transaction({
+        id: 'salary', employeeId: 'employee-1', amount: 5_300,
+        date: '2026-08-05', salaryYm: '2026-07', comment: 'Зарплата',
+      }),
+    ]);
+
+    expect(result.periods[0]).toMatchObject({
+      salary: 5_000, bonus: 500, bonusPaid: 0, fine: 200,
       accrued: 5_300, totalPaid: 5_300, remaining: 0, salaryDelta: 0,
     });
   });

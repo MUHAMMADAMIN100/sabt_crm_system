@@ -16,11 +16,17 @@ const mocks = vi.hoisted(() => ({
     debts: { monthly: 400, remaining: 800 }, other: { spent: 100 },
   })),
   breakdown: vi.fn(async () => ({ items: [], total: 0 })),
+  // Карточка «Зарплата» на «Расходе» ждёт ведомость (25.08.2026), график — свой запрос.
+  salaryDetail: vi.fn(async () => ({ cards: { toPay: 1200, paid: 0, advances: 0 }, rows: [] })),
+  expenseChart: vi.fn(() => new Promise(() => undefined)),
 }));
 
 vi.mock('@/services/api.service', () => ({
   financeApi: {
-    expenseDetail: mocks.expenseDetail,
+    expenseDetail: (kind: string, ym: string) => (kind === 'salary' && ym === '2026-07'
+      ? mocks.salaryDetail()
+      : mocks.expenseDetail()),
+    expenseChart: mocks.expenseChart,
     incomeDirectionDetail: mocks.incomeDirectionDetail,
     expenseSummary: mocks.expenseSummary,
     breakdown: mocks.breakdown,
@@ -63,12 +69,14 @@ describe('finance detail back links', () => {
       .toHaveAttribute('href', '/finance/expense?ym=2026-05');
   });
 
-  it('keeps August when opening salary from expense overview', async () => {
+  // С 25.08.2026 карточка «Зарплата» в «Расходе/M» — ведомость месяца M−1:
+  // в августе (10-го) платим за июль, и открывается июльская ведомость.
+  it('opens the July payroll from the August expense overview', async () => {
     renderRoute('/finance/expense?ym=2026-08', '/finance/expense', <FinanceExpensePage />);
 
     const salary = await screen.findByRole('button', { name: 'Открыть «Зарплата»' });
     fireEvent.click(salary);
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/finance/expense/salary?ym=2026-08');
+    expect(screen.getByTestId('location')).toHaveTextContent('/finance/expense/salary?ym=2026-07');
   });
 });

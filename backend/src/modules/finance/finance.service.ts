@@ -5190,10 +5190,13 @@ export class FinanceService implements OnModuleInit {
           ? r2(Number(snapshot.advance) || 0)
           : txAdvance > 0 ? txAdvance : advanceOf(e, ym);
         // Бонус накопительный: для открытого месяца берём журнал (bonusOf),
-        // а не выданные операции.
+        // а не выданные операции. До 03.09.2026 премию выдавали отдельной
+        // операцией без записи в журнал — тогда начислено = выданное, иначе
+        // история показывала ложную «переплату» (ведомость такой месяц
+        // считает закрытым: бонус-операции не входят в её «выплачено»).
         const bonus = snapshot
           ? r2(Number(snapshot.bonus) || 0)
-          : bonusOf(e, ym);
+          : bonusOf(e, ym) || txBonus;
         const fine = snapshot ? r2(Number(snapshot.fine) || 0) : fineOf(e, ym);
         const vacation = snapshot ? r2(Number(snapshot.vacation) || 0) : vacationOf(e, ym);
         const owed = Math.max(0, salary + bonus - fine - vacation);

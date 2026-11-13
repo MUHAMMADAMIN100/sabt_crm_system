@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
@@ -8,11 +8,22 @@ import { Employee, EmployeeStatus } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { MailService } from '../mail/mail.service';
+import { RefreshToken } from './refresh-token.entity';
+import { SecurityAuditService } from './security-audit.service';
+import { AppGateway } from '../gateway/app.gateway';
+
+// otplib 13 тянет @scure/base — чистый ESM, который Jest не читает (сервер на
+// Node 20.19+ грузит его штатно). Двухфакторный вход тут не проверяется.
+jest.mock('otplib', () => ({
+  authenticator: { check: jest.fn(() => false), generateSecret: jest.fn(() => 'SECRET'), keyuri: jest.fn(() => 'otpauth://') },
+}));
 
 const mockUserRepo = () => ({
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
+  // Регистрация открыта, только пока нет основателя: по умолчанию — первая установка.
+  manager: { query: jest.fn().mockResolvedValue([{ count: 0 }]) },
 });
 
 const mockEmployeeRepo = () => ({
@@ -25,7 +36,8 @@ const mockSessionRepo = () => ({
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
-  find: jest.fn(),
+  // При входе закрываются незакрытые рабочие сессии — по умолчанию их нет.
+  find: jest.fn().mockResolvedValue([]),
 });
 
 const mockJwtService = () => ({
@@ -57,6 +69,18 @@ describe('AuthService', () => {
         { provide: JwtService, useFactory: mockJwtService },
         { provide: ActivityLogService, useFactory: mockActivityLog },
         { provide: MailService, useFactory: mockMailService },
+        // Добавлены в сервис позже: refresh-токены, живые события и журнал
+        // безопасности (блокировка после 5 неудачных входов за 15 минут).
+        { provide: getRepositoryToken(RefreshToken), useValue: {
+          create: jest.fn((v) => v), save: jest.fn(async (v) => v),
+          findOne: jest.fn().mockResolvedValue(null), update: jest.fn().mockResolvedValue(undefined),
+        } },
+        { provide: AppGateway, useValue: { broadcast: jest.fn() } },
+        { provide: SecurityAuditService, useValue: {
+          log: jest.fn().mockResolvedValue(undefined),
+          checkLoginLockout: jest.fn().mockResolvedValue({ locked: false }),
+          list: jest.fn().mockResolvedValue([]),
+        } },
       ],
     }).compile();
 
@@ -69,6 +93,13 @@ describe('AuthService', () => {
 
   describe('register', () => {
     const dto = { name: 'Test User', email: 'test@example.com', password: 'password123' };
+
+    it('should refuse registration once a founder exists', async () => {
+      userRepo.manager.query.mockResolvedValue([{ count: 1 }]);
+
+      await expect(service.register(dto)).rejects.toThrow(ForbiddenException);
+      expect(userRepo.save).not.toHaveBeenCalled();
+    });
 
     it('should register a new user and return token', async () => {
       const savedUser = { id: 'user-1', ...dto, role: UserRole.EMPLOYEE };

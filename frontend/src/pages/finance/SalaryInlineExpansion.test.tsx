@@ -66,7 +66,10 @@ describe('salary employee inline expansion', () => {
     });
   });
 
-  it('toggles history by clicking the free row area without an arrow or name button', async () => {
+  // С 02.09.2026 строка действующего сотрудника раскрывает месяц (аванс,
+  // бонус, штраф, отпускные), а полная история — на странице сотрудника
+  // («Детальная информация»). В строке история осталась у уволенных.
+  it('toggles the month panel by clicking the free row area without an arrow or name button', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -74,6 +77,7 @@ describe('salary employee inline expansion', () => {
         <MemoryRouter initialEntries={['/finance/expense/salary?ym=2026-07']}>
           <Routes>
             <Route path="/finance/expense/:kind" element={<FinanceExpenseGroupPage />} />
+            <Route path="/finance/salary/:id" element={<p>Страница сотрудника</p>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -88,13 +92,16 @@ describe('salary employee inline expansion', () => {
 
     await act(async () => { await user.click(row!); });
     expect(row).toHaveAttribute('aria-expanded', 'true');
-    expect(await screen.findByText('Повышение оклада')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'История зарплаты — Бехруз Миров' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Детальная информация/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await act(async () => { await user.click(row!); });
     expect(row).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('region', { name: 'История зарплаты — Бехруз Миров' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Детальная информация/ })).not.toBeInTheDocument();
+
+    await act(async () => { await user.click(row!); });
+    await act(async () => { await user.click(screen.getByRole('button', { name: /Детальная информация/ })); });
+    expect(screen.getByText('Страница сотрудника')).toBeInTheDocument();
   });
 
   it('does not toggle history from nested inputs and action buttons', async () => {
@@ -124,7 +131,7 @@ describe('salary employee inline expansion', () => {
     expect(screen.getByText('Выплата ЗП · Бехруз Миров')).toBeInTheDocument();
   });
 
-  it('supports Enter/Space and restores focus to the row after collapsing', async () => {
+  it('toggles the month panel with Enter and Space on the focused row', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -142,6 +149,44 @@ describe('salary employee inline expansion', () => {
     row.focus();
     fireEvent.keyDown(row, { key: 'Enter' });
     expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /Детальная информация/ })).toBeInTheDocument();
+
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(row).toHaveFocus();
+
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows a fired employee history inline and returns focus to the row after «Свернуть»', async () => {
+    const user = userEvent.setup();
+    const firedEmployee = {
+      id: 'emp-1', name: 'Бехруз Миров', role: 'Руководитель',
+      hireDate: '2026-03-26', salary: 5_000, status: 'fired',
+    };
+    mocks.expenseDetail.mockResolvedValue({
+      cards: { fund: 0, advances: 0, bonuses: 0, fines: 0, paid: 0, toPay: 0 },
+      rows: [], fired: [firedEmployee], allPaid: true,
+    });
+    mocks.employees.mockResolvedValue([firedEmployee]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/finance/expense/salary?ym=2026-07']}>
+          <Routes>
+            <Route path="/finance/expense/:kind" element={<FinanceExpenseGroupPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const firedToggle = await screen.findByRole('button', { name: /Уволенные сотрудники/ });
+    await act(async () => { await user.click(firedToggle); });
+    const row = screen.getByText('Бехруз Миров').closest('tr')!;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(row).toHaveAttribute('aria-expanded', 'true');
     expect(await screen.findByRole('region', { name: 'История зарплаты — Бехруз Миров' })).toBeInTheDocument();
     await screen.findByText('Повышение оклада');
 
@@ -150,9 +195,6 @@ describe('salary employee inline expansion', () => {
     });
     await waitFor(() => expect(row).toHaveFocus());
     expect(row).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.keyDown(row, { key: ' ' });
-    expect(row).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('keeps fired employees in one accessible full-width section', async () => {
