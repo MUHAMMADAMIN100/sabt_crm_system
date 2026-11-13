@@ -84,7 +84,7 @@ export const dbSchema: ToolDef<{ search?: string }> = {
       for (const r of rows) {
         if (BLOCKED_TABLES.test(r.table_name) || SENSITIVE_COLUMN.test(r.column_name)) continue;
         const list = map.get(r.table_name) || [];
-        list.push(`${r.column_name}:${String(r.data_type).replace('timestamp with time zone', 'timestamptz').replace('character varying', 'text')}`);
+        list.push(`${r.column_name}:${String(r.data_type).replace('timestamp with time zone', 'timestamptz').replace('timestamp without time zone', 'timestamp').replace('character varying', 'text')}`);
         map.set(r.table_name, list);
       }
       schemaCache = { at: Date.now(), tables: [...map.entries()].map(([table, columns]) => ({ table, columns })) };
@@ -94,7 +94,7 @@ export const dbSchema: ToolDef<{ search?: string }> = {
       ? schemaCache.tables.filter((t) => t.table.includes(q) || t.columns.some((c) => c.toLowerCase().includes(q)))
       : schemaCache.tables.map((t) => ({ table: t.table, columns: [`${t.columns.length} колонок — уточните search`] }));
     return {
-      note: 'Колонки в "кавычках" (camelCase): t."assigneeId". Время в timestamptz (UTC); Душанбе = UTC+5: AT TIME ZONE \'Asia/Dushanbe\'. Деньги — сомони. '
+      note: 'Колонки в "кавычках" (camelCase): t."assigneeId". Время в базе — по Гринвичу (UTC), Душанбе = UTC+5. Колонка timestamptz → col AT TIME ZONE \'Asia/Dushanbe\'; колонка timestamp (без пояса, таких большинство: createdAt, startedAt) → (col AT TIME ZONE \'UTC\') AT TIME ZONE \'Asia/Dushanbe\' — одно AT TIME ZONE у timestamp сдвигает время в обратную сторону. Деньги — сомони. '
         + 'СВЯЗИ: люди — users (id, name, role); tasks."assigneeId"/"createdById" → users.id; task_assignees."userId" → users.id; '
         + 'employees."userId" → users.id (employees.id — НЕ то же, что users.id); projects."managerId" → users.id; tasks."projectId" → projects.id; '
         + 'client_leads."ownerId" → users.id; work_shifts."employeeId" → users.id; story_logs."employeeId" → users.id; '

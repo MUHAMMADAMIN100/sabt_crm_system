@@ -888,6 +888,15 @@ export class FinanceService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`smm startup reconciliation failed: ${String(e?.message || e).slice(0, 200)}`);
     }
+
+    // Разовая отмена ложных штрафов за опоздание 10–12.11.2026 — после
+    // старта, чтобы не задерживать подъём сервера. Повторный запуск ничего
+    // не делает: отменённые решения уже не «fined».
+    setTimeout(() => {
+      this.refundWrongLateFines()
+        .then(r => { if (r.refunded || r.failed) this.logger.log(`Ложные штрафы 10–12.11: отменено ${r.refunded}, не удалось ${r.failed}, сообщений ${r.notified}`); })
+        .catch((e: any) => this.logger.warn(`refundWrongLateFines failed: ${String(e?.message || e).slice(0, 200)}`));
+    }, 20_000).unref?.();
   }
 
   /** Точные итоги набора исторических проводок — одновременно аудит импорта
@@ -4282,9 +4291,15 @@ export class FinanceService implements OnModuleInit {
     // Порог у каждого свой: смена начинается когда начинается ИМЕННО у него,
     // «плавающим» (выездные съёмки) опоздание не считается вовсе, а день с
     // отгулом или одобренной заранее просьбой «приду позже» не считается.
+    // "startedAt" — timestamp БЕЗ пояса, в нём лежит время по Гринвичу (UTC).
+    // Поэтому сначала говорим базе «это UTC», и только потом переводим в
+    // Душанбе. Одно «AT TIME ZONE 'Asia/Dushanbe'» делает обратное: считает
+    // гринвичское время душанбинским и сдвигает его на 5 часов НАЗАД — пришёл
+    // в 08:35, а система видела 22:35 и штрафовала тех, кто пришёл вовремя
+    // (10–12.11.2026).
     const rows: Array<{ userId: string; name: string; role: string; first: string; startTime: string; grace: number; floating: boolean; workdays: string; excused: boolean }> = await this.ds.query(
       `SELECT s."employeeId" AS "userId", u."name", u."role",
-              to_char(min(s."startedAt") AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first,
+              to_char((min(s."startedAt") AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe', 'HH24:MI') AS first,
               COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."startTime" END, c."startTime", '09:00') AS "startTime",
               COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."graceMinutes" END, c."graceMinutes", 30) AS grace,
               COALESCE(CASE WHEN p."followsCompany" THEN NULL ELSE p."floating" END, c."floating", false) AS floating,
@@ -4441,6 +4456,64 @@ export class FinanceService implements OnModuleInit {
     }
     await this.lateRepo.delete({ id: row.id });
     return { ok: true };
+  }
+
+  /** Отмена ВСЕХ штрафов за опоздание 10–12.11.2026 — решение владельца.
+   *
+   *  В эти дни список опоздавших считался по неверному времени (см.
+   *  lateOfDay): штраф получали пришедшие вовремя, а опоздавшие — нет.
+   *  Решение не удаляем, а переводим в «прощено»: по верному времени
+   *  действительно опоздавший иначе снова всплыл бы в списке, а владелец
+   *  решил простить эти дни целиком. Сначала убираем запись из журнала, потом
+   *  меняем решение — если упадёт посередине, повтор доделает без вреда. */
+  async refundWrongLateFines(from = '2026-11-10', to = '2026-11-12') {
+    const rows = await this.lateRepo.createQueryBuilder('d')
+      .where('d.decision = :fined', { fined: 'fined' })
+      .andWhere('d.date BETWEEN :from AND :to', { from, to })
+      .orderBy('d.date', 'ASC')
+      .getMany();
+    let refunded = 0;
+    let failed = 0;
+    const byUser = new Map<string, { dates: string[]; total: number }>();
+    for (const row of rows) {
+      try {
+        const date = String(row.date).slice(0, 10);
+        const ym = row.ym || date.slice(0, 7);
+        if (row.employeeId) {
+          await this.assertPayrollPeriodOpen(ym);
+          let ids = row.entryId ? [row.entryId] : [];
+          if (!ids.length) {
+            // Запись не нашлась при начислении — ищем её так же, как её
+            // создавал applyLateFines: тот же день и «Опоздание …» в комментарии.
+            const emp = await this.empRepo.findOne({ where: { id: row.employeeId } });
+            ids = readDeductionEntries(emp as any, 'fineEntries', 'fines', ym)
+              .filter(e => e.date === date && String(e.note || '').startsWith('Опоздание '))
+              .map(e => e.id);
+          }
+          for (const entryId of ids) {
+            await this.removeEmployeeDeduction(row.employeeId, entryId, { kind: 'fine', ym });
+          }
+        }
+        await this.lateRepo.update({ id: row.id }, { decision: 'forgiven', amount: 0, entryId: null });
+        refunded++;
+        const acc = byUser.get(row.userId) || { dates: [], total: 0 };
+        acc.dates.push(`${date.slice(8, 10)}.${date.slice(5, 7)}`);
+        acc.total = r2(acc.total + (Number(row.amount) || 0));
+        byUser.set(row.userId, acc);
+      } catch (e: any) {
+        failed++;
+        this.logger.warn(`refund late fine ${row.id} failed: ${String(e?.message || e).slice(0, 160)}`);
+      }
+    }
+    let notified = 0;
+    for (const [userId, { dates, total }] of byUser) {
+      const list = dates.length > 1 ? `${dates.slice(0, -1).join(', ')} и ${dates[dates.length - 1]}` : dates[0];
+      const text = dates.length > 1
+        ? `✅ Штрафы за опоздание ${list} (всего ${total} с.) отменены — это была ошибка системы: она неверно считала время прихода. В зарплате их больше нет. Извините.`
+        : `✅ Штраф за опоздание ${list} (${total} с.) отменён — это была ошибка системы: она неверно считала время прихода. В зарплате его больше нет. Извините.`;
+      await this.telegram.sendToUser(userId, text).then(() => { notified++; }).catch(() => undefined);
+    }
+    return { refunded, failed, notified };
   }
 
   // ─── ЛИЧНАЯ ЗАРПЛАТА: сотрудник видит только свою строку ведомости ─────

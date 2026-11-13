@@ -470,7 +470,7 @@ export class ContentPlanService {
        LEFT JOIN LATERAL (
          SELECT s.status::text AS status,
                 to_char(s."publishDate"::date, 'YYYY-MM-DD') AS d,
-                to_char(s."updatedAt" AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD') AS done_at
+                to_char((s."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD') AS done_at
            FROM content_plan_items s
           WHERE ci."prepStage" = 'edit' AND s."shootForItemId" = ci."shootForItemId" AND s.id <> ci.id
             AND COALESCE(s."prepStage", 'shoot') = 'shoot'
@@ -881,7 +881,7 @@ export class ContentPlanService {
     const rows: any[] = await this.repo.manager.query(
       `SELECT a.action::text AS action, a.details AS details, a."userName" AS "userName",
               u.name AS "userFullName",
-              to_char(a."createdAt" AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD HH24:MI') AS at
+              to_char((a."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD HH24:MI') AS at
        FROM activity_logs a
        LEFT JOIN users u ON u.id = a."userId"
        WHERE a.entity = 'content_plan_item' AND a."entityId" = $1
