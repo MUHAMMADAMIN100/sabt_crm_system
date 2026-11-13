@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Coffee, MapPin, User as UserIcon, Square, Play, Clock, X, Check, CalendarRange } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { workShiftsApi } from '@/services/api.service'
+import { useAuthStore } from '@/store/auth.store'
 
 /** «5 ч 46 м» из минут. */
 export function fmtMin(min: number): string {
@@ -30,6 +31,8 @@ const PAUSE_META: Record<PauseKind, { label: string; hint: string; Icon: any }> 
 
 export default function ShiftCard({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
+  // «Войти как»: смену за сотрудника не трогаем — только смотрим.
+  const locked = useAuthStore(s => !!s.user?.impersonator)
   const { data } = useQuery({
     queryKey: ['work-shift-my'],
     queryFn: () => workShiftsApi.my(),
@@ -171,8 +174,13 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Действия */}
+          {locked && (
+            <div className="rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[13px] px-3 py-2">
+              Вы в кабинете сотрудника: начинать, ставить на перерыв и заканчивать его смену нельзя.
+            </div>
+          )}
           {state === 'idle' ? (
-            <button disabled={act.isPending} onClick={() => act.mutate({ type: 'start' })}
+            <button disabled={act.isPending || locked} onClick={() => act.mutate({ type: 'start' })}
               className="h-13 min-h-[52px] rounded-2xl bg-emerald-600 text-white text-[15px] font-bold flex items-center justify-center gap-2 disabled:opacity-60">
               <Play size={16} /> Начать работу
             </button>
@@ -182,7 +190,7 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
               {(['lunch', 'work', 'personal'] as PauseKind[]).map(k => {
                 const M = PAUSE_META[k]
                 return (
-                  <button key={k} disabled={act.isPending} onClick={() => act.mutate({ type: 'pause', kind: k })}
+                  <button key={k} disabled={act.isPending || locked} onClick={() => act.mutate({ type: 'pause', kind: k })}
                     className="flex items-center gap-3 min-h-[58px] px-3.5 rounded-2xl border border-gray-200 dark:border-gray-700 text-left disabled:opacity-60">
                     <M.Icon size={18} className="shrink-0 text-gray-500 dark:text-gray-400" />
                     <span className="flex-1 min-w-0">
@@ -199,17 +207,17 @@ export default function ShiftCard({ onClose }: { onClose: () => void }) {
           ) : (
             <div className="flex gap-2.5">
               {state === 'paused' ? (
-                <button disabled={act.isPending} onClick={() => act.mutate({ type: 'start' })}
+                <button disabled={act.isPending || locked} onClick={() => act.mutate({ type: 'start' })}
                   className="flex-1 min-h-[52px] rounded-2xl bg-emerald-600 text-white text-[15px] font-bold flex items-center justify-center gap-2 disabled:opacity-60">
                   <Play size={16} /> Продолжить
                 </button>
               ) : (
-                <button disabled={act.isPending} onClick={() => setPausing(true)}
+                <button disabled={act.isPending || locked} onClick={() => setPausing(true)}
                   className="flex-1 min-h-[52px] rounded-2xl border border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[15px] font-bold flex items-center justify-center gap-2 disabled:opacity-60">
                   <Coffee size={16} /> Перерыв
                 </button>
               )}
-              <button disabled={act.isPending} onClick={() => act.mutate({ type: 'stop' })}
+              <button disabled={act.isPending || locked} onClick={() => act.mutate({ type: 'stop' })}
                 className="flex-1 min-h-[52px] rounded-2xl border border-red-500/50 bg-red-500/10 text-red-600 dark:text-red-400 text-[15px] font-bold flex items-center justify-center gap-2 disabled:opacity-60">
                 <Square size={14} /> Завершить
               </button>

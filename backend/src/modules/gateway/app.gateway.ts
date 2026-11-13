@@ -50,11 +50,11 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       //  2) handshake.auth.token (legacy — фронт ещё не обновился)
       //  3) Authorization: Bearer (Swagger / curl)
       const cookieHeader = client.handshake.headers?.cookie || '';
-      const cookieToken = cookieHeader
-        .split(';')
-        .map(c => c.trim())
-        .find(c => c.startsWith('auth_token='))
-        ?.slice('auth_token='.length);
+      const cookies = cookieHeader.split(';').map(c => c.trim());
+      const cookieOf = (name: string) => cookies.find(c => c.startsWith(`${name}=`))?.slice(name.length + 1);
+      // «Войти как»: кука входа в кабинет сотрудника сильнее основной —
+      // как в jwt.strategy, иначе сокет слушал бы события самого админа.
+      const cookieToken = cookieOf('imp_token') || cookieOf('auth_token');
       const token =
         cookieToken
         || client.handshake.auth?.token

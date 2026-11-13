@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ActivityLog, ActivityAction } from './activity-log.entity';
+import { impersonationStore } from '../auth/impersonation';
 
 export interface LogDto {
   userId?: string;
@@ -24,6 +25,16 @@ export class ActivityLogService {
 
   async log(dto: LogDto): Promise<void> {
     try {
+      // Запрос сделан «от имени» сотрудника (основатель/админ вошёл в его
+      // кабинет) — помечаем запись настоящим автором. Имя оставляем
+      // сотрудника: историю задачи видит и он сам, а знать о входе ему не
+      // нужно (решение владельца); пометку показывает журнал команды.
+      const imp = impersonationStore.getStore();
+      if (imp) {
+        imp.logged += 1;
+        const mark = { id: imp.actorId, name: imp.actorName, role: imp.actorRole };
+        dto = { ...dto, details: { ...(dto.details || {}), impersonatedBy: dto.details?.impersonatedBy || mark } };
+      }
       const entry = this.repo.create(dto);
       await this.repo.save(entry);
     } catch (e) {

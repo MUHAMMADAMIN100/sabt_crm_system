@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query, Res, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, Patch, Query, Res, Req, Param, ParseUUIDPipe } from '@nestjs/common';
+import { NoImpersonation } from './impersonation';
 import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
@@ -34,6 +35,10 @@ const REFRESH_COOKIE_OPTS = {
   maxAge: 400 * 24 * 60 * 60 * 1000,
 };
 const COOKIE_OPTS = ACCESS_COOKIE_OPTS; // alias для clearCookie
+/** «Войти как»: токен сотрудника поверх основного входа. Своя кука, чтобы
+ *  основной вход основателя/админа не трогать вовсе (см. jwt.strategy). */
+const IMPERSONATION_COOKIE = 'imp_token';
+const IMPERSONATION_COOKIE_OPTS = { ...ACCESS_COOKIE_OPTS, maxAge: 12 * 60 * 60 * 1000 };
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -97,6 +102,7 @@ export class AuthController {
   // ─── 2FA ────────────────────────────────────────────────────────────
 
   @Post('2fa/setup')
+  @NoImpersonation('Двухфакторную защиту сотрудник настраивает сам')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   setup2FA(@Request() req) {
@@ -104,6 +110,7 @@ export class AuthController {
   }
 
   @Post('2fa/enable')
+  @NoImpersonation('Двухфакторную защиту сотрудник настраивает сам')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   enable2FA(@Request() req, @Body() body: TwoFactorCodeDto) {
@@ -111,6 +118,7 @@ export class AuthController {
   }
 
   @Post('2fa/disable')
+  @NoImpersonation('Двухфакторную защиту сотрудник настраивает сам')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   disable2FA(@Request() req, @Body() body: TwoFactorCodeDto) {
@@ -136,8 +144,18 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  getMe(@Request() req) {
-    return this.authService.getMe(req.user.id);
+  async getMe(@Request() req) {
+    const me = await this.authService.getMe(req.user.id);
+    // В чужом кабинете фронт показывает полосу «Вы вошли как …» — по ответу
+    // сервера, а не по заметке в браузере.
+    if (req.user?.impersonatorId) {
+      return {
+        ...me,
+        canImpersonate: false,
+        impersonator: { id: req.user.impersonatorId, name: req.user.impersonatorName, role: req.user.impersonatorRole },
+      };
+    }
+    return me;
   }
 
   @Post('forgot-password')
@@ -153,6 +171,7 @@ export class AuthController {
   }
 
   @Patch('change-password')
+  @NoImpersonation('Пароль сотрудника из его кабинета не меняется — для этого есть «Сбросить пароль»')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   changePassword(@Request() req, @Body() body: ChangePasswordDto) {
@@ -168,12 +187,57 @@ export class AuthController {
     return this.authService.setThemeColor(req.user.id, body?.themeColor ?? null);
   }
 
+  // ─── «Войти как» (13.11.2026) ───────────────────────────────────────
+  // Порядок важен: «stop» объявлен раньше «:userId», иначе express принял бы
+  // слово stop за id сотрудника.
+
+  /** Вернуться в свой аккаунт. Без JwtAuthGuard намеренно: выйти из чужого
+   *  кабинета нужно и тогда, когда вход уже недействителен. Своя кука
+   *  основателя/админа всё это время не менялась — убираем только куку входа. */
+  @Post('impersonate/stop')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Leave employee cabinet (impersonation)' })
+  async stopImpersonation(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const raw = req.cookies?.[IMPERSONATION_COOKIE]
+      || String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '')
+      || null;
+    await this.authService.endImpersonation(raw, req).catch(() => undefined);
+    res.clearCookie(IMPERSONATION_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
+    return { ok: true };
+  }
+
+  @Post('impersonate/:userId')
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @UseGuards(JwtAuthGuard)
+  @NoImpersonation('Сначала вернитесь в свой аккаунт')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Open employee cabinet as founder/admin (impersonation)' })
+  async impersonate(
+    @Request() req,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.impersonate(req.user.id, userId, req);
+    res.cookie(IMPERSONATION_COOKIE, result.token, IMPERSONATION_COOKIE_OPTS);
+    return result;
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async logout(@Request() req, @Res({ passthrough: true }) res: Response) {
+    // Из чужого кабинета «Выйти» закрывает только его: сессии и токены
+    // сотрудника не трогаем — он о входе вообще не должен узнать.
+    if (req.user?.impersonatorId) {
+      const raw = req.cookies?.[IMPERSONATION_COOKIE]
+        || String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '') || null;
+      await this.authService.endImpersonation(raw, req).catch(() => undefined);
+      res.clearCookie(IMPERSONATION_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
+      return { message: 'Impersonation ended' };
+    }
     // Чистим обе httpOnly cookies. На бэке закрываем сессию и отзываем
     // все refresh-токены этого пользователя.
+    res.clearCookie(IMPERSONATION_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
     res.clearCookie(AUTH_COOKIE, { ...ACCESS_COOKIE_OPTS, maxAge: 0 });
     res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTS, maxAge: 0 });
     return this.authService.logout(req.user.id, req);
@@ -184,6 +248,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async heartbeat(@Request() req) {
+    // В чужом кабинете время работы сотрудника не продлеваем.
+    if (req.user?.impersonatorId) return { ok: true };
     await this.authService.heartbeat(req.user.id);
     return { ok: true };
   }

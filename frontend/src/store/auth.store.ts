@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import api, { markJustAuthed, isJustAuthed, tokenStore } from '@/lib/api'
+import api, { markJustAuthed, isJustAuthed, tokenStore, impersonationLocal } from '@/lib/api'
 import { syncThemeFromServer, resetTheme } from '@/lib/theme'
 import { queryClient } from '@/lib/queryClient'
 import { wipePersistedCache } from '@/lib/persistCache'
@@ -53,6 +53,11 @@ export interface User {
   blockReason?: string | null
   /** Включена ли двухфакторная аутентификация. */
   twoFactorEnabled?: boolean
+  /** «Войти как»: может ли этот человек входить в кабинеты сотрудников
+   *  (основатель/админ по роли из базы — решает сервер). */
+  canImpersonate?: boolean
+  /** Сейчас это кабинет сотрудника, а работает в нём основатель/админ. */
+  impersonator?: { id: string; name: string; role?: string } | null
 }
 
 /** Специальная ошибка, которую кидает login() когда бэк ответил 2FA_REQUIRED.
@@ -145,6 +150,14 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        // Из кабинета сотрудника «Выйти» возвращает в свой аккаунт: выходить
+        // из системы целиком основатель не просил, а сессии сотрудника
+        // трогать нельзя вовсе.
+        if (get().user?.impersonator || impersonationLocal.get()) {
+          const { stopImpersonation } = await import('@/lib/impersonation')
+          await stopImpersonation('/employees')
+          return
+        }
         // Снимок данных на устройстве (08.11.2026) стираем первым делом: если
         // запрос выхода повиснет, а приложение закроют, данные не останутся.
         wipePersistedCache()
@@ -171,6 +184,9 @@ export const useAuthStore = create<AuthState>()(
           const { data } = await api.get('/auth/me')
           const oldRole = get().user?.role
           meAttempt = 0
+          // Заметка о входе за сотрудника осталась, а сервер говорит «вы у
+          // себя» (кука входа истекла) — возвращаем свои токены на место.
+          if (!data?.impersonator && impersonationLocal.get()) impersonationLocal.restore()
           set({ user: data, authenticated: true, loading: false })
           // Персональный цвет интерфейса: значение с сервера — источник
           // истины, применяется мгновенно (ездит между устройствами).

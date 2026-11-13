@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
+import ImpersonationBanner from './ImpersonationBanner'
 import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
@@ -129,6 +130,8 @@ export default function Layout() {
           sidebarOpen ? 'ml-0 lg:ml-[260px]' : 'ml-0 lg:ml-[72px]',
         )}
       >
+        {/* «Войти как»: основатель/админ в кабинете сотрудника — видно всегда. */}
+        <ImpersonationBanner />
         {/* На телефоне навигация снизу: три раздела, «Ещё» и кнопка создания.
             Кнопка-гамбургер в углу больше не нужна. */}
         {!directChatOpen && <BottomNav />}

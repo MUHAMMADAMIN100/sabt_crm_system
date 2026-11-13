@@ -29,9 +29,14 @@ function fmt(min: number): string {
 
 type Action = 'start' | 'pause' | 'stop'
 
+export const SHIFT_LOCKED = 'Вы в кабинете сотрудника: начинать и заканчивать смену за него нельзя'
+
 function useShift() {
   const role = useAuthStore(s => s.user?.role)
   const enabled = !!role && role !== 'founder'
+  // «Войти как»: смену за сотрудника не начинаем и не заканчиваем (табель
+  // должен показывать его настоящее время); сервер это тоже не пропустит.
+  const locked = useAuthStore(s => !!s.user?.impersonator)
   const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['work-shift-my'],
@@ -67,7 +72,8 @@ function useShift() {
     enabled,
     state,
     busy: mut.isPending,
-    run: (a: Action) => mut.mutate(a),
+    locked,
+    run: (a: Action) => (locked ? toast(SHIFT_LOCKED, { icon: '🔒' }) : mut.mutate(a)),
     today: fmt(
       state === 'working' && open
         ? (data?.closedMinutes ?? 0) + Math.max(0, Math.round((Date.now() - new Date(open.startedAt).getTime()) / 60000))
@@ -94,7 +100,9 @@ export default function ShiftButton({ variant, collapsed = false }: {
   // Идёт смена — открываем карточку (перерыв там, с причиной). Простой и
   // перерыв — действие сразу, без лишнего экрана.
   const onMain = () => (working ? setCardOpen(true) : s.run('start'))
-  const title = working ? `Смена с ${s.startedLabel} — открыть карточку` : paused ? `На перерыве с ${s.pausedSince}` : 'Начать рабочий день'
+  const title = s.locked && !working
+    ? SHIFT_LOCKED
+    : working ? `Смена с ${s.startedLabel} — открыть карточку` : paused ? `На перерыве с ${s.pausedSince}` : 'Начать рабочий день'
   const card = cardOpen ? <ShiftCard onClose={() => setCardOpen(false)} /> : null
 
   if (variant === 'sheet') {

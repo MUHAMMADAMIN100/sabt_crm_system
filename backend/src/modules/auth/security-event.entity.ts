@@ -20,6 +20,9 @@ export enum SecurityEventType {
   TWO_FACTOR_ENABLED    = 'two_factor_enabled',
   TWO_FACTOR_DISABLED   = 'two_factor_disabled',
   TWO_FACTOR_FAIL       = 'two_factor_fail',
+  /** «Войти как»: основатель/админ открыл кабинет сотрудника и вышел из него. */
+  IMPERSONATION_START   = 'impersonation_start',
+  IMPERSONATION_END     = 'impersonation_end',
 }
 
 /** Запись в журнале безопасности. Для админа: вижу что происходит,

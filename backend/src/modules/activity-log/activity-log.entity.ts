@@ -60,6 +60,9 @@ export enum ActivityAction {
    *  onboardingStage прогрессировал вперёд). Используется для подсчёта
    *  KPI «количество продвижений по воронке за период». */
   LEAD_PROGRESS  = 'LEAD_PROGRESS',
+  /** Изменение, сделанное основателем/админом из кабинета сотрудника
+   *  («Войти как»), если сам обработчик в журнал ничего не записал. */
+  IMPERSONATED_ACTION = 'IMPERSONATED_ACTION',
 }
 
 @Entity('activity_logs')

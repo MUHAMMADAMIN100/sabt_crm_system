@@ -59,6 +59,70 @@ export const tokenStore = {
   },
 }
 
+// ─── «Войти как» (13.11.2026) ─────────────────────────────────────────
+/** Основатель/админ в кабинете сотрудника. Свои токены основателя лежат
+ *  здесь до возврата; на их месте — токен сотрудника. Refresh основателя на
+ *  это время убираем: иначе «тихое продление» вернуло бы его в свой аккаунт,
+ *  а интерфейс продолжал бы показывать кабинет сотрудника. */
+const IMP_KEY = 'sabt-impersonation'
+export interface ImpersonationSaved {
+  targetId: string
+  targetName: string
+  actorName: string
+  prevAccess: string | null
+  prevRefresh: string | null
+  startedAt: number
+}
+export const impersonationLocal = {
+  key: IMP_KEY,
+  get(): ImpersonationSaved | null {
+    try {
+      const raw = localStorage.getItem(IMP_KEY)
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  },
+  /** Войти: запомнить свои токены и поставить токен сотрудника. */
+  begin(saved: Omit<ImpersonationSaved, 'prevAccess' | 'prevRefresh' | 'startedAt'>, impAccess: string) {
+    try {
+      const prev: ImpersonationSaved = {
+        ...saved,
+        prevAccess: tokenStore.getAccess(),
+        prevRefresh: tokenStore.getRefresh(),
+        startedAt: Date.now(),
+      }
+      localStorage.setItem(IMP_KEY, JSON.stringify(prev))
+      localStorage.setItem(TOKEN_KEY, impAccess)
+      localStorage.removeItem(REFRESH_KEY)
+      sessionStorage.removeItem(TOKEN_KEY)
+      sessionStorage.removeItem(REFRESH_KEY)
+    } catch {}
+  },
+  /** Вернуться: свои токены на место, заметку о входе — забыть. */
+  restore() {
+    const saved = impersonationLocal.get()
+    try {
+      localStorage.removeItem(IMP_KEY)
+      if (!saved) return
+      if (saved.prevAccess) localStorage.setItem(TOKEN_KEY, saved.prevAccess)
+      else localStorage.removeItem(TOKEN_KEY)
+      if (saved.prevRefresh) localStorage.setItem(REFRESH_KEY, saved.prevRefresh)
+    } catch {}
+  },
+}
+
+/** Вход за сотрудника закончился сам (истёк, входившего заблокировали) —
+ *  возвращаем основателя в его аккаунт, а не на экран входа. */
+let impersonationEnding = false
+const endImpersonationAfter401 = async () => {
+  if (impersonationEnding) return new Promise<void>(() => {})
+  impersonationEnding = true
+  impersonationLocal.restore()
+  // Убираем куку входа; адрес работает и с уже недействительным токеном.
+  try { await api.post('/auth/impersonate/stop') } catch {}
+  try { sessionStorage.setItem('impersonation-message', 'Вход в кабинет сотрудника завершён — вы снова в своём аккаунте.') } catch {}
+  window.location.href = '/employees'
+}
+
 // Одноразовая миграция при загрузке приложения: у пользователей со старой
 // версии токены остались в sessionStorage. Переносим ОБА сразу (не дожидаясь
 // цикла refresh — иначе refresh-токен потерялся бы при закрытии браузера, и
@@ -186,6 +250,16 @@ api.interceptors.response.use(
     // обновления означает, что мы промахнулись с токеном (гонка вкладок,
     // ротация) — обновляемся ещё раз, и только потом выходим.
     const attempts: number = err.config?.__retry || 0
+    // В кабинете сотрудника 401 значит «вход за него закончился»: продлевать
+    // нельзя (продлился бы вход самого основателя), возвращаем его к себе.
+    const impEnded = typeof raw === 'string' && raw.includes('IMPERSONATION_ENDED')
+    if (status === 401 && !url.includes('/auth/impersonate') && (impersonationLocal.get() || impEnded)) {
+      await endImpersonationAfter401()
+      // Страница уже уходит на «Сотрудники». Ответ не отдаём никому: иначе
+      // обработчик ошибки входа (fetchMe) стёр бы только что возвращённые
+      // токены основателя — и его выбросило бы на экран входа.
+      return new Promise(() => {})
+    }
     if (status === 401 && !isAuthEndpoint && attempts < 2) {
       refreshOutcome = await tryRefresh()
       if (refreshOutcome === 'ok') {
@@ -258,7 +332,8 @@ if (typeof document !== 'undefined') {
       return
     }
     const slept = Date.now() - hiddenAt
-    if (hiddenAt && slept > 10 * 60 * 1000 && tokenStore.getAccess()) {
+    // В кабинете сотрудника не продлеваем: продлился бы вход основателя.
+    if (hiddenAt && slept > 10 * 60 * 1000 && tokenStore.getAccess() && !impersonationLocal.get()) {
       tryRefresh().catch(() => { /* не вышло — обычный поток разберётся */ })
     }
     hiddenAt = 0

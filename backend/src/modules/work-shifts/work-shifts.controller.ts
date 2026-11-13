@@ -4,6 +4,7 @@ import { WorkShiftsService } from './work-shifts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../users/user.entity';
+import { NoImpersonation } from '../auth/impersonation';
 import { ClearCacheOnWriteInterceptor } from '../../common/clear-cache-on-write.interceptor';
 
 @ApiTags('Work shifts')
@@ -23,11 +24,13 @@ export class WorkShiftsController {
   }
 
   @Post('start')
+  @NoImpersonation('Начинать и заканчивать смену за сотрудника нельзя — табель должен показывать его настоящее время')
   start(@Request() req) {
     return this.service.start(req.user.id);
   }
 
   @Post('stop')
+  @NoImpersonation('Начинать и заканчивать смену за сотрудника нельзя — табель должен показывать его настоящее время')
   stop(@Request() req) {
     return this.service.stop(req.user.id);
   }
@@ -36,6 +39,7 @@ export class WorkShiftsController {
    *  идёт ли время в часы: обед — до лимита, выезд по работе — целиком,
    *  личное — нет. */
   @Post('pause')
+  @NoImpersonation('Начинать и заканчивать смену за сотрудника нельзя — табель должен показывать его настоящее время')
   pause(@Request() req, @Body() body?: { kind?: 'lunch' | 'work' | 'personal' }) {
     return this.service.pause(req.user.id, body?.kind);
   }

@@ -183,7 +183,13 @@ export class FinanceActivityInterceptor implements NestInterceptor {
         userId: req?.user?.id ?? null,
         action: labelFor(method, url),
         route: `${method} ${url}`.slice(0, 200),
-        details: this.detailPayload(req, before, after, response),
+        details: {
+          ...(this.detailPayload(req, before, after, response) as Record<string, any>),
+          // «Войти как»: действие из кабинета сотрудника сделал основатель.
+          ...(req?.user?.impersonatorId
+            ? { impersonatedBy: { id: req.user.impersonatorId, name: req.user.impersonatorName, role: req.user.impersonatorRole } }
+            : {}),
+        },
       }));
     } catch (error: any) {
       this.logger.warn(`finance activity log failed: ${error?.message || error}`);

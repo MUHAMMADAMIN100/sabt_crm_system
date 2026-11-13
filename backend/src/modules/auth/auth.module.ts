@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ImpersonationInterceptor } from './impersonation.interceptor';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -42,7 +44,12 @@ import { GatewayModule } from '../gateway/gateway.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, LocalStrategy],
+  providers: [
+    AuthService, JwtStrategy, LocalStrategy,
+    // «Войти как»: запреты, пометка журналов и след каждого изменения —
+    // для всех запросов приложения.
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationInterceptor },
+  ],
   exports: [AuthService, JwtModule, SecurityAuditModule],
 })
 export class AuthModule {}

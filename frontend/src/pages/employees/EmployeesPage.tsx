@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { getRoleLabel, userCan } from '@/lib/permissions'
 import { useTranslation } from '@/i18n'
 import { PageLoader, EmptyState, Modal, Avatar, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, Trash2, Edit, Mail, Phone, List, LayoutGrid, ShieldCheck, Send, Lock, Unlock, Ban, Key, Copy, Check, Camera, MoreHorizontal, LogIn } from 'lucide-react'
+import { startImpersonation } from '@/lib/impersonation'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { CollapsibleField } from '@/components/ui/CollapsibleField'
@@ -64,6 +65,34 @@ export default function EmployeesPage() {
     const empRole = emp.user?.role || ''
     if (['founder'].includes(empRole) || pos === 'основатель' || pos === 'сооснователь') return false
     return canManage
+  }
+  // «Войти как» (13.11.2026): основатель — к любому, админ — к любому, кроме
+  // основателя, сооснователя и другого администратора. То же правило
+  // проверяет сервер (auth/impersonation.ts); здесь — только чтобы не
+  // показывать кнопку, которая всё равно откажет.
+  const canImpersonate = (emp: any) => {
+    if (!user?.canImpersonate || user?.impersonator) return false
+    if (!emp.userId || emp.userId === user.id) return false
+    if (emp.user?.isBlocked || emp.user?.isActive === false) return false
+    if (user.role === 'founder' || user.secondaryRole === 'founder') return true
+    const pos = String(emp.position || '').trim().toLowerCase()
+    const roles = [emp.user?.role, emp.user?.secondaryRole]
+    if (roles.includes('founder') || roles.includes('admin') || emp.isSubAdmin) return false
+    return !['основатель', 'сооснователь', 'администратор'].includes(pos)
+  }
+  const [enteringId, setEnteringId] = useState<string | null>(null)
+  const loginAs = async (emp: any) => {
+    if (enteringId) return
+    setActionsFor(null)
+    setEnteringId(emp.id)
+    const tid = toast.loading(`Входим в кабинет: ${emp.fullName}…`)
+    try {
+      // При успехе страница перезагрузится уже кабинетом сотрудника.
+      await startImpersonation({ userId: emp.userId, name: emp.fullName }, user?.name || '')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Не удалось войти в кабинет сотрудника', { id: tid })
+      setEnteringId(null)
+    }
   }
   const qc = useQueryClient()
   const { t } = useTranslation()
@@ -328,6 +357,19 @@ export default function EmployeesPage() {
                               (решение владельца, 19.09.2026): роли задаются
                               должностью и «Доступами сотрудников», отдельные
                               переключатели только путали. */}
+                          {canImpersonate(emp) && (
+                            <>
+                              <button
+                                onClick={() => loginAs(emp)}
+                                disabled={!!enteringId}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors disabled:opacity-60"
+                              >
+                                <LogIn size={14} className="text-primary-500" />
+                                <span className="text-surface-700 dark:text-surface-200 font-medium">Войти как</span>
+                              </button>
+                              <div className="my-1 border-t border-surface-100 dark:border-surface-700" />
+                            </>
+                          )}
                           <button
                             onClick={() => { setResetPwdEmp(emp); setCustomPwd(''); setActionsFor(null) }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-50 dark:hover:bg-surface-700/60 transition-colors"
@@ -483,6 +525,11 @@ export default function EmployeesPage() {
                       <div className="flex gap-1 justify-end">
                         {canEditEmployee(emp) && (
                           <>
+                            {canImpersonate(emp) && (
+                              <button onClick={() => loginAs(emp)} disabled={!!enteringId} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-primary-500 disabled:opacity-60" title="Войти как" aria-label={`Войти как ${emp.fullName}`}>
+                                <LogIn size={14} />
+                              </button>
+                            )}
                             <button onClick={() => { setResetPwdEmp(emp); setCustomPwd('') }} className="p-1.5 hover:bg-surface-50 dark:hover:bg-surface-900/20 rounded-lg text-surface-500" title="Сбросить пароль">
                               <Key size={14} />
                             </button>
