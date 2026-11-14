@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Project } from '../projects/project.entity';
 import {
-  CalPay, FinClient, FinPlan, FinTx, PayItem, byUrgency, calendarPays, isEarning, paymentItems, resolveFinanceLinks,
+  CalPay, FinClient, FinPlan, FinTx, OwnerProject, PayItem, calendarPays, cardPays, isEarning, mayOwn,
+  monthPayState, ownedPays, payScope, resolveFinanceLinks, toPayItem, withManagerChange,
 } from './smm-payments.logic';
 
 /** Кто видит оплаты всех проектов и связывает проект с клиентом «Финансов». */
@@ -14,15 +15,20 @@ const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
 /** Клиент «Финансов» с полями, нужными календарю менеджера. */
-type FinClientRow = FinClient & { retentionMonths: number | null; salesManagerId: string | null };
+type FinClientRow = FinClient & { retentionMonths: number | null; salesManagerId: string | null; salesManagerHistory: unknown };
+/** Менеджеры, чьи деньги нужны: id менеджера → подходит ли. */
+type Want = (managerId: string | null) => boolean;
+/** Направления, где менеджер хранится у клиента «Финансов» (не SMM). */
+const DIRECT_DIRECTIONS = ['development', 'design', 'maintenance'];
 
 /** Деньги дня в календаре на «Панели» менеджера: сумма, клиент и проект CRM. */
 export type CalendarPayItem = CalPay & { name: string; projectId: string | null; direction: string | null };
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Оплата проекта для менеджера: проект, день, состояние — без сумм. */
-export type ProjectPayItem = PayItem & { projectId: string; projectName: string };
+/** Оплата клиента для менеджера: проект, день, состояние — без сумм. У
+ *  клиента не из SMM проекта CRM нет — projectId = null. */
+export type ProjectPayItem = PayItem & { projectId: string | null; projectName: string };
 
 const todayDushanbe = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 const shiftMonth = (iso: string, delta: number) => {
@@ -37,6 +43,17 @@ const managerOf = (p: Project): string | null =>
   typeof (p.smmData as any)?.salesManagerId === 'string' ? (p.smmData as any).salesManagerId : null;
 const linkOf = (p: Project): string | null =>
   typeof (p.smmData as any)?.financeProjectId === 'string' ? (p.smmData as any).financeProjectId : null;
+const isLive = (p: Project) => !p.isArchived && String(p.status) !== 'archived';
+const addDays = (iso: string, delta: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+};
+/** Проект CRM для выбора, чей клиент «Финансов». */
+const ownerProject = (p: Project): OwnerProject => ({
+  id: p.id, name: p.name, financeProjectId: linkOf(p), live: isLive(p),
+  managerId: managerOf(p), history: (p.smmData as any)?.salesManagerHistory,
+});
 
 /**
  * «Когда клиент должен заплатить» — для ответственного менеджера SMM-проекта
@@ -64,73 +81,49 @@ export class SmmPaymentsService {
     return rows.filter(p => String(p.status) !== 'archived');
   }
 
+  /** Все SMM-проекты, и архивные: их прошлые оплаты остаются за менеджером. */
+  private async allSmmProjects(): Promise<Project[]> {
+    return this.projectRepo.find({ where: { projectType: 'SMM' } as any });
+  }
+
   private async clients(): Promise<FinClientRow[]> {
     const rows: any[] = await this.ds.query(
       `SELECT id, name, direction, tariff::float AS tariff,
               to_char("contractDate", 'YYYY-MM-DD') AS "contractDate",
               to_char("cycleAnchor", 'YYYY-MM-DD') AS "cycleAnchor",
               COALESCE(archived, false) AS archived, status,
-              "retentionMonths", "salesManagerId"
+              "retentionMonths", "salesManagerId", "salesManagerHistory"
          FROM finance_projects`,
     ).catch((e: any) => { this.logger.warn(`finance clients query failed: ${e?.message || e}`); return []; });
     return rows.map(r => ({
       ...r, tariff: Number(r.tariff) || 0, archived: !!r.archived,
       retentionMonths: r.retentionMonths == null ? null : Number(r.retentionMonths),
       salesManagerId: r.salesManagerId || null,
+      salesManagerHistory: r.salesManagerHistory ?? null,
     }));
   }
 
-  /** Плановые оплаты клиентов: все ожидаемые и полученные за последние месяцы
-   *  (они нужны для «оплачено» и для срока по дню договора). */
-  private async plans(clientIds: string[], today: string): Promise<FinPlan[]> {
-    if (!clientIds.length) return [];
-    const rows: any[] = await this.ds.query(
-      `SELECT pp.id, pp."projectId" AS "projectId", pp.ym, pp."partNo" AS "partNo", pp.status,
-              to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate", pp.amount::float AS amount,
-              to_char(tx.date, 'YYYY-MM-DD') AS "paidAt"
-         FROM finance_planned_payments pp
-         LEFT JOIN finance_transactions tx ON tx.id = pp."receivedTxId"
-        WHERE pp."projectId" = ANY($1::uuid[])
-          AND (pp.status = 'expected' OR pp.ym >= $2)`,
-      [clientIds, shiftMonth(today, -2)],
-    ).catch((e: any) => { this.logger.warn(`finance plans query failed: ${e?.message || e}`); return []; });
-    return rows.map(r => ({ ...r, partNo: Number(r.partNo) || 1, amount: Number(r.amount) || 0 }));
-  }
-
-  /** Оплаты по набору проектов + проекты, для которых клиент в «Финансах» не найден. */
-  private async collect(projects: Project[], today: string) {
-    const clients = await this.clients();
-    const links = resolveFinanceLinks(
-      projects.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), clients,
-    );
-    const plans = await this.plans([...new Set([...links.values()].map(l => l.client.id))], today);
-    const items: ProjectPayItem[] = [];
-    const unlinked: Array<{ projectId: string; projectName: string }> = [];
-    for (const p of projects) {
-      const link = links.get(p.id);
-      if (!link) { unlinked.push({ projectId: p.id, projectName: p.name }); continue; }
-      for (const it of paymentItems(link.client, plans, today)) {
-        items.push({ ...it, key: `${p.id}:${it.key}`, projectId: p.id, projectName: p.name });
-      }
-    }
-    items.sort((a, b) => byUrgency(a, b) || a.projectName.localeCompare(b.projectName, 'ru'));
-    unlinked.sort((a, b) => a.projectName.localeCompare(b.projectName, 'ru'));
-    return { items, unlinked, links };
-  }
-
-  /** Оплаты проектов, где сотрудник — ответственный менеджер. Для календаря. */
-  async forManager(userId: string): Promise<ProjectPayItem[]> {
-    const own = (await this.smmProjects()).filter(p => managerOf(p) === userId);
-    if (!own.length) return [];
-    return (await this.collect(own, todayDushanbe())).items;
+  /** Оплаты клиентов менеджера за [from, to] — события «Оплата: …» в
+   *  «Календаре»: те же даты и состояния, что на «Панели», без сумм.
+   *  Полученная стоит в день прихода денег; клиенты разработки — тоже. */
+  async forManager(userId: string, from?: string, to?: string): Promise<ProjectPayItem[]> {
+    const today = todayDushanbe();
+    const lo = ISO_DAY.test(String(from || '')) ? String(from) : `${today.slice(0, 7)}-01`;
+    const hi = ISO_DAY.test(String(to || '')) && String(to) >= lo ? String(to) : monthEnd(lo);
+    const { items } = await this.calendarOf(id => id === userId, lo, hi);
+    return items.map(it => ({
+      ...toPayItem(it), key: `${it.projectId || it.clientId}:${it.key}`, projectId: it.projectId, projectName: it.name,
+    }));
   }
 
   /**
    * Деньги в календаре «Панели» менеджера по продажам (решение владельца
    * 17.10.2026): то же, что владелец видит в «Финансах → Планирование», но
    * только по клиентам менеджера — SMM-проекты, где он ответственный в CRM,
-   * и клиенты разработки, где он назначен в «Доход → Разработка». Суммы
-   * видны. Владелец и админ видят всех клиентов, у которых есть менеджер.
+   * и клиенты разработки, дизайна и обслуживания, где он назначен в
+   * «Доходе». Полученное — только за время, когда клиент был его (история
+   * назначений, 14.11.2026). Суммы видны. Владелец и админ видят всех
+   * клиентов, у которых есть менеджер.
    */
   async calendar(actor: Actor, fromRaw?: string, toRaw?: string) {
     const today = todayDushanbe();
@@ -153,37 +146,57 @@ export class SmmPaymentsService {
     return Math.round(sum * 100) / 100;
   }
 
-  /** Деньги клиентов, чей менеджер подходит под mineOnly, за [from, to]. */
-  private async calendarOf(mineOnly: (managerId: string | null) => boolean, from: string, to: string) {
+  /** Деньги клиентов менеджеров под want за [from, to] (решение владельца
+   *  14.11.2026): полученная оплата — тому, кто отвечал за клиента в день
+   *  оплаты, и у архивных клиентов тоже; ожидаемая и прогноз — текущему
+   *  ответственному. Так «получено за месяц» на «Панели» и факт плана
+   *  продаж — одни и те же деньги, а смена менеджера не переносит прошлое. */
+  private async calendarOf(want: Want, from: string, to: string) {
     const today = todayDushanbe();
     const all = await this.clients();
-    const own = (await this.smmProjects()).filter(p => mineOnly(managerOf(p)));
-    const links = resolveFinanceLinks(own.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), all);
-    const scope = new Map<string, { client: FinClientRow; name: string; projectId: string | null }>();
-    for (const p of [...own].sort((a, b) => a.name.localeCompare(b.name, 'ru'))) {
-      const l = links.get(p.id);
-      if (l && !scope.has(l.client.id)) scope.set(l.client.id, { client: l.client, name: p.name, projectId: p.id });
-    }
-    for (const c of all) {
-      if (c.direction === 'smm' || scope.has(c.id) || !mineOnly(c.salesManagerId)) continue;
-      scope.set(c.id, { client: c, name: c.name, projectId: null });
-    }
-    if (!scope.size) return { today, from, to, clients: 0, items: [] as CalendarPayItem[] };
+    const projects = await this.allSmmProjects();
+    const scope = [...payScope(projects.map(ownerProject), all).values()].filter(x => mayOwn(x.owner, want));
+    if (!scope.length) return { today, from, to, clients: 0, items: [] as CalendarPayItem[] };
 
-    const ids = [...scope.keys()];
-    // Окно запросов шире календаря: текущий месяц нужен всегда (прогноз и
-    // «Просрочено»), месяц до окна — для оплат, полученных позже своего месяца.
-    const lo = [from, today].sort()[0];
-    const hi = [to, today].sort()[1];
-    const [plans, txs] = await Promise.all([this.calendarPlans(ids, lo), this.incomeTxs(ids, lo, hi)]);
+    const { plans, txs } = await this.moneyOf(scope.map(x => x.client.id), from, to, today);
     const items: CalendarPayItem[] = [];
-    for (const { client, name, projectId } of scope.values()) {
-      for (const it of calendarPays(client, plans, txs, from, to, today)) {
+    for (const { client, name, projectId, owner } of scope) {
+      for (const it of ownedPays(calendarPays(client, plans, txs, from, to, today), owner, want)) {
         items.push({ ...it, name, projectId, direction: client.direction });
       }
     }
     items.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'ru') || a.partNo - b.partNo);
-    return { today, from, to, clients: scope.size, items };
+    // «Своих клиентов пока нет» — про тех, кого менеджер ведёт сейчас.
+    return { today, from, to, clients: scope.filter(x => want(x.owner.current)).length, items };
+  }
+
+  /** Плановые оплаты и поступления клиентов для окна [from, to]. */
+  private async moneyOf(clientIds: string[], from: string, to: string, today: string) {
+    // Окно запросов шире календаря: текущий месяц нужен всегда (прогноз и
+    // «Просрочено»), месяц до окна — для оплат, полученных позже своего месяца.
+    const lo = [from, today].sort()[0];
+    const hi = [to, today].sort()[1];
+    const [plans, txs] = await Promise.all([this.calendarPlans(clientIds, lo), this.incomeTxs(clientIds, lo, hi)]);
+    return { plans, txs };
+  }
+
+  /** Колонка «Оплата» в «Контроле» за месяц: состояние клиента каждого
+   *  проекта по тем же оплатам, что на «Панели» и в «Планировании». */
+  async monthStates(projects: Project[], month: string): Promise<Map<string, 'late' | 'wait' | 'paid'>> {
+    const out = new Map<string, 'late' | 'wait' | 'paid'>();
+    if (!projects.length) return out;
+    const today = todayDushanbe();
+    const from = `${month}-01`;
+    const to = monthEnd(from);
+    const links = resolveFinanceLinks(projects.map(p => ({ id: p.id, name: p.name, financeProjectId: linkOf(p) })), await this.clients());
+    const ids = [...new Set([...links.values()].map(l => l.client.id))];
+    if (!ids.length) return out;
+    const { plans, txs } = await this.moneyOf(ids, from, to, today);
+    for (const [projectId, { client }] of links) {
+      const st = monthPayState(calendarPays(client, plans, txs, from, to, today), from, to);
+      if (st) out.set(projectId, st);
+    }
+    return out;
   }
 
   /** Плановые оплаты для календаря: все ожидаемые (просрочка) и любые с
@@ -192,7 +205,8 @@ export class SmmPaymentsService {
     const rows: any[] = await this.ds.query(
       `SELECT pp.id, pp."projectId" AS "projectId", pp.ym, pp."partNo" AS "partNo", pp.status,
               to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate", pp.amount::float AS amount,
-              to_char(tx.date, 'YYYY-MM-DD') AS "paidAt", pp."receivedTxId" AS "receivedTxId"
+              CASE WHEN COALESCE(tx.status, 'completed') <> 'cancelled' THEN to_char(tx.date, 'YYYY-MM-DD') END AS "paidAt",
+              pp."receivedTxId" AS "receivedTxId"
          FROM finance_planned_payments pp
          LEFT JOIN finance_transactions tx ON tx.id = pp."receivedTxId"
         WHERE pp."projectId" = ANY($1::uuid[])
@@ -227,16 +241,29 @@ export class SmmPaymentsService {
     if (!top && !(sales && managerOf(p) === actor.id)) return { visible: false };
 
     const today = todayDushanbe();
-    const { items, links } = await this.collect([p], today);
-    const link = links.get(p.id) || null;
+    const link = resolveFinanceLinks([{ id: p.id, name: p.name, financeProjectId: linkOf(p) }], await this.clients()).get(p.id) || null;
+    let next: ProjectPayItem | null = null;
+    let lastPaid: ProjectPayItem | null = null;
+    if (link) {
+      // Те же оплаты, что на «Панели»: неделя назад — для «оплачено», год
+      // вперёд — чтобы ближайший срок нашёлся всегда.
+      const from = addDays(today, -7);
+      const to = monthEnd(`${shiftMonth(today, 12)}-01`);
+      const { plans, txs } = await this.moneyOf([link.client.id], from, to, today);
+      const pick = cardPays(calendarPays(link.client, plans, txs, from, to, today), today);
+      const wrap = (it: CalPay | null): ProjectPayItem | null =>
+        (it ? { ...toPayItem(it), key: `${p.id}:${it.key}`, projectId: p.id, projectName: p.name } : null);
+      next = wrap(pick.next);
+      lastPaid = wrap(pick.lastPaid);
+    }
     return {
       visible: true,
       canLink: top,
       today,
       client: link ? { id: link.client.id, name: link.client.name, by: link.by, active: isEarning(link.client) } : null,
       // Ближайшее неоплаченное — главное; последняя оплата — для «оплачено».
-      next: items.find(it => it.state !== 'paid') || null,
-      lastPaid: items.find(it => it.state === 'paid') || null,
+      next,
+      lastPaid,
     };
   }
 
@@ -298,10 +325,10 @@ export class SmmPaymentsService {
               direct: false,
             };
           }),
-        // Разработка (17.10.2026): менеджер хранится у клиента в «Финансах»,
-        // связь с проектом CRM не нужна.
+        // Разработка (17.10.2026), дизайн и обслуживание (14.11.2026):
+        // менеджер хранится у клиента в «Финансах», связь с проектом CRM не нужна.
         ...all
-          .filter(c => c.direction === 'development' && !c.archived)
+          .filter(c => DIRECT_DIRECTIONS.includes(c.direction || '') && !c.archived)
           .map(c => ({ financeProjectId: c.id, project: null, by: null, manager: person(c.salesManagerId), direct: true })),
       ],
       managers: users
@@ -337,7 +364,7 @@ export class SmmPaymentsService {
     return this.financeManagers(actor);
   }
 
-  /** Менеджер клиента разработки в «Доход → Разработка» (null — снять).
+  /** Менеджер клиента разработки, дизайна или обслуживания в «Доходе» (null — снять).
    *  У SMM-клиента менеджер назначается в карточке проекта CRM. */
   async setClientManager(financeProjectId: string, userId: string | null, actor: Actor) {
     if (!this.rolesOf(actor).includes('founder')) throw new BadRequestException('Менеджера назначает основатель');
@@ -350,7 +377,13 @@ export class SmmPaymentsService {
         throw new BadRequestException('Выберите менеджера по продажам');
       }
     }
-    await this.ds.query(`UPDATE finance_projects SET "salesManagerId" = $1 WHERE id = $2`, [userId, financeProjectId]);
+    // История назначений (14.11.2026): прошлые оплаты остаются за тем, кто
+    // вёл клиента в день оплаты.
+    const history = withManagerChange(client.salesManagerHistory, client.salesManagerId, userId, todayDushanbe(), client.contractDate);
+    await this.ds.query(
+      `UPDATE finance_projects SET "salesManagerId" = $1, "salesManagerHistory" = $2::jsonb WHERE id = $3`,
+      [userId, history.length ? JSON.stringify(history) : null, financeProjectId],
+    );
     return this.financeManagers(actor);
   }
 

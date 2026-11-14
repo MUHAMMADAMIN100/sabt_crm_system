@@ -21,6 +21,7 @@ import {
   salaryForFinanceMonth,
   workedInFinanceMonth,
 } from './finance-calculations';
+import { payScope } from '../smm-control/smm-payments.logic';
 
 const SMM_LINK = '/finance/income/smm';
 const SUBS_LINK = '/finance/expense/rent_subs';
@@ -64,7 +65,8 @@ function fmtMoney(n: number): string {
 /** Напоминания об оплатах проектов: срок второй части (15 дней после первой)
  *  и новый платёж цикла в день контракта. Получатели — все пользователи с
  *  доступом к финансам (founder/co_founder или грант finance.manage):
- *  колокольчик + сокет (NotificationsService) и Telegram, если привязан. */
+ *  колокольчик + сокет (NotificationsService) и Telegram, если привязан.
+ *  Накануне и в день срока — ещё и ответственный менеджер клиента. */
 @Injectable()
 export class FinanceScheduler {
   private readonly logger = new Logger(FinanceScheduler.name);
@@ -93,22 +95,53 @@ export class FinanceScheduler {
   async notifyFinanceUsers(opts: { title: string; message: string; alertKey: string; link?: string; dedupHours?: number }): Promise<number> {
     const users = await this.financeUsers();
     let sent = 0;
-    for (const u of users) {
-      try {
-        const created = await this.notifications.createIfNotRecent({
-          userId: u.id, type: NotificationType.PAYMENT_REMINDER,
-          title: opts.title, message: opts.message, link: opts.link ?? SMM_LINK,
-          data: { alertKey: opts.alertKey },
-        }, opts.dedupHours ?? 20);
-        if (created) {
-          sent++;
-          this.telegram.sendToUser(u.id, `💰 <b>${opts.title}</b>\n${opts.message}`).catch(() => {});
-        }
-      } catch (e: any) {
-        this.logger.warn(`finance notify failed for ${u.id}: ${String(e?.message || e).slice(0, 120)}`);
-      }
-    }
+    for (const u of users) sent += await this.notifyUser(u.id, opts);
     return sent;
+  }
+
+  /** Одно напоминание одному сотруднику: колокольчик и Telegram. */
+  private async notifyUser(userId: string, opts: { title: string; message: string; alertKey: string; link?: string; dedupHours?: number }): Promise<number> {
+    try {
+      const created = await this.notifications.createIfNotRecent({
+        userId, type: NotificationType.PAYMENT_REMINDER,
+        title: opts.title, message: opts.message, link: opts.link ?? SMM_LINK,
+        data: { alertKey: opts.alertKey },
+      }, opts.dedupHours ?? 20);
+      if (!created) return 0;
+      this.telegram.sendToUser(userId, `💰 <b>${opts.title}</b>\n${opts.message}`).catch(() => {});
+      return 1;
+    } catch (e: any) {
+      this.logger.warn(`finance notify failed for ${userId}: ${String(e?.message || e).slice(0, 120)}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Ответственный менеджер по продажам клиента «Финансов» (14.11.2026):
+   * у SMM — менеджер связанного проекта CRM (smmData.salesManagerId, та же
+   * связь, что у сроков на «Панели»), у остальных — назначенный в «Доходе».
+   * Ссылка — карточка SMM-проекта или «Панель» с календарём денег.
+   */
+  private async clientManagers(clients: FinanceProject[]): Promise<Map<string, { userId: string; name: string; link: string }>> {
+    const rows: Array<{ id: string; name: string; smmData: any; isArchived: boolean; status: string | null }> =
+      await Promise.resolve()
+        .then(() => this.projRepo.manager.query(
+          `SELECT id, name, "smmData", COALESCE("isArchived", false) AS "isArchived", status
+             FROM projects WHERE "projectType" = 'SMM'`,
+        ))
+        .catch((e: any) => { this.logger.warn(`smm projects for reminders failed: ${String(e?.message || e).slice(0, 120)}`); return []; });
+    const projects = rows.map(p => ({
+      id: p.id, name: p.name,
+      financeProjectId: typeof p.smmData?.financeProjectId === 'string' ? p.smmData.financeProjectId : null,
+      live: !p.isArchived && String(p.status) !== 'archived',
+      managerId: typeof p.smmData?.salesManagerId === 'string' ? p.smmData.salesManagerId : null,
+    }));
+    const out = new Map<string, { userId: string; name: string; link: string }>();
+    for (const [clientId, x] of payScope(projects, clients)) {
+      if (!x.owner.current || !x.owner.live) continue;
+      out.set(clientId, { userId: x.owner.current, name: x.name, link: x.projectId ? `/smm/projects/${x.projectId}` : '/' });
+    }
+    return out;
   }
 
   /** Цикл проекта оплачен полностью → сообщаем о следующем платеже. */
@@ -175,7 +208,15 @@ export class FinanceScheduler {
     const due = expected.filter(p => p.projectId && p.dueDate && p.dueDate <= horizon);
     if (!due.length) return { due: 0, notified: 0 };
 
-    const projects = new Map((await this.projRepo.find()).map(p => [p.id, p]));
+    const projectList = await this.projRepo.find();
+    const projects = new Map(projectList.map(p => [p.id, p]));
+    // Менеджеру — накануне и в день срока; у кого есть «Финансы», тот уже
+    // получил напоминание выше — второй раз не шлём.
+    const near = due.some(pp => { const d = daysUntil(today, pp.dueDate as string); return d === 0 || d === 1; });
+    const managers = near ? await this.clientManagers(projectList) : new Map<string, { userId: string; name: string; link: string }>();
+    const users = managers.size ? await this.userRepo.find({ where: { isActive: true, isBlocked: false } }) : [];
+    const activeIds = new Set(users.map(u => u.id));
+    const financeIds = new Set(users.filter(u => hasGrant(u, 'finance.manage')).map(u => u.id));
     let eligibleDue = 0, notified = 0;
     for (const pp of due) {
       const project = projects.get(pp.projectId as string);
@@ -195,6 +236,15 @@ export class FinanceScheduler {
         alertKey: `fin-pp-due:${pp.id}`,
         link: directionLink(project.direction),
       });
+      const mgr = days === 0 || days === 1 ? managers.get(project.id) : undefined;
+      if (mgr && activeIds.has(mgr.userId) && !financeIds.has(mgr.userId)) {
+        notified += await this.notifyUser(mgr.userId, {
+          title: days === 0 ? 'Сегодня клиент должен оплатить' : 'Завтра клиент должен оплатить',
+          message: `${mgr.name}: ${what} ${fmtMoney(Number(pp.amount))} — срок ${days === 0 ? 'сегодня' : 'завтра'} (${formatRu(pp.dueDate as string)}). Напомните клиенту.`,
+          alertKey: `fin-pp-mgr:${pp.id}:${pp.dueDate}:${days}`,
+          link: mgr.link,
+        });
+      }
     }
     return { due: eligibleDue, notified };
   }

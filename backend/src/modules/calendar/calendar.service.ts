@@ -249,8 +249,9 @@ export class CalendarService {
     }));
 
     // Оплаты клиентов (решение владельца 12.10.2026): менеджер по продажам
-    // видит в своём календаре, когда клиент должен заплатить, — только по
-    // SMM-проектам, где он ответственный. Сроки из «Финансов», сумм нет.
+    // видит в своём календаре, когда клиент должен заплатить. С 14.11.2026 —
+    // те же оплаты, что в календаре «Панели» (одно правило сроков): SMM-проекты
+    // и клиенты разработки, полученная — в день прихода денег. Сумм нет.
     // При фильтре «Личные»/«Общие» и в чужом календаре не показываем.
     const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
     const isSalesViewer = SALES_ROLES.includes(role)
@@ -259,7 +260,7 @@ export class CalendarService {
     if (isSalesViewer && viewerId && (!scope || scope === 'business') && (!employeeId || employeeId === viewerId)) {
       const fromDay = String(from || '').slice(0, 10);
       const toDay = String(to || '').slice(0, 10);
-      const pays = await this.payments.forManager(viewerId).catch((e: any) => {
+      const pays = await this.payments.forManager(viewerId, fromDay, toDay).catch((e: any) => {
         this.logger.warn(`client payment events failed: ${e?.message || e}`);
         return [];
       });
@@ -282,7 +283,8 @@ export class CalendarService {
           projectName: it.projectName,
           assigneeId: viewerId,
           scope: 'business',
-          link: `/smm/projects/${it.projectId}`,
+          // Клиент разработки без проекта CRM — на «Панель», к его деньгам.
+          link: it.projectId ? `/smm/projects/${it.projectId}` : '/',
         }));
     }
 

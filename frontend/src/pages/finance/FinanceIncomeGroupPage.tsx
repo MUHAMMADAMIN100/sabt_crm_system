@@ -874,6 +874,8 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
   // «Сайт × шесть месяцев» на телефоне не помещается — там карточка на сайт
   // с полоской месяцев, как у долгов.
   const narrow = useNarrow(720);
+  // «Менеджер» клиента (14.11.2026) — как у разработки: деньги идут в его план продаж.
+  const managers = useSmmManagers();
   const [openRow, setOpenRow] = useState<string | null>(null);
   const qc = useQueryClient();
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
@@ -940,6 +942,10 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
                       <span className="num">{money(p.tariff)}</span>
                     </button>
                     <span className="mini muted">тариф в месяц · оплата до {day}-го числа</span>
+                    <div className="fin-pp-mgr">
+                      <span className="mini muted">Менеджер</span>
+                      <SmmManagerCell financeProjectId={p.id} clientName={p.name} data={managers} narrow />
+                    </div>
 
                     <div className="fin-debt-year">
                       {months.map((m) => {
@@ -999,6 +1005,7 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
               <thead>
                 <tr>
                   <th style={{ minWidth: 170 }}>Сайт</th>
+                  <th style={{ minWidth: 150, textAlign: 'left' }}>Менеджер</th>
                   <th className="num" style={{ width: 104 }}>Тариф/мес</th>
                   <th style={{ width: 110 }}>День оплаты</th>
                   {months.map((m) => <th key={m} className={`num${m === cm ? ' fin-current-month-cell' : ''}`} style={{ textTransform: 'capitalize', minWidth: 86 }}>{monthLabel(m)}{m === cm && <small className="fin-current-month-dot" title="Текущий месяц" />}</th>)}
@@ -1012,6 +1019,7 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
                   return (
                     <tr key={p.id}>
                       <td><b>{p.name}</b></td>
+                      <td style={{ textAlign: 'left' }}><SmmManagerCell financeProjectId={p.id} clientName={p.name} data={managers} /></td>
                       <td className="num">{money(p.tariff)}</td>
                       <td className="muted nowrap"><b style={{ color: 'var(--text)' }}>{day}-го</b> числа</td>
                       {months.map((m) => {
@@ -1069,10 +1077,11 @@ function MaintenanceSection({ data, direction, archived, onShift }: { data: any;
 
 function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any[]; months: string[]; totals: any; direction: string; onShift: (months: string[], d: number) => void }) {
   const qc = useQueryClient();
-  // «Менеджер» у клиента разработки (17.10.2026): его деньги видны в
-  // календаре на «Панели» этого менеджера по продажам.
-  const dev = direction === 'development';
-  const managers = useSmmManagers(dev);
+  // «Менеджер» у клиента разработки (17.10.2026), с 14.11.2026 — и у
+  // дизайна: его деньги видны в календаре на «Панели» менеджера по продажам
+  // и идут в план продаж.
+  const direct = direction !== 'smm';
+  const managers = useSmmManagers(direct);
   const narrow = useNarrow(720);
   const [cellFor, setCellFor] = useState<{ row: any; ym?: string; plan?: any } | null>(null);
   const [editProject, setEditProject] = useState<any>(null);
@@ -1116,7 +1125,7 @@ function MatrixSection({ rows, months, totals, direction, onShift }: { rows: any
                   <button className="btn ghost sm" title="В архив (больше не работаем)" onClick={() => archiveProject(p)}><FinIcon name="archive" size={15} /></button>
                 </div>
               </div>
-              {dev && (
+              {direct && (
                 <div className="fin-pp-mgr">
                   <span className="mini muted">Менеджер</span>
                   <SmmManagerCell financeProjectId={p.id} clientName={p.name} data={managers} narrow={narrow} />
@@ -1318,6 +1327,9 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
   const simple: any[] = data.simple || [];
   const matrixRows: any[] = data.matrix?.rows || [];
   const cm = currentYm();
+  // «Менеджер» клиента (14.11.2026) — как у разработки: деньги идут в его план продаж.
+  const managers = useSmmManagers();
+  const narrow = useNarrow(720);
 
   async function archiveProject(p: any) {
     try { await financeApi.updateProject(p.id, { archived: true }); invalidateFinanceAll(qc); } catch (e) { toast.error(apiErr(e)); }
@@ -1345,6 +1357,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
             <thead>
               <tr>
                 <th style={{ minWidth: 160 }}>Название</th>
+                <th style={{ minWidth: 150 }}>Менеджер</th>
                 <th>Дата</th>
                 <th className="num" style={{ width: 96 }}>Сумма</th>
                 <th style={{ minWidth: 170 }}>Комментарий</th>
@@ -1356,6 +1369,7 @@ function DesignSection({ data, direction, archived, onShift }: { data: any; dire
               {simple.map((r) => (
                 <tr key={r.project.id} onDoubleClick={() => setWorkFor(r)}>
                   <td data-label="" className="fin-name-cell"><b>{r.project.name}</b></td>
+                  <td data-label="Менеджер"><SmmManagerCell financeProjectId={r.project.id} clientName={r.project.name} data={managers} narrow={narrow} /></td>
                   <td data-label="Дата" className="muted">{r.project.contractDate ? formatDate(r.project.contractDate) : '—'}</td>
                   <td data-label="Сумма" className="num">{money(r.project.tariff)}</td>
                   <td data-label="Комментарий"><NoteCell project={r.project} /></td>

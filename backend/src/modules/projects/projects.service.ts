@@ -24,6 +24,7 @@ import { encryptSecret, decryptSecret } from '../../common/secret-box';
 import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel } from '../../common/sales-segment';
 import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-limits';
 import { devClientFromSmm, CLIENT_MOVED_FLAG } from './dev-client.logic';
+import { withManagerChange } from '../smm-control/smm-payments.logic';
 
 /** Кто видит и задаёт цену индивидуального тарифа. Один список и на чтение
  *  (stripFinance), и на запись (normalizeCustomTariff): иначе роль правила бы
@@ -2332,7 +2333,14 @@ export class ProjectsService implements OnModuleInit {
       }
     }
     const sd: any = { ...(project.smmData || {}) };
+    const prev = typeof sd.salesManagerId === 'string' ? sd.salesManagerId : null;
     sd.salesManagerId = managerId || null;
+    // История назначений (14.11.2026): оплата засчитывается тому, кто вёл
+    // проект в день оплаты, — смена менеджера не переносит прошлые деньги.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
+    const since = project.createdAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date(project.createdAt)) : null;
+    const history = withManagerChange(sd.salesManagerHistory, prev, sd.salesManagerId, today, since);
+    if (history.length) sd.salesManagerHistory = history; else delete sd.salesManagerHistory;
     await this.repo.update(id, { smmData: sd });
     return { ok: true, salesManagerId: sd.salesManagerId };
   }

@@ -150,3 +150,57 @@ describe('FinanceScheduler: срок подписки и напоминание 
     expect(notify).not.toHaveBeenCalled();
   });
 });
+
+describe('FinanceScheduler: напоминание ответственному менеджеру (14.11.2026)', () => {
+  const TODAY = '2026-11-14';
+  const fin = (over: any) => ({ archived: false, status: 'active', tariff: 4000, salesManagerId: null, salesManagerHistory: null, ...over });
+  const build = (expected: any[]) => {
+    const finProjects = [
+      fin({ id: 'f-smm', name: 'Chrono', direction: 'smm' }),
+      fin({ id: 'f-dev', name: 'Сайт Alif', direction: 'development', salesManagerId: 'mgr-dev' }),
+      fin({ id: 'f-boss', name: 'Сайт владельца', direction: 'maintenance', salesManagerId: 'boss' }),
+    ];
+    const crm = [{ id: 'crm-1', name: 'Chrono', smmData: { salesManagerId: 'mgr-smm' }, isArchived: false, status: 'active' }];
+    const users = [
+      { id: 'mgr-smm', role: 'sales_manager_smm', isActive: true, isBlocked: false },
+      { id: 'mgr-dev', role: 'sales_manager_dev', isActive: true, isBlocked: false },
+      { id: 'boss', role: 'founder', isActive: true, isBlocked: false },
+    ];
+    const created: any[] = [];
+    const scheduler = new FinanceScheduler(
+      { find: jest.fn().mockResolvedValue(expected) } as any,
+      { find: jest.fn().mockResolvedValue(finProjects), manager: { query: jest.fn().mockResolvedValue(crm) } } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn().mockResolvedValue(users) } as any,
+      { createIfNotRecent: jest.fn(async (dto: any) => { created.push(dto); return true; }) } as any,
+      { sendToUser: jest.fn().mockResolvedValue(undefined) } as any,
+    );
+    return { scheduler, created };
+  };
+  const pp = (id: string, projectId: string, dueDate: string) => ({ id, projectId, dueDate, status: 'expected', partNo: 1, amount: 4000, ym: dueDate.slice(0, 7) });
+
+  it('накануне — менеджеру SMM-проекта со ссылкой на проект, в день срока — менеджеру разработки на «Панель»', async () => {
+    const { scheduler, created } = build([pp('a', 'f-smm', '2026-11-15'), pp('b', 'f-dev', TODAY)]);
+    await (scheduler as any).checkProjectPayments(TODAY);
+    const toMgr = created.filter(n => n.userId !== 'boss');
+    expect(toMgr.map(n => [n.userId, n.title, n.link])).toEqual([
+      ['mgr-smm', 'Завтра клиент должен оплатить', '/smm/projects/crm-1'],
+      ['mgr-dev', 'Сегодня клиент должен оплатить', '/'],
+    ]);
+    expect(toMgr[0].message).toContain('Chrono');
+  });
+
+  it('за 3 дня и после срока менеджеру не пишем — только «Финансам», как раньше', async () => {
+    const { scheduler, created } = build([pp('a', 'f-smm', '2026-11-17'), pp('b', 'f-dev', '2026-11-10')]);
+    await (scheduler as any).checkProjectPayments(TODAY);
+    expect(created.map(n => n.userId)).toEqual(['boss', 'boss']);
+  });
+
+  it('у менеджера есть «Финансы» — второе напоминание не шлём', async () => {
+    const { scheduler, created } = build([pp('c', 'f-boss', TODAY)]);
+    await (scheduler as any).checkProjectPayments(TODAY);
+    expect(created.map(n => n.userId)).toEqual(['boss']);
+  });
+});

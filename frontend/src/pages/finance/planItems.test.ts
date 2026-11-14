@@ -295,3 +295,28 @@ describe('Планирование: «Просрочено» других мес
     expect(late.reduce((s, x) => s + x.amount, 0)).toBe(13000);
   });
 });
+
+// Тот же случай проверяет сервер (smm-payments.logic.spec, «одно правило
+// сроков»): «Панель», карточка проекта, «Календарь» и «Контроль» менеджера
+// должны показать то же, что здесь.
+describe('Планирование: договор 5-го, октябрь оплачен 20-го, плана на ноябрь нет', () => {
+  const proj = smm({ contractDate: '2026-08-05', tariff: 4000 });
+  const oct = { id: 'oct', projectId: 'p-smm', ym: '2026-10', dueDate: '2026-10-05', status: 'received', amount: 4000, receivedTxId: 't-oct' };
+  const tx = { id: 't-oct', type: 'income', projectId: 'p-smm', date: '2026-10-20', amount: 4000, status: 'completed' };
+
+  it('ноябрь: прогноз на день договора, 5-е — уже просрочено; другого долга нет', () => {
+    const items = buildMonthItems(base({ projects: [proj], planned: [oct] }));
+    expect(items.map((x) => [x.date, x.amount, x.done])).toEqual([['2026-11-05', 4000, false]]);
+    // строка SMM: срок по дню оплаты — 20 ноября, ещё не наступил
+    const late = buildLateOther({
+      calYm: '2026-11', today: TODAY, planned: [oct], projects: [proj], debts: [],
+      smmRows: [{ project: { id: 'p-smm', name: 'Chrono' }, due: { date: '2026-11-20', state: 'wait', planned: false }, overdue: 0 }],
+    });
+    expect(late).toEqual([]);
+  });
+
+  it('октябрь: получено в день прихода денег, 20-го', () => {
+    const items = buildMonthItems(base({ calYm: '2026-10', projects: [proj], planned: [oct], txItems: [tx] }));
+    expect(items.map((x) => [x.id, x.date, x.done])).toEqual([['pp-oct', '2026-10-20', true]]);
+  });
+});

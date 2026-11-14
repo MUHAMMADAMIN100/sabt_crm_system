@@ -65,6 +65,11 @@ export class FinanceProject {
   @Column({ type: 'uuid', nullable: true })
   salesManagerId: string | null;
 
+  /** Кто вёл клиента раньше: [{ managerId, from }] — оплата засчитывается
+   *  менеджеру, который отвечал за клиента в день оплаты (14.11.2026). */
+  @Column({ type: 'jsonb', nullable: true })
+  salesManagerHistory: Array<{ managerId: string | null; from: string }> | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

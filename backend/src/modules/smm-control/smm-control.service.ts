@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
-import { resolveFinanceLinks } from './smm-payments.logic';
+import { SmmPaymentsService } from './smm-payments.service';
 import { TIKTOK_FROM } from '../../common/tiktok';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -48,6 +48,7 @@ export class SmmControlService {
     @InjectRepository(SmmProjectCheck) private repo: Repository<SmmProjectCheck>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     private ds: DataSource,
+    private payments: SmmPaymentsService,
   ) {}
 
   private rolesOf(a: Actor) { return [a.role, a.secondaryRole].filter(Boolean) as string[]; }
@@ -180,8 +181,11 @@ export class SmmControlService {
     for (const u of byUsers) userName.set(u.id, u.name);
 
     // Оплата за месяц — из Финансов: по клиенту, выбранному в карточке
-    // проекта, иначе по совпадению названия.
-    const payOf = seeMoney ? await this.paymentsByProject(live, month, today) : new Map<string, string>();
+    // проекта, иначе по совпадению названия. Состояние — по тем же оплатам,
+    // что на «Панели» и в «Планировании» (одно правило сроков, 14.11.2026).
+    const payOf: Map<string, string> = seeMoney
+      ? await this.payments.monthStates(live, month).catch(() => new Map<string, string>())
+      : new Map<string, string>();
 
     const rows = live.map(p => {
       const sd: any = p.smmData || {};
@@ -239,42 +243,6 @@ export class SmmControlService {
     }).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 
     return { ym: month, today, ref, seeMoney, projects: rows };
-  }
-
-  /** Статус оплаты месяца по проекту: paid — всё получено, late — есть
-   *  ожидаемый платёж с прошедшим сроком, wait — ждём по сроку. Клиент
-   *  «Финансов» — тот, что владелец выбрал в карточке проекта, иначе с тем же
-   *  названием; два клиента с одним названием не связываем — лучше «—», чем
-   *  чужая оплата (resolveFinanceLinks, общая со сроками для менеджеров). */
-  private async paymentsByProject(live: Project[], month: string, today: string): Promise<Map<string, string>> {
-    const clients: Array<{ id: string; name: string; archived: boolean }> = await this.ds.query(
-      `SELECT id, name, COALESCE(archived, false) AS archived FROM finance_projects`,
-    ).catch(() => []);
-    const links = resolveFinanceLinks(
-      live.map(p => ({ id: p.id, name: p.name, financeProjectId: (p.smmData as any)?.financeProjectId })),
-      clients,
-    );
-    const rows: Array<{ projectId: string; status: string; dueDate: string | null }> = await this.ds.query(
-      `SELECT pp."projectId" AS "projectId", pp.status AS status, to_char(pp."dueDate", 'YYYY-MM-DD') AS "dueDate"
-         FROM finance_planned_payments pp
-        WHERE pp.ym = $1 AND pp."projectId" IS NOT NULL`,
-      [month],
-    ).catch(() => []);
-    const agg = new Map<string, { open: boolean; late: boolean }>();
-    for (const r of rows) {
-      const a = agg.get(r.projectId) || { open: false, late: false };
-      if (r.status !== 'received') {
-        a.open = true;
-        if (r.dueDate && r.dueDate < today) a.late = true;
-      }
-      agg.set(r.projectId, a);
-    }
-    const out = new Map<string, string>();
-    for (const [projectId, link] of links) {
-      const a = agg.get(link.client.id);
-      if (a) out.set(projectId, a.late ? 'late' : a.open ? 'wait' : 'paid');
-    }
-    return out;
   }
 
   /** Отметка по проекту за месяц: отзыв клиента, «на связи», «отчёт».

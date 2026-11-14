@@ -574,7 +574,7 @@ export type FinancePerson = { id: string; name: string; avatar: string | null }
 /** Менеджеры клиентов «Финансов»: у клиента — проект CRM и его ответственный. */
 export type FinanceManagers = {
   canAssign: boolean; canLink: boolean
-  /** direct — менеджер хранится у клиента в «Финансах» (разработка), без проекта CRM. */
+  /** direct — менеджер хранится у клиента в «Финансах» (разработка, дизайн, обслуживание), без проекта CRM. */
   clients: { financeProjectId: string; project: { id: string; name: string } | null; by: 'manual' | 'name' | null; manager: FinancePerson | null; direct?: boolean }[]
   managers: FinancePerson[]
   projects: { id: string; name: string; taken: boolean }[]
