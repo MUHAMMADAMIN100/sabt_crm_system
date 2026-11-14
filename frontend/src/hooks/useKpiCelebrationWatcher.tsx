@@ -36,7 +36,8 @@ export default function KpiCelebrationWatcher() {
 
   // Окно — сегодня. Если юзер перешёл через полночь, useEffect ниже
   // увидит новую дату и сбросит baseline (новый день — новые KPI).
-  const today = new Date().toISOString().slice(0, 10)
+  // По Душанбе, как считает сервер и панель (общий кэш ['sales-kpi', …]).
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date())
 
   const { data: kpi } = useQuery({
     queryKey: ['sales-kpi', userId, today, today],

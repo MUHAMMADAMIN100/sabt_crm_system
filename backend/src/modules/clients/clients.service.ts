@@ -10,6 +10,9 @@ import { ActivityAction, ActivityLog } from '../activity-log/activity-log.entity
 import { AppGateway } from '../gateway/app.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import {
+  COLD_CALL_EVENTS_SINCE, buildSalesKpi, emailBecameSent, expandRanges, meetingSyncPlan, salesPeriod, workingDays,
+} from './sales-kpi.logic';
 
 /** Роли менеджеров продаж — для bulk-KPI и фильтров. */
 const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
@@ -18,17 +21,6 @@ const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_
 const ROLE_TO_DIRECTION: Record<string, ClientLeadDirection> = {
   [UserRole.SALES_MANAGER_SMM]: ClientLeadDirection.SMM,
   [UserRole.SALES_MANAGER_DEV]: ClientLeadDirection.DEVELOPMENT,
-};
-
-/** Дневные цели KPI менеджера продаж (план на ОДИН день). При выборе периода
- *  (неделя/месяц) цель умножается на число дней в диапазоне — см. kpi():
- *  встречи 2/день → 60 за месяц (~30 дней), 14 за неделю. */
-const SALES_DAILY_TARGETS = {
-  funnel_progress: 20,
-  new_companies:   15,
-  cold_calls:      20,
-  personal_emails: 10,
-  meetings:        2,
 };
 
 /** Порядок продвижения лида по статусу — для подсчёта «прогрессий вперёд». */
@@ -164,6 +156,16 @@ export class ClientsService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_lead_actions_user_kind_date
           ON lead_actions(user_id, kind, created_at);
       `);
+      // Встречи (kind=meeting) — тоже события: at = время встречи. В KPI
+      // встреча идёт в день, на который назначена, когда это время наступило;
+      // перенос ещё не прошедшей встречи её запись убирает.
+      await this.repo.manager.query(`
+        ALTER TABLE lead_actions ADD COLUMN IF NOT EXISTS "at" timestamp with time zone;
+        CREATE INDEX IF NOT EXISTS idx_lead_actions_user_kind_at
+          ON lead_actions(user_id, kind, "at");
+        CREATE INDEX IF NOT EXISTS idx_lead_actions_lead_kind
+          ON lead_actions(lead_id, kind);
+      `);
     } catch (e: any) {
       this.logger.error(`CREATE TABLE lead_actions failed: ${e?.message || e}`);
     }
@@ -199,6 +201,40 @@ export class ClientsService implements OnModuleInit {
       );
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE client_leads callRequested failed: ${e?.message || e}`);
+    }
+    await this.backfillLeadEvents();
+  }
+
+  /** Идемпотентная дозапись событий (14.11.2026): встречи и письма раньше
+   *  считались по состоянию лида, теперь — по журналу lead_actions. Уже
+   *  назначенные встречи (nextContactAt) и отмеченные «Написал» письма
+   *  переносим в журнал; повторный запуск ничего не добавляет. Письмо
+   *  датируем последней правкой лида — так его считал старый KPI. */
+  private async backfillLeadEvents(): Promise<void> {
+    try {
+      const meetings = await this.repo.manager.query(`
+        INSERT INTO lead_actions (user_id, lead_id, kind, "at", created_at)
+        SELECT c."ownerId"::uuid, c.id, 'meeting', c."nextContactAt", c."updatedAt"
+        FROM client_leads c
+        WHERE c."nextContactAt" IS NOT NULL AND c."ownerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM lead_actions la
+            WHERE la.lead_id = c.id AND la.kind = 'meeting'
+              AND (la."at" AT TIME ZONE 'Asia/Dushanbe')::date = (c."nextContactAt" AT TIME ZONE 'Asia/Dushanbe')::date)
+        RETURNING id`);
+      const emails = await this.repo.manager.query(`
+        INSERT INTO lead_actions (user_id, lead_id, kind, created_at)
+        SELECT c."ownerId"::uuid, c.id, 'email', c."updatedAt"
+        FROM client_leads c
+        WHERE LOWER(COALESCE(c."emailStatus", '')) = 'sent' AND c."ownerId" IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM lead_actions la WHERE la.lead_id = c.id AND la.kind = 'email')
+        RETURNING id`);
+      const n = (r: unknown) => (Array.isArray(r) ? r.length : 0);
+      if (n(meetings) || n(emails)) {
+        this.logger.log(`lead_actions backfill: meetings=${n(meetings)} emails=${n(emails)}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`lead_actions backfill failed: ${e?.message || e}`);
     }
   }
 
@@ -391,6 +427,9 @@ export class ClientsService implements OnModuleInit {
     if (String(saved.callType || '').toLowerCase() === 'cold' && saved.ownerId) {
       await this.logColdCall(saved.ownerId, saved.id);
     }
+    // KPI «Встречи» и «Письма» — события: встреча на nextContactAt и письмо,
+    // если лид заведён сразу с «Написал».
+    await this.syncLeadEvents(null, saved, actor?.id);
     // Если при создании указана дата встречи — авто-генерируем личную задачу.
     await this.syncMeetingTask(saved);
     // KPI: если лид создаётся СРАЗУ с продвинутым статусом или onboardingStage
@@ -423,7 +462,68 @@ export class ClientsService implements OnModuleInit {
     }
   }
 
-  async update(id: string, dto: Partial<ClientLead>) {
+  /** События встреч и писем по изменению лида (before = null — лид новый).
+   *  nextContactAt и emailStatus пишутся только через create/update, а туда
+   *  же ходят голосовой помощник (POST/PATCH /clients) и «Создать лид» из
+   *  Директа. Best-effort: ошибка журнала не ломает сохранение лида. */
+  private async syncLeadEvents(
+    before: Pick<ClientLead, 'nextContactAt' | 'ownerId' | 'emailStatus'> | null,
+    after: Pick<ClientLead, 'id' | 'nextContactAt' | 'ownerId' | 'emailStatus'>,
+    actorId?: string,
+  ): Promise<void> {
+    const now = new Date();
+    const plan = meetingSyncPlan(
+      before ? { at: before.nextContactAt, ownerId: before.ownerId } : null,
+      { at: after.nextContactAt, ownerId: after.ownerId },
+      now,
+    );
+    if (plan) {
+      try {
+        // Встречу перенесли или отменили до того, как она прошла, — её не было.
+        if (plan.dropPending) {
+          await this.repo.manager.query(
+            `DELETE FROM lead_actions WHERE lead_id = $1::uuid AND kind = 'meeting' AND "at" > $2`,
+            [after.id, now],
+          );
+        }
+        // Одна встреча с клиентом в день: правка времени уже прошедшей
+        // встречи вторую не добавляет.
+        if (plan.insert) {
+          await this.repo.manager.query(
+            `INSERT INTO lead_actions (user_id, lead_id, kind, "at")
+             SELECT $1::uuid, $2::uuid, 'meeting', $3::timestamptz
+             WHERE NOT EXISTS (
+               SELECT 1 FROM lead_actions
+               WHERE lead_id = $2::uuid AND kind = 'meeting'
+                 AND ("at" AT TIME ZONE 'Asia/Dushanbe')::date = ($3::timestamptz AT TIME ZONE 'Asia/Dushanbe')::date)`,
+            [plan.insert.userId, after.id, plan.insert.at],
+          );
+        }
+      } catch (e: any) {
+        this.logger.warn(`meeting event failed: ${e?.message || e}`);
+      }
+    }
+    // Письмо — владельцу лида (так считал и старый KPI); у ничьего — автору.
+    const emailUser = after.ownerId || actorId;
+    if (emailUser && emailBecameSent(before, after)) {
+      try {
+        // Повторная отметка «Написал» в тот же день письма не добавляет.
+        await this.repo.manager.query(
+          `INSERT INTO lead_actions (user_id, lead_id, kind)
+           SELECT $1::uuid, $2::uuid, 'email'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM lead_actions
+             WHERE lead_id = $2::uuid AND kind = 'email'
+               AND (created_at AT TIME ZONE 'Asia/Dushanbe')::date = (NOW() AT TIME ZONE 'Asia/Dushanbe')::date)`,
+          [emailUser, after.id],
+        );
+      } catch (e: any) {
+        this.logger.warn(`email event failed: ${e?.message || e}`);
+      }
+    }
+  }
+
+  async update(id: string, dto: Partial<ClientLead>, actorId?: string) {
     const existing = await this.findOne(id);
     // meetingTaskId — внутреннее поле, выставляется только сервером.
     const { meetingTaskId: _ignored, ...safe } = dto as any;
@@ -432,6 +532,8 @@ export class ClientsService implements OnModuleInit {
     // Авто-синхронизация задачи-встречи: создать / обновить / удалить
     // в зависимости от изменений nextContactAt, name, onboardingStage.
     await this.syncMeetingTask(updated, existing);
+    // KPI: перенос встречи и отметка «Написал» — события в lead_actions.
+    await this.syncLeadEvents(existing, updated, actorId);
     return this.findOne(updated.id);
   }
 
@@ -450,7 +552,7 @@ export class ClientsService implements OnModuleInit {
       throw new ForbiddenException('Вы можете редактировать только своих лидов');
     }
     // Правка менеджером = активность с клиентом.
-    const updated = await this.update(id, { ...dto, lastActivityAt: new Date() });
+    const updated = await this.update(id, { ...dto, lastActivityAt: new Date() }, user.id);
     // KPI «Холодные звонки»: событие при ПЕРЕХОДЕ «Тип звонка» → Холодный
     // (был не-cold, стал cold). Считаем по событиям, не по состоянию —
     // звонок не пропадёт при последующей смене типа и каждый новый
@@ -560,6 +662,11 @@ export class ClientsService implements OnModuleInit {
       try { await this.taskRepo.delete(lead.meetingTaskId); } catch { /* ignore */ }
     }
     await this.repo.remove(lead);
+    // Удалённый лид будущую встречу не проведёт; прошедшие остаются в KPI.
+    await this.repo.manager.query(
+      `DELETE FROM lead_actions WHERE lead_id = $1::uuid AND kind = 'meeting' AND "at" > NOW()`,
+      [id],
+    ).catch(() => undefined);
     try { this.gateway.broadcast('leads:changed', { leadId: id, ownerId: lead.ownerId, deleted: true }); } catch {}
     return { message: 'Lead deleted' };
   }
@@ -578,133 +685,122 @@ export class ClientsService implements OnModuleInit {
   }
 
   /**
-   * KPI менеджера продаж за период.
-   * Wave 11: ключевая метрика — «прогрессии воронки», т.е. сколько раз МП
-   * сдвинул лидов на шаг вперёд по status или onboardingStage. Считается
-   * из activity_logs (action = LEAD_PROGRESS).
-   *
-   * Дополнительные показатели остаются для контекста:
-   *  - новые компании в базе (createdAt в окне)
-   *  - холодные звонки (channel ∈ call/whatsapp/telegram, updatedAt в окне)
-   *  - персональные письма (channel=email или есть contactEmail, lastContactAt)
-   *  - встречи / созвоны (nextContactAt в окне периода = в день встречи)
+   * KPI менеджера продаж за период (честный счёт, 14.11.2026).
+   * Норма = дневная × рабочие дни (пн–сб по Душанбе), которые уже наступили,
+   * без отпуска и отметок табеля; будущее не считаем. Факт — события:
+   *  - продвижения по воронке — SUM(delta) из lead_progress;
+   *  - новые компании — лиды, заведённые в периоде;
+   *  - холодные звонки — события lead_actions «cold_call»;
+   *  - персональные письма — события «email» (отметка «Написал»);
+   *  - встречи / созвоны — события «meeting» на время встречи, когда оно наступило.
+   * Правила нормы и общего процента — sales-kpi.logic.ts.
    */
   async kpi(ownerId: string, direction?: ClientLeadDirection, from?: string, to?: string) {
-    // Окно по умолчанию — сегодняшний день. Если переданы from/to (YYYY-MM-DD),
-    // считаем за указанный интервал. Конец дня всегда захватываем целиком.
-    const today = new Date();
-    const parseLocalDate = (s: string) => {
-      const [y, m, d] = s.split('-').map(Number);
-      return new Date(y, (m || 1) - 1, d || 1);
-    };
-    const periodFrom = from ? parseLocalDate(from) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    periodFrom.setHours(0, 0, 0, 0);
-    const periodTo = to ? parseLocalDate(to) : new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    periodTo.setHours(23, 59, 59, 999);
+    const now = new Date();
+    const p = salesPeriod(from, to, now);
     const base = () => {
       const qb = this.repo.createQueryBuilder('c').where('c.ownerId = :oid', { oid: ownerId });
       if (direction) qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: direction });
       return qb;
     };
-
     const safeCount = async (build: () => Promise<number>) => {
       try { return await build(); } catch { return 0; }
     };
+    const countActions = (kind: string, column: 'created_at' | 'at') => safeCount(async () => {
+      const rows = await this.repo.manager.query(
+        `SELECT COUNT(*)::int AS c FROM lead_actions
+         WHERE user_id = $1 AND kind = $2 AND "${column}" BETWEEN $3 AND $4`,
+        [ownerId, kind, p.start, p.until],
+      );
+      return Number(rows?.[0]?.c || 0);
+    });
 
-    // Семь счётчиков друг от друга не зависят — считаем разом (08.11.2026):
-    // раньше шли по очереди, и KPI менеджера ждал семь походов в базу.
-    // safeCount никогда не бросает, так что цифры те же, что и по очереди.
-    const [
-      newCompanies, coldCallEvents, coldCallsState, personalEmails, meetings,
-      progressFromTable, progressFromActivity,
-    ] = await Promise.all([
+    // Счётчики друг от друга не зависят — считаем разом. Всё — с начала
+    // первого дня по Душанбе до min(конец периода, сейчас).
+    const [off, newCompanies, coldCalls, personalEmails, meetings, progressCount] = await Promise.all([
+      this.offDays(ownerId, p.fromIso, p.countedToIso),
       safeCount(() => base()
-        .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+        .andWhere('c.createdAt BETWEEN :from AND :to', { from: p.start, to: p.until })
         .getCount()),
-
-      // «Холодные звонки» — СОБЫТИЙНЫЙ учёт: каждая отметка «Тип звонка =
-      // Холодный» пишет событие в lead_actions. KPI = число событий за
-      // период. Это надёжнее состояния: каждый звонок +1, звонок не
-      // «исчезает» при последующей смене типа звонка у лида.
-      // Fallback: если событий 0 (старые данные до релиза) — берём прежний
-      // счёт по состоянию, чтобы цифра не «обнулилась» на деплое.
-      safeCount(async () => {
-        const rows = await this.repo.manager.query(
-          `SELECT COUNT(*)::int AS c FROM lead_actions
-           WHERE user_id = $1 AND kind = 'cold_call' AND created_at BETWEEN $2 AND $3`,
-          [ownerId, periodFrom, periodTo],
-        );
-        return Number(rows?.[0]?.c || 0);
-      }),
-      safeCount(() => base()
-        .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
-        .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-        .getCount()),
-
-      // «Персональные письма» — теперь считаются по ЯВНОМУ полю
-      // emailStatus='sent' («Написал»), которое менеджер выбирает в форме
-      // клиента селектом «Письмо». updatedAt в окне — менеджер «трогал»
-      // лида в этом периоде. Точная цифра вместо эвристики по channel/email.
-      safeCount(() => base()
-        .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
-        .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-        .getCount()),
-
-      // Встречи засчитываются в KPI того ДНЯ, на который они назначены:
-      // nextContactAt попадает в выбранное окно [periodFrom, periodTo].
-      // (Раньше был «горизонт +14 дней» — будущие встречи капали в KPI
-      //  сегодняшнего дня; теперь привязка строго к дате встречи.)
-      safeCount(() => base()
-        .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-        .getCount()),
-
-      // Главная метрика: чистый прогресс по воронке.
-      // Источник №1 (первичный) — SUM(delta) из lead_progress: +1 forward,
-      // -1 backward. Менеджер не может «накручивать», гоняя лид взад-вперёд.
-      // Источник №2 (fallback) — COUNT из activity_logs, только если в
-      // lead_progress 0 (миграция не прошла / новый деплой ещё не подхватился).
-      safeCount(async () => {
-        const rows = await this.activityRepo.manager.query(
-          `SELECT COALESCE(SUM(delta), 0)::int AS s FROM lead_progress
-           WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
-          [ownerId, periodFrom, periodTo],
-        );
-        return Math.max(0, Number(rows?.[0]?.s || 0));
-      }),
-      safeCount(() =>
-        this.activityRepo
-          .createQueryBuilder('a')
-          .where('a.userId = :uid', { uid: ownerId })
-          .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
-          .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-          .getCount(),
-      ),
+      // «Холодные звонки» — только события. Счёт по состоянию (callType=cold
+      // и правка лида в периоде) остался лишь для периодов, целиком
+      // закончившихся до появления событий: иначе прошлые месяцы обнулились
+      // бы. В новых периодах он давал звонки без звонков — правку лида.
+      p.toIso < COLD_CALL_EVENTS_SINCE
+        ? safeCount(() => base()
+          .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
+          .andWhere('c.updatedAt BETWEEN :from AND :to', { from: p.start, to: p.until })
+          .getCount())
+        : countActions('cold_call', 'created_at'),
+      // «Персональные письма» — событие на отметке «Написал»: правка
+      // старого лида письмо на сегодня больше не переносит.
+      countActions('email', 'created_at'),
+      // «Встречи» — в день встречи и только когда её время наступило.
+      // Перенос будущей встречи её запись убирает, прошедшая остаётся.
+      countActions('meeting', 'at'),
+      // Чистый прогресс по воронке: +1 вперёд, −1 назад.
+      this.funnelProgress(ownerId, p.start, p.until),
     ]);
-    const coldCalls = coldCallEvents > 0 ? coldCallEvents : coldCallsState;
-    const progressCount = progressFromTable > 0 ? progressFromTable : progressFromActivity;
 
-    // Число дней в выбранном периоде: сегодня → 1, неделя → 7, месяц → ~30.
-    // Цель = дневная цель × дни (план встреч 2/день = 60 за месяц).
-    const days = Math.max(1, Math.round((periodTo.getTime() - periodFrom.getTime()) / 86400000));
-    const items = [
-      { key: 'funnel_progress', label: 'Продвижения по воронке',  target: SALES_DAILY_TARGETS.funnel_progress * days, value: progressCount },
-      { key: 'new_companies',   label: 'Новые компании в базе',   target: SALES_DAILY_TARGETS.new_companies   * days, value: newCompanies },
-      { key: 'cold_calls',      label: 'Холодные звонки',         target: SALES_DAILY_TARGETS.cold_calls      * days, value: coldCalls },
-      { key: 'personal_emails', label: 'Персональные письма',     target: SALES_DAILY_TARGETS.personal_emails * days, value: personalEmails },
-      { key: 'meetings',        label: 'Встречи / созвоны',       target: SALES_DAILY_TARGETS.meetings        * days, value: meetings },
-    ].map(i => ({
-      ...i,
-      percent: i.target > 0 ? Math.min(100, Math.round((i.value / i.target) * 100)) : 0,
-      done: i.value >= i.target,
-    }));
-
-    const overall = Math.round(items.reduce((acc, i) => acc + (i.value / i.target) * 100, 0) / items.length);
+    const workDays = workingDays(p.fromIso, p.toIso, p.todayIso, off).length;
+    const result = buildSalesKpi({
+      funnel_progress: progressCount,
+      new_companies: newCompanies,
+      cold_calls: coldCalls,
+      personal_emails: personalEmails,
+      meetings,
+    }, workDays);
     return {
-      periodFrom: periodFrom.toISOString(),
-      periodTo: periodTo.toISOString(),
-      overallPercent: Math.min(100, Math.max(0, overall)),
-      items,
+      periodFrom: p.start.toISOString(),
+      periodTo: p.end.toISOString(),
+      ...result,
     };
+  }
+
+  /** Продвижения по воронке за период: SUM(delta) из lead_progress. Счёт
+   *  по activity_logs — только если lead_progress недоступна (запрос упал):
+   *  откатов там нет, и ноль в таблице — не повод брать завышенную цифру. */
+  private async funnelProgress(userId: string, from: Date, to: Date): Promise<number> {
+    try {
+      const rows = await this.activityRepo.manager.query(
+        `SELECT COALESCE(SUM(delta), 0)::int AS s FROM lead_progress
+         WHERE user_id = $1 AND created_at BETWEEN $2 AND $3`,
+        [userId, from, to],
+      );
+      return Math.max(0, Number(rows?.[0]?.s || 0));
+    } catch (e: any) {
+      this.logger.warn(`lead_progress KPI query failed: ${e?.message || e}`);
+      return this.activityRepo
+        .createQueryBuilder('a')
+        .where('a.userId = :uid', { uid: userId })
+        .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
+        .andWhere('a.createdAt BETWEEN :from AND :to', { from, to })
+        .getCount()
+        .catch(() => 0);
+    }
+  }
+
+  /** Дни, когда менеджера нет на работе: отметки табеля (отпуск, отгул,
+   *  больничный, праздник — shift_absences по userId) и отпуска из карточки
+   *  сотрудника (employee_vacations и текущий статус «В отпуске»). Каждый
+   *  источник отдельно: нет таблицы — считаем без него. */
+  private async offDays(userId: string, fromIso: string, toIso: string): Promise<Set<string>> {
+    if (fromIso > toIso) return new Set();
+    const q = (sql: string, params: unknown[]): Promise<any[]> =>
+      this.repo.manager.query(sql, params).catch(() => []);
+    const [absences, vacations, current] = await Promise.all([
+      q(`SELECT to_char(date, 'YYYY-MM-DD') AS day FROM shift_absences
+         WHERE "employeeId"::text = $1 AND date BETWEEN $2::date AND $3::date`, [userId, fromIso, toIso]),
+      q(`SELECT to_char("dateFrom", 'YYYY-MM-DD') AS "from", to_char("dateUntil", 'YYYY-MM-DD') AS until
+         FROM employee_vacations
+         WHERE "userId"::text = $1 AND "dateFrom" <= $3::date AND "dateUntil" >= $2::date`, [userId, fromIso, toIso]),
+      q(`SELECT to_char("vacationFrom", 'YYYY-MM-DD') AS "from", to_char("vacationUntil", 'YYYY-MM-DD') AS until
+         FROM employees WHERE "userId"::text = $1 AND status::text = 'vacation'`, [userId]),
+    ]);
+    return new Set([
+      ...absences.map(r => String(r.day)),
+      ...expandRanges([...vacations, ...current], fromIso, toIso),
+    ]);
   }
 
   /** Aggregated counters for the Clients page header */

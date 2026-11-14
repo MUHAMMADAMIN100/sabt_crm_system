@@ -16,7 +16,8 @@ export default function SalesKpi() {
   const [openedKpiItem, setOpenedKpiItem] = useState<{ key: string; label: string } | null>(null)
 
   // KPI плана МП — окно по умолчанию «сегодня», можно выбрать диапазон.
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // «Сегодня» — по Душанбе, как считает сервер (UTC-дата до 05:00 — вчера).
+  const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date())
   const [kpiFrom, setKpiFrom] = useState(todayIso)
   const [kpiTo, setKpiTo] = useState(todayIso)
   const { data: kpi } = useQuery({
@@ -41,7 +42,7 @@ export default function SalesKpi() {
                 : `— ${kpiFrom} … ${kpiTo}`}
             </h3>
             {/* На телефоне период во всю ширину, процент справа от него:
-                поле в 260 px выталкивало «% от плана» за край экрана. */}
+                поле в 260 px выталкивало «% нормы» за край экрана. */}
             <div className="flex items-center gap-3 max-sm:w-full" onClick={(e) => e.stopPropagation()}>
               <div className="w-[260px] max-sm:w-auto max-sm:min-w-0 max-sm:flex-1">
                 <DateRangePicker
@@ -51,19 +52,29 @@ export default function SalesKpi() {
                   placeholder="Выберите период"
                 />
               </div>
-              <span className={clsx(
-                'text-xs font-semibold tabular-nums shrink-0',
-                (kpi?.overallPercent ?? 0) >= 100 ? 'text-green-600' :
-                (kpi?.overallPercent ?? 0) >= 70  ? 'text-surface-600'   : 'text-red-600',
-              )}>
-                {kpi ? `${kpi.overallPercent}% от плана` : 'загрузка…'}
-              </span>
+              {/* Выходной (воскресенье, отпуск): нормы нет — не красный 0 %. */}
+              {kpi?.restDay ? (
+                <span className="text-xs font-medium text-surface-500 shrink-0">
+                  Выходной — норма не считается
+                </span>
+              ) : (
+                <span className={clsx(
+                  'text-xs font-semibold tabular-nums shrink-0',
+                  (kpi?.overallPercent ?? 0) >= 100 ? 'text-green-600' :
+                  (kpi?.overallPercent ?? 0) >= 70  ? 'text-surface-600'   : 'text-red-600',
+                )}>
+                  {kpi ? `${kpi.overallPercent}% нормы` : 'загрузка…'}
+                </span>
+              )}
             </div>
           </div>
         }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Пять пунктов — в один ряд на компьютере; заглушка на время загрузки
+            из тех же пяти, чтобы сетка не прыгала. Телефон — как было. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {(kpi?.items ?? [
+            { key: 'funnel_progress', label: 'Продвижения по воронке', target: 20, value: 0, percent: 0, done: false },
             { key: 'new_companies',   label: 'Новые компании в базе', target: 15, value: 0, percent: 0, done: false },
             { key: 'cold_calls',      label: 'Холодные звонки',       target: 20, value: 0, percent: 0, done: false },
             { key: 'personal_emails', label: 'Персональные письма',   target: 10, value: 0, percent: 0, done: false },

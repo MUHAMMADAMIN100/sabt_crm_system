@@ -12,6 +12,8 @@ import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity
 import { ClientsService } from '../clients/clients.service';
 import { DirectionScope, isInDirection } from '../../common/direction-scope';
 import { cachedResponse } from '../../common/response-cache';
+import { COLD_CALL_EVENTS_SINCE, salesPeriod } from '../clients/sales-kpi.logic';
+import { KpiItem, salesActivityItem, salesDeadlineItem, salesKpiItems } from './kpi.logic';
 
 /** Короткий кэш KPI (08.11.2026): расчёт — десяток агрегаций, а просят его
  *  панели, профиль и страница KPI одновременно. Ответ зависит только от
@@ -19,15 +21,7 @@ import { cachedResponse } from '../../common/response-cache';
  *  до вызова). Любое событие изменения кэш сбрасывает. */
 const KPI_TTL = 90_000;
 
-/** Универсальная KPI-метрика. */
-export interface KpiItem {
-  key: string;
-  label: string;
-  target: number;
-  value: number;
-  percent: number;
-  done: boolean;
-}
+export type { KpiItem } from './kpi.logic';
 
 /** Сводный ответ KPI одного юзера. */
 export interface UserKpi {
@@ -339,7 +333,8 @@ export class KpiService {
                 COUNT(*)::int AS done_count,
                 COUNT(*) FILTER (
                   WHERE deadline IS NULL OR COALESCE("reviewedAt", "updatedAt") <= deadline
-                )::int AS on_time_count
+                )::int AS on_time_count,
+                COUNT(*) FILTER (WHERE deadline IS NOT NULL)::int AS with_deadline
          FROM tasks
          WHERE "assigneeId" = ANY($1::uuid[])
            AND status::text = 'done'
@@ -416,9 +411,13 @@ export class KpiService {
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
-    const tasksByUid = new Map<string, { done: number; onTime: number }>();
+    const tasksByUid = new Map<string, { done: number; onTime: number; withDeadline: number }>();
     for (const r of tasksRows) {
-      tasksByUid.set(r.uid, { done: Number(r.done_count) || 0, onTime: Number(r.on_time_count) || 0 });
+      tasksByUid.set(r.uid, {
+        done: Number(r.done_count) || 0,
+        onTime: Number(r.on_time_count) || 0,
+        withDeadline: Number(r.with_deadline) || 0,
+      });
     }
     const activityByUid = new Map<string, number>();
     for (const r of sessionRows) activityByUid.set(r.uid, Number(r.days) || 0);
@@ -476,7 +475,11 @@ export class KpiService {
       const direction = u.role === UserRole.SALES_MANAGER_SMM ? 'smm' as any
         : u.role === UserRole.SALES_MANAGER_DEV ? 'development' as any
         : undefined;
-      const kpi = await this.clientsService.kpi(uid, direction, from, to).catch(() => null);
+      // Период — тот же, что у остальных метрик (пустой = текущий месяц).
+      // Нормы по рабочим дням и обрезку будущего считает clientsService.kpi.
+      const kpi = await this.clientsService
+        .kpi(uid, direction, this.isoDay(periodFrom), this.isoDay(periodTo))
+        .catch(() => null);
       if (kpi) salesKpis.set(uid, kpi);
     }));
 
@@ -487,7 +490,7 @@ export class KpiService {
         return null;
       }
       const targets = targetsFor(user.role);
-      const t = tasksByUid.get(uid) || { done: 0, onTime: 0 };
+      const t = tasksByUid.get(uid) || { done: 0, onTime: 0, withDeadline: 0 };
       const actDays = activityByUid.get(uid) || 0;
 
       const items: KpiItem[] = [];
@@ -518,25 +521,29 @@ export class KpiService {
             });
           }
         } else {
-          const deadlineRate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
+          // Продажи: «Соблюдено дедлайнов» — только если в периоде были задачи
+          // со сроком (как у разработки). Нет задач — не 0 %, а без пункта.
+          const deadline = salesDeadlineItem(t, deliveryByUid.get(uid)?.planned ?? 0, targets.deadlineRate);
+          if (deadline) items.push(deadline);
+        }
+        // Продажи: норма активных дней — рабочие дни их KPI (пн–сб, уже
+        // наступившие, без отпуска); выходной — без пункта. Нет ответа KPI
+        // продаж или это разработка — прежняя норма от длины периода.
+        const salesWorkDays = isDevTeam ? undefined : salesKpis.get(uid)?.workDays;
+        if (typeof salesWorkDays === 'number') {
+          const activity = salesActivityItem(actDays, salesWorkDays);
+          if (activity) items.push(activity);
+        } else {
+          const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
           items.push({
-            key: 'deadline_rate',
-            label: 'Соблюдено дедлайнов',
-            target: targets.deadlineRate,
-            value: deadlineRate,
-            percent: t.done > 0 ? Math.min(100, Math.round(deadlineRate / targets.deadlineRate * 100)) : 0,
-            done: t.done > 0 && deadlineRate >= targets.deadlineRate,
+            key: 'activity_days',
+            label: 'Активных дней',
+            target: activityTarget,
+            value: actDays,
+            percent: Math.min(100, Math.round(actDays / activityTarget * 100)),
+            done: actDays >= activityTarget,
           });
         }
-        const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
-        items.push({
-          key: 'activity_days',
-          label: 'Активных дней',
-          target: activityTarget,
-          value: actDays,
-          percent: Math.min(100, Math.round(actDays / activityTarget * 100)),
-          done: actDays >= activityTarget,
-        });
       }
 
       // Сторис — проекто-дни: сколько дней-проектов закрыто из закреплённых.
@@ -568,13 +575,8 @@ export class KpiService {
       }
 
       if (SALES_ROLES.has(user.role)) {
-        const salesKpi = salesKpis.get(uid);
-        if (salesKpi?.items) {
-          // Префиксуем sales-ключи чтобы не пересекались с универсальными.
-          for (const it of salesKpi.items as KpiItem[]) {
-            items.push({ ...it, key: `sales_${it.key}` });
-          }
-        }
+        // В выходной (нет рабочих дней) пунктов продаж нет — норма не считается.
+        items.push(...salesKpiItems(salesKpis.get(uid)));
       }
 
       // Overall: среднее процентов всех метрик
@@ -615,6 +617,8 @@ export class KpiService {
     meta?: Record<string, any>;
   }>> {
     const { periodFrom, periodTo } = this.periodRange(from, to);
+    // Продажи — те же границы, что у их KPI: сутки по Душанбе, без будущего.
+    const sp = salesPeriod(this.isoDay(periodFrom), this.isoDay(periodTo), new Date());
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) return [];
     const direction: ClientLeadDirection | undefined =
@@ -695,40 +699,44 @@ export class KpiService {
       }
 
       // ─── Sales: продвижения по воронке ────────────────────────────────
-      // Источник №1 — lead_progress (новая таблица, без enum), №2 —
-      // activity_logs (legacy). Берём оба, дедуплицируем по дате+лиду.
+      // Как в KPI: только lead_progress. activity_logs (legacy) — лишь если
+      // таблица недоступна (запрос упал): откатов там нет.
       case 'sales_funnel_progress': {
-        const tableRows: any[] = await this.activityRepo.manager.query(
-          `SELECT id, lead_id, lead_name, stage_from, stage_to, status_from, status_to, created_at
-           FROM lead_progress
-           WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
-           ORDER BY created_at DESC`,
-          [userId, periodFrom, periodTo],
-        ).catch(() => []);
+        let tableRows: any[] | null = null;
+        try {
+          tableRows = await this.activityRepo.manager.query(
+            `SELECT id, lead_id, lead_name, stage_from, stage_to, status_from, status_to, created_at
+             FROM lead_progress
+             WHERE user_id = $1 AND created_at BETWEEN $2 AND $3
+             ORDER BY created_at DESC`,
+            [userId, sp.start, sp.until],
+          );
+        } catch (e: any) {
+          this.logger.warn(`lead_progress details query failed: ${e?.message || e}`);
+        }
+        if (tableRows) {
+          return tableRows.map(r => ({
+            id: r.id,
+            title: r.lead_name || 'Лид',
+            subtitle: [
+              r.status_to && r.status_from ? `${r.status_from} → ${r.status_to}` : null,
+              r.stage_to && r.stage_from !== r.stage_to
+                ? `этап: ${r.stage_from ?? '—'} → ${r.stage_to}`
+                : (r.stage_to ? `этап: ${r.stage_to}` : null),
+            ].filter(Boolean).join(' · ') || null,
+            date: r.created_at ? new Date(r.created_at).toISOString() : null,
+            // Deep-link на клиента; у старых записей без lead_id — на базу.
+            link: r.lead_id ? `/clients?id=${r.lead_id}` : '/clients',
+          }));
+        }
         const legacyRows = await this.activityRepo
           .createQueryBuilder('a')
           .where('a.userId = :uid', { uid: userId })
           .andWhere('a.action = :act', { act: ActivityAction.LEAD_PROGRESS })
-          .andWhere('a.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .andWhere('a.createdAt BETWEEN :from AND :to', { from: sp.start, to: sp.until })
           .orderBy('a.createdAt', 'DESC')
           .getMany().catch(() => []);
-
-        const fromTable = (tableRows || []).map(r => ({
-          id: r.id,
-          title: r.lead_name || 'Лид',
-          subtitle: [
-            r.status_to && r.status_from ? `${r.status_from} → ${r.status_to}` : null,
-            r.stage_to && r.stage_from !== r.stage_to
-              ? `этап: ${r.stage_from ?? '—'} → ${r.stage_to}`
-              : (r.stage_to ? `этап: ${r.stage_to}` : null),
-          ].filter(Boolean).join(' · ') || null,
-          date: r.created_at ? new Date(r.created_at).toISOString() : null,
-          // Deep-link на конкретного клиента — открывает форму
-          // редактирования в ClientsPage. Если lead_id потерян (старые
-          // записи) — ссылка просто на /clients.
-          link: r.lead_id ? `/clients?id=${r.lead_id}` : '/clients',
-        }));
-        const fromActivity = legacyRows.map(r => {
+        return legacyRows.map(r => {
           const d = r.details || {};
           const status = d.statusTo && d.statusFrom ? `${d.statusFrom} → ${d.statusTo}` : null;
           const stage = d.stageTo && d.stageFrom !== d.stageTo
@@ -739,22 +747,17 @@ export class KpiService {
             title: r.entityName || 'Лид',
             subtitle: [status, stage].filter(Boolean).join(' · ') || null,
             date: r.createdAt?.toISOString() || null,
-            // У activity_logs нет lead_id — entityId раньше тоже
-            // ставился в undefined. Ссылка остаётся общая.
+            // У activity_logs нет lead_id — ссылка общая.
             link: '/clients',
           };
         });
-
-        // Возвращаем более длинный массив — он точнее (дедуп руками по дате
-        // не делаем, потому что одна запись пишется в оба источника один раз).
-        return fromTable.length >= fromActivity.length ? fromTable : fromActivity;
       }
 
-      // ─── Sales: новые компании в базе (created в период) ───────────────
+      // ─── Sales: новые компании в базе (заведены в периоде) ─────────────
       case 'sales_new_companies': {
         const qb = this.leadRepo.createQueryBuilder('c')
           .where('c.ownerId = :uid', { uid: userId })
-          .andWhere('c.createdAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
+          .andWhere('c.createdAt BETWEEN :from AND :to', { from: sp.start, to: sp.until })
           .orderBy('c.createdAt', 'DESC');
         const leads = await applyDirection(qb).getMany();
         return leads.map(l => ({
@@ -769,9 +772,25 @@ export class KpiService {
       }
 
       // ─── Sales: холодные звонки ────────────────────────────────────────
-      // СОБЫТИЙНЫЙ учёт: каждая отметка «Холодный» = событие в lead_actions.
-      // Fallback на состояние (callType='cold') если событий ещё нет.
+      // Как в KPI: события lead_actions. По состоянию лидов (callType=cold)
+      // — только для периодов, целиком закончившихся до появления событий.
       case 'sales_cold_calls': {
+        if (sp.toIso < COLD_CALL_EVENTS_SINCE) {
+          const qb = this.leadRepo.createQueryBuilder('c')
+            .where('c.ownerId = :uid', { uid: userId })
+            .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
+            .andWhere('c.updatedAt BETWEEN :from AND :to', { from: sp.start, to: sp.until })
+            .orderBy('c.updatedAt', 'DESC');
+          const leads = await applyDirection(qb).getMany();
+          return leads.map(l => ({
+            id: l.id,
+            title: l.name,
+            subtitle: [l.channel, l.contactPhone || l.contactInstagram || l.contactPerson]
+              .filter(Boolean).join(' · ') || null,
+            date: l.updatedAt?.toISOString() || null,
+            link: `/clients?id=${l.id}`,
+          }));
+        }
         const rows = await this.leadRepo.manager.query(
           `SELECT la.id, la.created_at AS date, la.lead_id,
                   cl.name, cl.channel, cl."contactPhone", cl."contactInstagram", cl."contactPerson"
@@ -780,68 +799,59 @@ export class KpiService {
            WHERE la.user_id = $1 AND la.kind = 'cold_call'
              AND la.created_at BETWEEN $2 AND $3
            ORDER BY la.created_at DESC`,
-          [userId, periodFrom, periodTo],
+          [userId, sp.start, sp.until],
         ).catch(() => [] as any[]);
-        if (rows.length > 0) {
-          return rows.map((r: any) => ({
-            id: r.lead_id || r.id,
-            title: r.name || 'Лид удалён',
-            subtitle: [r.channel, r.contactPhone || r.contactInstagram || r.contactPerson]
-              .filter(Boolean).join(' · ') || null,
-            date: r.date ? new Date(r.date).toISOString() : null,
-            link: r.lead_id ? `/clients?id=${r.lead_id}` : undefined,
-          }));
-        }
-        const qb = this.leadRepo.createQueryBuilder('c')
-          .where('c.ownerId = :uid', { uid: userId })
-          .andWhere(`LOWER(COALESCE(c."callType", '')) = 'cold'`)
-          .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-          .orderBy('c.updatedAt', 'DESC');
-        const leads = await applyDirection(qb).getMany();
-        return leads.map(l => ({
-          id: l.id,
-          title: l.name,
-          subtitle: [l.channel, l.contactPhone || l.contactInstagram || l.contactPerson]
+        return rows.map((r: any) => ({
+          id: r.id,
+          title: r.name || 'Лид удалён',
+          subtitle: [r.channel, r.contactPhone || r.contactInstagram || r.contactPerson]
             .filter(Boolean).join(' · ') || null,
-          date: l.updatedAt?.toISOString() || null,
-          link: `/clients?id=${l.id}`,
+          date: r.date ? new Date(r.date).toISOString() : null,
+          link: r.lead_id ? `/clients?id=${r.lead_id}` : undefined,
         }));
       }
 
       // ─── Sales: персональные письма ────────────────────────────────────
-      // По полю emailStatus='sent' («Написал») — точный учёт отправленных
-      // писем вместо эвристики через channel/contactEmail.
+      // Как в KPI: события отметки «Написал» (lead_actions, kind=email).
       case 'sales_personal_emails': {
-        const qb = this.leadRepo.createQueryBuilder('c')
-          .where('c.ownerId = :uid', { uid: userId })
-          .andWhere(`LOWER(COALESCE(c."emailStatus", '')) = 'sent'`)
-          .andWhere('c.updatedAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-          .orderBy('c.updatedAt', 'DESC');
-        const leads = await applyDirection(qb).getMany();
-        return leads.map(l => ({
-          id: l.id,
-          title: l.name,
-          subtitle: [l.contactEmail || l.channel, l.contactPerson].filter(Boolean).join(' · ') || null,
-          date: l.updatedAt ? new Date(l.updatedAt).toISOString() : null,
-          link: `/clients?id=${l.id}`,
+        const rows = await this.leadRepo.manager.query(
+          `SELECT la.id, la.created_at AS date, la.lead_id,
+                  cl.name, cl.channel, cl."contactEmail", cl."contactPerson"
+           FROM lead_actions la
+           LEFT JOIN client_leads cl ON cl.id = la.lead_id
+           WHERE la.user_id = $1 AND la.kind = 'email'
+             AND la.created_at BETWEEN $2 AND $3
+           ORDER BY la.created_at DESC`,
+          [userId, sp.start, sp.until],
+        ).catch(() => [] as any[]);
+        return rows.map((r: any) => ({
+          id: r.id,
+          title: r.name || 'Лид удалён',
+          subtitle: [r.contactEmail || r.channel, r.contactPerson].filter(Boolean).join(' · ') || null,
+          date: r.date ? new Date(r.date).toISOString() : null,
+          link: r.lead_id ? `/clients?id=${r.lead_id}` : undefined,
         }));
       }
 
       // ─── Sales: встречи / созвоны ──────────────────────────────────────
-      // Встречи привязаны к ДНЮ встречи: nextContactAt в окне периода
-      // (раньше был «горизонт +14 дней» — убран).
+      // Как в KPI: события «meeting» на время встречи, которое уже наступило.
       case 'sales_meetings': {
-        const qb = this.leadRepo.createQueryBuilder('c')
-          .where('c.ownerId = :uid', { uid: userId })
-          .andWhere('c.nextContactAt BETWEEN :from AND :to', { from: periodFrom, to: periodTo })
-          .orderBy('c.nextContactAt', 'ASC');
-        const leads = await applyDirection(qb).getMany();
-        return leads.map(l => ({
-          id: l.id,
-          title: l.name,
-          subtitle: [l.channel, l.contactPerson || l.contactPhone].filter(Boolean).join(' · ') || null,
-          date: l.nextContactAt?.toISOString() || null,
-          link: `/clients?id=${l.id}`,
+        const rows = await this.leadRepo.manager.query(
+          `SELECT la.id, la."at" AS date, la.lead_id,
+                  cl.name, cl.channel, cl."contactPerson", cl."contactPhone"
+           FROM lead_actions la
+           LEFT JOIN client_leads cl ON cl.id = la.lead_id
+           WHERE la.user_id = $1 AND la.kind = 'meeting'
+             AND la."at" BETWEEN $2 AND $3
+           ORDER BY la."at" ASC`,
+          [userId, sp.start, sp.until],
+        ).catch(() => [] as any[]);
+        return rows.map((r: any) => ({
+          id: r.id,
+          title: r.name || 'Лид удалён',
+          subtitle: [r.channel, r.contactPerson || r.contactPhone].filter(Boolean).join(' · ') || null,
+          date: r.date ? new Date(r.date).toISOString() : null,
+          link: r.lead_id ? `/clients?id=${r.lead_id}` : undefined,
         }));
       }
 
