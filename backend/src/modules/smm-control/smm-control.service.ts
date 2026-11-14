@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
 import { resolveFinanceLinks } from './smm-payments.logic';
+import { TIKTOK_FROM } from '../../common/tiktok';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Кто видит и правит все проекты раздела. */
@@ -94,6 +95,11 @@ export class SmmControlService {
       : [];
     const userName = new Map(users.map(u => [u.id, u.name]));
 
+    // TikTok (14.11.2026): «вышло» по плану — в Instagram и, если нужен, в
+    // TikTok. Не нужен — у проекта, где его выключили, и у публикаций раньше
+    // TIKTOK_FROM. Свежесть и полоса дней — по Instagram, как прежде.
+    const tiktokOffIds = live.filter(p => (p.smmData as any)?.tiktokOff === true).map(p => p.id);
+    const tiktokOk = `AND (ci."tiktokAt" IS NOT NULL OR ci."publishDate"::date < '${TIKTOK_FROM}'::date OR ci."projectId" = ANY($4::uuid[]))`;
     // Опубликованные рилсы и посты за месяц — по норме.
     const counts: Array<{ projectId: string; kind: string; n: number }> = await this.ds.query(
       `SELECT ci."projectId" AS "projectId",
@@ -103,10 +109,11 @@ export class SmmControlService {
         WHERE ci."projectId" = ANY($1::uuid[])
           AND ci."shootForItemId" IS NULL
           AND ci.status = 'published'
+          ${tiktokOk}
           AND ci."contentType" IN ('reel', 'video', 'post', 'design', 'carousel')
           AND ci."publishDate"::date BETWEEN $2::date AND $3::date
         GROUP BY 1, 2`,
-      [ids, monthStart, monthEnd],
+      [ids, monthStart, monthEnd, tiktokOffIds],
     );
     // Последняя публикация до опорного дня — «свежесть».
     const lasts: Array<{ projectId: string; last: string }> = await this.ds.query(
@@ -155,9 +162,10 @@ export class SmmControlService {
         WHERE ci."projectId" = ANY($1::uuid[])
           AND ci."shootForItemId" IS NULL
           AND ci.status = 'published'
+          ${tiktokOk}
           AND ci."contentType" IN ('reel', 'video', 'post', 'design', 'carousel')
           AND ci."publishDate"::date BETWEEN $2::date AND $3::date`,
-      [ids, minStart, ref],
+      [ids, minStart, ref, tiktokOffIds],
     );
     const postSet = new Set(postDays.map(r => `${r.projectId}|${r.d}`));
     const storySet = new Set(storyDays.map(r => `${r.projectId}|${r.d}`));

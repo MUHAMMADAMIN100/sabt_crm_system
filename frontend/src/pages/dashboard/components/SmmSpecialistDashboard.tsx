@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { projectsApi, contentPlanApi, storiesApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { projColor, storiesDailyTarget } from '@/pages/smm/smmShared'
-import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown } from 'lucide-react'
+import { igDone, pubDone, tiktokPending } from '@/pages/smm/tiktok'
+import { Film, Image as ImageIcon, Palette, Camera, Scissors, Info, ChevronLeft, ChevronRight, X, Check, Minus, Plus, AlertTriangle, MoreHorizontal, CalendarDays, RotateCcw, Ban, Copy, Paperclip, History as HistoryIcon, ChevronUp, ChevronDown, Instagram, Music2 } from 'lucide-react'
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, isToday, isSameDay, addMonths, format, subDays, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import clsx from 'clsx'
@@ -65,7 +66,8 @@ function taskTitle(e: any): string {
   if (e.kind === 'shoot') return (e.title && e.title.trim()) || PREP_INFO[prepStageOf(e)].fallback
   return (e.topic && e.topic.trim()) || 'Без названия'
 }
-const isDone = (e: any) => e.status === 'published'
+// Сделано: вышло в Instagram и, если нужен, в TikTok (14.11.2026).
+const isDone = (e: any) => pubDone(e)
 const isCancelled = (e: any) => e.status === 'cancelled'
 /** Дата из YYYY-MM-DD в «12 сент». */
 const shortDay = (d?: string | null) => (d ? format(new Date(d + 'T00:00:00'), 'd MMM', { locale: ru }) : '')
@@ -244,7 +246,24 @@ export default function SmmSpecialistDashboard() {
       qc.invalidateQueries({ queryKey: ['smm-calendar-overdue'] })
     },
   })
-  const toggleDone = (e: any) => { if (e.itemId) markMut.mutate({ itemId: e.itemId, done: isDone(e) }) }
+  // Галочка = Instagram: снимаем/ставим статус по НЕМУ, а не по «сделано
+  // целиком» — иначе при ждущем TikTok галочку было бы не снять.
+  const toggleDone = (e: any) => { if (e.itemId) markMut.mutate({ itemId: e.itemId, done: igDone(e) }) }
+  const tiktokMut = useMutation({
+    mutationFn: (v: { itemId: string; on: boolean }) => contentPlanApi.smartUpdate(v.itemId, { tiktok: v.on }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ['smm-calendar', from, to] })
+      const prev = qc.getQueryData<any>(['smm-calendar', from, to])
+      patchEvent(v.itemId, e => ({ ...e, tiktokAt: v.on ? todayKey : null }))
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-calendar', from, to], ctx.prev); toast.error('Не удалось отметить TikTok') },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['smm-calendar-overdue'] })
+    },
+  })
+  const toggleTiktok = (e: any) => { if (e.itemId) tiktokMut.mutate({ itemId: e.itemId, on: !e.tiktokAt }) }
 
   const refetchCal = () => {
     qc.invalidateQueries({ queryKey: ['smm-calendar'] })
@@ -578,6 +597,7 @@ export default function SmmSpecialistDashboard() {
             {overdue.map(e => (
               <TaskRow key={e.id} e={e}
                 onToggle={() => { if (!isDone(e)) setKeep(prev => new Set(prev).add(e.id)); toggleDone(e) }}
+                onToggleTiktok={() => { if (!isDone(e)) setKeep(prev => new Set(prev).add(e.id)); toggleTiktok(e) }}
                 onInfo={() => setOpenId(e.id)}
                 onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)}
                 late={isDone(e) ? undefined : Math.max(1, differenceInCalendarDays(new Date(todayKey + 'T00:00:00'), new Date(e.date + 'T00:00:00')))} />
@@ -615,7 +635,7 @@ export default function SmmSpecialistDashboard() {
         ) : (
           <div className="space-y-2">
             {selEvents.map(e => (
-              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onInfo={() => setOpenId(e.id)}
+              <TaskRow key={e.id} e={e} onToggle={() => toggleDone(e)} onToggleTiktok={() => toggleTiktok(e)} onInfo={() => setOpenId(e.id)}
                 onMove={d => moveTo(e, d)} onCancel={c => setCancelled(e, c)} />
             ))}
           </div>
@@ -672,11 +692,44 @@ export default function SmmSpecialistDashboard() {
           onNext={() => { if (openIdx < navList.length - 1) setOpenId(navList[openIdx + 1].id) }}
           onClose={() => setOpenId(null)}
           onToggle={() => toggleDone(openEvent)}
+          onToggleTiktok={() => toggleTiktok(openEvent)}
           onMove={d => { moveTo(openEvent, d); toast.success(`Перенесено на ${format(d, 'd MMMM', { locale: ru })}`) }}
           onCancel={c => { setCancelled(openEvent, c); toast.success(c ? 'Задача отменена' : 'Задача возвращена в работу') }}
         />
       )}
     </div>
+  )
+}
+
+/** Отметка площадки в строке задачи: квадрат как у галочки, внутри знак
+ *  Instagram или TikTok; вышло — зелёный. */
+function PlatformMark({ kind, on, disabled, onClick }: { kind: 'ig' | 'tt'; on: boolean; disabled?: boolean; onClick: () => void }) {
+  const name = kind === 'ig' ? 'Instagram' : 'TikTok'
+  const Icon = kind === 'ig' ? Instagram : Music2
+  return (
+    <button type="button" disabled={disabled} aria-pressed={on}
+      onClick={ev => { ev.stopPropagation(); onClick() }}
+      title={on ? `Выложено в ${name} — снять отметку` : `Выложено в ${name}`}
+      aria-label={on ? `${name}: выложено, снять отметку` : `Отметить: выложено в ${name}`}
+      className={clsx('w-[26px] h-[26px] rounded-lg border-2 flex items-center justify-center shrink-0 transition',
+        on ? 'bg-green-500 border-green-500 text-white' : 'border-surface-300 dark:border-surface-600 text-surface-400 dark:text-surface-500 hover:border-green-500')}>
+      <Icon size={13} strokeWidth={2.2} />
+    </button>
+  )
+}
+
+/** Кнопка площадки в окне задачи. */
+function PanelPlatformBtn({ name, Icon, on, disabled, onClick }: { name: string; Icon: any; on: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={on}
+      title={on ? `Выложено в ${name} — нажмите, чтобы снять отметку` : `Отметить: выложено в ${name}`}
+      className={clsx('flex-1 min-w-0 h-[50px] sm:h-[42px] rounded-[14px] sm:rounded-xl text-[14px] sm:text-[13.5px] font-bold flex items-center justify-center gap-1.5 sm:gap-2 px-2 transition disabled:opacity-40 whitespace-nowrap',
+        on ? 'border border-green-500/45 bg-green-500/10 text-green-600 dark:text-green-400'
+          : 'bg-green-500 hover:bg-green-600 text-white')}>
+      <Icon size={16} strokeWidth={2.2} className="shrink-0" />
+      <span className="truncate">{name}</span>
+      {on && <Check size={15} strokeWidth={3} className="shrink-0" />}
+    </button>
   )
 }
 
@@ -726,8 +779,11 @@ function AnchoredMenu({ anchorRef, open, onClose, width = 236, children }: {
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false и задано окно
  *  переноса, потому что исполнитель двигает карточку только от сегодня до
  *  дня выхода и не отменяет задачи. */
-export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee, note, readOnly = false }: {
+export function TaskRow({ e, onToggle, onToggleTiktok, onInfo, onMove, onCancel, late, canCancel = true, moveWindow, assigneeName, showAssignee, note, readOnly = false }: {
   e: any; onToggle: () => void; onInfo: () => void
+  /** «Выложено в TikTok» (14.11.2026). Задано и TikTok нужен — вместо одной
+   *  галочки две отметки: Instagram и TikTok (вариант А). */
+  onToggleTiktok?: () => void
   /** Только смотреть («Контроль» у менеджеров по продажам): без галочки и меню. */
   readOnly?: boolean
   onMove?: (d: Date) => void; onCancel?: (cancel: boolean) => void; late?: number
@@ -747,6 +803,7 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
   const cancelled = isCancelled(e)
   const canAct = !readOnly && !!e.itemId && !!onMove
   const showCancel = canCancel && !!onCancel
+  const twoMarks = !!e.tiktok && !!onToggleTiktok
   const tomorrow = addDays(new Date(), 1)
   // «На завтра» — только если завтра ещё внутри окна переноса.
   const tomorrowOk = !moveWindow?.max || dk(tomorrow) <= moveWindow.max
@@ -764,6 +821,11 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
 
       {cancelled ? (
         <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-surface-400 dark:text-surface-500" title="Задача отменена"><Ban size={15} /></span>
+      ) : twoMarks ? (
+        <div className="flex gap-1.5 shrink-0">
+          <PlatformMark kind="ig" on={igDone(e)} disabled={readOnly || !e.itemId} onClick={onToggle} />
+          <PlatformMark kind="tt" on={!!e.tiktokAt} disabled={readOnly || !e.itemId} onClick={onToggleTiktok!} />
+        </div>
       ) : (
         <button onClick={ev => { ev.stopPropagation(); onToggle() }} disabled={readOnly || !e.itemId} title="Отметить готовой"
           className={clsx('w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition',
@@ -772,7 +834,9 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
         </button>
       )}
 
-      <div className={clsx('w-8 h-8 rounded-lg shrink-0 flex items-center justify-center', GROUP_CLS[group])}><Icon size={16} /></div>
+      {/* С двумя отметками на телефоне значок типа прячем — иначе название
+          сжимается до пары букв (тип и так виден в окне задачи). */}
+      <div className={clsx('w-8 h-8 rounded-lg shrink-0 items-center justify-center', twoMarks ? 'hidden sm:flex' : 'flex', GROUP_CLS[group])}><Icon size={16} /></div>
 
       <div className="min-w-0 flex-1 overflow-hidden">
         <p className={clsx('text-[13.5px] font-semibold truncate',
@@ -793,6 +857,13 @@ export function TaskRow({ e, onToggle, onInfo, onMove, onCancel, late, canCancel
           ) : null}
           {cancelled && (
             <span className="text-[11px] font-semibold text-surface-400 dark:text-surface-500 shrink-0">отменено</span>
+          )}
+          {/* Вышло на одной площадке — подсказка, чего ещё ждём. */}
+          {twoMarks && !cancelled && igDone(e) && tiktokPending(e) && (
+            <span className="text-[11px] font-bold text-amber-500 dark:text-amber-400 shrink-0"><span className="hidden sm:inline">Instagram ✓ · </span>ждём TikTok</span>
+          )}
+          {twoMarks && !cancelled && !igDone(e) && !!e.tiktokAt && (
+            <span className="text-[11px] font-bold text-amber-500 dark:text-amber-400 shrink-0"><span className="hidden sm:inline">TikTok ✓ · </span>ждём Instagram</span>
           )}
           {showAssignee && (
             <span className={clsx('text-[11px] font-semibold shrink-0 hidden sm:inline',
@@ -916,6 +987,7 @@ function StoryRow({ name, color, count, target, onSet }: {
 /** Запись журнала в человеческую фразу. */
 function historyText(h: any): string {
   if (h.kind === 'move') return `перенесено с ${shortDay(h.from) || '—'} на ${shortDay(h.to) || 'без даты'}`
+  if (h.kind === 'tiktok') return h.to ? 'выложено в TikTok' : 'отметка TikTok снята'
   if (h.kind === 'status') {
     if (h.to === 'published') return 'отмечено готовым'
     if (h.to === 'cancelled') return 'задача отменена'
@@ -930,8 +1002,10 @@ function historyText(h: any): string {
 /** Панель задачи. Экспортирована: её же использует кабинет производства
  *  (видеограф / монтажёр / дизайнер) — там canCancel=false, потому что
  *  отменить задачу может руководство, а не исполнитель. */
-export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onMove, onCancel, canCancel = true, showFile = true, moveWindow, assign, readOnly = false }: {
+export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, onToggleTiktok, onMove, onCancel, canCancel = true, showFile = true, moveWindow, assign, readOnly = false }: {
   e: any; pos: number; total: number
+  /** «Выложено в TikTok» (14.11.2026): задано и TikTok нужен — две кнопки. */
+  onToggleTiktok?: () => void
   /** Только смотреть: без отметки, переноса и отмены. */
   readOnly?: boolean
   onPrev: () => void; onNext: () => void; onClose: () => void
@@ -956,6 +1030,7 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
   const done = isDone(e)
   const cancelled = isCancelled(e)
   const canAct = !readOnly && !!e.itemId
+  const twoMarks = !!e.tiktok && !!onToggleTiktok
   const desc = (e.scriptText && String(e.scriptText).trim()) || ''
   const caption = (e.caption && String(e.caption).trim()) || ''
   // Ссылку открываем только http(s): поле заполняют руками, javascript:-ссылка не должна пройти.
@@ -1194,6 +1269,13 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
               className="flex-1 h-[50px] sm:h-[42px] rounded-[14px] sm:rounded-xl border border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400 text-[15px] sm:text-[13.5px] font-bold flex items-center justify-center gap-2">
               <RotateCcw size={15} /> Вернуть в работу
             </button>
+          ) : twoMarks ? (
+            // Две площадки (14.11.2026): вышло — зелёная рамка с галочкой
+            // (нажать — снять), не вышло — зелёная кнопка «Выложено в …».
+            <>
+              <PanelPlatformBtn name="Instagram" Icon={Instagram} on={igDone(e)} disabled={!canAct} onClick={onToggle} />
+              <PanelPlatformBtn name="TikTok" Icon={Music2} on={!!e.tiktokAt} disabled={!canAct} onClick={onToggleTiktok!} />
+            </>
           ) : (
             <button onClick={onToggle} disabled={!canAct}
               className={clsx('flex-1 h-[50px] sm:h-[42px] rounded-[14px] sm:rounded-xl text-[15px] sm:text-[13.5px] font-bold flex items-center justify-center gap-2 transition disabled:opacity-40',
@@ -1205,8 +1287,9 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
 
           {canAct && !done && !cancelled && (
             <button onClick={() => setPicking(v => !v)} title="Перенести"
-              className={clsx(iconBtn, 'w-[50px] h-[50px] sm:w-auto sm:h-[42px] sm:px-3.5 gap-1.5', picking && 'border-primary-400 text-primary-600 dark:text-primary-400')}>
-              <CalendarDays size={17} /><span className="hidden sm:inline text-[13px] font-semibold">Перенести</span>
+              className={clsx(iconBtn, twoMarks ? 'w-[50px] h-[50px] sm:w-[42px] sm:h-[42px]' : 'w-[50px] h-[50px] sm:w-auto sm:h-[42px] sm:px-3.5 gap-1.5', picking && 'border-primary-400 text-primary-600 dark:text-primary-400')}>
+              {/* С двумя площадками места мало — только значок. */}
+              <CalendarDays size={17} />{!twoMarks && <span className="hidden sm:inline text-[13px] font-semibold">Перенести</span>}
             </button>
           )}
 

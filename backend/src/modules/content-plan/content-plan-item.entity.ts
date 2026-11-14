@@ -147,6 +147,13 @@ export class ContentPlanItem {
   @Column({ type: 'varchar', length: 300, nullable: true })
   shootPlace: string | null;
 
+  /** TikTok (14.11.2026): публикацию дублируют в TikTok. Когда отметили
+   *  «выложено в TikTok»; пусто — ещё не выложено. Instagram — это status
+   *  «published». Нужен ли TikTok — решает проект (smmData.tiktokOff) и дата
+   *  публикации (с TIKTOK_FROM), см. ContentPlanService.smmCalendar. */
+  @Column({ type: 'timestamptz', nullable: true })
+  tiktokAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

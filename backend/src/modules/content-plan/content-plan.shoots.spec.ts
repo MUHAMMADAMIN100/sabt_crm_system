@@ -138,3 +138,40 @@ describe('продюсер — полный доступ к производст
     await expect(svc.smartUpdateItem('post', { status: ContentPlanStatus.PUBLISHED }, producer)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
+
+describe('TikTok: вторая отметка публикации (14.11.2026)', () => {
+  const items = () => [
+    { id: 'reel', projectId: 'p', contentType: 'reel', status: 'published', publishDate: day('2026-11-20'), shootForItemId: null, prepStage: null, tiktokAt: null },
+    { id: 'story', projectId: 'p', contentType: 'story', status: 'planned', publishDate: day('2026-11-20'), shootForItemId: null, prepStage: null, tiktokAt: null },
+    { id: 'shoot', projectId: 'p', contentType: 'reel', status: 'planned', publishDate: day('2026-11-18'), shootForItemId: 'reel', prepStage: 'shoot', tiktokAt: null },
+  ];
+
+  it('«выложено в TikTok» ставит и снимает отметку и пишет её в историю', async () => {
+    const { svc, byId, updates } = make(items());
+    await svc.smartUpdateItem('reel', { tiktok: true }, { id: 'sabrina' });
+    expect(byId.get('reel').tiktokAt).toBeInstanceOf(Date);
+    expect(byId.get('reel').status).toBe('published');
+    expect((svc as any).logItemAction).toHaveBeenCalledWith(expect.anything(), expect.anything(),
+      expect.objectContaining({ kind: 'tiktok', to: true }), { id: 'sabrina' });
+    await svc.smartUpdateItem('reel', { tiktok: false }, { id: 'sabrina' });
+    expect(byId.get('reel').tiktokAt).toBeNull();
+    expect(updates).toHaveLength(2);
+  });
+
+  it('у сторис и у съёмки TikTok не ставится; повторная отметка ничего не меняет', async () => {
+    const { svc, byId, updates } = make(items());
+    await svc.smartUpdateItem('story', { tiktok: true }, { id: 'u' });
+    await svc.smartUpdateItem('shoot', { tiktok: true }, { id: 'u' });
+    expect(byId.get('story').tiktokAt).toBeNull();
+    expect(byId.get('shoot').tiktokAt).toBeNull();
+    await svc.smartUpdateItem('reel', { tiktok: true }, { id: 'u' });
+    await svc.smartUpdateItem('reel', { tiktok: true }, { id: 'u' });
+    expect(updates).toHaveLength(1);
+  });
+
+  it('продюсеру отметка публикации недоступна', async () => {
+    const { svc } = make(items());
+    await expect(svc.smartUpdateItem('reel', { tiktok: true }, { id: 'pr', role: 'producer' }))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+});

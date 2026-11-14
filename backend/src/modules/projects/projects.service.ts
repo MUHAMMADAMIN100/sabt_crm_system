@@ -2107,6 +2107,8 @@ export class ProjectsService implements OnModuleInit {
       // пароль — только кому можно (canSeeAccess), отдельным запросом.
       pageUrl: typeof sd.pageUrl === 'string' && sd.pageUrl ? sd.pageUrl : null,
       canSeeAccess: !!viewer && this.canSeeClientAccessFor(viewer, specIds),
+      // TikTok (14.11.2026): по умолчанию у всех проектов, выключают по одному.
+      tiktok: (sd as any).tiktokOff !== true,
     };
   }
 
@@ -2114,7 +2116,7 @@ export class ProjectsService implements OnModuleInit {
     id: string,
     dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
       videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[];
-      shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null },
+      shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; tiktok?: boolean },
     user?: { id: string; role: string; name?: string },
   ) {
     const project = await this.repo.findOne({ where: { id } });
@@ -2135,6 +2137,14 @@ export class ProjectsService implements OnModuleInit {
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
+    // TikTok: выключить у проекта может только руководство — иначе дубль в
+    // TikTok выключали бы, чтобы не делать (14.11.2026).
+    if ('tiktok' in dto) {
+      if (!['admin', 'founder', 'smm_director'].includes(String(user?.role))) {
+        throw new ForbiddenException('Включать и выключать TikTok у проекта может руководство');
+      }
+      setOrDel('tiktokOff', dto.tiktok === false ? true : null);
+    }
     // Съёмки: адрес, ссылка на карту (только http/https — она уходит ссылкой
     // в Telegram) и человек на месте. Пусто — поле убираем.
     if ('shootAddress' in dto) setOrDel('shootAddress', str(dto.shootAddress, 300));

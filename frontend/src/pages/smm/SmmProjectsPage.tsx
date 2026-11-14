@@ -12,6 +12,7 @@ import { SmmProjectCardBox, CARD_CLS, type SmmCard } from './SmmProjectCard'
 import { useUrlState } from '@/lib/urlState'
 import SmmSpecialistBoard from './SmmSpecialistBoard'
 import SmmManagerBoard from './SmmManagerBoard'
+import { pubDone } from './tiktok'
 
 // Кто может создавать SMM-проекты (как на основной странице «Проекты»).
 // СММ-специалист тоже может добавлять проект (по просьбе владельца).
@@ -93,7 +94,8 @@ export default function SmmProjectsPage() {
     // Опубликовано за месяц по проекту (рилсы/посты) — для % успеваемости.
     const doneBy = new Map<string, number>()
     for (const e of events) {
-      if (e.kind === 'publication' && e.status === 'published'
+      // Вышло — в Instagram и, если нужен, в TikTok (14.11.2026).
+      if (e.kind === 'publication' && pubDone(e)
           && (e.contentType === 'reel' || e.contentType === 'video' || e.contentType === 'design')) {
         doneBy.set(e.projectId, (doneBy.get(e.projectId) ?? 0) + 1)
       }

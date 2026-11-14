@@ -584,7 +584,7 @@ export const contentPlanApi = {
   create: (data: any) => api.post('/content-plan', data).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/content-plan/${id}`, data).then(r => r.data),
   // Умный календарь: перенос даты / статус без побочных эффектов (не Доска).
-  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }) =>
+  smartUpdate: (id: string, data: { publishDate?: string | null; status?: string; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null; tiktok?: boolean }) =>
     api.patch(`/content-plan/smart-item/${id}`, data).then(r => r.data),
   /** Авторасстановка: правила проекта + даты публикаций (itemId null — новая заготовка до нормы). */
   autoPlan: (projectId: string, data: { rules: object; reels: { itemId: string | null; date: string }[]; posts: { itemId: string | null; date: string }[] }) =>

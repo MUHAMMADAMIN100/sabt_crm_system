@@ -1,5 +1,6 @@
 import { projectListFields } from '../../common/project-list-fields';
 import { shootPlaceKind, shootPlaceLabel } from '../../common/shoot-place';
+import { tiktokNeeded } from '../../common/tiktok';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -62,6 +63,7 @@ export function isProductionOnly(u: { role?: string | null; secondaryRole?: stri
 
 /** Событие «съёмка изменилась»: id карточки и как было до правки. */
 export const SHOOT_CHANGED = 'content-plan.shoot-changed';
+
 export interface ShootChangedEvent {
   itemId: string;
   actorId: string | null;
@@ -896,7 +898,7 @@ export class ContentPlanService {
     }));
   }
 
-  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, actor?: { id?: string; name?: string; role?: string | null; secondaryRole?: string | null }) {
+  async smartUpdateItem(id: string, patch: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null; tiktok?: boolean }, actor?: { id?: string; name?: string; role?: string | null; secondaryRole?: string | null }) {
     const before = await this.repo.findOne({ where: { id } });
     if (actor && isProductionOnly(actor) && !before?.shootForItemId) {
       throw new ForbiddenException('Продюсер правит производство: съёмки, монтаж и дизайн. Публикации ведёт СММ-специалист');
@@ -917,6 +919,11 @@ export class ContentPlanService {
       const v = typeof patch.shootPlace === 'string' ? patch.shootPlace.trim().slice(0, 300) : '';
       set.shootPlace = v || null;
     }
+    // «Выложено в TikTok» (14.11.2026) — только у публикаций (не у съёмки,
+    // монтажа, дизайна и не у сторис). Instagram — это status «published».
+    const tiktokChanged = 'tiktok' in patch && !!before && !before.shootForItemId
+      && before.contentType !== ContentItemType.STORY && !!patch.tiktok !== !!before.tiktokAt;
+    if (tiktokChanged) set.tiktokAt = patch.tiktok ? new Date() : null;
     if (Object.keys(set).length) await this.repo.update(id, set);
     // Авто-съёмка при переносе рилса: если съёмки нет (удалили) или она без даты (сняли) —
     // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
@@ -932,6 +939,9 @@ export class ContentPlanService {
       if ('status' in patch && patch.status && before.status !== patch.status) {
         await this.logItemAction(item, ActivityAction.TASK_STATUS,
           { kind: 'status', from: before.status, to: patch.status, plannedDate: nowDate }, actor);
+      }
+      if (tiktokChanged) {
+        await this.logItemAction(item, ActivityAction.TASK_STATUS, { kind: 'tiktok', to: !!patch.tiktok, plannedDate: nowDate }, actor);
       }
     }
     if (Object.keys(set).length) this.shootChanged(before, actor?.id);
@@ -1293,6 +1303,8 @@ export class ContentPlanService {
         ).catch(() => [] as any[])).map((r: any) => String(r.id))
       : undefined;
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
+    // Проекты, где TikTok выключили (по умолчанию он у всех).
+    const tiktokOff = new Set(active.filter(p => (p.smmData as any)?.tiktokOff === true).map(p => p.id));
     // «Мои проекты» — то же правило, что в кабинете специалиста: менеджер,
     // участник или назначенный SMM-специалист проекта.
     const memberOf = new Set<string>();
@@ -1348,6 +1360,7 @@ export class ContentPlanService {
               ci.status AS status, ci."taskId" AS "taskId",
               ci.caption AS caption, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
+              to_char(((ci."tiktokAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD') AS "tiktokAt",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
@@ -1419,6 +1432,8 @@ export class ContentPlanService {
         projectId: p.projectId, projectName: nameById.get(p.projectId) || '',
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
         topic: p.title || null, scriptText: p.scriptText || null, status: p.status || undefined, taskId: p.taskId || null,
+        // TikTok (14.11.2026): нужен ли он этой публикации и когда отметили.
+        tiktok: tiktokNeeded(tiktokOff.has(p.projectId), p.date), tiktokAt: p.tiktokAt || null,
         time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
         durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),

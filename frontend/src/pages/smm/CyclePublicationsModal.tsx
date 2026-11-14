@@ -12,12 +12,14 @@ import toast from 'react-hot-toast'
 import { Loader2, X } from 'lucide-react'
 import { contentPlanApi } from '@/services/api.service'
 import { TaskRow, TaskPanel } from '@/pages/dashboard/components/SmmSpecialistDashboard'
+import { igDone, pubDone } from './tiktok'
 
 type Plan = { done: number; norm: number; expected: number; start: string; end: string }
 
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const shortDay = (iso: string) => format(new Date(`${iso}T00:00:00`), 'd MMM', { locale: ru })
-const isDone = (e: any) => e.status === 'published'
+// «Вышло» — в Instagram и, если нужен, в TikTok (14.11.2026), как «вышло N из M» сверху.
+const isDone = (e: any) => pubDone(e)
 const isCancelled = (e: any) => e.status === 'cancelled'
 
 /** Раздел окна: заголовок с числом и строки. Пустой не показываем. */
@@ -97,8 +99,15 @@ export default function CyclePublicationsModal({ projectId, name, plan, canEdit,
   })
   const toggle = (e: any) => {
     if (!e.itemId || !canEdit) return
-    const next = isDone(e) ? 'planned' : 'published'
+    // Галочка — Instagram: по ней и ставим/снимаем статус.
+    const next = igDone(e) ? 'planned' : 'published'
     mut.mutate({ itemId: e.itemId, body: { status: next }, local: x => ({ ...x, status: next }) })
+  }
+  // «Выложено в TikTok» (14.11.2026) — вторая отметка публикации.
+  const toggleTiktok = (e: any) => {
+    if (!e.itemId || !canEdit) return
+    const on = !e.tiktokAt
+    mut.mutate({ itemId: e.itemId, body: { tiktok: on }, local: x => ({ ...x, tiktokAt: on ? todayKey : null }) })
   }
   const moveTo = (e: any, d: Date) => {
     if (!e.itemId || !canEdit) return
@@ -126,7 +135,7 @@ export default function CyclePublicationsModal({ projectId, name, plan, canEdit,
   const lateDays = (e: any) => Math.max(1, differenceInCalendarDays(new Date(`${todayKey}T00:00:00`), new Date(`${e.date}T00:00:00`)))
   const row = (e: any, extra?: { late?: number; note?: React.ReactNode }) => (
     <TaskRow key={e.id} e={e} readOnly={!canEdit}
-      onToggle={() => toggle(e)} onInfo={() => setOpenId(e.id)}
+      onToggle={() => toggle(e)} onToggleTiktok={() => toggleTiktok(e)} onInfo={() => setOpenId(e.id)}
       onMove={canEdit ? d => moveTo(e, d) : undefined} onCancel={canEdit ? c => setCancelled(e, c) : undefined}
       late={extra?.late} note={extra?.note} />
   )
@@ -185,6 +194,7 @@ export default function CyclePublicationsModal({ projectId, name, plan, canEdit,
           onNext={() => { if (openIdx < list.length - 1) setOpenId(list[openIdx + 1].id) }}
           onClose={() => setOpenId(null)}
           onToggle={() => toggle(openEvent)}
+          onToggleTiktok={() => toggleTiktok(openEvent)}
           onMove={d => { moveTo(openEvent, d); toast.success(`Перенесено на ${format(d, 'd MMMM', { locale: ru })}`) }}
           onCancel={c => { setCancelled(openEvent, c); toast.success(c ? 'Задача отменена' : 'Задача возвращена в работу') }} />
       )}

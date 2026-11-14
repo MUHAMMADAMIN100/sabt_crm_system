@@ -153,8 +153,9 @@ export class ContentPlanController {
 
   @Patch('smart-item/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
-  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null }, @Request() req) {
+  smartUpdateItem(@Param('id') id: string, @Body() body: { publishDate?: string | null; status?: ContentPlanStatus; publishTime?: string | null; durationMin?: number | null; shootPlace?: string | null; tiktok?: boolean }, @Request() req) {
     // Продюсеру сервис даёт только карточки производства (09.11.2026).
+    // tiktok — «выложено в TikTok» у публикации (14.11.2026).
     return this.service.smartUpdateItem(id, body || {}, {
       id: req.user?.id, name: req.user?.name, role: req.user?.role ?? null, secondaryRole: req.user?.secondaryRole ?? null,
     });

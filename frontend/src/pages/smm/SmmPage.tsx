@@ -8,13 +8,14 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import {
   addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Camera, X, Check, CheckCircle2, RotateCcw, Search, Film, AlignLeft, Image as ImageIcon, Circle, Inbox, Settings, CalendarRange, ExternalLink, CheckSquare, Palette, Scissors, Sparkles, Instagram, Music2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import { isSmmViewOnly, isProductionOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
+import { tiktokPending } from './tiktok'
 import { useHistoryOverlay } from '@/lib/navMemory'
 import { usePatchUrl } from '@/lib/urlState'
 
@@ -33,6 +34,8 @@ export type Ev = {
   prepStage?: 'shoot' | 'edit' | 'design' | null
   // Где снимаем (09.11.2026): студия, у клиента или другое место; location — подпись.
   placeKind?: PlaceKind | null
+  // TikTok (14.11.2026): нужен ли он публикации и когда отметили «выложено».
+  tiktok?: boolean; tiktokAt?: string | null
 }
 // Статус дня по сторис на странице «Сторисы»: сделано (цель достигнута) / частично / не сделано.
 export type SDay = 'done' | 'partial' | 'none'
@@ -71,7 +74,8 @@ const fmtDur = (m: number) => m % 60 === 0 ? `${m / 60}ч` : m < 60 ? `${m}м` :
 const addMinToTime = (t: string, add: number) => { const p = /^(\d{1,2}):(\d{2})/.exec(t); if (!p) return t; const tot = +p[1] * 60 + +p[2] + add; return `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}` }
 
 /** «Сделано» для публикации: опубликовано ИЛИ связанная задача выполнена. */
-const isDone = (e: Ev) => e.status === 'published' || e.taskStatus === 'done'
+// Сделано; у публикации — ещё и в TikTok, если он нужен (14.11.2026).
+const isDone = (e: Ev) => (e.status === 'published' || e.taskStatus === 'done') && !tiktokPending(e)
 type Proj = {
   id: string; name: string; startDate?: string | null; endDate?: string | null; cycleStartDay?: number | null; cycleAnchor?: string | null; normReels?: number | null; normPosts?: number | null
   // Авторасстановка: специалисты проекта, «мой ли проект» (для «Мои / Все») и сохранённые правила.
@@ -446,20 +450,27 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     }
     return { ids, reel }
   }, [focus, allEvents])
+  // { done } — Instagram (статус), { tiktok } — «выложено в TikTok» (14.11.2026).
+  const markBody = (ev: Ev, v: { done?: boolean; tiktok?: boolean }) =>
+    v.tiktok !== undefined ? { tiktok: v.tiktok } : { status: v.done ? 'published' : 'planned' }
   const markMut = useMutation({
-    mutationFn: ({ ev, done }: { ev: Ev; done: boolean }) =>
-      contentPlanApi.smartUpdate(ev.itemId!, { status: done ? 'published' : 'planned' }),
+    mutationFn: ({ ev, done, tiktok }: { ev: Ev; done?: boolean; tiktok?: boolean; keepOpen?: boolean }) =>
+      contentPlanApi.smartUpdate(ev.itemId!, markBody(ev, { done, tiktok })),
     // Галочка должна срабатывать мгновенно: правим кэш на месте и закрываем
     // карточку, запрос уходит фоном. Снимая отметку, гасим и статус задачи —
     // иначе isDone() продолжал бы считать её выполненной.
-    onMutate: async ({ ev, done }) => {
-      setDetail(null)
+    onMutate: async ({ ev, done, tiktok, keepOpen }) => {
+      // Отметки площадок в окне публикации — окно остаётся открытым, чтобы
+      // отметить вторую площадку сразу.
+      if (!keepOpen) setDetail(null)
       await qc.cancelQueries({ queryKey: calKey })
       const prev = qc.getQueryData<CalData>(calKey)
       qc.setQueryData<CalData>(calKey, old => old ? {
         ...old,
         events: old.events.map(x => x.itemId && x.itemId === ev.itemId
-          ? { ...x, status: done ? 'published' : 'planned', taskStatus: done ? 'done' : null }
+          ? (tiktok !== undefined
+            ? { ...x, tiktokAt: tiktok ? format(new Date(), 'yyyy-MM-dd') : null }
+            : { ...x, status: done ? 'published' : 'planned', taskStatus: done ? 'done' : null })
           : x),
       } : old)
       return { prev }
@@ -838,10 +849,23 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
     return []
   }, [view, cursor])
 
+  // Галочка в списке дня: у публикации с TikTok — по шагам: Instagram, затем
+  // TikTok; снятие — снимает Instagram (TikTok снимают в окне публикации).
+  const listMark = (e: Ev, done: boolean) => (
+    done && e.tiktok && e.status === 'published' && !e.tiktokAt ? { ev: e, tiktok: true } : { ev: e, done }
+  )
   // Окно события — одно на телефон и компьютер.
   const eventModal = detail && (
     <EventModal key={detail.id} e={detail} marking={markMut.isPending} onClose={() => setDetail(null)} readOnly={!canEditEv(detail)}
-      onMark={done => markMut.mutate({ ev: detail, done })}
+      onMark={done => {
+        const keep = detail.kind === 'publication' && !!detail.tiktok
+        markMut.mutate({ ev: detail, done, keepOpen: keep })
+        if (keep) setDetail(d => d ? { ...d, status: done ? 'published' : 'planned', taskStatus: done ? 'done' : null } : d)
+      }}
+      onTiktok={on => {
+        markMut.mutate({ ev: detail, tiktok: on, keepOpen: true })
+        setDetail(d => d ? { ...d, tiktokAt: on ? format(new Date(), 'yyyy-MM-dd') : null } : d)
+      }}
       onDuration={detail.itemId ? (min => { durMut.mutate({ itemId: detail.itemId!, min }); setDetail(d => d ? { ...d, durationMin: min } : d) }) : undefined}
       onSaveInfo={detail.itemId ? (patch => { saveInfoMut.mutate({ itemId: detail.itemId!, patch }); setDetail(d => d ? { ...d, ...patch } : d) }) : undefined}
       projectAddress={shootAddressOf(detail.projectId)}
@@ -873,7 +897,7 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
         backlogGroups={backlogGroups} selTypes={selTypes} toggleType={toggleType} clearTypes={clearTypes}
         loading={isLoading}
         onOpen={openDetail}
-        onMark={(e, done) => markMut.mutate({ ev: e, done })}
+        onMark={(e, done) => markMut.mutate(listMark(e, done))}
         onMove={(e, dateStr) => moveMut.mutate({ ev: e, dateStr, time: null })}
         cycleOf={cycleFor}
         onSettings={openProjSettings}
@@ -2134,8 +2158,10 @@ function fmtDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
-function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false, together = [], togetherBusy = false, onTogether }: {
+function EventModal({ e, onClose, onMark, onTiktok, marking, onUnschedule, onDuration, onSaveInfo, onOpenParent, onShoot, projectAddress, readOnly = false, together = [], togetherBusy = false, onTogether }: {
   readOnly?: boolean; e: Ev; onClose: () => void; onMark: (done: boolean) => void; marking: boolean; onUnschedule: () => void
+  /** «Выложено в TikTok» (14.11.2026): у публикации, где TikTok нужен. */
+  onTiktok?: (on: boolean) => void
   onDuration?: (min: number) => void; onSaveInfo?: (patch: { topic?: string; scriptText?: string | null }) => void; onOpenParent?: () => void
   onShoot?: (patch: ShootPatch) => void; projectAddress?: string | null
   /** «Снять вместе»: другие съёмки проекта, которые можно перенести на этот день. */
@@ -2197,6 +2223,23 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
     </button>
   ))
   const both = returnBtn && primaryBtn
+  // Публикация с TikTok (вариант А, 14.11.2026): вместо одной кнопки «Сделано» —
+  // две отметки площадок; вышло — зелёная рамка с галочкой (нажать — снять).
+  const platformBtn = (name: string, Icon: any, on: boolean, act: () => void) => (
+    <button key={name} disabled={marking} onClick={act} aria-pressed={on}
+      title={on ? `Выложено в ${name} — нажмите, чтобы снять отметку` : `Отметить: выложено в ${name}`}
+      className={'w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold disabled:opacity-60 ' + (on
+        ? 'border border-emerald-500/45 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+        : 'bg-[#3f7a58] text-white hover:brightness-110')}>
+      <Icon size={15} /> {name} {on && <Check size={15} />}
+    </button>
+  )
+  const platforms = !readOnly && e.kind === 'publication' && e.tiktok && onTiktok ? (
+    <div className="grid grid-cols-2 gap-2 mt-4">
+      {platformBtn('Instagram', Instagram, e.status === 'published', () => onMark(e.status !== 'published'))}
+      {platformBtn('TikTok', Music2, !!e.tiktokAt, () => onTiktok(!e.tiktokAt))}
+    </div>
+  ) : null
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[88vh] overflow-y-auto" onClick={ev => ev.stopPropagation()}>
@@ -2359,7 +2402,8 @@ function EventModal({ e, onClose, onMark, marking, onUnschedule, onDuration, onS
           </div>
         )}
 
-        {(returnBtn || primaryBtn) && (
+        {platforms}
+        {platforms ? (returnBtn && <div className="mt-2">{returnBtn}</div>) : (returnBtn || primaryBtn) && (
           <div className={(both ? 'grid grid-cols-2 gap-2' : 'space-y-2') + ' mt-4'}>
             {returnBtn}{primaryBtn}
           </div>

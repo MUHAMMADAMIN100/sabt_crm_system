@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode }
 import { createPortal } from 'react-dom'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive, MapPin } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive, MapPin, Music2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
@@ -16,6 +16,7 @@ import ClientAccountCard from './ClientAccountCard'
 import { BackLink } from '@/lib/navMemory'
 import { useUrlState } from '@/lib/urlState'
 import { isProductionOnly } from '@/lib/permissions'
+import { pubDone } from './tiktok'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
@@ -34,7 +35,7 @@ const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string
   { field: 'designerIds',     out: 'designers',     label: 'Дизайнер' },
 ]
 
-type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[] }
+type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[]; tiktok?: boolean }
   & Partial<Record<CrewField, string[]>> & Partial<Record<CrewOut, SmmSpec[]>>
   & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
   // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
@@ -234,6 +235,22 @@ export default function SmmProjectPage() {
     mutationFn: (patch: Partial<SmmProfile>) => projectsApi.setSmmProfile(id!, patch as any),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-profile', id] }); toast.success('Сохранено') },
     onError: () => toast.error('Не удалось сохранить'),
+  })
+  // TikTok у проекта (14.11.2026): по умолчанию дублируем, выключает руководство.
+  const canTiktok = ['admin', 'founder', 'smm_director'].includes(user?.role || '')
+  const tiktokMut = useMutation({
+    mutationFn: (on: boolean) => projectsApi.setSmmProfile(id!, { tiktok: on } as any),
+    onMutate: async (on) => {
+      await qc.cancelQueries({ queryKey: ['smm-profile', id] })
+      const prev = qc.getQueryData<SmmProfile>(['smm-profile', id])
+      qc.setQueryData(['smm-profile', id], (old: any) => ({ ...(old || {}), tiktok: on }))
+      return { prev }
+    },
+    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['smm-profile', id] })
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+    },
   })
   const cycleMut = useMutation({
     mutationFn: (patch: { day?: number | null; normReels?: number | null; normPosts?: number | null; storiesPerMonth?: number | null }) => projectsApi.setSmmCycle(id!, patch),
@@ -444,7 +461,8 @@ export default function SmmProjectPage() {
   // Выполнение плана (из событий календаря этого месяца).
   const myEv = events.filter(e => e.projectId === p.id)
   const isPub = (e: Ev) => e.kind === 'publication'
-  const done = (e: Ev) => e.status === 'published'
+  // Вышло — в Instagram и, если нужен, в TikTok (14.11.2026).
+  const done = (e: Ev) => pubDone(e)
   const reelsDone = myEv.filter(e => isPub(e) && (e.contentType === 'reel' || e.contentType === 'video') && done(e)).length
   const postsDone = myEv.filter(e => isPub(e) && e.contentType === 'design' && done(e)).length
   const storyByDate = new Map<string, number>()
@@ -734,6 +752,26 @@ export default function SmmProjectPage() {
               <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5"><Camera size={14} /> Сторис за месяц</span><span className="font-bold tabular-nums">{storiesTotal}{spm ? ` / ${spm}` : ''}</span></div>
               <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(storiesTotal, spm ?? storiesTotal)}%`, background: '#8b5cf6' }} /></div>
             </div>
+            {/* TikTok (14.11.2026): рилсы и посты дублируем в TikTok — у всех
+                проектов по умолчанию; выключает руководство. */}
+            {profile && (
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-sm">
+                <span className="text-gray-500 inline-flex items-center gap-1.5"><Music2 size={14} /> Дублируем в TikTok</span>
+                {canTiktok ? (
+                  <button type="button" role="switch" aria-checked={profile.tiktok !== false} aria-label="Дублировать публикации в TikTok"
+                    disabled={tiktokMut.isPending} onClick={() => tiktokMut.mutate(profile.tiktok === false)}
+                    className={clsx('relative w-10 h-[22px] rounded-full transition shrink-0 disabled:opacity-60',
+                      profile.tiktok !== false ? 'bg-[#3f7a58]' : 'bg-gray-300 dark:bg-gray-700')}>
+                    <span className={clsx('absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all',
+                      profile.tiktok !== false ? 'left-[21px]' : 'left-[3px]')} />
+                  </button>
+                ) : (
+                  <span className={profile.tiktok !== false ? 'font-semibold text-gray-700 dark:text-gray-200' : 'text-gray-400'}>
+                    {profile.tiktok !== false ? 'да' : 'нет'}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
         </div>
