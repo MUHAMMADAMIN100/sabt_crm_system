@@ -412,6 +412,8 @@ function DaySheet({ iso, monthNo, list, statusOf, canMove, onMove, onOpen, onClo
   onOpen: (t: any) => void; onClose: () => void;
 }) {
   const d = Number(iso.slice(8));
+  const ym = iso.slice(0, 7);
+  const daysIn = new Date(Number(iso.slice(0, 4)), monthNo, 0).getDate();
   const wd = WD_LONG[(new Date(Number(iso.slice(0, 4)), monthNo - 1, d).getDay() + 6) % 7];
   const inc = list.filter((t) => t.type === 'income').reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const exp = list.filter((t) => t.type === 'expense').reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -439,7 +441,14 @@ function DaySheet({ iso, monthNo, list, statusOf, canMove, onMove, onOpen, onClo
               {canMove(t) && (
                 <label className="move">
                   <span className="sr-only">Перенести на другой день</span>
-                  <input type="date" value={iso} onChange={(e) => { if (e.target.value) { onMove(t, e.target.value); onClose(); } }} />
+                  {/* Только в пределах месяца, как перетаскивание на компьютере
+                      (14.11.2026): план, перенесённый в другой месяц, другие
+                      страницы показывали бы в старом. */}
+                  <input type="date" value={iso} min={`${ym}-01`} max={`${ym}-${String(daysIn).padStart(2, '0')}`}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v && v.slice(0, 7) === ym) { onMove(t, v); onClose(); }
+                    }} />
                 </label>
               )}
             </div>
