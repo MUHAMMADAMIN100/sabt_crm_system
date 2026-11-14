@@ -1492,6 +1492,121 @@ describe('FinanceService correctness', () => {
     expect(() => (service as any).normalizeImportData({ version: 99 }))
       .toThrow('Версия резервной копии 99 не поддерживается');
   });
+
+  // ─── Проверка финансов 14.11.2026 ─────────────────────────────────
+  describe('проверка 14.11.2026', () => {
+    const closed = (ym: string) => payrollPeriodRepo.findOne.mockImplementation(async (o: any) => ({
+      ym: o?.where?.ym, status: o?.where?.ym === ym ? 'closed' : 'open', closedAt: null, closedById: null, reopenedAt: null,
+    }));
+
+    it('сотрудника, принятого в закрытом месяце, можно править, пока дату приёма не меняют', async () => {
+      closed('2026-10');
+      const emp = { id: 'e1', name: 'Бехруз', status: 'active', salary: 5000, salaryHistory: { '2026-10': 5000 },
+        hireDate: '2026-10-20', terminationDate: null, employmentHistory: null };
+      employeeRepo.findOne.mockResolvedValue(emp);
+      employeeRepo.save.mockImplementation(async (v: any) => v);
+      await expect(service.updateEmployee('e1', { name: 'Бехруз Миров', hireDate: '2026-10-20', terminationDate: null }))
+        .resolves.toMatchObject({ name: 'Бехруз Миров' });
+      await expect(service.updateEmployee('e1', { hireDate: '2026-11-01' }))
+        .rejects.toThrow('Зарплатный период 2026-10 закрыт');
+    });
+
+    it('та же дата договора не сбрасывает дату цикла оплаты, новая — сбрасывает', async () => {
+      const proj: any = { id: 'p1', name: 'Chrono', direction: 'smm', tariff: 3500, status: 'active', archived: false,
+        contractDate: '2026-06-20', cycleAnchor: '2026-11-05' };
+      projectRepo.findOne.mockResolvedValue(proj);
+      projectRepo.save.mockImplementation(async (v: any) => v);
+      await service.updateProject('p1', { tariff: 4000, contractDate: '2026-06-20' });
+      expect(proj).toMatchObject({ tariff: 4000, cycleAnchor: '2026-11-05' });
+      await service.updateProject('p1', { contractDate: '2026-06-25' });
+      expect(proj).toMatchObject({ contractDate: '2026-06-25', cycleAnchor: null });
+    });
+
+    it('правка названия банковского кредита не трогает график, правка платежа — перестраивает', async () => {
+      const bank: any = { id: 'b1', name: 'Алиф', kind: 'bank', totalAmount: 12000, paidBefore: 0, monthlyPayment: 1000, dueDay: 15 };
+      debtRepo.findOne.mockResolvedValue(bank);
+      debtRepo.save.mockImplementation(async (v: any) => v);
+      plannedPaymentRepo.find.mockResolvedValue([
+        { id: 'late', debtId: 'b1', ym: '2026-10', status: 'expected', amount: 1000 },
+      ]);
+      plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+      await service.updateDebt('b1', { name: 'Кредит Алиф', note: 'на технику' });
+      expect(plannedPaymentRepo.delete).not.toHaveBeenCalled();
+      await service.updateDebt('b1', { monthlyPayment: 1500 });
+      expect(plannedPaymentRepo.delete).toHaveBeenCalledWith(['late']);
+    });
+
+    it('новый банковский кредит: первый платёж не раньше сегодняшнего дня', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-14T07:00:00Z'));
+      try {
+        const saved: any = { id: 'b2', name: 'Кредит', kind: 'bank', totalAmount: 3000, paidBefore: 0, monthlyPayment: 1000, dueDay: 10 };
+        debtRepo.count.mockResolvedValue(0);
+        debtRepo.save.mockResolvedValue(saved);
+        debtRepo.findOne.mockResolvedValue(saved);
+        plannedPaymentRepo.find.mockResolvedValue([]);
+        plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+        await service.createDebt({ name: 'Кредит', kind: 'bank', totalAmount: 3000, monthlyPayment: 1000, dueDay: 10 });
+        const plans = plannedPaymentRepo.save.mock.calls.at(-1)![0];
+        expect(plans.map((x: any) => x.dueDate)).toEqual(['2026-12-10', '2027-01-10', '2027-02-10']);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('платёж банку из журнала не принимается — его отмечают в «Рассрочках»', async () => {
+      debtRepo.findOne.mockResolvedValue({ id: 'b1', kind: 'bank' });
+      accountRepo.findOne.mockResolvedValue({ id: 'acc', archived: false });
+      await expect(service.createOperation({ type: 'expense', amount: 1000, date: '2026-11-14', accountId: 'acc', debtId: 'b1' } as any))
+        .rejects.toThrow('Платёж банку отмечается в «Рассрочках»');
+      expect(txRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('доход «Обслуживание» без проекта считается в своём направлении', () => {
+      const m: any = { ...emptyMaps, cat: new Map([['c-m', { id: 'c-m', key: 'maintenance' }]]) };
+      expect((service as any).directionOf(transaction({ type: FinanceTxType.INCOME, categoryId: 'c-m' }), m)).toBe('maintenance');
+    });
+
+    it('частичное «Получено» у SMM: остаток без старого срока — его поставит правило +15 дней', async () => {
+      const plan: any = { id: 'pp', projectId: 'p1', debtId: null, ym: '2026-11', partNo: 1, amount: 3500, status: 'expected', dueDate: '2026-11-05' };
+      const created: any[] = [];
+      plannedPaymentRepo.findOne.mockImplementation(async (o: any) => (o?.where?.id === 'pp' ? plan : null));
+      plannedPaymentRepo.create.mockImplementation((v: any) => v);
+      plannedPaymentRepo.save.mockImplementation(async (v: any) => { created.push(v); return v; });
+      projectRepo.findOne.mockResolvedValue({ id: 'p1', name: 'Chrono', direction: 'smm' });
+      categoryRepo.findOne.mockResolvedValue({ id: 'c-smm', key: 'smm', name: 'SMM' });
+      txRepo.save.mockImplementation(async (v: any) => ({ ...v, id: 'tx-1' }));
+      jest.spyOn(service as any, 'ensureSmmFollowUps').mockResolvedValue(undefined);
+      await service.receivePlannedPayment('pp', { accountId: 'acc', date: '2026-11-05', amount: 2000 });
+      const rest = created.find((x) => x.status === 'expected');
+      expect(rest).toMatchObject({ amount: 1500, partNo: 2, dueDate: null });
+    });
+
+    it('откат не удаляет следующий цикл, если прошлый оплачен в следующем месяце', async () => {
+      // Октябрьский цикл оплачен 3 ноября → следующий план на декабрь.
+      const plans: any[] = [
+        { id: 'oct', projectId: 'p1', ym: '2026-10', status: 'received', amount: 3500, receivedTxId: 't-oct', auto: false },
+        { id: 'dec', projectId: 'p1', ym: '2026-12', status: 'expected', amount: 3500, auto: true, dueDate: '2026-12-03' },
+      ];
+      projectRepo.findOne.mockResolvedValue({ id: 'p1', name: 'Chrono', direction: 'smm', tariff: 3500, contractDate: '2026-06-01', cycleAnchor: '2026-11-03' });
+      projectRepo.save.mockImplementation(async (v: any) => v);
+      plannedPaymentRepo.find.mockResolvedValue(plans);
+      txRepo.findOne.mockResolvedValue({ id: 't-oct', date: '2026-11-03' });
+      await (service as any).resyncSmmAfterUndo('p1');
+      expect(plannedPaymentRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('правка суммы операции, связанной с оплатой SMM, меняет план и не создаёт второй', async () => {
+      const manual: any = { id: 'pp', projectId: 'p1', ym: '2026-11', partNo: 1, amount: 3500, status: 'received', receivedTxId: 't1', auto: false };
+      txRepo.findOne.mockResolvedValue(transaction({ id: 't1', type: FinanceTxType.INCOME, amount: 3000, projectId: 'p1', date: '2026-11-05' }));
+      plannedPaymentRepo.findOne.mockImplementation(async (o: any) => (o?.where?.auto === false ? manual : null));
+      plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+      const follow = jest.spyOn(service as any, 'ensureSmmFollowUps').mockResolvedValue(undefined);
+      await (service as any).syncSmmPartLink('t1');
+      expect(manual.amount).toBe(3000);
+      expect(plannedPaymentRepo.create).not.toHaveBeenCalled();
+      expect(follow).toHaveBeenCalledWith('p1');
+    });
+  });
 });
 
 describe('workedInFinanceMonth', () => {

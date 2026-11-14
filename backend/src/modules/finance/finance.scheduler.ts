@@ -34,6 +34,7 @@ function directionLink(direction?: string | null): string {
 const REMIND_BEFORE_DAYS = 3;
 /** Числа месяца, по которым напоминаем о невыплаченной ЗП. */
 const SALARY_REMIND_DAYS = [10, 15, 20, 25];
+const MONTHS_RU_PREP_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 
 /** Сегодняшняя дата по Душанбе — сервер (Railway) живёт в UTC. */
 function todayISO(): string {
@@ -202,7 +203,14 @@ export class FinanceScheduler {
    *  ни отметкой) и срок ≤ 3 дней или прошёл. */
   private async checkSubscriptionsDue(today: string): Promise<{ due: number; notified: number }> {
     const ym = today.slice(0, 7);
-    const subs = (await this.subRepo.find()).filter(s => s.active && s.dueDay);
+    // Только позиции, живые в этом месяце (как «Расход» и «Планирование»):
+    // закончившаяся подписка напоминала каждый день, будущая — заранее (14.11.2026).
+    const live = (s: FinanceSubscription) => {
+      const startYm = s.dueDate ? String(s.dueDate).slice(0, 7) : null;
+      const endYm = s.endDate ? String(s.endDate).slice(0, 7) : null;
+      return !(startYm && ym < startYm) && !(endYm && ym > endYm);
+    };
+    const subs = (await this.subRepo.find()).filter(s => s.active && s.dueDay && live(s));
     if (!subs.length) return { due: 0, notified: 0 };
 
     const [y, m] = ym.split('-').map(Number);
@@ -228,6 +236,8 @@ export class FinanceScheduler {
       );
       if (remaining === 0) continue;
       const dueDate = `${ym}-${String(Math.min(s.dueDay as number, lastDay)).padStart(2, '0')}`;
+      // Срок позже даты окончания — в этом месяце платить уже нечего.
+      if (s.endDate && dueDate > String(s.endDate).slice(0, 10)) continue;
       const days = daysUntil(today, dueDate);
       if (days > REMIND_BEFORE_DAYS) continue;
       due++;
@@ -251,13 +261,19 @@ export class FinanceScheduler {
   private async checkSalaryDue(today: string): Promise<{ due: number; notified: number }> {
     const day = Number(today.slice(8, 10));
     if (!SALARY_REMIND_DAYS.includes(day)) return { due: 0, notified: 0 };
-    const ym = today.slice(0, 7);
+    // 14.11.2026: ЗП за месяц M платят 10-го числа M+1 — значит 10/15/20/25
+    // ноября напоминаем про ОКТЯБРЬ. Раньше проверялся текущий месяц: ноябрь
+    // «не выплачен» всегда (его время не пришло), а долг за октябрь молчал.
+    const [ty, tm] = today.slice(0, 7).split('-').map(Number);
+    const prev = new Date(ty, tm - 2, 1);
+    const ym = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
     const emps = (await this.empRepo.find()).filter(e => workedInFinanceMonth(e, ym));
     if (!emps.length) return { due: 0, notified: 0 };
 
-    const [y, m] = ym.split('-').map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    const from = `${ym}-01`, to = `${ym}-${String(lastDay).padStart(2, '0')}`;
+    // Операция без месяца начисления относится к нему по дате, правилом
+    // «10-е → 10-е» (как на сервере, salaryPeriodForDate): с 11-го числа M
+    // по 10-е число M+1.
+    const from = `${ym}-11`, to = `${today.slice(0, 7)}-10`;
     // Выплаты месяца НАЧИСЛЕНИЯ (salaryYm, с fallback на дату), без отменённых.
     const monthTx = (await this.txRepo.createQueryBuilder('t')
       .where('t.type = :type', { type: FinanceTxType.EXPENSE })
@@ -276,7 +292,8 @@ export class FinanceScheduler {
       const empTx = monthTx.filter(t => t.employeeId === e.id);
       // Бонус НАКОПИТЕЛЬНЫЙ (выдаётся с зарплатой) — берём из журнала (bonuses),
       // а бонус-операции в «выплачено» не считаем (как в зарплатной таблице).
-      const isBonusTx = (t: any) => (t.comment || '').trim().toLowerCase().startsWith('бонус');
+      // Как в сервисе: «Бонус …» и «Премия …» (раньше «Премия» шла в «выплачено»).
+      const isBonusTx = (t: any) => /^(бонус|премия)(?:$|\s|[—–-])/i.test((t.comment || '').trim());
       const paidE = empTx.filter(t => !isBonusTx(t)).reduce((s, t) => s + Number(t.amount), 0);
       const bonus = Number((e.bonuses || {})[ym]) || 0;
       const fine = Number((e.fines || {})[ym]) || 0;
@@ -293,7 +310,7 @@ export class FinanceScheduler {
     if (toPay <= 0) return { due: 0, notified: 0 };
 
     const notified = await this.notifyFinanceUsers({
-      title: 'Зарплата за месяц не выплачена полностью',
+      title: `Зарплата за ${MONTHS_RU_PREP_NOM[Number(ym.slice(5, 7)) - 1]} не выплачена полностью`,
       message: `К выплате осталось ${fmtMoney(toPay)} (фонд + бонусы − авансы − выплачено). День выплаты — 10-е число.`,
       alertKey: `fin-salary:${ym}:${day}`,
       link: SALARY_LINK,

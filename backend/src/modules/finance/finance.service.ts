@@ -1529,6 +1529,9 @@ export class FinanceService implements OnModuleInit {
     if (key === 'smm' || key === 'smm1' || key === 'smm2') return 'smm';
     if (key === 'development') return 'development';
     if (key === 'design') return 'design';
+    // Доход «Обслуживание» без проекта (14.11.2026): раньше не попадал ни в
+    // одно направление — в общем доходе был, в карточках и графике нет.
+    if (key === 'maintenance') return 'maintenance';
     return null;
   }
 
@@ -2135,7 +2138,7 @@ export class FinanceService implements OnModuleInit {
           ? r2(openPlans.filter(x => x.dueDate && x.dueDate < today).reduce((s, x) => s + Number(x.amount), 0))
           : (dueCounts && dueItem!.state === 'late' ? tariff : 0);
         return {
-          project: { id: p.id, name: p.name, tariff, contractDate: p.contractDate, archived: p.archived, note: p.note },
+          project: { id: p.id, name: p.name, direction: p.direction, tariff, contractDate: p.contractDate, archived: p.archived, note: p.note, status: p.status, retentionMonths: p.retentionMonths ?? null },
           due: dueItem ? { date: dueItem.date, state: dueItem.state, planned: duePlanned } : null,
           remaining, overdue,
           // Полученные части отображаемого цикла — для «✓ сумма» с отменой.
@@ -2263,7 +2266,7 @@ export class FinanceService implements OnModuleInit {
       const simple = simpleClients.map(p => {
         const pPlans = planned.filter(x => x.projectId === p.id);
         return {
-          project: { id: p.id, name: p.name, tariff: Number(p.tariff), contractDate: p.contractDate, note: p.note },
+          project: { id: p.id, name: p.name, direction: p.direction, tariff: Number(p.tariff), contractDate: p.contractDate, note: p.note, status: p.status, archived: p.archived, retentionMonths: p.retentionMonths ?? null },
           paidLife: r2(pPlans.filter(x => x.status === 'received').reduce((s, x) => s + Number(x.amount), 0)),
           paid: clientPaid(p.id),
         };
@@ -2378,7 +2381,7 @@ export class FinanceService implements OnModuleInit {
           };
         })
         .sort((a, b) => (a.effDate < b.effDate ? -1 : a.effDate > b.effDate ? 1 : 0));
-      return { project: { id: p.id, name: p.name, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth, contractDate: p.contractDate }, paidLife, scheduledLife, cells, parts };
+      return { project: { id: p.id, name: p.name, direction: p.direction, tariff: Number(p.tariff), note: p.note, multiMonth: p.multiMonth, contractDate: p.contractDate, status: p.status, archived: p.archived }, paidLife, scheduledLife, cells, parts };
     });
     const totals = {
       tariff: r2(clients.reduce((s, p) => s + Number(p.tariff), 0)),
@@ -3497,6 +3500,12 @@ export class FinanceService implements OnModuleInit {
         if (links.length > 1) {
           throw new BadRequestException('Расход можно привязать только к одному обязательству');
         }
+        // Платёж банку — только в «Рассрочках» (14.11.2026): там он закрывает
+        // платёж по графику. Из журнала он уменьшал остаток, а платёж месяца
+        // оставался «не оплачен» — и его оплачивали второй раз.
+        if (base.debtId && isBankDebt(await this.debtRepo.findOne({ where: { id: base.debtId } }))) {
+          throw new BadRequestException('Платёж банку отмечается в «Рассрочках» — там он закроет платёж по графику');
+        }
         // Месяц начисления ЗП: явный из формы, иначе — по правилу «10-е → 10-е»
         // (зарплатный период даты), а не по календарному месяцу.
         if (base.employeeId) {
@@ -3705,6 +3714,21 @@ export class FinanceService implements OnModuleInit {
   private async syncSmmPartLink(txId: string) {
     const tx = await this.txRepo.findOne({ where: { id: txId } });
     const existing = await this.ppRepo.findOne({ where: { auto: true, receivedTxId: txId } });
+    // Оплата уже связана с плановой через «Получено»/«Оплатить» (14.11.2026):
+    // второй план на ту же операцию не создаём (смена категории на «SMM
+    // часть 1» задваивала оплату цикла), а сумму плана держим равной
+    // операции — правка суммы в журнале раньше не меняла таблицу SMM.
+    const manual = await this.ppRepo.findOne({ where: { auto: false, receivedTxId: txId } });
+    if (manual?.projectId) {
+      if (existing) await this.ppRepo.delete(existing.id);
+      if (tx && isPostedFinanceTransaction(tx) && tx.type === FinanceTxType.INCOME
+        && Math.abs(Number(manual.amount) - Number(tx.amount)) > 0.005 && Number(tx.amount) > 0) {
+        manual.amount = r2(Number(tx.amount));
+        await this.ppRepo.save(manual);
+      }
+      await this.ensureSmmFollowUps(manual.projectId);
+      return;
+    }
     const key = tx?.categoryId ? (await this.catRepo.findOne({ where: { id: tx.categoryId } }))?.key ?? null : null;
     const partNo = key === 'smm2' ? 2 : key === 'smm1' ? 1 : null;
     const shouldExist = !!(tx
@@ -3799,7 +3823,15 @@ export class FinanceService implements OnModuleInit {
         // просрочка сдвигает следующий срок, отмена оплаты откатывает якорь
         // (recomputeSmmAnchor детерминированно выводит его из оплат).
         const anchor = smmAnchor(p);
-        const day = contractDay(anchor) ?? 1;
+        let day = contractDay(anchor) ?? 1;
+        // День договора 29–31 и оплата в последний день короткого месяца
+        // (срок был урезан концом месяца): дальше — снова день договора, а не
+        // 28-е навсегда (14.11.2026).
+        const cDay = contractDay(p.contractDate);
+        if (anchor && cDay && cDay > day) {
+          const [ay, am] = String(anchor).slice(0, 7).split('-').map(Number);
+          if (day === new Date(ay, am, 0).getDate()) day = cDay;
+        }
 
         // Следующий цикл — через месяц от max(последний покрытый цикл, месяц
         // якоря): досрочная оплата, датированная предыдущим месяцем, не должна
@@ -3892,7 +3924,15 @@ export class FinanceService implements OnModuleInit {
       // Авто-план уместен в месяце имеющихся оплат (остаток, часть 2) или в
       // месяце следующего цикла. Авто-expected в любом другом месяце — сирота.
       const validYms = new Set<string>(sums.keys());
-      if (lastCovered) validYms.add(shiftYm(lastCovered, 1));
+      if (lastCovered) {
+        validYms.add(shiftYm(lastCovered, 1));
+        // Тот же месяц, что выбирает ensureSmmFollowUps: от max(последний
+        // покрытый цикл, месяц якоря). Цикл, оплаченный в следующем месяце,
+        // ставит план на месяц позже — раньше любой откат удалял его как
+        // «сироту» (14.11.2026). recomputeSmmAnchor уже обновил p.cycleAnchor.
+        const anchorYm = p.cycleAnchor ? ymOf(String(p.cycleAnchor)) : null;
+        if (anchorYm && anchorYm > lastCovered) validYms.add(shiftYm(anchorYm, 1));
+      }
       const orphans = plans.filter(x => x.auto && x.status === 'expected' && !validYms.has(x.ym));
       if (orphans.length) await this.ppRepo.delete(orphans.map(x => x.id));
     } catch (e: any) {
@@ -3997,16 +4037,23 @@ export class FinanceService implements OnModuleInit {
         // если слот свободен — обе видны в таблице частей. Иначе тот же слот
         // (в ячейке приоритет у received, остаток виден в строке «остаток…»).
         let restPartNo = pp.partNo;
-        if (pp.projectId && pp.partNo === 1) {
+        let restDue: string | null = pp.dueDate ?? null;
+        if (pp.projectId) {
           const proj = await em.getRepository(FinanceProject).findOne({ where: { id: pp.projectId } });
           if (proj?.direction === 'smm') {
-            const slotBusy = await ppRepo.findOne({ where: { projectId: pp.projectId, ym: pp.ym, partNo: 2 } });
-            if (!slotBusy) restPartNo = 2;
+            if (pp.partNo === 1) {
+              const slotBusy = await ppRepo.findOne({ where: { projectId: pp.projectId, ym: pp.ym, partNo: 2 } });
+              if (!slotBusy) restPartNo = 2;
+            }
+            // Срок остатка SMM — по правилу «первая оплата цикла + 15 дней»
+            // (его ставит ensureSmmFollowUps). Раньше остаток копировал старый
+            // срок и сразу был просрочен (14.11.2026).
+            restDue = null;
           }
         }
         await ppRepo.save(ppRepo.create({
           projectId: pp.projectId, debtId: pp.debtId, ym: pp.ym, partNo: restPartNo,
-          amount: r2(planned - amount), status: 'expected', dueDate: pp.dueDate ?? null, auto: false,
+          amount: r2(planned - amount), status: 'expected', dueDate: restDue, auto: false,
         }));
         pp.amount = amount;
       }
@@ -4280,8 +4327,14 @@ export class FinanceService implements OnModuleInit {
     if (dto.contractDate !== undefined) {
       // Ручная правка даты контракта задаёт новую точку отсчёта цикла —
       // катящийся якорь сбрасывается и заново выставится ближайшей оплатой.
-      p.contractDate = dto.contractDate || null;
-      p.cycleAnchor = null;
+      // Та же дата (форма прислала её вместе с другими полями) якорь не
+      // трогает (14.11.2026): иначе правка тарифа сдвигала срок оплаты.
+      const next = dto.contractDate ? String(dto.contractDate).slice(0, 10) : null;
+      const prev = p.contractDate ? String(p.contractDate).slice(0, 10) : null;
+      if (next !== prev) {
+        p.contractDate = next;
+        p.cycleAnchor = null;
+      }
     }
     if (dto.multiMonth !== undefined) p.multiMonth = !!dto.multiMonth;
     if (dto.retentionMonths !== undefined) p.retentionMonths = normRetentionMonths(dto.retentionMonths);
@@ -4823,8 +4876,19 @@ export class FinanceService implements OnModuleInit {
     if (dto.advance !== undefined) e.advance = Number(dto.advance) || 0;
     const nextStatus = dto.status !== undefined ? this.normStatus(dto.status) : e.status;
     const employmentMonths = new Set<string>();
-    if (dto.hireDate) employmentMonths.add(ymOf(dto.hireDate));
-    if (dto.terminationDate) employmentMonths.add(ymOf(dto.terminationDate));
+    // Закрытость месяца проверяем, только если дату правда меняют (14.11.2026):
+    // форма присылает дату приёма всегда, и у сотрудника, принятого в
+    // закрытом месяце, нельзя было поменять даже имя или оклад. Меняют —
+    // проверяем и старый, и новый месяц: оба затрагивают ведомость.
+    const day = (v: unknown) => (v ? String(v).slice(0, 10) : null);
+    if (dto.hireDate !== undefined && day(dto.hireDate) !== day(oldHireDate)) {
+      if (dto.hireDate) employmentMonths.add(ymOf(dto.hireDate));
+      if (oldHireDate) employmentMonths.add(ymOf(String(oldHireDate)));
+    }
+    if (dto.terminationDate !== undefined && day(dto.terminationDate) !== day(oldTerminationDate)) {
+      if (dto.terminationDate) employmentMonths.add(ymOf(dto.terminationDate));
+      if (oldTerminationDate) employmentMonths.add(ymOf(String(oldTerminationDate)));
+    }
     if (dto.status !== undefined && nextStatus !== oldStatus) {
       employmentMonths.add(ymOf(dto.terminationDate || dto.hireDate || todayISO()));
     }
@@ -5849,10 +5913,17 @@ export class FinanceService implements OnModuleInit {
       note: `Рассрочка сотрудника${emp?.name ? ` — ${emp.name}` : ''}`,
       kind: 'bank' as const,
     };
+    const scheduleKey = (x: { totalAmount: any; paidBefore: any; monthlyPayment: any; dueDay?: any }) =>
+      [Number(x.totalAmount), Number(x.paidBefore), Number(x.monthlyPayment), x.dueDay ?? null].join('|');
+    const before = existing ? scheduleKey(existing) : null;
     const debt = existing
       ? await this.debtRepo.save(Object.assign(existing, fields))
       : await this.debtRepo.save(this.debtRepo.create({ ...fields, position: await this.debtRepo.count() }));
     inst.debtId = debt.id;
+    // График банка — заново, только если он новый или поменялись сумма,
+    // платёж или день (14.11.2026): иначе правка заметки рассрочки стирала
+    // просроченные платежи банку.
+    if (before !== null && before === scheduleKey(debt)) return;
     const createdOn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(debt.createdAt || new Date());
     await this.regenerateDebtSchedule(debt.id, createdOn);
   }
@@ -6165,7 +6236,10 @@ export class FinanceService implements OnModuleInit {
       kind: bank ? 'bank' : 'debt',
       dueDate: bank ? null : (dto.dueDate || null),
     }));
-    if (bank) await this.regenerateDebtSchedule(d.id);
+    // Первый платёж — не раньше сегодняшнего дня (14.11.2026): кредит, взятый
+    // 14-го с днём оплаты 10-го, сразу получал просроченный платёж 10-го,
+    // хотя окно заведения показывало первый платёж в следующем месяце.
+    if (bank) await this.regenerateDebtSchedule(d.id, todayISO());
     else await this.writeDebtTranches(d.id, tranches);
     return d;
   }
@@ -6173,6 +6247,8 @@ export class FinanceService implements OnModuleInit {
     const d = await this.debtRepo.findOne({ where: { id } });
     if (!d) throw new NotFoundException('Долг не найден');
     const bank = isBankDebt(d);
+    // Что задаёт график банка — до правки, чтобы не перестраивать его зря.
+    const scheduleBefore = [Number(d.totalAmount), Number(d.paidBefore), Number(d.monthlyPayment), d.dueDay ?? null].join('|');
     if (dto.name !== undefined) d.name = String(dto.name).trim();
     if (dto.counterparty !== undefined) d.counterparty = dto.counterparty ?? null;
     if (dto.totalAmount !== undefined) d.totalAmount = Number(dto.totalAmount) || 0;
@@ -6188,7 +6264,11 @@ export class FinanceService implements OnModuleInit {
       this.assertTranchesFit(tranches, r2(Math.max(0, Number(d.totalAmount) - Number(d.paidBefore) - paid)));
     }
     const saved = await this.debtRepo.save(d);
-    if (bank) await this.regenerateDebtSchedule(id);
+    // График банка перестраиваем, только если поменялись сумма, платёж или
+    // день (14.11.2026): правка названия или заметки стирала просроченные
+    // платежи и перенесённые даты.
+    const scheduleAfter = [Number(d.totalAmount), Number(d.paidBefore), Number(d.monthlyPayment), d.dueDay ?? null].join('|');
+    if (bank && scheduleAfter !== scheduleBefore) await this.regenerateDebtSchedule(id);
     else if (tranches) await this.writeDebtTranches(id, tranches);
     else await this.trimDebtTranches(id);
     return saved;

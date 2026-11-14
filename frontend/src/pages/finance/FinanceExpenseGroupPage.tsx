@@ -6,7 +6,7 @@ import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, currentYm, todayISO, formatDate, monthLabel, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm } from './finlib';
+import { money, currentYm, todayISO, formatDate, monthLabel, apiErr, downloadCsv, EXPENSE_GROUPS, OTHER_GROUP, useYmParam, salaryComment, withYm, parseAmount } from './finlib';
 import { FinLoading, FinLoadError, FinModal, useModalKeys, finConfirm, invalidateFinance } from './FinKit';
 import { EmployeeFormModal, SubFormModal } from './FinForms';
 import FinIcon, { CatIcon } from './FinIcon';
@@ -721,11 +721,13 @@ function IssueField({ label, kind, row, ym, total, entries, accounts, onIssue }:
 }) {
   const qc = useQueryClient();
   const [v, setV] = useState('');
-  const go = () => { const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0); if (n > 0) { onIssue(n); setV(''); } };
+  const go = () => { const n = Math.max(0, parseAmount(v) || 0); if (n > 0) { onIssue(n); setV(''); } };
   const accName = (id: string) => accounts.find((a) => a.id === id)?.name || 'счёт';
   const listKey = kind === 'advance' ? 'advanceEntries' : 'bonusEntries';
 
   const cancel = async (entry: any) => {
+    // Это выданные со счёта деньги — отмена только с подтверждением (14.11.2026).
+    if (!(await finConfirm(`Отменить выдачу ${money(Number(entry.amount) || 0)}? Операция со счёта будет отменена.`, { danger: true, confirmLabel: 'Отменить выдачу' }))) return;
     patchSalaryRow(qc, ym, row.id, (r) => {
       r[listKey] = (r[listKey] || []).filter((x: any) => x.id !== entry.id);
       r[kind] = r2((r[listKey] || []).reduce((s: number, x: any) => s + (Number(x.amount) || 0), 0));
@@ -772,7 +774,7 @@ function DeductionField({ row, ym, field, label, total, entries }: {
   const listKey = field === 'fine' ? 'fineEntries' : field === 'vacation' ? 'vacationEntries' : 'bonusEntries';
 
   const add = async () => {
-    const n = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
+    const n = Math.max(0, parseAmount(v) || 0);
     if (!(n > 0)) return;
     setV('');
     const entry = { id: `tmp-${Date.now()}`, date: todayISO(), amount: n, note: null };
@@ -904,7 +906,7 @@ function VacationHintCard({ row, ym, hint }: { row: any; ym: string; hint: any }
   const qc = useQueryClient();
   const [custom, setCustom] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const customAmt = custom === null ? NaN : parseFloat(custom.replace(',', '.'));
+  const customAmt = custom === null ? NaN : parseAmount(custom);
 
   const send = async (action: 'withhold' | 'dismiss', amount?: number) => {
     if (busy) return;
@@ -968,7 +970,7 @@ function VacationModal({ row, ym, onClose }: { row: any; ym: string; onClose: ()
   const [to, setTo] = useState(`${ym}-01`);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   const valid = amt > 0 && !!from && !!to && from <= to;
 
   const save = async () => {
@@ -1026,9 +1028,10 @@ function PayoutModal({ row, kind, ym, defaultAmount, onClose }: { row: any; kind
 
   const title = kind === 'advance' ? 'Выдать аванс' : 'Выплатить бонус';
   const comment = kind === 'advance' ? 'Аванс' : 'Бонус';
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   async function save() {
     if (!(amt > 0) || !accountId || busy) return;
+    if (date > todayISO()) { toast.error(FUTURE_PAY_MSG); return; }
     setBusy(true);
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
@@ -1050,7 +1053,7 @@ function PayoutModal({ row, kind, ym, defaultAmount, onClose }: { row: any; kind
         <div className="modal-body">
           <div className="form-grid">
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="field"><label>Дата выплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата выплаты</label><input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="form-grid">
             <div className="field"><label>Месяц начисления (за какой месяц)</label><input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} /></div>
@@ -1093,9 +1096,10 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   async function save() {
     if (!(amt > 0) || !accountId || busy) return;
+    if (date > todayISO()) { toast.error(FUTURE_PAY_MSG); return; }
     setBusy(true);
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
@@ -1118,7 +1122,7 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
         <div className="modal-body">
           <div className="form-grid">
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="field"><label>Дата выплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата выплаты</label><input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="form-grid">
             <div className="field"><label>Месяц начисления (за какой месяц)</label><input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} /></div>
@@ -1281,6 +1285,8 @@ function SubsList({ ym }: { ym: string }) {
   );
 }
 
+const FUTURE_PAY_MSG = 'Дата в будущем: такая выплата не уменьшит «К выплате» до своего дня. Внесите её, когда деньги выданы.';
+
 /** Оплата подписки/аренды всегда подтверждает сумму, дату и счёт.
  *  Это исключает случайное списание с первого счёта и поддерживает доплату. */
 function SubscriptionPaymentModal({ sub, ym, onClose }: { sub: any; ym: string; onClose: () => void }) {
@@ -1290,14 +1296,23 @@ function SubscriptionPaymentModal({ sub, ym, onClose }: { sub: any; ym: string; 
   const paid = Number(sub.paidMonth) || 0;
   const remaining = Math.max(0, (Number(sub.amount) || 0) - paid);
   const [amount, setAmount] = useState(String(remaining || sub.amount || ''));
-  const [date, setDate] = useState(todayISO());
+  // Оплата засчитывается за месяц ДАТЫ. Платим за прошлый месяц — дата по
+  // умолчанию в нём (день оплаты), а не сегодня: иначе октябрьская аренда,
+  // оплаченная 3 ноября, закрывала ноябрь, а октябрь оставался неоплаченным.
+  const [date, setDate] = useState(() => {
+    const today = todayISO();
+    if (ym >= today.slice(0, 7)) return today;
+    const last = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
+    const day = Math.min(Number(sub.dueDay) || Number(String(sub.dueDate || '').slice(8, 10)) || last, last);
+    return `${ym}-${String(day).padStart(2, '0')}`;
+  });
   const [accountId, setAccountId] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
-  const amt = parseFloat(amount.replace(',', '.'));
-  const valid = amt > 0 && amt <= remaining + 0.005 && !!accountId;
+  const amt = parseAmount(amount);
+  const valid = amt > 0 && amt <= remaining + 0.005 && !!accountId && !!date && date <= todayISO();
 
   async function save() {
     if (!valid || busy) return;
@@ -1336,9 +1351,12 @@ function SubscriptionPaymentModal({ sub, ym, onClose }: { sub: any; ym: string; 
           <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
         <div className="field"><label>Дата списания</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
         </div>
       </div>
+      {date.slice(0, 7) !== ym && date <= todayISO() && (
+        <p className="mini" style={{ margin: 0, color: 'var(--amber)' }}>Оплата засчитается за {monthLabel(date.slice(0, 7), true)}, а не за {monthLabel(ym, true)}.</p>
+      )}
       <div className="field"><label>Со счёта</label>
         <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
           <option value="">— выбрать счёт —</option>

@@ -102,8 +102,11 @@ export default function FinanceTransactionsPage() {
   const narrow = useNarrow();
 
   useEffect(() => {
-    const t = setTimeout(() => { setDq(q.trim()); setPage(1); }, 350);
+    // Страница сбрасывается, только если поиск правда изменился (14.11.2026):
+    // раньше через 350 мс после открытия «Назад» возвращал на 1-ю страницу.
+    const t = setTimeout(() => { const next = q.trim(); if (next !== dq) { setDq(next); setPage(1); } }, 350);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
   // Back/forward restores the journal exactly as it was: filters, view and page
   // are URL state, while q stays local only during the debounce window.
@@ -132,7 +135,7 @@ export default function FinanceTransactionsPage() {
       pageSize: PAGE_SIZE,
       search: dq || undefined,
       type: typeFilter || undefined,
-      status: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+      status: statusFilter || undefined,
     }),
     placeholderData: (prev: any) => prev, // при листании не мигаем пустотой
     // Постраничный журнал нужен только таблице; календарь берёт свой месяц.
@@ -148,7 +151,7 @@ export default function FinanceTransactionsPage() {
         from: `${calYm}-01`,
         to: `${calYm}-${String(last).padStart(2, '0')}`,
         pageSize: 1000,
-        status: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+        status: statusFilter || undefined,
       });
     },
     enabled: view === 'calendar',
@@ -239,7 +242,7 @@ export default function FinanceTransactionsPage() {
         pageSize: 100000,
         search: dq || undefined,
         type: typeFilter || undefined,
-        status: statusFilter && statusFilter !== 'all' ? statusFilter : undefined,
+        status: statusFilter || undefined,
       });
       const rows = buildFinanceTransactionCsv((res?.items ?? []) as any[]);
       downloadCsv(`transactions-${todayISO()}.csv`, rows);

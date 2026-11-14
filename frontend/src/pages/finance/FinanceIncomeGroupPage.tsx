@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, pluralRu, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm } from './finlib';
+import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, pluralRu, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm, parseAmount } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
 import { keepMonth, FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
@@ -271,8 +271,8 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
-  const planAmt = parseFloat(planAmount.replace(',', '.'));
-  const payAmt = parseFloat(payAmount.replace(',', '.'));
+  const planAmt = parseAmount(planAmount);
+  const payAmt = parseAmount(payAmount);
   const planChanged = planAmt !== plan.amount || (planDue || null) !== (plan.dueDate ?? null);
   const payValid = payAmt > 0 && planAmt > 0 && payAmt <= planAmt + 0.005 && !!accountId && !busy;
 
@@ -462,13 +462,19 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
       invalidateFinanceAll(qc);
     } catch (e) { toast.error(apiErr(e)); }
   }
-  // «↩» на полученной части: удаляем и операцию, и сам платёж — оплата снова ожидается.
+  // «↩» на полученной части: операция отменяется, платёж снова ожидается.
+  // 14.11.2026: сам план больше не удаляем — после частичной оплаты клиент
+  // «должен» был меньше, чем на деле (удалялась отменённая часть), а план,
+  // который сервер уже убрал при откате, давал ошибку «не найдена».
   async function undoPart(part: any) {
-    try {
-      if (part.txId) await financeApi.unreceivePlanned(part.plannedId);
-      await financeApi.removePlanned(part.plannedId);
-      inv();
-    } catch (e) { toast.error(apiErr(e)); }
+    try { await financeApi.unreceivePlanned(part.plannedId); }
+    catch (e) { toast.error(apiErr(e)); }
+    finally { inv(); }
+  }
+  // На компьютере — тоже с вопросом: это настоящие деньги на счёте.
+  async function undoPartAsk(r: any, part: any) {
+    if (!(await finConfirm(`Отменить оплату ${money(Number(part.amount) || 0)} — «${r.project.name}»?`, { danger: true, confirmLabel: 'Отменить оплату' }))) return;
+    await undoPart(part);
   }
   // На телефоне отмена — по нажатию на «✓ дата», поэтому сначала спрашиваем.
   async function undoAsk(r: any) {
@@ -645,7 +651,7 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                       {got.map((p: any) => (
                         <span key={p.plannedId} className="flex">
                           <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
-                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
+                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPartAsk(r, p)}><FinIcon name="undo" size={15} /></button>
                         </span>
                       ))}
                       {r.remaining > 0 && <span className="fin-smm-chip wait">{got.length > 0 ? 'остаток ' : ''}{money(r.remaining)}</span>}
@@ -675,14 +681,14 @@ function SmmSection({ data, ym }: { data: any; ym: string }) {
                         <>
                           <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(got[0].amount)}</span>
                           {r.paidAt && <span className="mini muted nowrap">{dayMonth(r.paidAt)}</span>}
-                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(got[0])}><FinIcon name="undo" size={15} /></button>
+                          <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPartAsk(r, got[0])}><FinIcon name="undo" size={15} /></button>
                         </>
                       ) : (
                         <>
                           {got.map((p: any) => (
                             <span key={p.plannedId} className="flex">
                               <span className="fin-smm-chip ok"><FinIcon name="check" size={13} /> {money(p.amount)}</span>
-                              <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPart(p)}><FinIcon name="undo" size={15} /></button>
+                              <button className="btn ghost sm" title="Отменить оплату" onClick={() => undoPartAsk(r, p)}><FinIcon name="undo" size={15} /></button>
                             </span>
                           ))}
                           {r.paidAt && <span className="mini muted nowrap">{dayMonth(r.paidAt)}</span>}
@@ -758,7 +764,7 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
 
   const scheduledMonth = (row.part1?.amount ?? 0) + (row.part2?.amount ?? 0);
   const remaining = project.tariff - scheduledMonth;
@@ -1186,7 +1192,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   // Месяц выводим из выбранной даты (ym-пропа при добавлении части нет).
   const effYm = ym ?? plan?.ym ?? ymOf(date);
   const monthName = monthLabel(effYm, true);
@@ -1398,14 +1404,15 @@ function WorkModal({ row, onClose }: { row?: any; onClose: () => void }) {
   const [date, setDate] = useState(work?.contractDate ?? todayISO());
   const [note, setNote] = useState(work?.note ?? '');
   const [busy, setBusy] = useState(false);
-  const amt = parseFloat(tariff.replace(',', '.'));
+  const amt = parseAmount(tariff);
 
   async function save() {
     if (!name.trim() || busy) return;
     setBusy(true);
     const p: any = {
       name: name.trim(), tariff: amt > 0 ? amt : 0,
-      contractDate: date || undefined, note: note.trim() || undefined, multiMonth: false,
+      // Стёртая заметка при правке — null, иначе сервер её не очищал.
+      contractDate: date || undefined, note: note.trim() || (work ? null : undefined), multiMonth: false,
     };
     try {
       if (work) await financeApi.updateProject(work.id, p);
@@ -1471,7 +1478,7 @@ function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) 
   const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   const overLimit = project.tariff > 0 && amt > remaining;
 
   async function save() {

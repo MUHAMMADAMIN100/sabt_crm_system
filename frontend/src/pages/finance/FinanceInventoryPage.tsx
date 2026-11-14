@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, todayISO, formatDate, apiErr } from './finlib';
+import { money, todayISO, formatDate, apiErr, parseAmount } from './finlib';
 import FinIcon from './FinIcon';
 import { FinLoading, FinLoadError, finConfirm, useModalKeys, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -199,17 +199,20 @@ function AssetModal({ asset, knownCategories, onClose }: { asset?: any; knownCat
   const [note, setNote] = useState(asset?.note ?? '');
   const [busy, setBusy] = useState(false);
 
-  const priceNum = parseFloat(price.replace(',', '.')) || 0;
+  const priceNum = parseAmount(price) || 0;
   const lifeNum = Math.max(0, parseInt(serviceMonths, 10) || 0);
 
   async function save() {
     if (!name.trim() || busy) return;
     setBusy(true);
+    // При правке очищенное поле уходит как null — иначе сервер его пропускал,
+    // и «Ответственный» у сданной техники оставался прежним (14.11.2026).
+    const empty = asset ? null : undefined;
     const data: any = {
-      name: name.trim(), category: category.trim() || undefined,
-      purchaseDate: purchaseDate || undefined, price: priceNum, serviceMonths: lifeNum,
-      status, assignee: assignee.trim() || undefined, serial: serial.trim() || undefined,
-      warrantyUntil: warrantyUntil || undefined, note: note.trim() || undefined,
+      name: name.trim(), category: category.trim() || empty,
+      purchaseDate: purchaseDate || empty, price: priceNum, serviceMonths: lifeNum,
+      status, assignee: assignee.trim() || empty, serial: serial.trim() || empty,
+      warrantyUntil: warrantyUntil || empty, note: note.trim() || empty,
     };
     try {
       if (asset) await financeApi.updateAsset(asset.id, data);

@@ -1,7 +1,7 @@
 // Активность финансов: кто, что и когда изменил (журнал пишется бэкендом
 // на каждое успешное изменение в разделе). Только чтение.
 import { Fragment, useRef, useState, type KeyboardEvent } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { financeApi } from '@/services/api.service';
 import { FinLoading, FinLoadError } from './FinKit';
 import FinIcon from './FinIcon';
@@ -195,13 +195,19 @@ function ActivityDetailPanel({ row, refs, onClose }: { row: any; refs: RefMaps; 
 }
 
 export default function FinanceActivityPage() {
-  const [limit, setLimit] = useState(PAGE);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['finance', 'activity', limit],
-    queryFn: () => financeApi.activity(limit, 0),
-    placeholderData: keepPreviousData,
+  // Подгрузка страницами по 50 со сдвигом (14.11.2026): раньше «Показать
+  // ещё» увеличивал лимит с нуля, а сервер отдаёт не больше 200 — дальше
+  // кнопка возвращала те же записи.
+  const { data, isLoading, isError, refetch, isFetching, fetchNextPage } = useInfiniteQuery({
+    queryKey: ['finance', 'activity', 'pages'],
+    queryFn: ({ pageParam }) => financeApi.activity(PAGE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last: any, all: any[]) => {
+      const loaded = all.reduce((s, p) => s + ((p?.rows ?? []).length), 0);
+      return (last?.rows ?? []).length && loaded < (last?.total ?? 0) ? loaded : undefined;
+    },
   });
   const { data: referenceData } = useQuery({
     queryKey: ['finance', 'activity', 'references'],
@@ -214,8 +220,8 @@ export default function FinanceActivityPage() {
     },
   });
 
-  const rows: any[] = data?.rows ?? [];
-  const total: number = data?.total ?? 0;
+  const rows: any[] = (data?.pages ?? []).flatMap((p: any) => p?.rows ?? []);
+  const total: number = data?.pages?.[data.pages.length - 1]?.total ?? 0;
   const refs: RefMaps = Object.fromEntries(
     Object.entries(referenceData || {}).map(([key, values]) => [
       key,
@@ -294,7 +300,7 @@ export default function FinanceActivityPage() {
 
           {rows.length < total && (
             <div style={{ textAlign: 'center', marginTop: 14 }}>
-              <button className="btn" disabled={isFetching} onClick={() => setLimit(l => l + PAGE)}>
+              <button className="btn" disabled={isFetching} onClick={() => fetchNextPage()}>
                 {isFetching ? 'Загрузка…' : `Показать ещё (${total - rows.length})`}
               </button>
             </div>

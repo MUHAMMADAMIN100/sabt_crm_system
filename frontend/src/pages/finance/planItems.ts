@@ -357,6 +357,26 @@ export function buildLateOther(src: LateSources): any[] {
         ]) });
     }
   }
+  // Долг «вернуть до» с прошедшим сроком в другом месяце (14.11.2026): на
+  // «Расходе» он висит просроченным, а в «Просрочено» его не было. Сумма —
+  // как в дне срока: остаток вне ожидаемых траншей.
+  for (const d of src.debts) {
+    if (d.kind === 'bank' || !d.dueDate) continue;
+    const due = String(d.dueDate).slice(0, 10);
+    if (due >= today || due.slice(0, 7) === calYm) continue;
+    const planned = src.planned
+      .filter((p: any) => p.debtId === d.id && p.status === 'expected')
+      .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+    const left = r2(Number(d.remaining) - planned);
+    if (!(left > 0.005)) continue;
+    out.push({ id: `due-${d.id}`, date: due, amount: left, type: 'expense', status: 'completed', done: false,
+      comment: `${d.name} · вернуть долг`,
+      details: detailList([
+        { label: 'Долг', value: d.name },
+        { label: 'Осталось отдать', value: money(Number(d.remaining)) },
+        { label: 'Срок был', value: formatDate(due) },
+      ]) });
+  }
   // SMM-клиенты, не заплатившие в срок по дню договора (срок в другом месяце:
   // свой месяц уже есть в календаре строкой прогноза). Срок из сохранённого
   // плана (due.planned) не берём — этот план уже есть выше, иначе долг

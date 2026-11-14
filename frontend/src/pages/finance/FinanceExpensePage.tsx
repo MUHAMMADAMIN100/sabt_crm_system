@@ -112,7 +112,8 @@ function MonthView({ ym }: { ym: string }) {
   const salPaidCount = salRows.filter((r) => Number(r.toPay || 0) <= 0.005).length;
 
   if (isLoading || salaryQ.isLoading) return <FinLoading cards={5} />;
-  if (isError) return <FinLoadError onRetry={() => refetch()} />;
+  // Ведомость не загрузилась — ошибка с «Повторить», а не «0 с.» (14.11.2026).
+  if (isError || salaryQ.isError) return <FinLoadError onRetry={() => { refetch(); salaryQ.refetch(); }} />;
 
   const salary = EXPENSE_GROUPS.find((g) => g.key === 'salary')!;
   const rent = EXPENSE_GROUPS.find((g) => g.key === 'rent_subs')!;

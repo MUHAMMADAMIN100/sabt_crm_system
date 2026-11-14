@@ -265,6 +265,21 @@ describe('Планирование: «Просрочено» других мес
     expect(late.find((x) => x.id === 'pp-b')).toMatchObject({ date: '2026-10-10', type: 'expense' });
   });
 
+  it('долг «вернуть до» с прошедшим сроком прошлого месяца — в «Просрочено», остаток вне траншей', () => {
+    const late = buildLateOther({
+      calYm: '2026-11', today: TODAY, projects: [], smmRows: [],
+      debts: [
+        { id: 'd1', name: 'Мухаммад', kind: 'person', remaining: 5000, dueDate: '2026-10-31' },
+        { id: 'd2', name: 'Закрыт', kind: 'person', remaining: 0, dueDate: '2026-10-31' },
+        { id: 'd3', name: 'Ещё не срок', kind: 'person', remaining: 900, dueDate: '2026-12-20' },
+        { id: 'b1', name: 'Банк', kind: 'bank', remaining: 9000, dueDate: '2026-10-01' },
+      ],
+      planned: [{ id: 't', debtId: 'd1', ym: '2026-12', dueDate: '2026-12-05', status: 'expected', amount: 2000 }],
+    });
+    expect(ids(late)).toEqual(['due-d1']);
+    expect(late[0]).toMatchObject({ date: '2026-10-31', amount: 3000, type: 'expense' });
+  });
+
   it('SMM: просрочка по дню договора — да, по сохранённому плану — не второй раз', () => {
     const late = buildLateOther({
       calYm: '2026-11', today: TODAY,

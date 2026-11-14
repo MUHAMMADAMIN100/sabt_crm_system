@@ -21,12 +21,15 @@ export const keepMonth = { placeholderData: keepPreviousData } as const;
 export function invalidateFinance(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['finance'] });
   qc.invalidateQueries({ queryKey: ['fin-payouts'] });
+  // Окна-разбивки при наведении (14.11.2026): иначе до минуты показывали старое.
+  qc.invalidateQueries({ queryKey: ['fin-breakdown'] });
 }
 /** После правки справочника: и справочники, и зависящие от них расчёты. */
 export function invalidateFinanceAll(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['finance'] });
   qc.invalidateQueries({ queryKey: ['finref'] });
   qc.invalidateQueries({ queryKey: ['fin-payouts'] });
+  qc.invalidateQueries({ queryKey: ['fin-breakdown'] });
 }
 
 /** Скелетон: карточки-заглушки на время первой загрузки страницы. */

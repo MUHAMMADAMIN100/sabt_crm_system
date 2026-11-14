@@ -4,12 +4,12 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { apiErr, todayISO, currentYm, monthLabel, money, INCOME_GROUPS } from './finlib';
+import { apiErr, todayISO, currentYm, monthLabel, money, INCOME_GROUPS, parseAmount } from './finlib';
 import { FinModal, finConfirm, invalidateFinanceAll } from './FinKit';
 import type { FinProject, FinEmployee, FinSubscription, FinDebt } from './types';
 import { financeApi, usersApi } from '@/services/api.service';
 
-const num = (s: string) => parseFloat(String(s).replace(',', '.')) || 0;
+const num = (s: string) => parseAmount(s) || 0;
 
 /** Кнопка «Удалить» в футере формы (только при редактировании). */
 function DeleteButton({ label, confirmText, busy, onDelete }: {
@@ -40,6 +40,18 @@ export function ProjectFormModal({ project, direction, onClose }: {
     project ? (project.retentionMonths != null ? String(project.retentionMonths) : '') : '6');
   const [status, setStatus] = useState(project?.status ?? 'active');
   const [busy, setBusy] = useState(false);
+  // Значения, с которыми форма открылась, — в том же виде, что уйдут на сервер.
+  const [initialValues] = useState<Record<string, unknown>>(() => {
+    const d = project?.direction ?? direction ?? 'smm';
+    const rm = project ? (project.retentionMonths != null ? String(project.retentionMonths) : '') : '6';
+    return {
+      name: (project?.name ?? '').trim(), direction: d, tariff: num(project != null ? String(project.tariff ?? '') : ''),
+      contractDate: (project ? (project.contractDate ?? '') : '') || null,
+      multiMonth: d === 'design' ? !!project?.multiMonth : false,
+      retentionMonths: (d === 'smm' || d === 'maintenance') ? (rm === '' ? null : Number(rm)) : null,
+      status: project?.status ?? 'active',
+    };
+  });
 
   async function save() {
     if (!name.trim() || busy) return;
@@ -53,8 +65,14 @@ export function ProjectFormModal({ project, direction, onClose }: {
         retentionMonths: recurring ? (retentionMonths === '' ? null : Number(retentionMonths)) : null,
         status,
       };
-      if (isEdit) await financeApi.updateProject(project.id, p);
-      else await financeApi.createProject(p);
+      if (isEdit) {
+        // Правка — только изменённые поля (14.11.2026). Строки таблиц «Дохода»
+        // открывают форму с неполным проектом (без срока и статуса): раньше
+        // правка тарифа делала клиента «бессрочным», снимала паузу и
+        // сбрасывала дату цикла оплаты (сервер сбрасывает её при новой дате договора).
+        for (const k of Object.keys(p)) if (p[k] === initialValues[k]) delete p[k];
+        if (Object.keys(p).length) await financeApi.updateProject(project.id, p);
+      } else await financeApi.createProject(p);
       invalidateFinanceAll(qc);
       onClose();
     } catch (e) {
@@ -320,10 +338,14 @@ export function SubFormModal({ sub, onClose }: { sub?: FinSubscription; onClose:
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const p = {
+      const p: any = {
         name: name.trim(), kind, amount: num(amount), active: sub?.active ?? true,
         dueDate: dueDate || null, endDate: endDate || null,
       };
+      // Дату начала шлём, только если её поменяли (14.11.2026): у старых
+      // позиций есть лишь «день оплаты», и пустая дата его стирала; день,
+      // перенесённый в «Планировании», тоже затирался датой начала.
+      if (isEdit && (dueDate || null) === (sub.dueDate ? String(sub.dueDate).slice(0, 10) : null)) delete p.dueDate;
       if (isEdit) await financeApi.updateSubscription(sub.id, p);
       else await financeApi.createSubscription(p);
       invalidateFinanceAll(qc);

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { TYPE_LABEL, todayISO, currentYm, apiErr } from './finlib';
+import { TYPE_LABEL, todayISO, apiErr, parseAmount, salaryPeriodOf } from './finlib';
 import FinIcon from './FinIcon';
 import { FinModal, finConfirm, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { financeApi } from '@/services/api.service';
@@ -41,9 +41,13 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   // Кому выдано / от кого (сотрудник) — информационно, не зарплата.
   const [recipientId, setRecipientId] = useState<string>(initial?.recipientId ?? '');
   const [debtId, setDebtId] = useState<string>(initial?.debtId ?? '');
-  const [salaryYm, setSalaryYm] = useState<string>(
-    initial?.salaryYm || String(initial?.date ?? '').slice(0, 7) || currentYm(),
-  );
+  // Месяц начисления ЗП по умолчанию — по правилу «10-е → 10-е», как на
+  // сервере (14.11.2026): выплата 5 ноября — за октябрь. Раньше брался
+  // календарный месяц, и октябрьская выплата уходила в ноябрьскую ведомость.
+  // Пока месяц не меняли руками, он следует за датой.
+  const defaultSalaryYm = initial?.salaryYm || salaryPeriodOf(String(initial?.date ?? initialDate ?? todayISO()));
+  const [salaryYm, setSalaryYm] = useState<string>(defaultSalaryYm);
+  const [salaryYmTouched, setSalaryYmTouched] = useState(!!initial?.salaryYm);
   const [comment, setComment] = useState<string>(initial?.comment ?? '');
   const [busy, setBusy] = useState(false);
 
@@ -62,7 +66,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
   // своя привязка к сотруднику/долгу). Чтобы видеть траты по проекту внутри него.
   const showProject = type === 'income' || (type === 'expense' && !salaryExpense && !debtExpense);
 
-  const amt = parseFloat(amount.replace(',', '.'));
+  const amt = parseAmount(amount);
   const valid = amt > 0 && (!needFrom || accountFrom) && (!needTo || accountTo) &&
     (!['transfer', 'saving'].includes(type) || accountFrom !== accountTo) &&
     (!salaryExpense || (!!employeeId && /^\d{4}-(0[1-9]|1[0-2])$/.test(salaryYm))) &&
@@ -73,7 +77,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
       || accountTo !== ((['transfer', 'saving'].includes(initial.type) ? (initial.toAccountId ?? initial.accountId) : initial.type !== 'expense' ? initial.accountId : '') ?? '')
       || projectId !== (initial.projectId ?? '') || employeeId !== (initial.employeeId ?? '')
       || recipientId !== (initial.recipientId ?? '')
-      || debtId !== (initial.debtId ?? '') || salaryYm !== (initial.salaryYm || String(initial.date ?? '').slice(0, 7) || currentYm())
+      || debtId !== (initial.debtId ?? '') || salaryYm !== defaultSalaryYm
       || comment !== (initial.comment ?? '')
     : !!(amount || categoryId || accountFrom || accountTo || projectId || employeeId || recipientId || debtId || comment);
 
@@ -169,7 +173,10 @@ export default function TransactionModal({ initial, initialType, initialDate, on
             <div className="field"><label>Сумма, сомони</label>
               <input autoFocus inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
-            <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => {
+              setDate(e.target.value);
+              if (!salaryYmTouched && e.target.value) setSalaryYm(salaryPeriodOf(e.target.value));
+            }} /></div>
           </div>
 
           {needCategory && (
@@ -241,7 +248,7 @@ export default function TransactionModal({ initial, initialType, initialDate, on
                 </select>
               </div>
               <div className="field"><label>За какой месяц начисление</label>
-                <input type="month" value={salaryYm} onChange={(e) => setSalaryYm(e.target.value)} />
+                <input type="month" value={salaryYm} onChange={(e) => { setSalaryYm(e.target.value); setSalaryYmTouched(true); }} />
               </div>
             </div>
           )}
@@ -249,7 +256,9 @@ export default function TransactionModal({ initial, initialType, initialDate, on
             <div className="field"><label>Долг</label>
                 <select value={debtId} onChange={(e) => setDebtId(e.target.value)}>
                   <option value="">— выбрать долг —</option>
-                  {debts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  {/* Банки — не здесь: платёж банку отмечают в «Рассрочках» (14.11.2026). */}
+                  {debts.filter((d: any) => d.kind !== 'bank' || d.id === initial?.debtId)
+                    .map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
             </div>
           )}

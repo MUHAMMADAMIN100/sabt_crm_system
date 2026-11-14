@@ -648,6 +648,10 @@ export const teamsApi = {
 }
 
 // ─── Finance (Founder/Co-founder only) ──────────────────
+/** Пустая дата из стёртого поля — не отправляем: сервер подставит сегодня
+ *  (или «без срока»), а не отвечает английской ошибкой валидации (14.11.2026). */
+const dropEmptyDates = <T extends Record<string, any>>(d: T): T =>
+  Object.fromEntries(Object.entries(d || {}).filter(([k, v]) => !(v === '' && /date/i.test(k)))) as T
 export const financeApi = {
   // Дашборды / расчёты
   overview: (ym: string) => api.get('/finance/overview', { params: { ym } }).then(r => r.data),
@@ -783,11 +787,11 @@ export const financeApi = {
 
   // Планируемые оплаты (SMM части 1/2, матрицы Development/Design, график долгов)
   plannedPayments: (params?: any) => api.get('/finance/planned-payments', { params }).then(r => r.data),
-  createPlanned: (data: any) => api.post('/finance/planned-payments', data).then(r => r.data),
-  receivePlanned: (id: string, data: any) => api.post(`/finance/planned-payments/${id}/receive`, data).then(r => r.data),
+  createPlanned: (data: any) => api.post('/finance/planned-payments', dropEmptyDates(data)).then(r => r.data),
+  receivePlanned: (id: string, data: any) => api.post(`/finance/planned-payments/${id}/receive`, dropEmptyDates(data)).then(r => r.data),
   unreceivePlanned: (id: string) => api.post(`/finance/planned-payments/${id}/unreceive`, {}).then(r => r.data),
   removePlanned: (id: string) => api.delete(`/finance/planned-payments/${id}`).then(r => r.data),
-  payNow: (data: any) => api.post('/finance/planned-payments/pay-now', data).then(r => r.data),
+  payNow: (data: any) => api.post('/finance/planned-payments/pay-now', dropEmptyDates(data)).then(r => r.data),
 
   // Резервная копия / сброс
   exportAll: () => api.get('/finance/backup/export').then(r => r.data),

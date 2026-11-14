@@ -158,7 +158,9 @@ export default function FinanceOverviewPage() {
           icon="expense" color="var(--red)" total={expense}
           rows={expCats} ym={ym} txType="expense" onClick={() => navigate(withYm('/finance/expense', ym))}
           footerRows={[
-            { label: 'Регулярные обязательства / мес', value: money((stats.salaryToPay || 0) + (stats.subsMonthly || 0)) },
+            // Фонд ЗП, а не остаток к выплате (14.11.2026): после выплаты строка
+            // «в месяц» сжималась почти до одних подписок.
+            { label: 'Регулярные обязательства / мес', value: money((stats.salaryFund || 0) + (stats.subsMonthly || 0)) },
             { label: 'Расход за всё время', value: money(stats.expenseAllTime || 0), cls: 'neg' },
           ]}
         />

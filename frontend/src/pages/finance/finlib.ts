@@ -28,6 +28,11 @@ export function todayISO(): string {
 }
 
 export const ymOf = (iso: string): string => (iso || '').slice(0, 7)
+
+/** Сумма из поля ввода: «3 500», «3 500,50», «3500.5» → число. Пробелы (и
+ *  неразрывные — так CRM сама пишет суммы) убираем: раньше «3 500»
+ *  сохранялось как 3 с. (14.11.2026). Пустое/не число → NaN. */
+export const parseAmount = (s: unknown): number => parseFloat(String(s ?? '').replace(/\s/g, '').replace(',', '.'))
 export const currentYm = (): string => ymOf(todayISO())
 
 /** Период зарплатной ведомости для даты — цикл «10-е → 10-е»: дата на/до
