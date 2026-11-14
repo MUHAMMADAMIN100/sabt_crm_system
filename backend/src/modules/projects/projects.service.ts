@@ -297,34 +297,38 @@ export class ProjectsService implements OnModuleInit {
   // ─── Доступы к аккаунтам клиента ──────────────────────────────────
   /** Кому положено видеть и менять доступы. Список намеренно короткий и
    *  жёстко зашит: это чужие учётные данные, а не рабочая настройка.
-   *  Руководитель СММ работает с аккаунтами, менеджер продаж по СММ их
-   *  получает от клиента, основатель не должен остаться без доступа,
-   *  если сотрудник уйдёт. */
+   *  Руководитель СММ работает с аккаунтами, основатель не должен остаться
+   *  без доступа, если сотрудник уйдёт. Менеджер по продажам — только
+   *  менеджер ЭТОГО проекта (решение владельца 14.11.2026), не по роли. */
   static readonly CLIENT_ACCESS_ROLES: string[] = [
     UserRole.SMM_DIRECTOR,
-    UserRole.SALES_MANAGER_SMM,
     UserRole.FOUNDER,
   ];
 
-  /** + SMM-специалист этого проекта: он выкладывает контент, видит и меняет
-   *  доступы своего проекта (решение владельца 19.10.2026). */
-  private canSeeClientAccessFor(user: { id?: string; role?: string; secondaryRole?: string | null }, specialistIds: string[]): boolean {
+  /** + SMM-специалист этого проекта (решение владельца 19.10.2026) и
+   *  менеджер по продажам, назначенный на проект (smmData.salesManagerId). */
+  private canSeeClientAccessFor(
+    user: { id?: string; role?: string; secondaryRole?: string | null },
+    specialistIds: string[],
+    salesManagerId?: string | null,
+  ): boolean {
     return ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.role || '')
       || ProjectsService.CLIENT_ACCESS_ROLES.includes(user?.secondaryRole || '')
-      || (!!user?.id && specialistIds.includes(user.id));
+      || (!!user?.id && specialistIds.includes(user.id))
+      || (!!user?.id && !!salesManagerId && salesManagerId === user.id);
   }
 
   private assertCanSeeClientAccess(user: { id?: string; role?: string; secondaryRole?: string | null }, project: { smmData?: any }) {
-    const ids = Array.isArray(project?.smmData?.smmSpecialistIds)
-      ? (project.smmData.smmSpecialistIds as any[]).filter(x => typeof x === 'string') : [];
-    if (!this.canSeeClientAccessFor(user, ids)) {
-      throw new ForbiddenException('Доступы клиента видят руководитель СММ, менеджер по продажам SMM, SMM-специалист проекта и основатель');
+    const sd = project?.smmData || {};
+    const ids = Array.isArray(sd.smmSpecialistIds)
+      ? (sd.smmSpecialistIds as any[]).filter(x => typeof x === 'string') : [];
+    const salesManagerId = typeof sd.salesManagerId === 'string' ? sd.salesManagerId : null;
+    if (!this.canSeeClientAccessFor(user, ids, salesManagerId)) {
+      throw new ForbiddenException('Доступы клиента видят руководитель СММ, менеджер по продажам этого проекта, SMM-специалист проекта и основатель');
     }
   }
 
-  /** Доступы одного проекта. Пароль расшифровываем только здесь — в общей
-   *  карточке проекта колонка не выбирается вовсе (select: false). */
-  async getClientAccess(projectId: string, user: { id?: string; role?: string; secondaryRole?: string }) {
+  private async clientAccessRow(projectId: string) {
     const row = await this.repo
       .createQueryBuilder('p')
       .select(['p.id', 'p.smmData'])
@@ -332,16 +336,31 @@ export class ProjectsService implements OnModuleInit {
       .where('p.id = :id', { id: projectId })
       .getOne();
     if (!row) throw new NotFoundException('Проект не найден');
+    return row;
+  }
+
+  /** Доступы одного проекта — без пароля: он приезжает отдельным запросом,
+   *  только когда нажали «Показать», «Скопировать» или «Изменить». */
+  async getClientAccess(projectId: string, user: { id?: string; role?: string; secondaryRole?: string }) {
+    const row = await this.clientAccessRow(projectId);
     this.assertCanSeeClientAccess(user, row);
     const a = row.clientAccess || {};
     return {
       pageUrl: typeof (row.smmData as any)?.pageUrl === 'string' ? (row.smmData as any).pageUrl : '',
       login: a.login || '',
-      password: decryptSecret(a.password || ''),
+      hasPassword: !!a.password,
       note: a.note || '',
       updatedAt: a.updatedAt || null,
       updatedByName: a.updatedByName || null,
     };
+  }
+
+  /** Пароль клиента. Расшифровываем только здесь — в общей карточке проекта
+   *  колонка не выбирается вовсе (select: false). */
+  async getClientAccessPassword(projectId: string, user: { id?: string; role?: string; secondaryRole?: string }) {
+    const row = await this.clientAccessRow(projectId);
+    this.assertCanSeeClientAccess(user, row);
+    return { password: decryptSecret((row.clientAccess || {}).password || '') };
   }
 
   async saveClientAccess(
@@ -364,15 +383,20 @@ export class ProjectsService implements OnModuleInit {
     }
 
     const login = String(body?.login ?? '').trim().slice(0, 200);
-    const password = String(body?.password ?? '');
     const note = String(body?.note ?? '').trim().slice(0, 2000);
+    // Пароль не прислали вовсе — оставляем прежний (его могли не открывать).
+    const keepPassword = body?.password === undefined || body?.password === null;
+    const prevEncrypted: string = keepPassword
+      ? (((await this.clientAccessRow(projectId)).clientAccess || {}).password || '')
+      : '';
+    const password = keepPassword ? '' : String(body.password);
 
     // Всё пустое — считаем, что доступы удалили.
-    const empty = !login && !password && !note;
+    const empty = !login && !password && !prevEncrypted && !note;
     await this.repo.update(projectId, {
       clientAccess: empty ? null : {
         login,
-        password: password ? encryptSecret(password) : '',
+        password: keepPassword ? prevEncrypted : (password ? encryptSecret(password) : ''),
         note,
         updatedAt: new Date().toISOString(),
         updatedByName: user?.name || '',
@@ -1433,13 +1457,8 @@ export class ProjectsService implements OnModuleInit {
     const project = await this.findOne(id);
     // smm_director может редактировать ЛЮБОЙ SMM-проект (его область целиком).
     const isSmmDirectorOnSmm = user.role === 'smm_director' && project.projectType === 'SMM';
-    // Менеджер продаж управляет проектами своего направления полностью.
-    const editSegment = getSalesSegment(user.role);
-    // Сравниваем со ВСЕМИ типами сегмента: у МП по разработке их несколько
-    // (Лендинг, Телеграм бот, CRM, Интернет магазин, legacy «Web сайт»), а
-    // projectType — только дефолтный для создания.
-    const isSalesOnOwnSegment = !!editSegment
-      && editSegment.projectTypes.includes(project.projectType as string);
+    // Менеджер по продажам проекты не правит (решение владельца 14.11.2026):
+    // раньше «своё направление» давало ему полную правку, в т.ч. smmData.
     // Менеджер проекта — НАЗНАЧАЕМЫЙ: любой сотрудник, выбранный в поле
     // «Менеджер проекта» (project.managerId), руководит этим проектом и
     // может редактировать его данные независимо от своей роли. Отдельной
@@ -1447,7 +1466,6 @@ export class ProjectsService implements OnModuleInit {
     const isAssignedManager = project.managerId === user.id;
     const canEdit = ['admin', 'founder'].includes(user.role) ||
       isSmmDirectorOnSmm ||
-      isSalesOnOwnSegment ||
       isAssignedManager ||
       hasGrant(user as any, 'projects.edit'); // персональный грант
     if (!canEdit) {
@@ -2106,7 +2124,7 @@ export class ProjectsService implements OnModuleInit {
       // Ссылка на страницу клиента — видят все, кто открыл проект; логин и
       // пароль — только кому можно (canSeeAccess), отдельным запросом.
       pageUrl: typeof sd.pageUrl === 'string' && sd.pageUrl ? sd.pageUrl : null,
-      canSeeAccess: !!viewer && this.canSeeClientAccessFor(viewer, specIds),
+      canSeeAccess: !!viewer && this.canSeeClientAccessFor(viewer, specIds, managerId || null),
       // TikTok (14.11.2026): по умолчанию у всех проектов, выключают по одному.
       tiktok: (sd as any).tiktokOff !== true,
     };
@@ -2432,16 +2450,11 @@ export class ProjectsService implements OnModuleInit {
       const role = user.role;
       const isTopAdmin = ['admin', 'founder'].includes(role);
       const isSmmDirOnSmm = role === 'smm_director' && p.projectType === 'SMM';
-      const removeSegment = getSalesSegment(role);
-      const isSalesOnOwnSegment = !!removeSegment
-        && removeSegment.projectTypes.includes(p.projectType as string);
-      if (!isTopAdmin && !isSmmDirOnSmm && !isSalesOnOwnSegment) {
+      if (!isTopAdmin && !isSmmDirOnSmm) {
         throw new ForbiddenException(
           role === 'smm_director'
             ? 'Руководитель SMM может удалять только SMM-проекты'
-            : removeSegment
-              ? 'Вы можете удалять только проекты своего направления'
-              : 'Удалять проекты могут только администратор, основатель, сооснователь и руководитель SMM (для SMM-проектов)',
+            : 'Удалять проекты могут только администратор, основатель, сооснователь и руководитель SMM (для SMM-проектов)',
         );
       }
     }

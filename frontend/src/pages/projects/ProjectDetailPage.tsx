@@ -877,7 +877,9 @@ export default function ProjectDetailPage() {
           </div>
           {/* Доступы к аккаунтам клиента — компонент сам решает,
               показываться ли: у остальных ролей его нет вовсе. */}
-          <ClientAccessCard projectId={id!} />
+          <ClientAccessCard projectId={id!}
+            salesManagerId={(project as any)?.smmData?.salesManagerId ?? null}
+            specialistIds={(project as any)?.smmData?.smmSpecialistIds ?? null} />
         </div>
       )}
 

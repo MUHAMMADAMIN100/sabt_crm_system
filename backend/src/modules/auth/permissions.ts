@@ -38,13 +38,15 @@ const ALL_ROLES = [
 export const GRANTABLE: Record<string, GrantDef> = {
   // ─── Проекты ───────────────────────────────────────────────────────
   'projects.view':   { label: 'Проекты — просмотр',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev', 'smm_specialist'] },
-  'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  // Менеджеры по продажам проекты не создают, не правят и не удаляют
+  // (решение владельца 14.11.2026): клиента они «передают в работу».
+  'projects.create': { label: 'Проекты — добавление',     category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'smm_specialist'] },
+  'projects.edit':   { label: 'Проекты — редактирование', category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director'] },
   // Архив/восстановление проектов. Нативно — те же роли, что были в @Roles
   // эндпоинта; грантом можно выдать другим (напр. проект-менеджеру по
   // разработке — он архивирует только dev-проекты, см. projects.service).
   'projects.archive': { label: 'Проекты — архивирование',  category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
-  'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'], danger: true },
+  'projects.delete':  { label: 'Проекты — удаление',       category: 'Проекты', roles: [...TOP, 'smm_director', 'dev_director'], danger: true },
   'projects.payments.view':    { label: 'Оплаты проекта — просмотр',  category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev', 'smm_director', 'dev_director'] },
   'projects.payments.request': { label: 'Оплаты проекта — запрос',    category: 'Проекты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'projects.brief.manage':     { label: 'Бриф проекта — заполнение',  category: 'Проекты', roles: [...TOP, 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'] },

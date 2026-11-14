@@ -1,17 +1,18 @@
 // «Аккаунт клиента» на вкладке «Обзор» SMM-проекта (макет владельца
 // 19.10.2026, вариант Б): ссылка на страницу клиента, логин и пароль.
 // Ссылку видят все, кто открыл проект. Логин и пароль — руководитель СММ,
-// менеджер по продажам SMM, SMM-специалист этого проекта и основатель; они
-// же их меняют. Пароль приходит отдельным запросом и только им, хранится
-// на сервере зашифрованным.
+// менеджер по продажам ЭТОГО проекта, SMM-специалист проекта и основатель;
+// они же их меняют. Пароль хранится на сервере зашифрованным и приезжает
+// только по нажатию «Показать», «Скопировать» или «Изменить» (14.11.2026).
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, Copy, ExternalLink, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { projectsApi } from '@/services/api.service'
 import { Modal } from '@/components/ui'
+import { copyLoaded, useClientPassword } from '@/components/projects/useClientPassword'
 
-type Access = { pageUrl?: string; login: string; password: string; note: string; updatedAt?: string | null; updatedByName?: string | null }
+type Access = { pageUrl?: string; login: string; hasPassword?: boolean; note: string; updatedAt?: string | null; updatedByName?: string | null }
 
 const card = 'rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5'
 const secLabel = 'text-[11px] font-bold uppercase tracking-wider text-gray-400'
@@ -32,6 +33,7 @@ export default function ClientAccountCard({ projectId, pageUrl, canSeeAccess }: 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ pageUrl: '', login: '', password: '', note: '' })
   const [formShown, setFormShown] = useState(false)
+  const pw = useClientPassword(projectId)
 
   const { data, isLoading } = useQuery<Access>({
     queryKey: ['client-access', projectId],
@@ -44,6 +46,7 @@ export default function ClientAccountCard({ projectId, pageUrl, canSeeAccess }: 
     mutationFn: () => projectsApi.saveClientAccess(projectId, form),
     onSuccess: (fresh: Access) => {
       qc.setQueryData(['client-access', projectId], fresh)
+      pw.forget()
       qc.setQueryData(['smm-profile', projectId], (old: any) => old && { ...old, pageUrl: fresh.pageUrl || null })
       setEditing(false)
       setShown(false)
@@ -63,19 +66,36 @@ export default function ClientAccountCard({ projectId, pageUrl, canSeeAccess }: 
       toast.error('Браузер не дал скопировать')
     }
   }
-  const startEdit = () => {
-    setForm({ pageUrl: pageUrl || data?.pageUrl || '', login: data?.login || '', password: data?.password || '', note: data?.note || '' })
+  const copyPassword = async () => {
+    try {
+      await copyLoaded(pw.load)
+      setCopied('password')
+      setTimeout(() => setCopied(null), 1500)
+    } catch {
+      toast.error('Не удалось скопировать пароль')
+    }
+  }
+  const togglePassword = async () => {
+    if (shown) { setShown(false); return }
+    try { await pw.load(); setShown(true) } catch { toast.error('Не удалось загрузить пароль') }
+  }
+  const startEdit = async () => {
+    let password = ''
+    if (data?.hasPassword) {
+      try { password = await pw.load() } catch { toast.error('Не удалось загрузить пароль'); return }
+    }
+    setForm({ pageUrl: pageUrl || data?.pageUrl || '', login: data?.login || '', password, note: data?.note || '' })
     setFormShown(false)
     setEditing(true)
   }
-  const empty = !pageUrl && !data?.login && !data?.password && !data?.note
+  const empty = !pageUrl && !data?.login && !data?.hasPassword && !data?.note
 
   return (
     <div className={card}>
       <div className="flex items-center mb-2">
         <h2 className={secLabel + ' flex-1'}>Аккаунт клиента</h2>
         {canSeeAccess && (
-          <button type="button" onClick={startEdit} disabled={isLoading}
+          <button type="button" onClick={startEdit} disabled={isLoading || pw.loading}
             className="h-8 px-3 rounded-lg border border-gray-200 dark:border-gray-700 text-[13px] font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
             {empty ? 'Добавить' : 'Изменить'}
           </button>
@@ -105,17 +125,17 @@ export default function ClientAccountCard({ projectId, pageUrl, canSeeAccess }: 
               </button>
             </div>
           )}
-          {canSeeAccess && data?.password && (
+          {canSeeAccess && data?.hasPassword && (
             <div className={row}>
               <span className="text-sm text-gray-500 w-20 shrink-0">Пароль</span>
               {/* Точки — одной строкой: на 320 px «••••••» ломалось на две. */}
               <span className={'flex-1 min-w-0 text-right text-sm font-semibold font-mono ' + (shown ? 'break-all' : 'whitespace-nowrap overflow-hidden')}>
-                {shown ? data.password : '•'.repeat(Math.min(10, data.password.length))}
+                {shown && pw.password != null ? pw.password : '•'.repeat(8)}
               </span>
-              <button type="button" onClick={() => setShown(v => !v)} aria-label={shown ? 'Скрыть пароль' : 'Показать пароль'} className={iconBtn}>
-                {shown ? <EyeOff size={15} /> : <Eye size={15} />}
+              <button type="button" onClick={togglePassword} disabled={pw.loading} aria-label={shown ? 'Скрыть пароль' : 'Показать пароль'} className={iconBtn}>
+                {pw.loading ? <Loader2 size={15} className="animate-spin" /> : shown ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
-              <button type="button" onClick={() => copy('password', data.password)} aria-label="Скопировать пароль" className={iconBtn}>
+              <button type="button" onClick={copyPassword} aria-label="Скопировать пароль" className={iconBtn}>
                 {copied === 'password' ? <Check size={15} className="text-green-500" /> : <Copy size={15} />}
               </button>
             </div>

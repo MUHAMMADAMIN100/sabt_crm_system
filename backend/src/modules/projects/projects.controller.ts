@@ -196,6 +196,13 @@ export class ProjectsController {
     return this.service.getClientAccess(id, req.user);
   }
 
+  /** Пароль — отдельно и только по действию («Показать», «Скопировать»,
+   *  «Изменить»), чтобы не приезжал при каждом открытии карточки. */
+  @Get(':id/client-access/password')
+  getClientAccessPassword(@Param('id') id: string, @Request() req) {
+    return this.service.getClientAccessPassword(id, req.user);
+  }
+
   @Patch(':id/client-access')
   saveClientAccess(@Param('id') id: string, @Body() body: any, @Request() req) {
     return this.service.saveClientAccess(id, body, req.user);

@@ -95,10 +95,12 @@ export const projectsApi = {
   saveBrief: (id: string, brief: any) => api.patch(`/projects/${id}/brief`, brief).then(r => r.data),
   clearBrief: (id: string) => api.delete(`/projects/${id}/brief`).then(r => r.data),
   briefShareLink: (id: string) => api.post(`/projects/${id}/brief/share-link`).then(r => r.data),
-  // Доступы к аккаунтам клиента. Сервер отдаёт их только руководителю СММ,
-  // менеджеру продаж СММ и основателю — остальным вернётся 403.
+  // Доступы к аккаунтам клиента. Сервер отдаёт их руководителю СММ,
+  // менеджеру по продажам этого проекта, SMM-специалисту проекта и
+  // основателю — остальным вернётся 403. Пароль — отдельным запросом.
   clientAccess: (id: string) => api.get(`/projects/${id}/client-access`).then(r => r.data),
-  saveClientAccess: (id: string, data: { login: string; password: string; note: string; pageUrl?: string }) =>
+  clientAccessPassword: (id: string) => api.get(`/projects/${id}/client-access/password`).then(r => r.data),
+  saveClientAccess: (id: string, data: { login: string; password?: string; note: string; pageUrl?: string }) =>
     api.patch(`/projects/${id}/client-access`, data).then(r => r.data),
 }
 

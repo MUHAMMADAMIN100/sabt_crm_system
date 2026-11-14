@@ -4,33 +4,46 @@ import { KeyRound, Eye, EyeOff, Copy, Check, Edit, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
+import { copyLoaded, useClientPassword } from './useClientPassword'
 
-/** Кому положено видеть доступы к аккаунтам клиента. Тот же список, что и на
- *  сервере (ProjectsService.CLIENT_ACCESS_ROLES) — здесь он только прячет
- *  блок, решение всё равно принимает бэкенд. */
-const ACCESS_ROLES = ['smm_director', 'sales_manager_smm', 'founder']
+/** Кому положено видеть доступы к аккаунтам клиента. То же правило, что на
+ *  сервере (ProjectsService.CLIENT_ACCESS_ROLES + специалист и менеджер по
+ *  продажам этого проекта) — здесь оно только прячет блок, решение всё равно
+ *  принимает бэкенд. */
+const ACCESS_ROLES = ['smm_director', 'founder']
 
-export function canSeeClientAccess(user?: { role?: string | null; secondaryRole?: string | null } | null): boolean {
+export function canSeeClientAccess(
+  user?: { id?: string | null; role?: string | null; secondaryRole?: string | null } | null,
+  project?: { salesManagerId?: string | null; specialistIds?: string[] | null },
+): boolean {
   if (!user) return false
   return ACCESS_ROLES.includes(user.role || '') || ACCESS_ROLES.includes(user.secondaryRole || '')
+    || (!!user.id && !!project?.salesManagerId && project.salesManagerId === user.id)
+    || (!!user.id && !!project?.specialistIds?.includes(user.id))
 }
 
-interface Access { login: string; password: string; note: string; updatedAt?: string | null; updatedByName?: string | null }
+interface Access { login: string; hasPassword?: boolean; note: string; updatedAt?: string | null; updatedByName?: string | null }
+type Form = { login: string; password: string; note: string }
 
 /**
  * Доступы к аккаунтам клиента (Instagram и прочее) в карточке проекта.
  * Отдельная ручка, а не часть карточки: пароль не должен приезжать всем,
  * кто просто открыл проект. Показан звёздочками, пока не нажмут «Показать».
  */
-export default function ClientAccessCard({ projectId }: { projectId: string }) {
+export default function ClientAccessCard({ projectId, salesManagerId, specialistIds }: {
+  projectId: string
+  salesManagerId?: string | null
+  specialistIds?: string[] | null
+}) {
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [shown, setShown] = useState(false)
   const [copied, setCopied] = useState<'login' | 'password' | null>(null)
-  const [form, setForm] = useState<Access>({ login: '', password: '', note: '' })
+  const [form, setForm] = useState<Form>({ login: '', password: '', note: '' })
+  const pw = useClientPassword(projectId)
 
-  const allowed = canSeeClientAccess(user)
+  const allowed = canSeeClientAccess(user as any, { salesManagerId, specialistIds })
 
   const { data, isLoading } = useQuery<Access>({
     queryKey: ['client-access', projectId],
@@ -40,11 +53,12 @@ export default function ClientAccessCard({ projectId }: { projectId: string }) {
   })
 
   const saveMut = useMutation({
-    mutationFn: (v: Access) => projectsApi.saveClientAccess(projectId, {
+    mutationFn: (v: Form) => projectsApi.saveClientAccess(projectId, {
       login: v.login, password: v.password, note: v.note,
     }),
     onSuccess: (fresh) => {
       qc.setQueryData(['client-access', projectId], fresh)
+      pw.forget()
       setEditing(false)
       setShown(false)
       toast.success('Доступы сохранены')
@@ -54,7 +68,7 @@ export default function ClientAccessCard({ projectId }: { projectId: string }) {
 
   if (!allowed) return null
 
-  const filled = !!(data && (data.login || data.password || data.note))
+  const filled = !!(data && (data.login || data.hasPassword || data.note))
 
   const copy = async (what: 'login' | 'password', value: string) => {
     try {
@@ -66,8 +80,26 @@ export default function ClientAccessCard({ projectId }: { projectId: string }) {
     }
   }
 
-  const startEdit = () => {
-    setForm({ login: data?.login || '', password: data?.password || '', note: data?.note || '' })
+  const copyPassword = async () => {
+    try {
+      await copyLoaded(pw.load)
+      setCopied('password')
+      setTimeout(() => setCopied(null), 1500)
+    } catch {
+      toast.error('Не удалось скопировать пароль')
+    }
+  }
+  const togglePassword = async () => {
+    if (shown) { setShown(false); return }
+    try { await pw.load(); setShown(true) } catch { toast.error('Не удалось загрузить пароль') }
+  }
+  const startEdit = async () => {
+    let password = ''
+    if (data?.hasPassword) {
+      try { password = await pw.load() } catch { toast.error('Не удалось загрузить пароль'); return }
+    }
+    setShown(false)
+    setForm({ login: data?.login || '', password, note: data?.note || '' })
     setEditing(true)
   }
 
@@ -87,7 +119,7 @@ export default function ClientAccessCard({ projectId }: { projectId: string }) {
       </div>
 
       <p className="text-[11px] text-surface-500 dark:text-surface-400 -mt-1">
-        Видят только руководитель СММ, менеджер продаж СММ и основатель. Пароль хранится в зашифрованном виде.
+        Видят руководитель СММ, менеджер по продажам этого проекта, SMM-специалист проекта и основатель. Пароль хранится в зашифрованном виде.
       </p>
 
       {isLoading ? (
@@ -143,18 +175,18 @@ export default function ClientAccessCard({ projectId }: { projectId: string }) {
               </div>
             </div>
           )}
-          {data!.password && (
+          {data!.hasPassword && (
             <div>
               <p className="text-xs text-surface-500 dark:text-surface-400">Пароль</p>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-surface-900 dark:text-surface-100 break-all font-mono">
-                  {shown ? data!.password : '•'.repeat(Math.min(12, data!.password.length))}
+                  {shown && pw.password != null ? pw.password : '•'.repeat(8)}
                 </p>
-                <button onClick={() => setShown(v => !v)} title={shown ? 'Скрыть' : 'Показать'}
+                <button onClick={togglePassword} disabled={pw.loading} title={shown ? 'Скрыть' : 'Показать'}
                   className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 shrink-0">
-                  {shown ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {pw.loading ? <Loader2 size={13} className="animate-spin" /> : shown ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>
-                <button onClick={() => copy('password', data!.password)} title="Скопировать пароль"
+                <button onClick={copyPassword} title="Скопировать пароль"
                   className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 shrink-0">
                   {copied === 'password' ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
                 </button>
