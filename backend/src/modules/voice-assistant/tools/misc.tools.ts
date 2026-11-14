@@ -293,6 +293,13 @@ const ANALYTICS: Record<string, { path: string; perm: string; title: string }> =
 };
 const ANALYTICS_KINDS = Object.keys(ANALYTICS);
 
+/** Менеджер продаж без руководящей роли. «Аналитику» на сайте закрыли
+ *  19.09.2026, а помощник отдавал МП сводку по всей компании и бюджеты чужих
+ *  менеджеров (14.11.2026) — для них отчёт закрыт так же. */
+const salesOnly = (u: any) => hasRole(u, 'sales_manager_smm', 'sales_manager_dev')
+  && !hasRole(u, 'founder', 'admin', 'smm_director', 'dev_director');
+const SALES_ANALYTICS_CLOSED = 'Аналитика компании менеджерам продаж закрыта. Свои цифры — в KPI и на «Панели».';
+
 const trim = (data: any, max = 30): any => {
   if (Array.isArray(data)) return data.slice(0, max).map((x) => trim(x, max));
   if (data && typeof data === 'object') {
@@ -324,8 +331,9 @@ export const analyticsReport: ToolDef<{ kind: string; from?: string; to?: string
     required: ['kind'],
     additionalProperties: false,
   },
-  available: (u) => hasGrant(u, 'analytics.view') || hasRole(u, 'founder', 'admin', 'smm_director'),
+  available: (u) => !salesOnly(u) && (hasGrant(u, 'analytics.view') || hasRole(u, 'founder', 'admin', 'smm_director')),
   async run(args, ctx) {
+    if (salesOnly(ctx.user)) throw new ToolError(SALES_ANALYTICS_CLOSED);
     const def = ANALYTICS[args.kind];
     if (!def) throw new ToolError(`Не знаю такую аналитику «${args.kind}». Доступно: ${ANALYTICS_KINDS.join(', ')}.`);
     if (def.perm && !hasGrant(ctx.user, def.perm)) throw new ToolError('Этот отчёт аналитики вам недоступен.');

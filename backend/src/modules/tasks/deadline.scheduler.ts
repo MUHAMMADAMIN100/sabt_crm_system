@@ -1,10 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
-import { Cron, CronExpression } from '@nestjs/schedule'
+import { Cron } from '@nestjs/schedule'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, Between, LessThan, Not, In } from 'typeorm'
-import { Task, TaskStatus, TaskPriority, TaskScope, TASK_CLOSED_FOR_OVERDUE } from '../tasks/task.entity'
+import { Task, TaskStatus, TASK_CLOSED_FOR_OVERDUE } from '../tasks/task.entity'
 import { Employee } from '../employees/employee.entity'
-import { Project, ProjectStatus } from '../projects/project.entity'
 import { User, UserRole } from '../users/user.entity'
 import { NotificationsService } from '../notifications/notifications.service'
 import { NotificationType } from '../notifications/notification.entity'
@@ -38,6 +37,23 @@ const STATUS_ICON: Record<string, string> = {
   cancelled: '⛔',
 }
 
+/**
+ * Хвосты кронов по задачам, отключённых 27.06.2026 (495566d, переход на
+ * Доску проектов): просрочки, дедлайны, итоги дня, «ожидает проверки».
+ * Чистим только их типы и только созданное до отключения.
+ *
+ * Раньше на каждом старте шло DELETE по link LIKE /tasks% — и с каждой
+ * выкладкой пропадали живые уведомления: задачи от руководителя,
+ * комментарии, «через час», а «срок прошёл» по голосовым задачам слался
+ * заново (его дедуп держится на этих строках). Новые уведомления сюда не
+ * попадают по дате, так что запрос безопасен при любом числе рестартов.
+ */
+export const LEGACY_TASK_NOTIFICATIONS_SQL = `
+  DELETE FROM notifications
+  WHERE link LIKE '/tasks%'
+    AND type::text IN ('task_overdue', 'deadline_approaching', 'deadline_tomorrow', 'daily_uncompleted', 'review_needed')
+    AND "createdAt" < '2026-06-28'`
+
 @Injectable()
 export class DeadlineScheduler implements OnModuleInit {
   private readonly logger = new Logger(DeadlineScheduler.name)
@@ -52,10 +68,9 @@ export class DeadlineScheduler implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`Boot cleanup failed: ${e?.message}`)
     }
-    // Рассылки по задачам отключены: удаляем старые уведомления по задачам
-    // (просрочки/дедлайны/итоги дня) — они больше не актуальны.
+    // Хвосты отключённых кронов по задачам — только они (см. выше).
     try {
-      const res = await this.taskRepo.manager.query(`DELETE FROM notifications WHERE link LIKE '/tasks%'`)
+      const res = await this.taskRepo.manager.query(LEGACY_TASK_NOTIFICATIONS_SQL)
       const cnt = Array.isArray(res) ? Number(res[1] ?? 0) : 0
       if (cnt > 0) this.logger.log(`Removed ${cnt} obsolete task notifications`)
     } catch (e: any) {
@@ -67,7 +82,6 @@ export class DeadlineScheduler implements OnModuleInit {
     @InjectRepository(Task) private taskRepo: Repository<Task>,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
     @InjectRepository(ActivityLog) private activityLogRepo: Repository<ActivityLog>,
-    @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
     private notificationsService: NotificationsService,
     private mailService: MailService,
@@ -388,159 +402,15 @@ export class DeadlineScheduler implements OnModuleInit {
     this.logger.log('Activity scores recalculated')
   }
 
-  // ── 5. Payment reminder for sales manager (daily at 9am) ──────────────────
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
-  async notifyPaymentReminder() {
-    this.logger.log('Checking payment reminders for projects...')
-
-    const twoWeeksAgo = new Date()
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
-
-    // Projects created exactly 14 days ago (±1 day window) that have a salesManagerId and unpaid balance
-    const dayStart = new Date(twoWeeksAgo)
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(twoWeeksAgo)
-    dayEnd.setHours(23, 59, 59, 999)
-
-    const projects = await this.projectRepo.find({
-      where: {
-        createdAt: Between(dayStart, dayEnd) as any,
-        isArchived: false,
-        status: Not(ProjectStatus.COMPLETED) as any,
-      },
-      relations: ['salesManager'],
-    })
-
-    let sent = 0
-    for (const project of projects) {
-      if (!project.salesManagerId) continue
-
-      const budget = project.budget || 0
-      const paid = Number(project.paidAmount) || 0
-      const remaining = budget - paid
-
-      if (remaining <= 0) continue // Already fully paid
-
-      const projectUrl = `/projects/${project.id}`
-      await this.notificationsService.create({
-        userId: project.salesManagerId,
-        type: NotificationType.PAYMENT_REMINDER,
-        title: '💰 Напоминание об оплате',
-        message: `Проект "${project.name}" создан 2 недели назад. Остаток: ${remaining.toLocaleString('ru')} сомони. Запросите оплату у клиента.`,
-        link: projectUrl,
-        data: { projectId: project.id, budget, paid, remaining },
-      })
-
-      if (project.salesManager?.email) {
-        await this.telegramService.sendToUser(
-          project.salesManagerId,
-          `💰 <b>Напоминание об оплате</b>\n\n` +
-          `Проект: <b>${project.name}</b>\n` +
-          `Бюджет: ${budget.toLocaleString('ru')} сомони\n` +
-          `Оплачено: ${paid.toLocaleString('ru')} сомони\n` +
-          `Остаток: <b>${remaining.toLocaleString('ru')} сомони</b>\n\n` +
-          `Пожалуйста, запросите оставшуюся сумму у клиента.\n\n` +
-          `👉 ${this.telegramService.appUrl}${projectUrl}`,
-        )
-      }
-
-      sent++
-    }
-
-    this.logger.log(`Sent ${sent} payment reminders`)
-  }
-
-  // ── 6. Next-payment-date reminder for sales managers (daily at 9am) ──────
-  /**
-   * Каждое утро ищет проекты, у которых nextPaymentDate == сегодня (Душанбе),
-   * и отправляет МП трёхканальное напоминание (in-app + Telegram). Параллельно
-   * создаёт личную задачу в Календаре менеджера на 10:00, чтобы дата
-   * визуально появилась в его рабочем графике.
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
-  async notifyNextPaymentDate() {
-    this.logger.log('Checking projects with nextPaymentDate = today...')
-
-    const now = new Date()
-    const dushanbeNow = new Date(now.getTime() + 5 * 60 * 60 * 1000)
-    const y = dushanbeNow.getUTCFullYear()
-    const m = dushanbeNow.getUTCMonth()
-    const d = dushanbeNow.getUTCDate()
-    const dayStart = new Date(Date.UTC(y, m, d, 0, 0, 0) - 5 * 60 * 60 * 1000)
-    const dayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - 5 * 60 * 60 * 1000)
-
-    const projects = await this.projectRepo.find({
-      where: {
-        nextPaymentDate: Between(dayStart, dayEnd) as any,
-        isArchived: false,
-      },
-      relations: ['salesManager'],
-    })
-
-    let sent = 0
-    for (const project of projects) {
-      if (!project.salesManagerId) continue
-      const budget = Number(project.budget) || 0
-      const paid = Number(project.paidAmount) || 0
-      const remaining = Math.max(0, budget - paid)
-      const projectUrl = `/projects/${project.id}`
-
-      await this.notificationsService.create({
-        userId: project.salesManagerId,
-        type: NotificationType.PAYMENT_REMINDER,
-        title: '💸 Сегодня следующая оплата',
-        message: `Проект "${project.name}" — сегодня запланирована оплата. Остаток: ${remaining.toLocaleString('ru')} сомони.`,
-        link: projectUrl,
-        data: { projectId: project.id, nextPaymentDate: project.nextPaymentDate },
-      })
-
-      await this.telegramService.sendToUser(
-        project.salesManagerId,
-        `💸 <b>Сегодня запланирована оплата</b>\n\n` +
-        `Проект: <b>${project.name}</b>\n` +
-        `Остаток: <b>${remaining.toLocaleString('ru')} сомони</b>\n\n` +
-        `Свяжитесь с клиентом и закройте платёж.\n\n` +
-        `👉 ${this.telegramService.appUrl}${projectUrl}`,
-      )
-
-      // Личная задача в Календарь МП на 10:00 текущего дня.
-      // Идемпотентно: проверяем что такой задачи ещё нет (по title + assignee + day).
-      const deadline = new Date(dayStart)
-      deadline.setUTCHours(10 - 5, 0, 0, 0) // 10:00 Душанбе == 05:00 UTC
-      const title = `💸 Оплата по проекту: ${project.name}`
-      const existing = await this.taskRepo.findOne({
-        where: {
-          title,
-          assigneeId: project.salesManagerId,
-          deadline: Between(dayStart, dayEnd) as any,
-        },
-      })
-      if (!existing) {
-        const task = this.taskRepo.create({
-          title,
-          description: `Сегодня запланирована оплата по проекту «${project.name}». Остаток: ${remaining.toLocaleString('ru')} сомони.`,
-          deadline,
-          priority: TaskPriority.HIGH,
-          status: TaskStatus.NEW,
-          scope: TaskScope.PERSONAL,
-          createdById: project.salesManagerId,
-          assigneeId: project.salesManagerId,
-        })
-        const saved = await this.taskRepo.save(task)
-        // Личная задача — событие только самому МП (08.11.2026): без него
-        // напоминание появлялось в его календаре лишь по опросу страницы.
-        this.tasksService.notifyTasksChanged(
-          { projectId: null, taskId: saved.id, kind: 'create' },
-          [project.salesManagerId],
-        )
-      }
-
-      sent++
-    }
-
-    this.logger.log(`Sent ${sent} next-payment-date reminders`)
-  }
-
+  // ── 5–6. Напоминания об оплате по старым полям проекта — УДАЛЕНЫ ─────────
+  // 14.11.2026: «Оплата через 2 недели после создания» (budget/paidAmount) и
+  // «Сегодня следующая оплата» (nextPaymentDate + личная задача на 10:00).
+  // Данные мёртвые: nextPaymentDate никто не пишет с 17.10.2026 (293b3d2 —
+  // убрана таблица продаж), budget/paidAmount правятся только на старой
+  // странице /projects/:id. Получатель — projects.salesManagerId, то есть
+  // всегда менеджер продаж, а им такие напоминания больше не шлём: оплаты
+  // клиентов приходят из «Финансов». Крон без timeZone к тому же срабатывал
+  // в 14:00 по Душанбе.
   // ── 7. Daily 18:00 Dushanbe — remind PMs about uncompleted tasks ─────────
   // ОТКЛЮЧЕНО: переведено на Доску проектов. @Cron снят.
   async notifyDailyUncompleted() {

@@ -8,6 +8,7 @@ import { Employee } from '../employees/employee.entity';
 import { Task } from '../tasks/task.entity';
 import { TaskAssignee } from '../tasks/task-assignee.entity';
 import { User } from '../users/user.entity';
+import { ClientLead } from '../clients/client-lead.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { CommentsModule } from '../comments/comments.module';
@@ -17,7 +18,8 @@ import { GatewayModule } from '../gateway/gateway.module';
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Employee, Task, TaskAssignee, User]),
+    // ClientLead — встречи/звонки клиентов в /today.
+    TypeOrmModule.forFeature([Employee, Task, TaskAssignee, User, ClientLead]),
     NotificationsModule,
     forwardRef(() => TasksModule),
     forwardRef(() => CommentsModule),

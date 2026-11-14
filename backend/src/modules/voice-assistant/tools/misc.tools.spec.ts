@@ -75,6 +75,22 @@ describe('чтение', () => {
     expect(api.calls).toHaveLength(0);
   });
 
+  it('аналитика закрыта менеджерам продаж (роль или вторая роль), как на сайте', async () => {
+    const base = { id: ME, secondaryRole: null, extraPermissions: [], deniedPermissions: [] } as any;
+    expect(analyticsReport.available!({ ...base, role: 'sales_manager_smm' })).toBe(false);
+    expect(analyticsReport.available!({ ...base, role: 'sales_manager_dev' })).toBe(false);
+    expect(analyticsReport.available!({ ...base, role: 'designer', secondaryRole: 'sales_manager_dev' })).toBe(false);
+    // Руководство с МП второй ролью — доступ остаётся.
+    expect(analyticsReport.available!({ ...base, role: 'founder', secondaryRole: 'sales_manager_smm' })).toBe(true);
+    expect(analyticsReport.available!({ ...base, role: 'founder' })).toBe(true);
+
+    const api = fakeApi({ 'GET /analytics/sales': () => ({ projects: [{ name: 'Чужой', budget: 9000 }] }) });
+    for (const kind of ['sales', 'overview', 'employee_workload']) {
+      await expect(analyticsReport.run({ kind }, ctxWith(api, { role: 'sales_manager_smm' }))).rejects.toThrow(/менеджерам продаж закрыта/);
+    }
+    expect(api.calls).toHaveLength(0);
+  });
+
   it('сторис по проектам просит период', async () => {
     await expect(analyticsReport.run({ kind: 'stories_global' }, ctxWith(fakeApi({})))).rejects.toThrow(/период/);
   });

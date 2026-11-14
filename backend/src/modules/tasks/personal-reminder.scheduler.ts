@@ -7,11 +7,18 @@ import { TasksService } from './tasks.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { NotificationType } from '../notifications/notification.entity'
 import { TelegramService } from '../telegram/telegram.service'
+import { ClientLead } from '../clients/client-lead.entity'
+import {
+  LeadAgendaItem, LEAD_AGENDA_ICON, LEAD_AGENDA_LABEL, fetchLeadAgenda, leadAgendaText, leadLink, leadTime,
+} from '../clients/lead-agenda'
 
 /** Компания работает по Душанбе (UTC+5). Крон-выражения ниже привязаны к
  *  этой зоне, а границы суток считаем явным сдвигом — сервер живёт в UTC. */
 const TZ = 'Asia/Dushanbe'
 const TZ_OFFSET_H = 5
+
+/** Экранирование под HTML-разметку Telegram (имя клиента вводят руками). */
+const esc = (s: string) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /**
  * Напоминания по личным задачам и встречам сотрудника.
@@ -27,6 +34,10 @@ const TZ_OFFSET_H = 5
  *
  * Просрочки по карточкам Доски проектов шлёт DeadlineScheduler — здесь их
  * намеренно нет, чтобы не задваивать сообщения.
+ *
+ * С 14.11.2026 в сводку 09:00 и «через час» попадают и встречи / повторные
+ * звонки по своим клиентам (лиды): задачи под них у менеджера продаж нет,
+ * а форма клиента обещает напоминание. См. clients/lead-agenda.
  */
 @Injectable()
 export class PersonalReminderScheduler {
@@ -42,6 +53,7 @@ export class PersonalReminderScheduler {
     private tasks: TasksService,
     private notifications: NotificationsService,
     private telegram: TelegramService,
+    @InjectRepository(ClientLead) private leadRepo: Repository<ClientLead>,
   ) {}
 
   /** Границы сегодняшних суток по Душанбе, выраженные в UTC. */
@@ -70,15 +82,24 @@ export class PersonalReminderScheduler {
       && !String(t.title || '').startsWith('История:'))
   }
 
+  /** Встречи и звонки по своим клиентам в окне. Best-effort: сбой запроса
+   *  по лидам не должен глушить напоминания по задачам. */
+  private leadsBetween(from: Date, to: Date): Promise<LeadAgendaItem[]> {
+    return fetchLeadAgenda(this.leadRepo, this.taskRepo, from, to).catch((e: any) => {
+      this.logger.warn(`Лиды для напоминаний не прочитаны: ${e?.message || e}`)
+      return [] as LeadAgendaItem[]
+    })
+  }
+
   /** in-app + Telegram одному человеку. Оба канала best-effort: молчание
-   *  бота не должно ронять крон для остальных. */
-  private async push(userId: string, title: string, message: string, text: string, taskId?: string) {
+   *  бота не должно ронять крон для остальных. link — своя ссылка (клиент). */
+  private async push(userId: string, title: string, message: string, text: string, taskId?: string, link?: string) {
     await this.notifications.create({
       userId,
       type: NotificationType.DEADLINE_TOMORROW,
       title,
       message,
-      link: taskId ? `/tasks/${taskId}` : '/calendar',
+      link: link || (taskId ? `/tasks/${taskId}` : '/calendar'),
     } as any).catch(() => {})
     await this.telegram.sendToUser(userId, text, taskId ? this.tasks.publicTaskButtons(taskId) : undefined)
       .catch(() => {})
@@ -89,30 +110,45 @@ export class PersonalReminderScheduler {
   async morningAgenda() {
     const { start, end } = this.dushanbeDayBounds()
     const entries = await this.entriesBetween(start, end)
-    if (entries.length === 0) { this.logger.log('Утренняя сводка: на сегодня записей нет'); return }
+    const leads = await this.leadsBetween(start, end)
+    if (entries.length === 0 && leads.length === 0) { this.logger.log('Утренняя сводка: на сегодня записей нет'); return }
 
-    const byUser = new Map<string, Task[]>()
-    for (const t of entries) {
-      const arr = byUser.get(t.assigneeId!) || []
-      arr.push(t)
-      byUser.set(t.assigneeId!, arr)
+    const byUser = new Map<string, { items: Task[]; own: LeadAgendaItem[] }>()
+    const slot = (id: string) => {
+      let s = byUser.get(id)
+      if (!s) { s = { items: [], own: [] }; byUser.set(id, s) }
+      return s
     }
+    for (const t of entries) slot(t.assigneeId!).items.push(t)
+    for (const l of leads) slot(l.ownerId).own.push(l)
 
     let sent = 0
-    for (const [userId, items] of byUser) {
-      items.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-      const lines = items.map(t => {
+    for (const [userId, { items, own }] of byUser) {
+      // Задачи и клиенты — одним списком по времени.
+      const rows: Array<{ at: number; line: string }> = items.map(t => {
         const time = new Date(t.deadline).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: TZ })
         const icon = t.kind === TaskKind.MEETING ? '🤝' : '📌'
         const place = t.kind === TaskKind.MEETING && t.location ? ` · 📍 ${t.location}` : ''
         const proj = t.project?.name ? ` · ${t.project.name}` : ''
-        return `${icon} <b>${time}</b> — ${t.title}${place}${proj}`
-      }).join('\n')
+        return { at: new Date(t.deadline).getTime(), line: `${icon} <b>${time}</b> — ${t.title}${place}${proj}` }
+      })
+      for (const l of own) {
+        rows.push({
+          at: l.at.getTime(),
+          line: `${LEAD_AGENDA_ICON[l.kind]} <b>${leadTime(l.at)}</b> — ${LEAD_AGENDA_LABEL[l.kind]}: ${esc(l.name)}`,
+        })
+      }
+      rows.sort((a, b) => a.at - b.at)
+      const lines = rows.map(r => r.line).join('\n')
 
-      const meetings = items.filter(t => t.kind === TaskKind.MEETING).length
-      const summary = meetings > 0
-        ? `Задач: ${items.length - meetings} · Встреч: ${meetings}`
-        : `Задач: ${items.length}`
+      const taskMeetings = items.filter(t => t.kind === TaskKind.MEETING).length
+      const meetings = taskMeetings + own.filter(l => l.kind === 'meeting').length
+      const calls = own.filter(l => l.kind === 'call').length
+      const parts: string[] = []
+      if (items.length - taskMeetings > 0 || (meetings === 0 && calls === 0)) parts.push(`Задач: ${items.length - taskMeetings}`)
+      if (meetings > 0) parts.push(`Встреч: ${meetings}`)
+      if (calls > 0) parts.push(`Звонков: ${calls}`)
+      const summary = parts.join(' · ')
 
       await this.push(
         userId,
@@ -150,6 +186,27 @@ export class PersonalReminderScheduler {
         `${t.title} — в ${time}`,
         this.tasks.calendarEntryMessage(t, 'soon'),
         t.id,
+      )
+      sent++
+    }
+
+    // Встречи и повторные звонки по своим клиентам: тот же дедуп в памяти,
+    // ключ — вид + лид + время (перенесли встречу — напомним снова).
+    const leads = await this.leadsBetween(from, to)
+    for (const l of leads) {
+      const key = `lead:${l.kind}:${l.leadId}:${l.at.getTime()}`
+      if (this.soonSent.has(key)) continue
+      this.soonSent.add(key)
+
+      const text = leadAgendaText(l)
+      const link = leadLink(l.leadId)
+      await this.push(
+        l.ownerId,
+        l.kind === 'meeting' ? '⏰ Встреча через час' : '⏰ Звонок через час',
+        text,
+        `⏰ <b>Через час</b>\n${esc(text)}\n\n👉 ${this.telegram.appUrl}${link}`,
+        undefined,
+        link,
       )
       sent++
     }

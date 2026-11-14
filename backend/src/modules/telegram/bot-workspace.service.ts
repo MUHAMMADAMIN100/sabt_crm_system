@@ -9,6 +9,8 @@ import { CommentsService } from '../comments/comments.service';
 import { TaskResultsService } from '../task-results/task-results.service';
 import { TelegramService } from './telegram.service';
 import { TaskResultType } from '../task-results/task-result.entity';
+import { ClientLead } from '../clients/client-lead.entity';
+import { LeadAgendaItem, LEAD_AGENDA_ICON, fetchLeadAgenda, leadAgendaText } from '../clients/lead-agenda';
 import * as fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -46,6 +48,7 @@ export class BotWorkspaceService {
     private comments: CommentsService,
     private results: TaskResultsService,
     private telegram: TelegramService,
+    @InjectRepository(ClientLead) private leadRepo: Repository<ClientLead>,
   ) {}
 
   /** Сотрудник по чату — или null, если чат не привязан. */
@@ -55,6 +58,23 @@ export class BotWorkspaceService {
     const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
     if (!u || !u.isActive || u.isBlocked) return null;
     return u;
+  }
+
+  /** Сегодняшние сутки по Душанбе, выраженные в UTC. */
+  private todayBounds() {
+    const local = new Date(Date.now() + TZ_OFFSET_H * 3600_000);
+    const y = local.getUTCFullYear(); const m = local.getUTCMonth(); const d = local.getUTCDate();
+    const from = new Date(Date.UTC(y, m, d, 0, 0, 0) - TZ_OFFSET_H * 3600_000);
+    const to = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - TZ_OFFSET_H * 3600_000);
+    return { from, to };
+  }
+
+  /** Встречи и повторные звонки по своим клиентам на сегодня (14.11.2026):
+   *  задач под них у менеджера продаж нет, а /today обещает «задачи и
+   *  встречи». Best-effort — сбой не ломает список задач. */
+  private async myLeadsToday(userId: string): Promise<LeadAgendaItem[]> {
+    const { from, to } = this.todayBounds();
+    return fetchLeadAgenda(this.leadRepo, this.taskRepo, from, to, userId).catch(() => [] as LeadAgendaItem[]);
   }
 
   /** Задачи сотрудника: назначенные лично и через мульти-исполнителей. */
@@ -71,11 +91,7 @@ export class BotWorkspaceService {
       .orderBy('t.deadline', 'ASC');
 
     if (onlyToday) {
-      const now = new Date();
-      const local = new Date(now.getTime() + TZ_OFFSET_H * 3600_000);
-      const y = local.getUTCFullYear(); const m = local.getUTCMonth(); const d = local.getUTCDate();
-      const from = new Date(Date.UTC(y, m, d, 0, 0, 0) - TZ_OFFSET_H * 3600_000);
-      const to = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - TZ_OFFSET_H * 3600_000);
+      const { from, to } = this.todayBounds();
       qb.andWhere('t.deadline BETWEEN :from AND :to', { from, to });
     }
     const rows = await qb.take(50).getMany().catch(() => [] as Task[]);
@@ -117,16 +133,22 @@ export class BotWorkspaceService {
     const user = await this.userOf(chatId);
     if (!user) return false;
     const list = await this.myTasks(user.id, onlyToday);
-    if (list.length === 0) {
+    const leads = onlyToday ? await this.myLeadsToday(user.id) : [];
+    if (list.length === 0 && leads.length === 0) {
       await this.telegram.sendMessage(chatId, onlyToday
         ? '📅 На сегодня задач и встреч нет.'
         : '✅ Открытых задач нет.');
       return true;
     }
     const head = onlyToday
-      ? `📅 <b>Сегодня: ${list.length}</b>`
+      ? `📅 <b>Сегодня: ${list.length + leads.length}</b>`
       : `📋 <b>Ваши задачи: ${list.length}</b>`;
     await this.telegram.sendMessage(chatId, head);
+    // Клиенты — одним сообщением: кнопок «Готово» у встречи с клиентом нет.
+    if (leads.length > 0) {
+      const lines = leads.map(l => `${LEAD_AGENDA_ICON[l.kind]} ${esc(leadAgendaText(l))}`).join('\n');
+      await this.telegram.sendMessage(chatId, `👥 <b>Клиенты</b>\n${lines}\n\n👉 ${this.telegram.appUrl}/calendar`);
+    }
     for (const t of list.slice(0, PAGE)) {
       await this.telegram.sendMessage(chatId, this.taskCard(t), this.taskButtons(t));
     }

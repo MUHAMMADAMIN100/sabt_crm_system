@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { Project, ProjectPaymentStatus, ProjectStatus } from '../projects/project.entity';
+import { Repository } from 'typeorm';
+import { Project, ProjectStatus } from '../projects/project.entity';
 import { Task, TaskStatus } from '../tasks/task.entity';
 import { ContentPlanItem } from '../content-plan/content-plan-item.entity';
 import { User, UserRole } from '../users/user.entity';
@@ -9,7 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { RiskAnalyticsService } from './risk-analytics.service';
 import { ProjectsService } from '../projects/projects.service';
-import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
+import { isSalesManager } from '../../common/sales-segment';
 
 /** Wave 6: оркестратор алертов по операционным рискам.
  *  Каждый чекер собирает данные → определяет триггеры → шлёт уведомления
@@ -34,8 +34,6 @@ export class RiskAlertsService {
       this.checkInactiveEmployees(),
       this.checkPmOverload(),
       this.checkTariffOveruse(),
-      this.checkPaymentApproaching(),
-      this.checkPaymentFollowUp(),
       this.checkWeekNoContent(),
       this.checkTooManyPmReviews(),
       this.checkLaunchIncomplete(),
@@ -58,9 +56,12 @@ export class RiskAlertsService {
   // ─────────────────────────────────────────────────────────────────────
   async checkInactiveEmployees() {
     const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    const users = await this.userRepo.find({
+    // Менеджеров продаж (роль или вторая роль) не проверяем вовсе
+    // (14.11.2026): их работа — клиенты, Директ и звонки, а здесь считаются
+    // только задачи, и «неактивен» приходил при полной загрузке.
+    const users = (await this.userRepo.find({
       where: { isActive: true, isBlocked: false },
-    });
+    })).filter(u => !isSalesManager(u.role) && !isSalesManager(u.secondaryRole));
     if (users.length === 0) return;
 
     // Кто хоть что-то сделал за 2 дня (любая активность по задачам)
@@ -71,6 +72,14 @@ export class RiskAlertsService {
       .andWhere('t.updatedAt > :since', { since: cutoff })
       .getRawMany();
     const activeSet = new Set(activeRows.map(r => r.assigneeId));
+
+    // /employees/:id ждёт id сотрудника, а не аккаунта — иначе ссылка
+    // уводила на «не найден».
+    const empRows: Array<{ id: string; userId: string }> = await this.userRepo.manager.query(
+      `SELECT id, "userId" AS "userId" FROM employees WHERE "userId"::text = ANY($1::text[])`,
+      [users.map(u => u.id)],
+    ).catch(() => []);
+    const employeeOf = new Map((empRows || []).map(r => [r.userId, r.id]));
 
     const admins = await this.getTopAdmins();
     for (const u of users) {
@@ -86,7 +95,7 @@ export class RiskAlertsService {
           type: NotificationType.EMPLOYEE_INACTIVE_2D,
           title: '😴 Сотрудник неактивен 2 дня',
           message: `${u.name} не обновлял задачи последние 2 дня.`,
-          link: `/employees/${u.id}`,
+          link: employeeOf.has(u.id) ? `/employees/${employeeOf.get(u.id)}` : '/employees',
           data: { alertKey: `inactive-2d:${u.id}`, userId: u.id },
         }, 48).catch(() => {});
       }
@@ -160,111 +169,11 @@ export class RiskAlertsService {
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // 4. Приближается просрочка оплаты (nextPaymentDate в ближайшие 3 дня)
-  // ─────────────────────────────────────────────────────────────────────
-  async checkPaymentApproaching() {
-    const now = new Date();
-    const in3days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-    const projects = await this.projectRepo
-      .createQueryBuilder('p')
-      .where('p.isArchived = false')
-      .andWhere('p.nextPaymentDate IS NOT NULL')
-      .andWhere('p.nextPaymentDate BETWEEN :now AND :soon', { now, soon: in3days })
-      .andWhere('p.paymentStatus != :paid', { paid: ProjectPaymentStatus.PAID })
-      .getMany();
-
-    const salesManagers = await this.userRepo.find({
-      where: {
-        role: In([UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV]),
-        isActive: true,
-        isBlocked: false,
-      },
-    });
-    const admins = await this.getTopAdmins();
-
-    for (const p of projects) {
-      const recipients = new Set<string>();
-      if (p.salesManagerId) recipients.add(p.salesManagerId);
-      if (p.managerId) recipients.add(p.managerId);
-      salesManagers.forEach(s => recipients.add(s.id));
-      admins.forEach(a => recipients.add(a.id));
-
-      const dateStr = new Date(p.nextPaymentDate).toLocaleDateString('ru-RU');
-      for (const rid of recipients) {
-        await this.notificationsService.createIfNotRecent({
-          userId: rid,
-          type: NotificationType.PAYMENT_OVERDUE_SOON,
-          title: '💰 Скоро срок оплаты',
-          message: `Проект "${p.name}" — следующая оплата ${dateStr}.`,
-          link: `/projects/${p.id}`,
-          data: { alertKey: `payment-soon:${p.id}:${dateStr}`, projectId: p.id },
-        }, 24).catch(() => {});
-      }
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // 4b. Две недели после полученной оплаты — напоминание менеджеру продаж
-  //     связаться с клиентом (по просьбе отдела продаж). Ровно один раз на
-  //     каждый платёж: чекер ловит платежи с paidAt = сегодня−14 дней,
-  //     дедуп по alertKey с id платежа.
-  // ─────────────────────────────────────────────────────────────────────
-  async checkPaymentFollowUp() {
-    // Дата по Душанбе — сервер живёт в UTC.
-    const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
-    const target = new Date(todayIso + 'T00:00:00Z');
-    target.setUTCDate(target.getUTCDate() - 14);
-    const targetIso = target.toISOString().slice(0, 10);
-
-    // Диапазон в 3 дня (14..16 дней назад) — страховка от пропущенного прогона
-    // крона (рестарт/даунтайм): напоминание не потеряется. От дублей защищает
-    // alertKey с id платежа + dedupHours 96 ниже.
-    const rows: Array<{
-      id: string; projectId: string; amount: string; name: string;
-      salesManagerId: string | null; projectType: string | null;
-    }> = await this.projectRepo.manager.query(
-      `SELECT pp.id, pp."projectId", pp.amount, p.name, p."salesManagerId", p."projectType"
-       FROM project_payments pp
-       JOIN projects p ON p.id = pp."projectId"
-       WHERE pp."paidAt" BETWEEN $1::date - INTERVAL '2 days' AND $1::date
-         AND pp.amount > 0 AND p."isArchived" = false`,
-      [targetIso],
-    ).catch(() => []);
-    if (rows.length === 0) return;
-
-    const salesManagers = await this.userRepo.find({
-      where: {
-        role: In([UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV]),
-        isActive: true,
-        isBlocked: false,
-      },
-    });
-    const fmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
-
-    for (const r of rows) {
-      const recipients = new Set<string>();
-      if (r.salesManagerId) recipients.add(r.salesManagerId);
-      // Менеджеры продаж строго своего направления: SMM → МП-СММ, dev-типы →
-      // МП-разработки. Проекты вне сегментов (например, Дизайн) — только
-      // закреплённому МП, чтобы не спамить чужое направление.
-      const wantRole = r.projectType === 'SMM'
-        ? UserRole.SALES_MANAGER_SMM
-        : DEV_PROJECT_TYPES.includes(r.projectType || '') ? UserRole.SALES_MANAGER_DEV : null;
-      if (wantRole) salesManagers.filter(s => s.role === wantRole).forEach(s => recipients.add(s.id));
-
-      for (const rid of recipients) {
-        await this.notificationsService.createIfNotRecent({
-          userId: rid,
-          type: NotificationType.PAYMENT_REMINDER,
-          title: '💰 2 недели после оплаты',
-          message: `Проект «${r.name}»: оплата ${fmt.format(Number(r.amount) || 0)} смн получена 2 недели назад — свяжитесь с клиентом.`,
-          link: `/projects/${r.projectId}`,
-          data: { alertKey: `paid-14d:${r.id}`, projectId: r.projectId },
-          // 96 ч > 3-дневного окна выборки — один платёж = одно уведомление.
-        }, 96).catch(() => {});
-      }
-    }
-  }
+  // 4, 4b. «Скоро срок оплаты» и «2 недели после оплаты» — УДАЛЕНЫ 14.11.2026.
+  // Читали старые поля проекта: nextPaymentDate (никто не пишет с 17.10.2026),
+  // project_payments и projects.salesManagerId; рассылались всем менеджерам
+  // продаж обоих направлений — МП-СММ ловил 403 на ссылке dev-проекта.
+  // Оплаты клиентов теперь из «Финансов» (ответственному менеджеру).
 
   // ─────────────────────────────────────────────────────────────────────
   // 5. На неделю не запланирован контент (SMM-проект, в плане нет позиций

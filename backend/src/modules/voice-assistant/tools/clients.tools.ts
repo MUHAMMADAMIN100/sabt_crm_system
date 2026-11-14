@@ -303,8 +303,10 @@ export const unpaidClients: ToolDef<{ include_upcoming_days?: number }> = {
       res = await ctx.api.get('/smm-payments/calendar', { from: ctx.today, to: addDays(ctx.today, Math.max(days, 1)) });
     } catch (e) { throw apiErr(e); }
     const items: any[] = Array.isArray(res?.items) ? res.items : [];
+    // День оплаты в календаре — поле date (CalendarPayItem), не dueDate:
+    // раньше ответы приходили без дат.
     const pick = (x: any) => ({
-      name: x.name, due: x.dueDate ? fmtDateRu(x.dueDate) : null, part: x.partNo === 2 ? 2 : undefined,
+      name: x.name, due: x.date ? fmtDateRu(x.date) : null, part: x.partNo === 2 ? 2 : undefined,
       ...(x.amount ? { amount: Number(x.amount) } : {}),
     });
     return {
