@@ -29,9 +29,27 @@ jobs:
       - name: Build (nest build = проверка типов)
         run: npm run build --workspace backend
       - name: Unit tests
-        run: npm test --workspace backend -- --ci
+        run: |
+          set -o pipefail
+          npm test --workspace backend -- --ci 2>&1 | tee /tmp/test.log
         env:
           TZ: UTC
+      # Логи задач без входа в GitHub не читаются, а аннотации — публичные:
+      # при падении тестов выводим причины аннотациями (до 10 по 25 строк).
+      - name: Report test failures
+        if: failure()
+        run: |
+          [ -f /tmp/test.log ] || exit 0
+          python3 - <<'PY'
+          import re
+          lines = open('/tmp/test.log', encoding='utf-8', errors='replace').read().splitlines()
+          pat = re.compile(r'(FAIL|✕|×|●|AssertionError|TypeError|ReferenceError|Error:|Expected|Received|expect\(|at .*\.(ts|tsx):\d+)')
+          keep = [re.sub(r'\x1b\[[0-9;]*m', '', l).strip() for l in lines if pat.search(l)]
+          keep = [k for k in keep if k][:250]
+          esc = lambda t: t.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          for i in range(0, min(len(keep), 250), 25):
+              print('::error title=tests::' + esc('\n'.join(k[:300] for k in keep[i:i + 25])))
+          PY
 
   frontend:
     name: Frontend — build + tests
@@ -50,4 +68,22 @@ jobs:
         env:
           VITE_API_URL: https://api.example.invalid
       - name: Unit tests
-        run: npm test --workspace frontend
+        run: |
+          set -o pipefail
+          npm test --workspace frontend 2>&1 | tee /tmp/test.log
+      # Логи задач без входа в GitHub не читаются, а аннотации — публичные:
+      # при падении тестов выводим причины аннотациями (до 10 по 25 строк).
+      - name: Report test failures
+        if: failure()
+        run: |
+          [ -f /tmp/test.log ] || exit 0
+          python3 - <<'PY'
+          import re
+          lines = open('/tmp/test.log', encoding='utf-8', errors='replace').read().splitlines()
+          pat = re.compile(r'(FAIL|✕|×|●|AssertionError|TypeError|ReferenceError|Error:|Expected|Received|expect\(|at .*\.(ts|tsx):\d+)')
+          keep = [re.sub(r'\x1b\[[0-9;]*m', '', l).strip() for l in lines if pat.search(l)]
+          keep = [k for k in keep if k][:250]
+          esc = lambda t: t.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          for i in range(0, min(len(keep), 250), 25):
+              print('::error title=tests::' + esc('\n'.join(k[:300] for k in keep[i:i + 25])))
+          PY

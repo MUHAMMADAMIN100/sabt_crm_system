@@ -93,7 +93,7 @@ function CallForm({ lead, onCancel, onDone }: {
       <BigChoice label="Результат" options={CALL_RESULTS} value={result} onChange={v => { setResult(v); if (v !== 'reached') setOutcome(null) }} />
 
       {result === 'reached' && (
-        <ChoiceChips label="Итог" options={CALL_OUTCOMES} value={outcome} onChange={setOutcome} />
+        <ChoiceChips label="Итог" options={CALL_OUTCOMES} value={outcome} onChange={v => setOutcome(v as CallOutcome | null)} />
       )}
 
       <div>

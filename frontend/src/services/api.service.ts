@@ -445,7 +445,7 @@ export type MySalesPlanExtra = {
   commissionAmount?: number | null
   history?: SalesPlanHistoryRow[]
 }
-export type MySalesPlan = ({ ym: string; plan: null; received?: number } | {
+export type MySalesPlan = ({ ym: string; plan: null } | {
   ym: string; plan: number; received: number; day: number; daysInMonth: number; daysLeft: number
 }) & MySalesPlanExtra
 export const salesPlanApi = {
