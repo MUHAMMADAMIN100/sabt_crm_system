@@ -20,6 +20,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Встречи в KPI теперь засчитываются, когда менеджер отметил «состоялась»:
  * заранее записанные будущие встречи (lead_actions kind=meeting с at в
  * будущем) удаляем — они засчитаются при подтверждении.
+ *
+ * Перед переносом прежние значения сохраняются в client_leads_backup_1835
+ * и lead_actions_backup_1835 — down() возвращает их.
  */
 export class SalesFunnelData1835000000000 implements MigrationInterface {
   name = 'SalesFunnelData1835000000000';
@@ -28,6 +31,17 @@ export class SalesFunnelData1835000000000 implements MigrationInterface {
     if (!(await q.hasTable('client_leads'))) return;
     const t = await this.statusType(q);
     const as = (v: string) => `'${v}'::text::${t}`;
+
+    // 0. Снимок «как было» прямо в базе (15.11.2026): перенос меняет этапы
+    //    всех лидов, и без снимка откатить его нельзя. down() возвращает
+    //    значения из этих таблиц; удалить их можно, когда новая воронка
+    //    проверена в работе.
+    await q.query(`
+      CREATE TABLE IF NOT EXISTS client_leads_backup_1835 AS
+        SELECT id, status::text AS status, "onboardingStage"::text AS "onboardingStage",
+               "onHold", "lostReason", now() AS saved_at
+          FROM client_leads
+    `);
 
     const stageAsStatus = `(CASE "onboardingStage"::text
         WHEN 'negotiation' THEN 'waiting' WHEN 'meeting' THEN 'meeting'
@@ -76,12 +90,32 @@ export class SalesFunnelData1835000000000 implements MigrationInterface {
         WHERE table_schema = 'public' AND table_name = 'lead_actions' AND column_name = 'at' LIMIT 1`,
     );
     if (hasAt.length) {
+      await q.query(`
+        CREATE TABLE IF NOT EXISTS lead_actions_backup_1835 AS
+          SELECT * FROM lead_actions WHERE kind = 'meeting' AND at IS NOT NULL AND at > now()
+      `);
       await q.query(`DELETE FROM lead_actions WHERE kind = 'meeting' AND at IS NOT NULL AND at > now()`);
     }
   }
 
-  async down(): Promise<void> {
-    // Перенос необратим: прежние статусы и этапы однозначно не восстановить.
+  /** Откат — из снимка, сделанного в up() (таблицы *_backup_1835). */
+  async down(q: QueryRunner): Promise<void> {
+    if (!(await q.hasTable('client_leads_backup_1835'))) return;
+    const t = await this.statusType(q);
+    await q.query(`
+      UPDATE client_leads c
+         SET status = b.status::text::${t},
+             "onHold" = b."onHold",
+             "lostReason" = b."lostReason"
+        FROM client_leads_backup_1835 b
+       WHERE b.id = c.id
+    `);
+    if (await q.hasTable('lead_actions_backup_1835')) {
+      await q.query(`
+        INSERT INTO lead_actions SELECT b.* FROM lead_actions_backup_1835 b
+         WHERE NOT EXISTS (SELECT 1 FROM lead_actions a WHERE a.id = b.id)
+      `);
+    }
   }
 
   /** Имя типа колонки status (по каталогу, а не по догадке). */
