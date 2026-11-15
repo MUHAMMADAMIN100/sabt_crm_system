@@ -22,7 +22,7 @@ import { emitTasksChanged as sendTasksChanged, TasksChangedPayload } from '../ga
 import { hasGrant } from '../auth/permissions';
 import {
   AccessUser, assertCanEditSmmProject, assertCanViewProject, canViewProjectRow, directionTypesOf,
-  hasAnyRole, isSmmManagement, isTop, loadAccessRow, ownProjectSql, patchSmmData,
+  crewProjectSql, hasAnyRole, isSmmManagement, isTop, loadAccessRow, ownProjectSql, patchSmmData,
 } from '../projects/project-access';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -748,7 +748,9 @@ export class ContentPlanService implements OnModuleInit {
           qb.andWhere(`(project.projectType IN (:...cpDir) OR c.assigneeId = :cpUid OR ${ownProjectSql('project', 'cpUid')})`,
             { cpDir: dir, cpUid: user.id });
         } else if (!hasGrant(user as any, 'projects.view')) {
-          qb.andWhere(`(c.assigneeId = :cpUid OR ${ownProjectSql('project', 'cpUid')})`, { cpUid: user.id });
+          // Свои карточки, свои проекты и проекты, где он в съёмочной группе
+          // (видеограф, монтажёр, дизайнер) — как при открытии одного проекта.
+          qb.andWhere(`(c.assigneeId = :cpUid OR ${ownProjectSql('project', 'cpUid')} OR ${crewProjectSql('project', 'cpUid')})`, { cpUid: user.id });
         }
       }
     }

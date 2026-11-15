@@ -3672,6 +3672,7 @@ export class FinanceService implements OnModuleInit {
         }
       }
     }
+    for (const accId of [base.accountId, base.fromAccountId, base.toAccountId]) await this.assertAccountUsable(accId);
     const saved = await this.txRepo.save(this.txRepo.create(base));
     await this.syncSmmPartLink(saved.id);
     // Отдали долг через журнал — как «Отдать»: оплата видна в плане и
@@ -3685,6 +3686,16 @@ export class FinanceService implements OnModuleInit {
       await this.refreshSalarySnapshot(saved.employeeId, saved.salaryYm ?? ymOf(saved.date));
     }
     return saved;
+  }
+
+  /** Счёт новой операции существует и не в архиве (15.11.2026): архивный
+   *  счёт скрыт из остатков — проведённые на него деньги пропадали из
+   *  балансов, а несуществующий давал 500 вместо понятной ошибки. */
+  private async assertAccountUsable(id: string | null | undefined, em?: EntityManager): Promise<void> {
+    if (!id) return;
+    const repo = em ? em.getRepository(FinanceAccount) : this.accRepo;
+    const a = await repo.findOne({ where: { id } });
+    if (!a || a.archived) throw new BadRequestException('Счёт не найден или в архиве');
   }
 
   /** Пересчитать снапшот выплаченного месяца сотрудника: закрыт остаток —
@@ -3819,8 +3830,13 @@ export class FinanceService implements OnModuleInit {
       const emp = await this.empRepo.findOne({ where: { id: empId } });
       if (emp && snapOf(emp, ym)) throw new BadRequestException('Месяц у сотрудника уже выплачен и зафиксирован — операцию нельзя изменить (сначала переоткройте период)');
     }
+    // Перенос операции на другой счёт — только на рабочий; старую операцию
+    // на архивном счёте править можно, пока счёт не меняют.
+    for (const k of ['accountId', 'fromAccountId', 'toAccountId'] as const) {
+      if (patch[k] && patch[k] !== (t as any)[k]) await this.assertAccountUsable(patch[k]);
+    }
     await this.txRepo.update(id, patch);
-    await this.syncSmmPartLink(id);
+    await this.syncSmmPartLink(id, t.date);
     if (t.debtId || patch.debtId) await this.syncDebtPaymentLink(id, { prevDebtId: t.debtId });
     // Правка выплаты ЗП (сумма/дата/сотрудник) — пересчитать снапшоты
     // затронутых месяцев: и старого сотрудника/месяца, и нового.
@@ -3901,7 +3917,7 @@ export class FinanceService implements OnModuleInit {
 
   /** Синхронизирует авто-плановую оплату SMM (часть 1/2) с операцией журнала,
    *  чтобы она отображалась в таблице SMM (категория smm1/smm2 + проект). */
-  private async syncSmmPartLink(txId: string) {
+  private async syncSmmPartLink(txId: string, prevDate?: string | null) {
     const tx = await this.txRepo.findOne({ where: { id: txId } });
     const existing = await this.ppRepo.findOne({ where: { auto: true, receivedTxId: txId } });
     // Оплата уже связана с плановой через «Получено»/«Оплатить» (14.11.2026):
@@ -3932,20 +3948,25 @@ export class FinanceService implements OnModuleInit {
         projectId: tx.projectId, ym: tx.date.slice(0, 7), partNo, amount: Number(tx.amount),
         status: 'received' as const, receivedTxId: txId, auto: true,
       };
-      if (existing) await this.ppRepo.update(existing.id, data);
-      else {
-        // Новая оплата из журнала закрывает ожидаемые планы этого месяца на
+      if (existing) {
+        // Месяц даты оплаты не сменился — цикл, к которому её отнесли при
+        // создании, сохраняем (15.11.2026): правка суммы или комментария не
+        // должна переносить оплату части 2 из её цикла в месяц даты.
+        const keepYm = !!prevDate && prevDate.slice(0, 7) === data.ym;
+        await this.ppRepo.update(existing.id, keepYm ? { ...data, ym: existing.ym } : data);
+      } else {
+        // Новая оплата из журнала закрывает ожидаемые планы своего цикла на
         // свою сумму (15.11.2026): раньше рядом с полученной оставалась
         // ожидаемая — фантомная «просрочка» и ежедневные напоминания.
         const projectId = tx.projectId as string;
         await this.ds.transaction(async (em) => {
           await em.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [`fin-smm:${projectId}`]);
           const repo = em.getRepository(FinancePlannedPayment);
-          await repo.save(repo.create(data));
           const project = await em.getRepository(FinanceProject).findOne({ where: { id: projectId } });
-          if (project?.direction === 'smm') {
-            await this.consumeSmmExpected(repo, projectId, data.ym, partNo, Number(tx.amount));
-          }
+          const isSmm = project?.direction === 'smm';
+          const ym = isSmm ? await this.smmPaymentCycleYm(repo, projectId, tx.date, partNo) : data.ym;
+          await repo.save(repo.create({ ...data, ym }));
+          if (isSmm) await this.consumeSmmExpected(repo, projectId, ym, partNo, Number(tx.amount));
         });
       }
       await this.ensureSmmFollowUps(tx.projectId);
@@ -3955,12 +3976,14 @@ export class FinanceService implements OnModuleInit {
   }
 
   /** Состояние SMM-цикла проекта (см. SmmCycleState). Нет колонки или
-   *  строки — пустое: правила работают как до 15.11.2026. Не вызывать внутри
-   *  транзакции: ошибка запроса (старая схема) оборвала бы её. */
-  private async smmCycleState(projectId: string): Promise<SmmCycleState> {
+   *  строки — пустое: правила работают как до 15.11.2026. Колонку читаем
+   *  через to_jsonb(строки): на старой схеме без неё запрос не падает, и
+   *  его можно звать внутри транзакции — после её блокировки. */
+  private async smmCycleState(projectId: string, em?: EntityManager): Promise<SmmCycleState> {
     try {
-      const rows: Array<{ s: any }> = await this.ds.query(
-        `SELECT "smmCycle" AS s FROM finance_projects WHERE id = $1`, [projectId]);
+      const runner: { query(sql: string, params?: any[]): Promise<any> } = em ?? this.ds;
+      const rows: Array<{ s: any }> = await runner.query(
+        `SELECT to_jsonb(fp)->'smmCycle' AS s FROM finance_projects fp WHERE fp.id = $1`, [projectId]);
       const s = rows?.[0]?.s;
       return s && typeof s === 'object' && !Array.isArray(s) ? (s as SmmCycleState) : {};
     } catch {
@@ -4002,6 +4025,26 @@ export class FinanceService implements OnModuleInit {
     }
   }
 
+  /** Цикл (месяц плана), к которому относится новая оплата SMM из журнала
+   *  (15.11.2026). Раньше — всегда месяц даты оплаты, но срок плана бывает
+   *  в следующем месяце: часть 2 (+15 дней) и сдвиг паузы переносят его
+   *  туда. Оплата тогда попадала в «пустой» месяц, а план цикла висел
+   *  ложной просрочкой. Берём ожидаемый план своего месяца или со сроком в
+   *  месяце оплаты: сначала той же части, потом самый ранний по сроку. Нет
+   *  такого — месяц даты оплаты, как раньше. */
+  private async smmPaymentCycleYm(
+    repo: Repository<FinancePlannedPayment>, projectId: string, date: string, partNo: number,
+  ): Promise<string> {
+    const ym = String(date).slice(0, 7);
+    const dueOf = (x: FinancePlannedPayment) => String(x.dueDate ?? `${x.ym}-01`).slice(0, 10);
+    const fits = (await repo.find({ where: { projectId, status: 'expected' } as any }))
+      .filter(x => x.ym === ym || dueOf(x).slice(0, 7) === ym)
+      .sort((a, b) => ((a.partNo === partNo ? 0 : 1) - (b.partNo === partNo ? 0 : 1))
+        || dueOf(a).localeCompare(dueOf(b))
+        || String(a.ym).localeCompare(String(b.ym)));
+    return fits[0]?.ym ?? ym;
+  }
+
   /** Новая оплата из журнала закрывает ожидаемые планы своего месяца на свою
    *  сумму (15.11.2026): сначала той же части, потом остальные по сроку;
    *  последний — частично. Больше, чем пришло, не закрывает. */
@@ -4041,13 +4084,13 @@ export class FinanceService implements OnModuleInit {
    *  создаются. */
   private async ensureSmmFollowUps(projectId?: string | null) {
     if (!projectId) return;
-    // Состояние цикла читаем ДО транзакции: сбой этого чтения (старая схема
-    // без колонки) не должен обрывать транзакцию сверки.
-    const state = await this.smmCycleState(projectId);
     let created: { p: FinanceProject; next: FinancePlannedPayment } | null = null;
     try {
       created = await this.ds.transaction(async (em) => {
         await em.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [`fin-smm:${projectId}`]);
+        // Состояние цикла — ПОСЛЕ блокировки (15.11.2026): прочитанное до неё
+        // могло не видеть паузу или удаление, записанные параллельной сверкой.
+        const state = await this.smmCycleState(projectId, em);
         return this.smmFollowUpsIn(em, projectId, state);
       });
     } catch (e: any) {
@@ -6589,6 +6632,9 @@ export class FinanceService implements OnModuleInit {
       const instRepo = em.getRepository(FinanceInstallment);
       const inst = await instRepo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!inst) throw new NotFoundException('Рассрочка не найдена');
+      // Доход пишется здесь напрямую, мимо createOperation, — та же проверка
+      // счёта, что у обычной операции (15.11.2026).
+      await this.assertAccountUsable(dto.accountId, em);
       const emp = await em.getRepository(FinanceEmployee).findOne({ where: { id: inst.employeeId } });
       const sm = this.installmentSummary(inst, emp);
       if (amount > sm.remaining + 0.005) throw new BadRequestException(`Больше остатка: осталось ${som(sm.remaining)}`);

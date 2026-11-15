@@ -23,6 +23,7 @@ import { MailService } from '../mail/mail.service';
 import { AppGateway } from '../gateway/app.gateway';
 import type { Request } from 'express';
 import { IMPERSONATION_TTL, impersonationDenial } from './impersonation';
+import { LEGACY_DEFAULT_PASSWORD } from '../../common/temp-password';
 
 /** Время жизни refresh-токена.
  *
@@ -82,6 +83,14 @@ export class AuthService implements OnModuleInit {
       );
     } catch (e: any) {
       this.logger.warn(`passwordChangedAt column add failed: ${e?.message || e}`);
+    }
+    try {
+      // Обязательная смена пароля при входе (15.11.2026, миграция 1833).
+      await this.userRepo.manager.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "mustChangePassword" boolean NOT NULL DEFAULT false`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`mustChangePassword column add failed: ${e?.message || e}`);
     }
     try {
       // FCM-токены устройств мобильного приложения (пуш-уведомления).
@@ -427,6 +436,14 @@ export class AuthService implements OnModuleInit {
     const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
     const effectiveRole = effectiveRoleOf(user.role, employee?.isSubAdmin);
 
+    // Вошли старым общим паролем — сменить при входе (15.11.2026). Миграция
+    // 1833 отметила такие учётки разово; это — страховка для пропущенных.
+    if (dto.password === LEGACY_DEFAULT_PASSWORD && !user.mustChangePassword) {
+      user.mustChangePassword = true;
+      await this.userRepo.update(user.id, { mustChangePassword: true })
+        .catch((e: any) => this.logger.warn(`mustChangePassword flag failed: ${e?.message || e}`));
+    }
+
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
     const sanitized = this.sanitize(user);
 
@@ -655,6 +672,12 @@ export class AuthService implements OnModuleInit {
     if (!newPassword || newPassword.length < 8) {
       throw new BadRequestException('Новый пароль должен содержать минимум 8 символов');
     }
+    if (newPassword === LEGACY_DEFAULT_PASSWORD) {
+      throw new BadRequestException('Этот пароль знает вся команда — придумайте другой');
+    }
+    if (newPassword === oldPassword) {
+      throw new BadRequestException('Новый пароль совпадает с текущим');
+    }
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user || !(await user.validatePassword(oldPassword))) {
       // 400, а не 401 (15.11.2026): на 401 фронт считает сессию истёкшей и
@@ -663,6 +686,8 @@ export class AuthService implements OnModuleInit {
     }
     user.password = newPassword;
     user.passwordChangedAt = new Date();
+    // Свой пароль задан — обязательная смена выполнена.
+    user.mustChangePassword = false;
     await this.userRepo.save(user);
 
     // Security: при смене пароля отзываем ВСЕ refresh-токены этого юзера.
@@ -711,8 +736,13 @@ export class AuthService implements OnModuleInit {
     if (!user || user.resetPasswordExpires < new Date()) {
       throw new UnauthorizedException('Invalid or expired token');
     }
+    if (newPassword === LEGACY_DEFAULT_PASSWORD) {
+      throw new BadRequestException('Этот пароль знает вся команда — придумайте другой');
+    }
     user.password = newPassword;
     user.passwordChangedAt = new Date();
+    // Пароль задал сам человек по ссылке из письма — смена не нужна.
+    user.mustChangePassword = false;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
     await this.userRepo.save(user);

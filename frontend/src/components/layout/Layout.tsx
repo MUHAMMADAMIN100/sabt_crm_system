@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import ImpersonationBanner from './ImpersonationBanner'
 import PageErrorBoundary from './PageErrorBoundary'
+import { ChangePasswordSection } from '@/components/profile/SecuritySection'
 import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
@@ -104,6 +105,9 @@ export default function Layout() {
 
   // В отпуске открыт только профиль: любая другая страница ведёт туда.
   const onVacation = useAuthStore(s => !!s.user?.vacation)
+  // Обязательная смена пароля (15.11.2026) — не в «Войти как»: там пароль
+  // чужой, и менять его руководитель не должен.
+  const mustChangePassword = useAuthStore(s => !!s.user?.mustChangePassword && !s.user?.impersonator)
   if (onVacation && !location.pathname.startsWith('/profile')) return <Navigate to="/profile" replace />
 
   return (
@@ -168,6 +172,15 @@ export default function Layout() {
       {/* «Печать успеха» за выполненную задачу — глобально, чтобы срабатывала
           на любом экране; сама решает, показываться ли роли. */}
       {!onVacation && <StampCelebration />}
+      {/* Старый общий или выданный администратором пароль: сначала свой. */}
+      {mustChangePassword && (
+        <div role="dialog" aria-modal="true" aria-labelledby="force-password-title"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div className="w-full max-w-md">
+            <ChangePasswordSection forced />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

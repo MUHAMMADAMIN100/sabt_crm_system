@@ -11,10 +11,12 @@ import { useAuthStore } from '@/store/auth.store'
  * новый пароль, новый — от 8 до 128 символов. После смены он отзывает ВСЕ
  * сессии, в том числе эту, поэтому сразу выходим и просим войти заново.
  */
-export function ChangePasswordSection() {
+export function ChangePasswordSection({ forced = false }: { forced?: boolean } = {}) {
   const logout = useAuthStore(s => s.logout)
   const id = useId()
-  const [open, setOpen] = useState(false)
+  // forced — обязательная смена (окно поверх CRM в Layout): форма открыта
+  // сразу и без «Отмены».
+  const [open, setOpen] = useState(forced)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -33,6 +35,7 @@ export function ChangePasswordSection() {
     if (newPassword.length < 8) { setError('Новый пароль — минимум 8 символов'); return }
     if (newPassword.length > 128) { setError('Новый пароль — не длиннее 128 символов'); return }
     if (newPassword === oldPassword) { setError('Новый пароль совпадает с текущим'); return }
+    if (newPassword === 'Sabt@2024') { setError('Этот пароль знает вся команда — придумайте другой'); return }
     if (newPassword !== confirm) { setError('Пароли не совпадают'); return }
     setLoading(true)
     try {
@@ -64,9 +67,13 @@ export function ChangePasswordSection() {
         <div className="flex items-start gap-3 min-w-0">
           <KeyRound className="w-6 h-6 text-surface-400 mt-0.5 shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">Пароль</h3>
+            <h3 id={forced ? 'force-password-title' : undefined} className="text-base font-semibold text-surface-900 dark:text-surface-100">
+              {forced ? 'Смените пароль' : 'Пароль'}
+            </h3>
             <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 max-w-md">
-              После смены пароля все входы — и на этом устройстве — закроются, войдите заново с новым паролем.
+              {forced
+                ? 'Ваш пароль временный или его знают другие — придумайте свой, чтобы продолжить. Потом войдите заново с новым паролем.'
+                : 'После смены пароля все входы — и на этом устройстве — закроются, войдите заново с новым паролем.'}
             </p>
           </div>
         </div>
@@ -106,9 +113,15 @@ export function ChangePasswordSection() {
             <button type="submit" disabled={loading} className="btn-primary">
               {loading ? 'Сохраняю…' : 'Сменить пароль'}
             </button>
-            <button type="button" disabled={loading} onClick={() => { clear(); setOpen(false) }} className="btn-secondary">
-              Отмена
-            </button>
+            {forced ? (
+              <button type="button" disabled={loading} onClick={() => { void logout() }} className="btn-secondary">
+                Выйти
+              </button>
+            ) : (
+              <button type="button" disabled={loading} onClick={() => { clear(); setOpen(false) }} className="btn-secondary">
+                Отмена
+              </button>
+            )}
           </div>
         </form>
       )}

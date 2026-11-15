@@ -1,6 +1,6 @@
 import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
 import {
-  canEditSmmProject, canViewProject, directionTypesOf, inDirection, isOwnProject,
+  canEditSmmProject, canViewProject, crewProjectSql, directionTypesOf, inDirection, isOwnProject,
 } from './project-access';
 
 /** Доступ к проекту (15.11.2026): одно правило для чтения и правки. */
@@ -74,5 +74,15 @@ describe('Кто видит проект', () => {
 
   it('сторисмейкер видит SMM-проекты', () => {
     expect(canViewProject({ id: 'e', role: 'employee' }, smm(), { isStoryMaker: true })).toBe(true);
+  });
+});
+
+describe('Съёмочная группа в списках', () => {
+  it('условие покрывает видеографа, монтажёра и дизайнера', () => {
+    const sql = crewProjectSql('project', 'uid');
+    for (const k of ['videographerIds', 'videoEditorIds', 'designerIds']) {
+      expect(sql).toContain(`project."smmData"->'${k}'`);
+    }
+    expect(sql).toContain(':uid');
   });
 });

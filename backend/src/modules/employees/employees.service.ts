@@ -206,6 +206,8 @@ export class EmployeesService implements OnModuleInit {
         password: tempPassword,
         role: newRole,
         secondaryRole: newSecondary,
+        // Временный пароль видел создавший — при первом входе свой.
+        mustChangePassword: true,
       });
       savedUser = await this.userRepo.save(user);
     } else if (savedUser.role !== newRole || (savedUser.secondaryRole || null) !== newSecondary) {

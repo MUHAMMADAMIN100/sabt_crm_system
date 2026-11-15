@@ -282,6 +282,9 @@ export class UsersService implements OnModuleInit {
     // Отзываем и бессрочные рабочие токены: всё выданное до этой метки
     // перестаёт действовать (см. jwt.strategy).
     user.passwordChangedAt = new Date();
+    // Пароль, выданный администратором, знает и он — человек сменит его при
+    // входе (15.11.2026). Свой пароль так задать можно без этого.
+    user.mustChangePassword = user.id !== resetBy.id;
     await this.repo.save(user);
 
     // Security: админский сброс пароля — это обычно ответ на инцидент

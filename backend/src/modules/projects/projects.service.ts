@@ -2110,6 +2110,15 @@ export class ProjectsService implements OnModuleInit {
     }
   }
 
+  /** Флаг «сторисмейкер» на карточке сотрудника (employees.isStoryMaker). */
+  private async isStoryMakerUser(userId: string): Promise<boolean> {
+    const emp = await this.employeeRepo.findOne({
+      where: { userId },
+      select: ['id', 'isStoryMaker'] as any,
+    }).catch(() => null);
+    return !!emp?.isStoryMaker;
+  }
+
   /** Архив историй: скрыть/вернуть SMM-проект в кабинете сторисмейкера.
    *  НЕ настоящее архивирование — проект остаётся активным везде, кроме
    *  списков историй и напоминаний «нет историй». */
@@ -2119,7 +2128,9 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType !== 'SMM') {
       throw new BadRequestException('Архив историй применим только к SMM-проектам');
     }
-    this.assertSmmOwn(project, user);
+    // Сторисмейкер ведёт истории ВСЕХ SMM-проектов — архив историй это его
+    // кабинет, свой проект ему не нужен; остальным — только свой.
+    if (user && !(await this.isStoryMakerUser(user.id))) this.assertSmmOwn(project, user);
     if (project.storiesArchived === archived) return { id, storiesArchived: archived };
     await this.repo.update(id, { storiesArchived: archived });
     await this.activityLog.log({

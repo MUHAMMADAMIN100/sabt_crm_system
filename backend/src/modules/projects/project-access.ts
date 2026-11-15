@@ -237,6 +237,16 @@ export function ownProjectSql(alias: string, param: string): string {
     OR jsonb_exists(COALESCE(${alias}."smmData"->'smmSpecialistIds', '[]'::jsonb), :${param}))`;
 }
 
+/** SQL-условие «в производственной команде проекта» (smmData:
+ *  videographerIds / videoEditorIds / designerIds) — та же группа, которой
+ *  canViewProject открывает проект. Для списков, где «свой» проект узок:
+ *  видеограф видит план съёмки, даже не будучи участником. */
+export function crewProjectSql(alias: string, param: string): string {
+  return '(' + CREW_KEYS
+    .map(k => `jsonb_exists(COALESCE(${alias}."smmData"->'${k}', '[]'::jsonb), :${param})`)
+    .join(' OR ') + ')';
+}
+
 /**
  * Атомарная правка верхних ключей smmData (15.11.2026). Писатели раньше
  * читали smmData целиком, меняли ключ и писали весь объект обратно — две

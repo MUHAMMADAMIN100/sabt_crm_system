@@ -23,6 +23,7 @@ const mockUserRepo = () => ({
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
+  update: jest.fn().mockResolvedValue(undefined),
   // Регистрация открыта, только пока в базе нет ни одного пользователя:
   // по умолчанию — первая установка.
   manager: { query: jest.fn().mockResolvedValue([{ count: 0 }]) },
@@ -193,6 +194,46 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('token', 'mock-jwt-token');
       expect(result.user).not.toHaveProperty('password');
+    });
+
+    // 15.11.2026: старый общий пароль — сменить при входе.
+    it('вход старым общим паролем требует сменить пароль', async () => {
+      const user = {
+        id: 'user-1', name: 'Test', email: 'test@example.com', role: UserRole.EMPLOYEE,
+        isActive: true, password: 'hashed', mustChangePassword: false,
+        validatePassword: jest.fn().mockResolvedValue(true),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      employeeRepo.findOne.mockResolvedValue({ isSubAdmin: false });
+      sessionRepo.create.mockReturnValue({ userId: 'user-1' });
+      sessionRepo.save.mockResolvedValue({ id: 'session-1' });
+
+      const result = await service.login({ email: 'test@example.com', password: 'Sabt@2024' });
+
+      expect(userRepo.update).toHaveBeenCalledWith('user-1', { mustChangePassword: true });
+      expect(result.user).toHaveProperty('mustChangePassword', true);
+    });
+  });
+
+  describe('changePassword (15.11.2026)', () => {
+    const userWith = (extra: any = {}) => ({
+      id: 'user-1', name: 'Test', mustChangePassword: true,
+      validatePassword: jest.fn().mockResolvedValue(true), ...extra,
+    });
+
+    it('старый общий пароль поставить нельзя', async () => {
+      userRepo.findOne.mockResolvedValue(userWith());
+      await expect(service.changePassword('user-1', 'temp-password-1', 'Sabt@2024'))
+        .rejects.toThrow(BadRequestException);
+      expect(userRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('смена пароля снимает обязательную смену', async () => {
+      const user = userWith();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockImplementation(async (v: any) => v);
+      await service.changePassword('user-1', 'temp-password-1', 'my-own-password-9');
+      expect(userRepo.save).toHaveBeenCalledWith(expect.objectContaining({ mustChangePassword: false }));
     });
   });
 

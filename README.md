@@ -19,7 +19,8 @@
 JWT живёт в httpOnly-cookie (и дублируется в localStorage — фронт и API на разных
 доменах); access-токен бессрочный и отзывается проверкой в БД (блокировка, смена
 пароля), refresh — с ротацией. 2FA (TOTP), rate-limit, журнал безопасности,
-строгий CORS-allowlist (и для WebSocket).
+строгий CORS-allowlist (и для WebSocket). Временный пароль от администратора и
+старый общий пароль меняются при входе (`users.mustChangePassword`).
 
 **Фронтенд** — React 18, Vite, TypeScript, Tailwind, Zustand, TanStack Query v5,
 socket.io-client. Все страницы грузятся лениво; тема тёмная (зафиксирована для

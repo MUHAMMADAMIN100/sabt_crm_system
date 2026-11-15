@@ -19,3 +19,8 @@ export function generateTempPassword(length = 12): string {
   }
   return out;
 }
+
+/** Старый общий пароль новых учёток (до 15.11.2026). Его знала вся команда:
+ *  у кого он остался, тот должен сменить пароль при следующем входе
+ *  (users."mustChangePassword"), и поставить его заново нельзя. */
+export const LEGACY_DEFAULT_PASSWORD = 'Sabt@2024';
