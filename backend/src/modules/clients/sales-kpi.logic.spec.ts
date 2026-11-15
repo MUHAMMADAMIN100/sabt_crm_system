@@ -1,6 +1,6 @@
 import {
-  COLD_CALL_EVENTS_SINCE, SALES_DAILY_TARGETS, buildSalesKpi, emailBecameSent, expandRanges, funnelStepIsForward,
-  isWorkday, meetingSyncPlan, salesPeriod, workingDays,
+  COLD_CALL_EVENTS_SINCE, FUNNEL_ORDER, SALES_DAILY_TARGETS, buildSalesKpi, currentVacationRange, emailBecameSent,
+  expandRanges, funnelStepIsForward, isWorkday, milestoneEquivalents, salesPeriod, workingDays,
 } from './sales-kpi.logic';
 
 // Честный KPI менеджера продаж (решения владельца 14.11.2026): пн–сб,
@@ -47,6 +47,24 @@ describe('workingDays — рабочие дни пн–сб', () => {
 
   it('период целиком в будущем — ноль дней', () => {
     expect(workingDays('2026-11-20', '2026-11-25', '2026-11-14')).toEqual([]);
+  });
+});
+
+// 15.11.2026: статус «В отпуске» без дат не превращает прошлое в выходные.
+describe('currentVacationRange — текущий отпуск из карточки', () => {
+  it('без даты «с» — отпуск с сегодняшнего дня, а не «всегда»', () => {
+    const r = currentVacationRange({ from: null, until: null }, '2026-11-14');
+    expect(r).toEqual({ from: '2026-11-14', until: null });
+    expect(expandRanges([r], '2026-11-01', '2026-11-14')).toEqual(['2026-11-14']);
+    // Октябрь целиком остаётся рабочим.
+    expect(expandRanges([currentVacationRange({}, '2026-11-14')], '2026-10-01', '2026-10-31')).toEqual([]);
+  });
+
+  it('даты есть — берём их', () => {
+    expect(currentVacationRange({ from: '2026-11-10', until: '2026-11-20' }, '2026-11-14'))
+      .toEqual({ from: '2026-11-10', until: '2026-11-20' });
+    expect(currentVacationRange({ from: null, until: '2026-11-20' }, '2026-11-14'))
+      .toEqual({ from: '2026-11-14', until: '2026-11-20' });
   });
 });
 
@@ -112,6 +130,22 @@ describe('buildSalesKpi — нормы и общий процент', () => {
     expect(r.overallPercent).toBe(80);
   });
 
+  // 15.11.2026: нормы — из настроек продаж по направлению.
+  it('свои дневные нормы направления: норма = норма направления × дни', () => {
+    const norms = { funnel_progress: 5, new_companies: 4, cold_calls: 30, personal_emails: 0, meetings: 3 };
+    const r = buildSalesKpi({ ...zero, meetings: 6, cold_calls: 30 }, 2, norms);
+    expect(r.items.map(i => i.target)).toEqual([10, 8, 60, 0, 6]);
+    expect(r.items.find(i => i.key === 'meetings')).toMatchObject({ value: 6, percent: 100, done: true });
+    // Пункт с нормой 0 в общий процент не входит (не делим на ноль и не «100 % даром»).
+    expect(r.overallPercent).toBe(Math.round((0 + 0 + 50 + 100) / 4));
+  });
+
+  it('подпись cold_calls — «Звонки», ключи метрик прежние', () => {
+    const r = buildSalesKpi(zero, 1);
+    expect(r.items.map(i => i.key)).toEqual(['funnel_progress', 'new_companies', 'cold_calls', 'personal_emails', 'meetings']);
+    expect(r.items.find(i => i.key === 'cold_calls')!.label).toBe('Звонки');
+  });
+
   it('выходной: нормы 0, ничего не «выполнено», процента нет', () => {
     const r = buildSalesKpi({ ...zero, cold_calls: 5 }, 0);
     expect(r.restDay).toBe(true);
@@ -119,64 +153,6 @@ describe('buildSalesKpi — нормы и общий процент', () => {
     expect(r.items.every(i => i.target === 0 && !i.done)).toBe(true);
     // Работа в воскресенье остаётся в факте.
     expect(r.items.find(i => i.key === 'cold_calls')!.value).toBe(5);
-  });
-});
-
-describe('meetingSyncPlan — перенос встречи', () => {
-  const now = new Date('2026-11-14T10:00:00Z');
-  const past = '2026-11-13T09:00:00Z';
-  const future = '2026-11-16T09:00:00Z';
-  const later = '2026-11-20T09:00:00Z';
-
-  it('будущую встречу перенесли — старая запись уходит, новая пишется', () => {
-    expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: later, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: true, insert: { userId: 'u1', at: new Date(later) } });
-  });
-
-  it('прошедшая встреча остаётся: она была', () => {
-    expect(meetingSyncPlan({ at: past, ownerId: 'u1' }, { at: later, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: false, insert: { userId: 'u1', at: new Date(later) } });
-  });
-
-  it('отменили будущую — запись уходит; отменили прошедшую — ничего', () => {
-    expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: null, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: true, insert: null });
-    expect(meetingSyncPlan({ at: past, ownerId: 'u1' }, { at: null, ownerId: 'u1' }, now)).toBeNull();
-  });
-
-  it('дата не менялась — ничего (строка и Date одного момента равны)', () => {
-    expect(meetingSyncPlan({ at: new Date(future), ownerId: 'u1' }, { at: future, ownerId: 'u1' }, now)).toBeNull();
-  });
-
-  it('новый лид со встречей — запись владельцу; без владельца — нет', () => {
-    expect(meetingSyncPlan(null, { at: future, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: false, insert: { userId: 'u1', at: new Date(future) } });
-    expect(meetingSyncPlan(null, { at: future, ownerId: null }, now)).toBeNull();
-    expect(meetingSyncPlan(null, { at: null, ownerId: 'u1' }, now)).toBeNull();
-  });
-
-  it('сменился владелец: будущая встреча переходит к новому', () => {
-    expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: future, ownerId: 'u2' }, now))
-      .toEqual({ dropPending: true, insert: { userId: 'u2', at: new Date(future) } });
-  });
-
-  // 15.11.2026: встреча задним числом в KPI не попадает.
-  it('дата встречи раньше сегодняшнего дня (Душанбе) — записи нет', () => {
-    expect(meetingSyncPlan(null, { at: past, ownerId: 'u1' }, now)).toBeNull();
-    expect(meetingSyncPlan({ at: null, ownerId: 'u1' }, { at: '2026-11-01T09:00:00Z', ownerId: 'u1' }, now)).toBeNull();
-    // Будущую перенесли на вчера: старая запись уходит, новой нет.
-    expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: past, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: true, insert: null });
-  });
-
-  it('прошедшая встреча СЕГОДНЯ (по Душанбе) — засчитывается', () => {
-    // now = 15:00 по Душанбе; встреча в 09:00 по Душанбе того же дня.
-    const earlierToday = '2026-11-14T04:00:00Z';
-    expect(meetingSyncPlan(null, { at: earlierToday, ownerId: 'u1' }, now))
-      .toEqual({ dropPending: false, insert: { userId: 'u1', at: new Date(earlierToday) } });
-    // 00:30 по Душанбе — это ещё 13.11 по UTC, но уже сегодня по Душанбе.
-    const justAfterMidnight = '2026-11-13T19:30:00Z';
-    expect(meetingSyncPlan(null, { at: justAfterMidnight, ownerId: 'u1' }, now)?.insert).not.toBeNull();
   });
 });
 
@@ -195,6 +171,32 @@ describe('funnelStepIsForward — шаг воронки вперёд (15.11.2026
   it('из терминального — как из нулевого (повтор вершины отсекают вехи)', () => {
     expect(funnelStepIsForward(1, -1)).toBe(true);   // lost → waiting
     expect(funnelStepIsForward(0, -1)).toBe(false);  // lost → new
+  });
+});
+
+describe('единая воронка — порядок этапов и вехи (15.11.2026)', () => {
+  const fwd = (to: string, from: string) => funnelStepIsForward(FUNNEL_ORDER[to], FUNNEL_ORDER[from]);
+
+  it('new → waiting → meeting → proposal → contract → won — каждый шаг вперёд', () => {
+    const path = ['new', 'waiting', 'meeting', 'proposal', 'contract', 'won'];
+    for (let i = 1; i < path.length; i++) expect(fwd(path[i], path[i - 1])).toBe(true);
+    expect(fwd('contract', 'new')).toBe(true);
+  });
+
+  it('назад, в проигрыш и из устаревших «равных» — нет', () => {
+    expect(fwd('meeting', 'proposal')).toBe(false);
+    expect(fwd('lost', 'contract')).toBe(false);
+    expect(fwd('waiting', 'negotiating')).toBe(false); // negotiating ≡ waiting
+    expect(fwd('meeting', 'negotiating')).toBe(true);
+    expect(fwd('meeting', 'lost')).toBe(true);           // вернули из проигрыша — вершины отсекают вехи
+  });
+
+  it('вехи этапов онбординга эквивалентны новым этапам', () => {
+    expect(milestoneEquivalents('meeting')).toEqual({ statuses: ['meeting'], stages: ['meeting'] });
+    expect(milestoneEquivalents('proposal')).toEqual({ statuses: ['proposal'], stages: ['kp_creation'] });
+    expect(milestoneEquivalents('contract')).toEqual({ statuses: ['contract'], stages: ['contract'] });
+    expect(milestoneEquivalents('won')).toEqual({ statuses: ['won'], stages: ['implementation'] });
+    expect(milestoneEquivalents('waiting')).toEqual({ statuses: ['waiting', 'negotiating'], stages: ['negotiation'] });
   });
 });
 

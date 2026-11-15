@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { kpiApi } from '@/services/api.service'
 import KpiDetailsModal from './KpiDetailsModal'
+import { SALES_KPI_ORDER, SALES_KPI_RULE } from './salesKpiRules'
 import {
   TrendingUp, Building2, Phone, Mail, Calendar,
   Target, Activity, Camera, Briefcase, CheckSquare,
@@ -94,6 +95,9 @@ const METRIC_HINT: Record<string, string> = {
   task_delivery: 'Выданные вам задачи со сроком: сдано вовремя — 1, с опозданием — 0,4, не сдано — 0. Задачи без срока не учитываются.',
   stories_plan: 'Проекты × дни: за день по каждому вашему проекту нужна хотя бы одна история.',
   content_on_time: 'Публикации ваших проектов или ваши карточки производства, чей день наступил: сдано в свой день — 1, позже — 0,4, не сдано — 0.',
+  // Метрики менеджера продаж (15.11.2026) — те же правила, что на «Сегодня».
+  // Оба вида ключа: /kpi/user отдаёт sales_cold_calls, /clients/kpi — cold_calls.
+  ...Object.fromEntries(SALES_KPI_ORDER.flatMap(k => [[`sales_${k}`, SALES_KPI_RULE[k]], [k, SALES_KPI_RULE[k]]])),
 }
 
 function colorByPercent(p: number): string {
@@ -372,7 +376,7 @@ export default function EmployeeKpiCard({
                 />
               </div>
               {METRIC_HINT[it.key] && (
-                <p className="text-[10px] text-surface-400 dark:text-surface-500 leading-snug">
+                <p className="text-[11px] text-surface-400 dark:text-surface-500 leading-snug">
                   {METRIC_HINT[it.key]}
                 </p>
               )}

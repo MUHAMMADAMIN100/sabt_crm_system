@@ -6,6 +6,12 @@ import { Film, Image as ImageIcon, Loader2, X, ArrowRight, ArrowLeft, Check } fr
 import toast from 'react-hot-toast'
 import { projectsApi, contentPlanApi } from '@/services/api.service'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { useAuthStore } from '@/store/auth.store'
+import { hasAnyRole } from '@/lib/permissions'
+import { invalidateSales } from '@/lib/salesQueries'
+import type { Handoff } from '@/types/sales'
+import HandoffSummary from '@/pages/sales/HandoffSummary'
+import { amountDraft, handoffClientInfo, handoffLinkFields, parseAmount } from '@/pages/sales/handoffPrefill'
 
 const inp = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-gray-400 dark:focus:border-gray-500 w-full'
 
@@ -13,20 +19,30 @@ const inp = 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray
 // «Создать» → проект (smmData одним запросом, без тарифа) → генерация контента → страница проекта.
 // Раздел задаёт тип проекта: СММ → 'SMM', «Разработка» → 'Web сайт'
 // (legacy-значение в БД, в интерфейсе показывается как «Разработка»).
-export default function SmmProjectCreateModal({ onClose }: { onClose: () => void }) {
+//
+// Проект по заявке от продаж (15.11.2026, раздел «Продажи» → «Заявки»):
+// handoff подставляет название, владельца, начало сотрудничества и контакты
+// клиента, а в запрос уходит leadId — сервер свяжет проект с лидом. Без
+// handoff окно работает как раньше.
+export default function SmmProjectCreateModal({ onClose, handoff }: { onClose: () => void; handoff?: Handoff | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const user = useAuthStore(s => s.user)
+  // Абонплату по заявке записывает только основатель — остальным сервер
+  // финансовые поля проекта не даёт (FINANCE_FIELDS), поле им не показываем.
+  const canSetFee = !!handoff && hasAnyRole(user?.role, user?.secondaryRole, ['founder'])
   const [step, setStep] = useState<1 | 2>(1)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(handoff?.leadName ?? '')
   const [day, setDay] = useState('1')
   const [reels, setReels] = useState('4')
   const [posts, setPosts] = useState('4')
   const [spm, setSpm] = useState('')
-  const [ownerName, setOwnerName] = useState('')
+  const [ownerName, setOwnerName] = useState(handoff?.contactPerson ?? '')
   const [keyDate, setKeyDate] = useState('')
   const [keyDateNote, setKeyDateNote] = useState('')
-  const [collabSince, setCollabSince] = useState('')
+  const [collabSince, setCollabSince] = useState(handoff?.firstPaymentAt ?? '')
   const [preferences, setPreferences] = useState('')
+  const [fee, setFee] = useState(amountDraft(handoff?.amount))
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -50,7 +66,21 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
       if (keyDateNote.trim()) smmData.keyDateNote = keyDateNote.trim()
       if (collabSince) smmData.collabSince = collabSince
       if (preferences.trim()) smmData.preferences = preferences.trim()
-      const created: any = await projectsApi.create({ name: name.trim(), projectType: 'SMM', allowNoTariff: true, smmData })
+      // По заявке: связь с лидом, менеджер, который продал (он же
+      // ответственный менеджер проекта — сервер оставит это поле только
+      // основателю), контакты клиента и абонплата.
+      const fromHandoff: Record<string, any> = {}
+      if (handoff) {
+        const link = handoffLinkFields(handoff)
+        Object.assign(fromHandoff, link)
+        if (link.salesManagerId) smmData.salesManagerId = link.salesManagerId
+        const clientInfo = handoffClientInfo(handoff)
+        if (ownerName.trim()) clientInfo.contactPerson = ownerName.trim()
+        if (Object.keys(clientInfo).length) fromHandoff.clientInfo = clientInfo
+        const monthlyFee = canSetFee ? parseAmount(fee) : null
+        if (monthlyFee) { fromHandoff.monthlyFee = monthlyFee; fromHandoff.billingType = 'monthly' }
+      }
+      const created: any = await projectsApi.create({ name: name.trim(), projectType: 'SMM', allowNoTariff: true, smmData, ...fromHandoff })
       if (created?.id) {
         try { await contentPlanApi.smartGenerate({ projectId: created.id, reels: smmData.normReels, posts: smmData.normPosts }) }
         catch { /* нет прав/ошибка — проект уже создан */ }
@@ -59,7 +89,8 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
     },
     onSuccess: (created: any) => {
       qc.invalidateQueries({ queryKey: ['smm-calendar'] })
-      toast.success('Проект создан')
+      if (handoff) { invalidateSales(qc); qc.invalidateQueries({ queryKey: ['projects'] }) }
+      toast.success(handoff ? 'Проект создан и связан с заявкой' : 'Проект создан')
       onClose()
       navigate(created?.id ? `/smm/projects/${created.id}` : '/smm/projects')
     },
@@ -111,6 +142,7 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
         <div className="p-5 space-y-4">
           {step === 1 ? (
             <>
+              {handoff && <HandoffSummary handoff={handoff} />}
               <div>
                 <label className="block"><span className="text-xs text-gray-500">Название *</span>
                   <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') next() }} placeholder="Напр. Yalla Coffee" className={inp + ' mt-1'} autoFocus /></label>
@@ -140,6 +172,10 @@ export default function SmmProjectCreateModal({ onClose }: { onClose: () => void
               </div>
               <label className="block"><span className="text-xs text-gray-500">Сотрудничаем с</span><DatePicker value={collabSince} onChange={setCollabSince} placeholder="дата" className="mt-1 max-w-[220px]" /></label>
               <label className="block"><span className="text-xs text-gray-500">Предпочтения</span><textarea value={preferences} onChange={e => setPreferences(e.target.value)} rows={3} placeholder="Тон, что любят/не любят, правила согласования…" className={inp + ' mt-1 resize-y leading-relaxed'} /></label>
+              {canSetFee && (
+                <label className="block"><span className="text-xs text-gray-500">Абонплата по заявке, с./мес</span>
+                  <input value={fee} onChange={e => setFee(e.target.value.replace(/[^\d\s]/g, ''))} inputMode="numeric" placeholder="0" className={inp + ' mt-1 max-w-[220px] tabular-nums'} /></label>
+              )}
             </>
           )}
         </div>

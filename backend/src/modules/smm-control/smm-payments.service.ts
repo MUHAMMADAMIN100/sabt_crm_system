@@ -6,7 +6,7 @@ import { patchSmmData } from '../projects/project-access';
 import { hasGrant } from '../auth/permissions';
 import {
   CalPay, FinClient, FinPlan, FinTx, OwnerProject, PayItem, calendarPays, cardPays, isEarning, mayOwn,
-  monthPayState, ownedPays, payScope, resolveFinanceLinks, toPayItem, withManagerChange,
+  monthPayState, ownedPays, payScope, resolveFinanceLinks, resolveProjectClient, toPayItem, withManagerChange,
 } from './smm-payments.logic';
 
 /** Кто видит сроки оплат всех проектов и связывает проект с клиентом
@@ -41,6 +41,17 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** Оплата клиента для менеджера: проект, день, состояние — без сумм. У
  *  клиента не из SMM проекта CRM нет — projectId = null. */
 export type ProjectPayItem = PayItem & { projectId: string | null; projectName: string };
+
+/** Долг клиента проекта по «Финансам» на сегодня (15.11.2026). */
+export interface ProjectDebt {
+  client: { id: string; name: string; by: 'manual' | 'name' };
+  /** «Стоимость» в письме: к оплате + оплачено за те же месяцы. */
+  total: number;
+  paid: number;
+  /** «К оплате»: просроченное и со сроком сегодня. */
+  remaining: number;
+  items: Array<{ date: string; ym: string; amount: number; partNo: number; state: 'late' | 'today' | 'wait' | 'paid' }>;
+}
 
 const todayDushanbe = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 const shiftMonth = (iso: string, delta: number) => {
@@ -178,6 +189,61 @@ export class SmmPaymentsService {
       .filter(it => it.state === 'paid' && it.date >= from && it.date <= to)
       .reduce((s, it) => s + (Number(it.amount) || 0), 0);
     return Math.round(sum * 100) / 100;
+  }
+
+  /** «Получено» менеджером по месяцам [fromYm, toYm] (15.11.2026) — история
+   *  плана продаж. Один расчёт на всё окно вместо receivedOf на каждый месяц:
+   *  правило то же (оплата — тому, кто вёл клиента в день оплаты), деньги
+   *  месяца — по дню прихода, как в receivedOf. Месяц без денег — 0. */
+  async receivedByMonth(managerId: string, fromYm: string, toYm: string): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (let ym = fromYm, i = 0; ym <= toYm && i < 36; ym = shiftMonth(`${ym}-01`, 1), i++) out[ym] = 0;
+    const from = `${fromYm}-01`;
+    const to = monthEnd(`${toYm}-01`);
+    const { items } = await this.calendarOf(id => id === managerId, from, to);
+    for (const it of items) {
+      if (it.state !== 'paid' || it.date < from || it.date > to) continue;
+      const ym = it.date.slice(0, 7);
+      if (ym in out) out[ym] += Number(it.amount) || 0;
+    }
+    for (const ym of Object.keys(out)) out[ym] = Math.round(out[ym] * 100) / 100;
+    return out;
+  }
+
+  /**
+   * Долг клиента проекта по «Финансам» — письмо «Запрос оплаты» (15.11.2026).
+   * Раньше долг считался как totalContractValue/budget − paidAmount, но эти
+   * поля проекта давно никто не ведёт: деньги живут в «Финансах». Теперь:
+   *  • «К оплате» — неоплаченные оплаты со сроком сегодня или раньше, ровно
+   *    те, что «Просрочено»/«Сегодня» в календаре менеджера (calendarPays:
+   *    плановые оплаты, прогноз по тарифу, долг прошлого месяца);
+   *  • «Оплачено» — полученное за те же месяцы, «Стоимость» — их сумма.
+   * null — проект не связан с клиентом «Финансов» (вызывающий отвечает 400).
+   */
+  async projectDebt(p: Pick<Project, 'id' | 'name' | 'projectType' | 'smmData'>): Promise<ProjectDebt | null> {
+    const link = resolveProjectClient(
+      { id: p.id, name: p.name, projectType: p.projectType, financeProjectId: linkOf(p as Project) },
+      await this.clients(),
+    );
+    if (!link) return null;
+    const today = todayDushanbe();
+    // Год назад — чтобы «оплачено» за месяцы старого долга тоже нашлось;
+    // просроченное calendarPays возвращает и вне окна.
+    const from = `${shiftMonth(today, -12)}-01`;
+    const { plans, txs } = await this.moneyOf([link.client.id], from, today, today);
+    const items = calendarPays(link.client, plans, txs, from, today, today);
+    const owed = items.filter(it => it.state === 'late' || it.state === 'today');
+    const months = new Set(owed.map(it => it.ym));
+    const sum = (list: CalPay[]) => Math.round(list.reduce((s, it) => s + (Number(it.amount) || 0), 0) * 100) / 100;
+    const remaining = sum(owed);
+    const paid = sum(items.filter(it => it.state === 'paid' && months.has(it.ym)));
+    return {
+      client: { id: link.client.id, name: link.client.name, by: link.by },
+      total: Math.round((remaining + paid) * 100) / 100,
+      paid,
+      remaining,
+      items: owed.map(it => ({ date: it.date, ym: it.ym, amount: Number(it.amount) || 0, partNo: it.partNo, state: it.state })),
+    };
   }
 
   /** Деньги клиентов менеджеров под want за [from, to] (решение владельца

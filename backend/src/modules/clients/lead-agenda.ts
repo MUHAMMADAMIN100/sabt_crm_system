@@ -10,8 +10,11 @@ import { Task } from '../tasks/task.entity';
  * напоминание». Менеджеру продаж задачу под встречу не создаём (см.
  * ClientsService.syncMeetingTask), поэтому читаем лиды напрямую. Встречу,
  * у которой есть задача-двойник (владелец не МП), пропускаем — по ней
- * напомнит сама задача, иначе вышло бы два сообщения. Отказ (lost) не
- * напоминаем.
+ * напомнит сама задача, иначе вышло бы два сообщения.
+ *
+ * Не напоминаем (15.11.2026, единая воронка): закрытые сделки (won и lost),
+ * лиды «на паузе» и встречу, по которой уже отмечен итог (meetingResult —
+ * «состоялась»/«не состоялась»): о прошедшей встрече напоминать нечего.
  */
 
 export type LeadAgendaKind = 'meeting' | 'call';
@@ -53,16 +56,20 @@ const inWindow = (d: Date | null | undefined, from: Date, to: Date) => {
   return t >= from.getTime() && t <= to.getTime();
 };
 
-type LeadRow = Pick<ClientLead, 'id' | 'name' | 'ownerId' | 'status' | 'nextContactAt' | 'repeatCallAt' | 'meetingTaskId'>;
+type LeadRow = Pick<ClientLead, 'id' | 'name' | 'ownerId' | 'status' | 'nextContactAt' | 'repeatCallAt' | 'meetingTaskId'>
+  & Partial<Pick<ClientLead, 'onHold' | 'meetingResult'>>;
+
+/** Закрытые этапы — по ним дел нет. */
+const CLOSED: ClientLeadStatus[] = [ClientLeadStatus.WON, ClientLeadStatus.LOST];
 
 /** Чистая часть: из лидов — пункты окна [from, to]. liveTaskIds — задачи-
  *  двойники встреч, которые ещё есть в базе. */
 export function leadAgendaItems(leads: LeadRow[], liveTaskIds: Set<string>, from: Date, to: Date): LeadAgendaItem[] {
   const out: LeadAgendaItem[] = [];
   for (const l of leads) {
-    if (!l.ownerId || l.status === ClientLeadStatus.LOST) continue;
+    if (!l.ownerId || CLOSED.includes(l.status) || l.onHold) continue;
     const name = String(l.name || '').trim() || 'Клиент';
-    if (inWindow(l.nextContactAt, from, to) && !(l.meetingTaskId && liveTaskIds.has(l.meetingTaskId))) {
+    if (!l.meetingResult && inWindow(l.nextContactAt, from, to) && !(l.meetingTaskId && liveTaskIds.has(l.meetingTaskId))) {
       out.push({ leadId: l.id, ownerId: l.ownerId, name, kind: 'meeting', at: new Date(l.nextContactAt) });
     }
     if (inWindow(l.repeatCallAt, from, to)) {
@@ -81,15 +88,17 @@ export async function fetchLeadAgenda(
   ownerId?: string,
 ): Promise<LeadAgendaItem[]> {
   const base: Record<string, any> = {
-    status: Not(ClientLeadStatus.LOST),
+    status: Not(In(CLOSED)),
+    onHold: false,
     ownerId: ownerId || Not(IsNull()),
   };
   const leads = await leadRepo.find({
     where: [
-      { ...base, nextContactAt: Between(from, to) },
+      // Встреча с отмеченным итогом — уже не повод напоминать.
+      { ...base, nextContactAt: Between(from, to), meetingResult: IsNull() },
       { ...base, repeatCallAt: Between(from, to) },
     ] as any,
-    select: ['id', 'name', 'ownerId', 'status', 'nextContactAt', 'repeatCallAt', 'meetingTaskId'],
+    select: ['id', 'name', 'ownerId', 'status', 'nextContactAt', 'repeatCallAt', 'meetingTaskId', 'onHold', 'meetingResult'],
   });
   if (!leads || leads.length === 0) return [];
 

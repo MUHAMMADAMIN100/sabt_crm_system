@@ -97,7 +97,24 @@
          500 — серый текст     (#8792a2 — светлее, чтобы читался на новом фоне)
        Персональная тема (html.dark.theme-on, lib/theme.ts) по-прежнему
        перебивает эти значения. */
+    /* 15.11.2026: шкала тёмной темы задана целиком. Раньше 50–400 и 600
+       наследовались из светлой, и по шкале было не понять, что чем служит.
+       Шкала монотонная, как в lib/theme.ts (buildDark): 50 — самый светлый
+       текст, 950 — самый глубокий фон.
+         50–300 — светлый текст (dark:text-surface-100…300), значения прежние;
+         400    — приглушённый текст, #9aa5b3: 6:1 на карточке #22262e;
+         600    — между 500 и 700: рамки полей и тусклые заливки
+                  (dark:border/bg-surface-600). Чуть светлее прежнего #4d5a6a —
+                  рамка поля на карточке стала заметнее (≈3:1).
+       Текст text-surface-600 без dark:-варианта читается через правило
+       в конце файла (.dark :where(.text-surface-600)). */
+    --surf-50:  252 253 254;
+    --surf-100: 243 245 248;
+    --surf-200: 226 231 237;
+    --surf-300: 203 211 221;
+    --surf-400: 154 165 179;
     --surf-500: 135 146 162;
+    --surf-600:  98 107 122;
     --surf-700:  62  69  83;
     --surf-800:  34  38  46;
     --surf-900:  25  28  34;
@@ -221,6 +238,66 @@
   .btn-danger    { @apply btn bg-red-700 border-red-700 text-white hover:bg-red-800 hover:border-red-800; }
   .btn-ghost     { @apply btn border-transparent text-surface-600 hover:bg-surface-100 hover:text-surface-900; }
   .dark .btn-ghost { @apply text-surface-300 hover:bg-surface-700 hover:text-white; }
+
+  /* Видимый фокус с клавиатуры (15.11.2026): у кнопок его не было вовсе —
+     с Tab было не понять, где находишься. Только :focus-visible, поэтому
+     нажатие мышью и пальцем рамку не рисует. */
+  .btn:focus-visible,
+  .btn-primary:focus-visible,
+  .btn-secondary:focus-visible,
+  .btn-ghost:focus-visible,
+  .btn-danger:focus-visible,
+  .chip:focus-visible {
+    outline: 2px solid rgb(var(--prim-500));
+    outline-offset: 2px;
+  }
+  .dark .btn:focus-visible,
+  .dark .btn-primary:focus-visible,
+  .dark .btn-secondary:focus-visible,
+  .dark .btn-ghost:focus-visible,
+  .dark .btn-danger:focus-visible,
+  .dark .chip:focus-visible {
+    outline-color: rgb(var(--prim-300));
+  }
+
+  /* Чип-фильтр («Все / Звонки / Встречи / Оплаты» на «Сегодня»,
+     15.11.2026): кнопка с aria-pressed; выбранный — .chip-on. На телефоне
+     высота 44 px — по нему попадают пальцем. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+    min-height: 34px;
+    padding: 0 0.8rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--surf-200));
+    background: rgb(var(--surf-50));
+    color: rgb(var(--surf-700));
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .chip:hover { border-color: rgb(var(--surf-300)); }
+  .dark .chip {
+    background: rgb(var(--surf-800));
+    border-color: rgb(var(--surf-700));
+    color: rgb(var(--surf-200));
+  }
+  .dark .chip:hover { border-color: rgb(var(--surf-500)); }
+  .chip-on,
+  .chip-on:hover,
+  .dark .chip-on,
+  .dark .chip-on:hover {
+    background: rgb(var(--prim-600));
+    border-color: rgb(var(--prim-600));
+    color: #fff;
+  }
+  @media (max-width: 992px) {
+    .chip { min-height: 44px; }
+  }
 
   /* Инпут — флэт, тонкая граница, focus-ring без translate-Y.
      Фон СВЕТЛО-СЕРЫЙ (заметно отличается от подложки карточки/модалки),
@@ -1227,4 +1304,14 @@ aside {
   [contenteditable="true"]:not(.\#) {
     font-size: max(16px, 1em) !important;
   }
+}
+
+/* Текст text-surface-600 без dark:-варианта в тёмной теме (15.11.2026):
+   600 там — тёмная рамка, и такой текст на карточке #22262e почти не
+   читался (≈2:1; так было, например, в KPI менеджера). Красим его в 400 —
+   6:1. :where() не добавляет веса, поэтому любой явный dark:text-* на том
+   же элементе по-прежнему главнее; правило стоит после утилит Tailwind и
+   перебивает только сам .text-surface-600. */
+.dark :where(.text-surface-600) {
+  color: rgb(var(--surf-400) / var(--tw-text-opacity, 1));
 }

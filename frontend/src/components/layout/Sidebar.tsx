@@ -129,9 +129,10 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Навбар основателя: основные пункты на виду, остальные — под кнопкой «Ещё».
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
+  // «Продажи» (15.11.2026) — на виду: аналитика и заявки от продаж.
   const FOUNDER_CORE = new Set<string>([
     '/', '/direct', '/finance', '/smm', '/dev', '/calendar',
-    '/employees', '/clients', '/ai',
+    '/employees', '/clients', '/sales', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered
   const moreItems = isFounder ? filtered.filter(i => !FOUNDER_CORE.has(i.to)) : []
@@ -421,7 +422,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                 open ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0',
               )}>
                 <p className="text-xs font-semibold text-[rgb(var(--sidebar-fg))] truncate leading-tight">{user.name}</p>
-                <p className="text-[10px] text-[rgb(var(--sidebar-fg-dim))] truncate leading-tight">
+                <p className="text-[11px] text-[rgb(var(--sidebar-fg-dim))] truncate leading-tight">
                   {getUserPositionLabel(user)}
                 </p>
               </div>
@@ -429,15 +430,19 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
             {open && (
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
+                  type="button"
                   onClick={() => window.location.reload()}
                   title="Обновить"
+                  aria-label="Обновить"
                   className="p-1.5 rounded-md text-surface-400 hover:text-white hover:bg-surface-50/5 transition-colors"
                 >
                   <RotateCcw size={14} />
                 </button>
                 <button
+                  type="button"
                   onClick={() => logout()}
                   title="Выйти"
+                  aria-label="Выйти"
                   className="p-1.5 rounded-md text-surface-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <LogOut size={14} />

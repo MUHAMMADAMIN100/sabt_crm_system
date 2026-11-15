@@ -4,7 +4,7 @@ import { ClientLeadStatus } from '../clients/client-lead.entity';
 /** /today в Telegram: встречи и повторные звонки по своим лидам. */
 
 const lead = (over: Record<string, any>) => ({
-  id: 'L1', name: 'Кафе «Сафо»', ownerId: 'SM', status: ClientLeadStatus.NEGOTIATING,
+  id: 'L1', name: 'Кафе «Сафо»', ownerId: 'SM', status: ClientLeadStatus.WAITING,
   nextContactAt: null, repeatCallAt: null, meetingTaskId: null, ...over,
 }) as any;
 

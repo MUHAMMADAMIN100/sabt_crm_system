@@ -6,8 +6,8 @@ const FROM = new Date('2026-11-13T19:00:00Z');
 const TO = new Date('2026-11-14T18:59:59.999Z');
 
 const lead = (over: Record<string, any>) => ({
-  id: 'L1', name: 'Кафе «Сафо»', ownerId: 'U1', status: ClientLeadStatus.NEGOTIATING,
-  nextContactAt: null, repeatCallAt: null, meetingTaskId: null, ...over,
+  id: 'L1', name: 'Кафе «Сафо»', ownerId: 'U1', status: ClientLeadStatus.WAITING,
+  nextContactAt: null, repeatCallAt: null, meetingTaskId: null, onHold: false, meetingResult: null, ...over,
 }) as any;
 
 describe('lead-agenda: встречи и звонки по лидам', () => {
@@ -31,6 +31,17 @@ describe('lead-agenda: встречи и звонки по лидам', () => {
     expect(items).toEqual([]);
   });
 
+  // 15.11.2026: выигранные, «на паузе» и встречи с отмеченным итогом — тоже нет.
+  it('выигран, на паузе, встреча уже с итогом — не напоминаем (звонок по лиду с итогом встречи — да)', () => {
+    const at = new Date('2026-11-14T10:00:00Z');
+    const items = leadAgendaItems([
+      lead({ id: 'W', status: ClientLeadStatus.WON, nextContactAt: at }),
+      lead({ id: 'H', onHold: true, nextContactAt: at, repeatCallAt: at }),
+      lead({ id: 'R', meetingResult: 'held', nextContactAt: at, repeatCallAt: new Date('2026-11-14T11:00:00Z') }),
+    ], new Set(), FROM, TO);
+    expect(items.map(i => [i.leadId, i.kind])).toEqual([['R', 'call']]);
+  });
+
   it('встреча с живой задачей-двойником — напомнит задача, звонок остаётся', () => {
     const l = lead({ meetingTaskId: 'T1', nextContactAt: new Date('2026-11-14T10:00:00Z'), repeatCallAt: new Date('2026-11-14T12:00:00Z') });
     expect(leadAgendaItems([l], new Set(['T1']), FROM, TO).map(i => i.kind)).toEqual(['call']);
@@ -38,7 +49,7 @@ describe('lead-agenda: встречи и звонки по лидам', () => {
     expect(leadAgendaItems([l], new Set(), FROM, TO).map(i => i.kind)).toEqual(['meeting', 'call']);
   });
 
-  it('fetchLeadAgenda: свои лиды, без lost; живые двойники берёт из задач', async () => {
+  it('fetchLeadAgenda: свои лиды, без won/lost и паузы; встречи без итога; живые двойники — из задач', async () => {
     const leadRepo = { find: jest.fn().mockResolvedValue([
       lead({ meetingTaskId: 'T1', nextContactAt: new Date('2026-11-14T10:00:00Z') }),
       lead({ id: 'L2', meetingTaskId: 'T2', nextContactAt: new Date('2026-11-14T11:00:00Z') }),
@@ -50,8 +61,13 @@ describe('lead-agenda: встречи и звонки по лидам', () => {
     expect(where).toHaveLength(2);
     for (const w of where) {
       expect(w.ownerId).toBe('U1');
+      expect(w.onHold).toBe(false);
       expect(String(w.status.type)).toBe('not');
-      expect(w.status.value.value ?? w.status.value).toBe(ClientLeadStatus.LOST);
+      const closed = w.status.child?.value ?? w.status.value;
+      expect(closed).toEqual([ClientLeadStatus.WON, ClientLeadStatus.LOST]);
     }
+    // Встреча — только без итога; перезвон от итога встречи не зависит.
+    expect(String(where[0].meetingResult?.type)).toBe('isNull');
+    expect(where[1].meetingResult).toBeUndefined();
   });
 });

@@ -3,6 +3,10 @@
 // за цикл и сам заводил в проекте рилсы и посты. Здесь — только то, что
 // нужно разработке: название, тип, проект-менеджер, срок сдачи и клиент.
 // Новый проект начинается с этапа 1 (сбор требований и ТЗ).
+//
+// Проект по заявке от продаж (15.11.2026, «Продажи» → «Заявки»): handoff
+// подставляет название, тип (по продукту заявки), компанию и контакты, а в
+// запрос уходит leadId — сервер свяжет проект с лидом.
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,22 +19,33 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { DEV_PROJECT_TYPES } from '@/lib/projectType'
 import { DEV_STAGES } from '@/lib/devStages'
 import { todayIso } from '../devProjects'
+import { useAuthStore } from '@/store/auth.store'
+import { hasAnyRole } from '@/lib/permissions'
+import { invalidateSales } from '@/lib/salesQueries'
+import type { Handoff } from '@/types/sales'
+import HandoffSummary from '@/pages/sales/HandoffSummary'
+import { amountDraft, devTypeFromProduct, handoffClientInfo, handoffLinkFields, parseAmount } from '@/pages/sales/handoffPrefill'
 
 /** Кого можно поставить проект-менеджером. */
 const PM_ROLES = ['pm_dev', 'dev_director']
 
 const fieldCls = 'flex flex-col gap-1.5 text-[13px] text-surface-600 dark:text-surface-300 min-w-0'
 
-export default function DevProjectCreateModal({ onClose }: { onClose: () => void }) {
+export default function DevProjectCreateModal({ onClose, handoff }: { onClose: () => void; handoff?: Handoff | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [name, setName] = useState('')
-  const [type, setType] = useState<string>(DEV_PROJECT_TYPES[0])
+  const user = useAuthStore(s => s.user)
+  // Сумму договора по заявке записывает только основатель — остальным
+  // сервер финансовые поля проекта не даёт, поле им не показываем.
+  const canSetAmount = !!handoff && hasAnyRole(user?.role, user?.secondaryRole, ['founder'])
+  const [name, setName] = useState(handoff?.leadName ?? '')
+  const [type, setType] = useState<string>(devTypeFromProduct(handoff?.product) ?? DEV_PROJECT_TYPES[0])
   const [managerId, setManagerId] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [company, setCompany] = useState('')
-  const [contact, setContact] = useState('')
-  const [phone, setPhone] = useState('')
+  const [company, setCompany] = useState(handoff?.leadName ?? '')
+  const [contact, setContact] = useState(handoff?.contactPerson ?? '')
+  const [phone, setPhone] = useState(handoff?.contactPhone ?? '')
+  const [amount, setAmount] = useState(amountDraft(handoff?.amount))
   const [saving, setSaving] = useState(false)
 
   // Проект-менеджеры — из исполнителей доски (активные роли разработки;
@@ -51,7 +66,10 @@ export default function DevProjectCreateModal({ onClose }: { onClose: () => void
     const title = name.trim()
     if (!title) { toast.error('Введите название проекта'); return }
     if (saving) return
+    // По заявке — ещё Instagram клиента (своего поля в окне у него нет).
     const clientInfo: Record<string, string> = {}
+    const instagram = handoff ? handoffClientInfo(handoff).instagram : undefined
+    if (instagram) clientInfo.instagram = instagram
     if (company.trim()) clientInfo.companyName = company.trim()
     if (contact.trim()) clientInfo.contactPerson = contact.trim()
     if (phone.trim()) clientInfo.phone = phone.trim()
@@ -64,11 +82,14 @@ export default function DevProjectCreateModal({ onClose }: { onClose: () => void
         ...(managerId ? { managerId } : {}),
         ...(endDate ? { endDate } : {}),
         ...(Object.keys(clientInfo).length ? { clientInfo } : {}),
+        ...(handoff ? handoffLinkFields(handoff) : {}),
+        ...(canSetAmount && parseAmount(amount) ? { totalContractValue: parseAmount(amount), billingType: 'one_time' } : {}),
       })
       // Этап 1 — сразу: проект без этапа на странице выглядел бы «не начатым».
       if (created?.id) await projectsApi.setDevStage(created.id, firstStage.num).catch(() => undefined)
       qc.invalidateQueries({ queryKey: ['projects'] })
-      toast.success('Проект создан')
+      if (handoff) invalidateSales(qc)
+      toast.success(handoff ? 'Проект создан и связан с заявкой' : 'Проект создан')
       onClose()
       navigate(created?.id ? `/dev/projects/${created.id}` : '/dev/projects')
     } catch (e: any) {
@@ -81,6 +102,7 @@ export default function DevProjectCreateModal({ onClose }: { onClose: () => void
   return (
     <Modal open onClose={onClose} title="Новый проект разработки" size="md" closeOnBackdropClick={false}>
       <form className="flex flex-col gap-4" onSubmit={e => { e.preventDefault(); create() }}>
+        {handoff && <HandoffSummary handoff={handoff} />}
         <label className={fieldCls}>Название *
           <input className="input" autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Например, Лендинг клиники" />
         </label>
@@ -128,6 +150,12 @@ export default function DevProjectCreateModal({ onClose }: { onClose: () => void
               <input className="input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+992" />
             </label>
           </div>
+          {canSetAmount && (
+            <label className={fieldCls}>Сумма договора по заявке, с.
+              <input className="input tabular-nums sm:max-w-[220px]" inputMode="numeric" value={amount}
+                onChange={e => setAmount(e.target.value.replace(/[^\d\s]/g, ''))} placeholder="0" />
+            </label>
+          )}
         </div>
 
         <p className="text-[13px] leading-relaxed text-surface-600 dark:text-surface-300 bg-surface-100 dark:bg-surface-900 rounded-lg px-3 py-2.5">

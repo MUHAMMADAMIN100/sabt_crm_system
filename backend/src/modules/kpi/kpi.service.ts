@@ -12,8 +12,9 @@ import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity
 import { ClientsService } from '../clients/clients.service';
 import { DirectionScope, isInDirection } from '../../common/direction-scope';
 import { cachedResponse } from '../../common/response-cache';
-import { COLD_CALL_EVENTS_SINCE, expandRanges, salesPeriod, workingDays } from '../clients/sales-kpi.logic';
-import { KpiItem, salesActivityItem, salesDeadlineItem, salesKpiItems } from './kpi.logic';
+import { COLD_CALL_EVENTS_SINCE, currentVacationRange, dushanbeDay, expandRanges, salesPeriod, workingDays } from '../clients/sales-kpi.logic';
+import { KpiItem, salesActivityItem, salesKpiItems } from './kpi.logic';
+import { salesRoleOf } from '../../common/sales-segment';
 
 /** Короткий кэш KPI (08.11.2026): расчёт — десяток агрегаций, а просят его
  *  панели, профиль и страница KPI одновременно. Ответ зависит только от
@@ -37,12 +38,6 @@ export interface UserKpi {
 
 const TOP_ROLES = new Set<string>([
   UserRole.ADMIN, UserRole.FOUNDER,
-]);
-const PM_ROLES = new Set<string>([
-  UserRole.SMM_DIRECTOR,
-]);
-const SALES_ROLES = new Set<string>([
-  UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV,
 ]);
 const SMM_ROLES = new Set<string>([
   UserRole.SMM_SPECIALIST,
@@ -136,36 +131,13 @@ function storiesAssignedOnly(user: { role?: string | null; secondaryRole?: strin
   return roles.includes(UserRole.SMM_DIRECTOR) && !roles.includes(UserRole.SMM_SPECIALIST);
 }
 
-/** Базовые таргеты на 30-дневный период. Для других периодов скейлим
- *  пропорционально (см. scaleTarget ниже). */
-interface RoleTargets {
-  tasksDone: number;
-  hoursLogged: number;
-  deadlineRate: number; // % — НЕ скейлится, это качественная метрика
-  activityDays: number;
-  storiesPosted?: number;
-  projectsManaged?: number; // НЕ скейлится — это snapshot
-}
-
-function targetsFor(role: string): RoleTargets {
-  if (PM_ROLES.has(role)) {
-    return {
-      tasksDone: 30, hoursLogged: 160, deadlineRate: 95, activityDays: 22,
-      projectsManaged: 5,
-    };
-  }
-  if (SALES_ROLES.has(role)) {
-    return { tasksDone: 10, hoursLogged: 160, deadlineRate: 85, activityDays: 22 };
-  }
-  if (SMM_ROLES.has(role)) {
-    return {
-      tasksDone: 25, hoursLogged: 160, deadlineRate: 90, activityDays: 22,
-      storiesPosted: 80,
-    };
-  }
-  // Любая «рабочая» роль (designer / developer / videographer /
-  // video_editor / organizer / employee) — стандартный набор.
-  return { tasksDone: 20, hoursLogged: 160, deadlineRate: 90, activityDays: 22 };
+/** Направление лидов менеджера продаж — по основной или второй роли
+ *  (основная важнее), как фильтр /clients/kpi (15.11.2026). */
+function salesDirectionOf(user: { role?: string | null; secondaryRole?: string | null } | null | undefined): ClientLeadDirection | undefined {
+  const r = salesRoleOf(user);
+  return r === UserRole.SALES_MANAGER_SMM ? ClientLeadDirection.SMM
+    : r === UserRole.SALES_MANAGER_DEV ? ClientLeadDirection.DEVELOPMENT
+    : undefined;
 }
 
 @Injectable()
@@ -307,8 +279,16 @@ export class KpiService {
       set.add(day);
     };
     for (const r of absences) add(String(r.uid), String(r.day));
-    for (const r of [...vacations, ...current]) {
+    for (const r of vacations) {
       for (const d of expandRanges([{ from: r.from, until: r.until }], fromIso, toIso)) add(String(r.uid), d);
+    }
+    // «В отпуске» сейчас, но без дат — отпуск идёт с сегодняшнего дня, а не
+    // «всегда» (15.11.2026, как в ClientsService.offDays): иначе прошлые
+    // периоды целиком становились выходными и KPI за них пропадал.
+    const todayIso = dushanbeDay();
+    for (const r of current) {
+      const range = currentVacationRange({ from: r.from, until: r.until }, todayIso);
+      for (const d of expandRanges([range], fromIso, toIso)) add(String(r.uid), d);
     }
     return out;
   }
@@ -401,33 +381,9 @@ export class KpiService {
     // 2) Параллельно гонимся за всеми агрегациями.
     // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
     // выпилена, считать её больше не нужно.
-    const [tasksRows, sessionRows, storyRows, projectRows, deliveryRows, contentRows] = await Promise.all([
-      // «Соблюдено дедлайнов» (15.11.2026): момент закрытия — completedAt
-      // (запасной — reviewedAt/updatedAt), задачи без срока не участвуют,
-      // исполнитель — и основной, и со-исполнители. Раньше брали updatedAt
-      // (поздняя правка = просрочка), бессрочные шли «в срок», а со-
-      // исполнители не считались вовсе.
-      this.taskRepo.manager.query(
-        `WITH mine AS (
-           SELECT t.deadline, COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") AS closed_at, u.uid
-           FROM tasks t
-           JOIN LATERAL (
-             SELECT t."assigneeId" AS uid
-             UNION
-             SELECT ta."userId" FROM task_assignees ta WHERE ta."taskId" = t.id
-           ) u ON u.uid IS NOT NULL
-           WHERE u.uid = ANY($1::uuid[])
-             AND t.status::text = 'done'
-             AND t.deadline IS NOT NULL
-             AND COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") BETWEEN $2 AND $3
-         )
-         SELECT uid,
-                COUNT(*)::int AS done_count,
-                COUNT(*) FILTER (WHERE closed_at <= deadline)::int AS on_time_count,
-                COUNT(*)::int AS with_deadline
-         FROM mine GROUP BY uid`,
-        [userIds, periodFrom, periodTo],
-      ),
+    // «Соблюдено дедлайнов» больше не считается (15.11.2026): метрика была
+    // только у продаж, а у них теперь один KPI — тот же, что /clients/kpi.
+    const [sessionRows, storyRows, projectRows, deliveryRows, contentRows] = await Promise.all([
       // «Активных дней» (15.11.2026) — дни по Душанбе, когда человек работал:
       // была смена (work_shifts.date — уже дата Душанбе) или он был в
       // системе (вход или последний сигнал сессии). Раньше считали только
@@ -500,14 +456,6 @@ export class KpiService {
     ]);
 
     // 3) Индексируем по userId для быстрого доступа
-    const tasksByUid = new Map<string, { done: number; onTime: number; withDeadline: number }>();
-    for (const r of tasksRows) {
-      tasksByUid.set(r.uid, {
-        done: Number(r.done_count) || 0,
-        onTime: Number(r.on_time_count) || 0,
-        withDeadline: Number(r.with_deadline) || 0,
-      });
-    }
     const activityByUid = new Map<string, number>();
     for (const r of sessionRows) activityByUid.set(r.uid, Number(r.days) || 0);
     const storiesByUid = new Map<string, number>();
@@ -554,22 +502,21 @@ export class KpiService {
       }));
     }
 
-    // 4) Для МП — запросы к ClientsService, параллельно
+    // 4) Для МП — запросы к ClientsService, параллельно. МП — по основной
+    // ИЛИ второй роли (15.11.2026): раньше МП второй ролью в KPI продаж не
+    // попадал вовсе (проверялась только основная роль).
     const salesIds = userIds.filter(uid => {
       const u = userMap.get(uid);
-      return u && SALES_ROLES.has(u.role);
+      return !!u && !!salesRoleOf(u);
     });
     const salesKpis = new Map<string, any>();
     await Promise.all(salesIds.map(async (uid) => {
       const u = userMap.get(uid)!;
-      const direction = u.role === UserRole.SALES_MANAGER_SMM ? 'smm' as any
-        : u.role === UserRole.SALES_MANAGER_DEV ? 'development' as any
-        : undefined;
       // Период — тот же, что у остальных метрик (пустой = текущий месяц).
       // Нормы по рабочим дням и обрезку будущего считает clientsService.kpi.
       const kpi = await this.clientsService
-        .kpi(uid, direction, this.isoDay(periodFrom), this.isoDay(periodTo))
-        .catch(() => null);
+        .kpi(uid, salesDirectionOf(u), this.isoDay(periodFrom), this.isoDay(periodTo))
+        .catch((e: any) => { this.logger.warn(`sales KPI failed for ${uid}: ${e?.message || e}`); return null; });
       if (kpi) salesKpis.set(uid, kpi);
     }));
 
@@ -579,52 +526,58 @@ export class KpiService {
       if (!user || TOP_ROLES.has(user.role)) {
         return null;
       }
-      const targets = targetsFor(user.role);
-      const t = tasksByUid.get(uid) || { done: 0, onTime: 0, withDeadline: 0 };
+      // «Один KPI» (15.11.2026, SALES_SPEC §6): у менеджера продаж (основной
+      // или второй ролью) /kpi/user — ровно те 5 метрик и тот же общий
+      // процент, что /clients/kpi. Раньше здесь добавлялись «Соблюдено
+      // дедлайнов» и «Активных дней», и у одного менеджера было два разных
+      // KPI на соседних экранах. Ключи — с префиксом sales_ (детализация
+      // /kpi/user/:id/details понимает оба вида).
+      if (salesRoleOf(user)) {
+        const sales = salesKpis.get(uid);
+        const salesItems = salesKpiItems(sales);
+        return {
+          userId: uid,
+          role: user.role,
+          periodFrom: periodFrom.toISOString(),
+          periodTo: periodTo.toISOString(),
+          overallPercent: salesItems.length ? Math.min(100, Math.max(0, Number(sales?.overallPercent) || 0)) : 0,
+          noData: salesItems.length === 0,
+          items: salesItems,
+        } as UserKpi;
+      }
+
       const actDays = activityByUid.get(uid) || 0;
 
       const items: KpiItem[] = [];
 
-      // Роли задач — разработка и продажи: доской они не пользуются, их
-      // дисциплина считается по задачам (для продаж плюс воронка ниже).
+      // Команда разработки — роль задач: доской она не пользуется, её
+      // дисциплина считается по задачам. (Продажи — выше, своим KPI.)
       // Все остальные производственные роли живут ТОЛЬКО доской, сторисмейкер —
       // ТОЛЬКО сторис. «Активные дни» из оценки убраны: вход в систему не
       // является работой.
       const isDevTeam = user.role === UserRole.DEVELOPER || user.role === UserRole.PM_DEV;
-      const isTaskRole = SALES_ROLES.has(user.role) || isDevTeam;
-      if (isTaskRole) {
-        if (isDevTeam) {
-          // Команда разработки: нормы «столько-то задач» нет — сколько выдали,
-          // столько и надо сдать. План — выданные задачи со сроком, зачёт —
-          // сдано вовремя 1.0, с опозданием 0.4. Процент «Соблюдено дедлайнов»
-          // им НЕ показываем: одна просрочка не должна бить дважды.
-          const d = deliveryByUid.get(uid);
-          if (d && d.planned > 0) {
-            const percent = Math.min(100, Math.round((d.earned / d.planned) * 100));
-            items.push({
-              key: 'task_delivery',
-              label: 'Задачи сдано в срок',
-              target: d.planned,
-              value: Math.round(d.earned * 10) / 10,
-              percent,
-              done: percent >= 100,
-            });
-          }
-        } else {
-          // Продажи: «Соблюдено дедлайнов» — только если в периоде были задачи
-          // со сроком (как у разработки). Нет задач — не 0 %, а без пункта.
-          const deadline = salesDeadlineItem(t, deliveryByUid.get(uid)?.planned ?? 0, targets.deadlineRate);
-          if (deadline) items.push(deadline);
+      if (isDevTeam) {
+        // Нормы «столько-то задач» нет — сколько выдали, столько и надо
+        // сдать. План — выданные задачи со сроком, зачёт — сдано вовремя 1.0,
+        // с опозданием 0.4. Процент «Соблюдено дедлайнов» им НЕ показываем:
+        // одна просрочка не должна бить дважды.
+        const d = deliveryByUid.get(uid);
+        if (d && d.planned > 0) {
+          const percent = Math.min(100, Math.round((d.earned / d.planned) * 100));
+          items.push({
+            key: 'task_delivery',
+            label: 'Задачи сдано в срок',
+            target: d.planned,
+            value: Math.round(d.earned * 10) / 10,
+            percent,
+            done: percent >= 100,
+          });
         }
         // Норма активных дней — рабочие дни периода (пн–сб), которые уже
-        // наступили, без отпуска и отметок табеля; выходной — без пункта.
-        // Продажи берут их из своего KPI, разработка — тем же правилом
-        // (15.11.2026: раньше норма разработки считалась от длины всего
-        // периода, и текущий месяц выглядел проваленным из-за будущих дней).
-        const salesWorkDays = isDevTeam ? undefined : salesKpis.get(uid)?.workDays;
-        const workDays = typeof salesWorkDays === 'number'
-          ? salesWorkDays
-          : workingDays(fromIso, toIso, todayIso, offByUid.get(uid) ?? []).length;
+        // наступили, без отпуска и отметок табеля; выходной — без пункта
+        // (15.11.2026: раньше норма считалась от длины всего периода, и
+        // текущий месяц выглядел проваленным из-за будущих дней).
+        const workDays = workingDays(fromIso, toIso, todayIso, offByUid.get(uid) ?? []).length;
         const activity = salesActivityItem(actDays, workDays);
         if (activity) items.push(activity);
       }
@@ -655,11 +608,6 @@ export class KpiService {
         if (content) items.push(content);
         const tasks = deliveryItem('task_delivery', 'Задачи сдано в срок', deliveryByUid.get(uid));
         if (tasks) items.push(tasks);
-      }
-
-      if (SALES_ROLES.has(user.role)) {
-        // В выходной (нет рабочих дней) пунктов продаж нет — норма не считается.
-        items.push(...salesKpiItems(salesKpis.get(uid)));
       }
 
       // Overall: среднее процентов всех метрик
@@ -704,10 +652,8 @@ export class KpiService {
     const sp = salesPeriod(this.isoDay(periodFrom), this.isoDay(periodTo), new Date());
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) return [];
-    const direction: ClientLeadDirection | undefined =
-      user.role === UserRole.SALES_MANAGER_SMM ? ClientLeadDirection.SMM
-      : user.role === UserRole.SALES_MANAGER_DEV ? ClientLeadDirection.DEVELOPMENT
-      : undefined;
+    // Направление — по основной или второй роли, как в самом KPI (15.11.2026).
+    const direction: ClientLeadDirection | undefined = salesDirectionOf(user);
 
     // Дни отсутствия сотрудника — как в KPI (план сторис, сдача в срок).
     const offDays = async (): Promise<string[]> =>

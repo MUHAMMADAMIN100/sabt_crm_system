@@ -62,6 +62,10 @@ export class Project {
   @Column({ nullable: true })
   managerId: string;
 
+  /** Лид продаж, из которого создан проект (15.11.2026, миграция 1834). */
+  @Column({ type: 'uuid', nullable: true })
+  leadId: string | null;
+
   @Column({ type: 'date', nullable: true })
   startDate: Date;
 

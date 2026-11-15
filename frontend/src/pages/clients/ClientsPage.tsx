@@ -1,1203 +1,369 @@
-import { useState, useMemo, useEffect, useRef, lazy, Suspense, type RefObject } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { clientsApi } from '@/services/api.service'
-import { useAuthStore } from '@/store/auth.store'
-import { Modal, EmptyState, PageLoader, ConfirmDialog, Pagination } from '@/components/ui'
-import { Plus, Search, Edit, Trash2, List, LayoutGrid, Phone, PhoneCall, Instagram, Mail, Calendar as CalendarIcon, Flame, Snowflake, Sun, User as UserIcon, AlertCircle, Circle, Check } from 'lucide-react'
-import { useForm, Controller } from 'react-hook-form'
-import { DatePicker, DateTimePicker } from '@/components/ui/DatePicker'
-import { CollapsibleField } from '@/components/ui/CollapsibleField'
-import { format, parseISO, formatDistanceToNow } from 'date-fns'
-import { ru } from 'date-fns/locale'
-import toast from 'react-hot-toast'
-
-/** «Последняя активность» с клиентом: недавно — относительно («5 часов
- *  назад»), старше недели — датой («12 июн»). title — точные дата+время. */
-function formatLastActivity(iso?: string | null): { text: string; title: string } | null {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return null
-  const diffMs = Date.now() - d.getTime()
-  const title = format(d, 'dd.MM.yyyy, HH:mm')
-  let text: string
-  if (diffMs < 60_000) text = 'только что'
-  else if (diffMs <= 7 * 86_400_000) text = formatDistanceToNow(d, { addSuffix: true, locale: ru })
-  else text = format(d, 'd MMM yyyy', { locale: ru })
-  return { text, title }
-}
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
+import { LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { ConfirmDialog, EmptyState } from '@/components/ui'
+import { clientsApi } from '@/services/api.service'
+import { leadsApi } from '@/services/sales.api'
+import { salesKeys } from '@/lib/salesQueries'
+import { ACTIVE_STATUSES, ALL_STAGES, nextStage, normalizeStatus } from '@/lib/salesStages'
 import { useHistoryOverlay } from '@/lib/navMemory'
-import { useUrlState, useUrlFlag, useUrlNumber, usePatchUrl } from '@/lib/urlState'
+import { usePatchUrl, useUrlFlag, useUrlNumber, useUrlState } from '@/lib/urlState'
+import { useAuthStore } from '@/store/auth.store'
+import type { LeadListParams, LeadStats, LeadStatus, SalesLead } from '@/types/sales'
+import LeadDrawer from '@/components/sales/LeadDrawer'
+import LeadCreateModal from '@/components/sales/LeadCreateModal'
+import CallSheet from '@/components/sales/CallSheet'
+import HandoffModal from '@/components/sales/HandoffModal'
+import LostReasonModal from '@/components/sales/LostReasonModal'
+import { useIsDesktop } from '@/components/sales/salesHooks'
+import { SOURCE_OPTIONS, canWorkLead, formatMoney, isTopRole, salesDirectionOf } from '@/components/sales/leadUtils'
+import ClientsFilters from './ClientsFilters'
+import ClientsBoard, { BoardSkeleton } from './ClientsBoard'
+import ClientsList, { ListSkeleton } from './ClientsList'
+import { chipCounts, hasFilters, matchBoard, summaryOf, type DueFilter, type Summary } from './boardFilters'
+import { useClientsActions } from './useClientsActions'
 
-// Канбан-доска онбординга — отрисовывается прямо здесь при переключении
-// view-mode. Lazy, чтобы не тянуть в bundle когда юзер не открывает kanban.
-const OnboardingPage = lazy(() => import('@/pages/onboarding/OnboardingPage'))
+// Полная форма лида живёт в components/sales; экспорт отсюда оставлен для
+// старых импортов (Директ импортировал ClientForm со страницы).
+export { ClientForm } from '@/components/sales/ClientForm'
 
-/** Подписи этапов онбординга — для бейджа в списке клиентов. */
-const ONBOARDING_STAGE_LABELS: Record<string, string> = {
-  negotiation: 'Переговор',
-  meeting: 'Встреча',
-  kp_creation: 'Создание КП',
-  contract: 'Договор',
-  implementation: 'Реализация',
-  cancelled: 'Отмена',
-}
+const PAGE_SIZE = 20
+const VIEWS = ['board', 'list'] as const
+const OWNERS = ['me', 'all'] as const
+const DUES: readonly DueFilter[] = ['', 'overdue', 'today', 'none']
+const STAGE_FILTERS: readonly string[] = ['', 'all', ...ALL_STAGES.map(s => s.value)]
+const LEGACY_ACTIVE = ['negotiating', 'on_hold', 'unknown']
 
-const STATUS_OPTIONS: { value: string; label: string; color: string }[] = [
-  { value: 'new',         label: 'Новый',              color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'waiting',     label: 'Ожидание ответа',    color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  { value: 'negotiating', label: 'В переговорах',      color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
-  { value: 'proposal',    label: 'Предложение',        color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  { value: 'won',         label: 'Клиент ✓',           color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  { value: 'lost',        label: 'Отказ',              color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
-  { value: 'on_hold',     label: 'На паузе',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
-  // «Неизвестно» — статус направления разработки (просьба МП по dev).
-  // МП по СММ его не видит ни в фильтрах, ни в форме — см. statusOptionsFor.
-  { value: 'unknown',     label: 'Неизвестно',         color: 'bg-surface-100 text-surface-500 dark:bg-surface-700 dark:text-surface-300' },
-]
-
-/** Статусы, доступные конкретной роли: «Неизвестно» — только для направления
- *  разработки (МП по dev, руководство). МП по СММ опцию не видит, но если
- *  лид уже в этом статусе (выставил основатель) — показываем, чтобы селект
- *  не «съел» значение молча. */
-function statusOptionsFor(role?: string | null, currentStatus?: string) {
-  return STATUS_OPTIONS.filter(s =>
-    s.value !== 'unknown' || role !== 'sales_manager_smm' || currentStatus === 'unknown')
-}
-
-type InterestIcon = typeof Circle
-const INTEREST_OPTIONS: { value: string; label: string; Icon: InterestIcon; color: string }[] = [
-  { value: '',     label: 'Все',      Icon: Circle,    color: '' },
-  { value: 'cold', label: 'Холодный', Icon: Snowflake, color: 'text-surface-500' },
-  { value: 'warm', label: 'Тёплый',   Icon: Sun,       color: 'text-surface-500' },
-  { value: 'hot',  label: 'Горячий',  Icon: Flame,     color: 'text-red-500' },
-]
-
-// Chip styles for interest filter — visual states
-const INTEREST_CHIPS: { value: string; label: string; Icon: InterestIcon; bg: string; bgActive: string }[] = [
-  { value: 'hot',  label: 'Горячие',  Icon: Flame,     bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',           bgActive: 'bg-red-500 text-white' },
-  { value: 'warm', label: 'Тёплые',   Icon: Sun,       bg: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',   bgActive: 'bg-surface-500 text-white' },
-  { value: 'cold', label: 'Холодные', Icon: Snowflake, bg: 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',           bgActive: 'bg-surface-500 text-white' },
-]
-
-/** Города для селекта «Адрес». «Другое» открывает поле ручного ввода. */
-const ADDRESS_OPTIONS = ['Душанбе']
-const CHANNEL_OPTIONS = ['WhatsApp', 'Telegram', 'Instagram', 'Звонок', 'Email', 'Личная встреча']
-const SOURCE_OPTIONS = [
-  'Instagram', 'Рекомендация', 'Холодный обзвон', 'Сайт', 'Реклама',
-  // Платный трафик разводим по площадкам: по «Рекламе» не видно, откуда
-  // пришёл лид — с таргета в Instagram или из WhatsApp.
-  'Таргет Instagram', 'Таргет WhatsApp',
-  'Другое',
-]
-const SPHERE_SUGGESTIONS = ['Ресторан', 'Кафе', 'Клиника', 'Школа', 'Салон красоты', 'Отель', 'Магазин', 'Блогер', 'Модель', 'SMM', 'Разработка', 'Другое']
-
-/** true, если дата (локально) — сегодня. Нужно для оптимистичного
- *  bump KPI «Встречи»: метрика привязана к ДНЮ встречи, поэтому
- *  сегодняшний KPI трогаем только когда встреча назначена на сегодня. */
-function isTodayLocal(iso?: string | null): boolean {
-  if (!iso) return false
-  const d = new Date(iso); const n = new Date()
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
-}
-
-/** Оптимистично прибавляет delta к value метрики с заданным ключом
- *  в KPI-объекте {items: [{key, value, target, percent, done}, ...]}.
- *  WebSocket потом перетрёт точным значением с сервера. */
-function bumpKpiValue(kpi: any, key: string, delta: number) {
-  if (!kpi || !Array.isArray(kpi.items)) return kpi
-  let touched = false
-  const items = kpi.items.map((it: any) => {
-    if (it.key !== key) return it
-    touched = true
-    const value = Math.max(0, (Number(it.value) || 0) + delta)
-    const target = Number(it.target) || 0
-    const percent = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0
-    // Без нормы (выходной, target 0) пункт не «выполнен» — иначе ложный
-    // праздник «0 из 0» (15.11.2026, как на сервере).
-    return { ...it, value, percent, done: target > 0 && value >= target }
-  })
-  if (!touched) return kpi
-  // Общий процент — как на сервере: только пункты с нормой, каждый не
-  // больше 100 % (перевыполнение одного не закрывает недобор другого).
-  const counted = items.filter((i: any) => Number(i.target) > 0)
-  if (counted.length === 0) return { ...kpi, items }
-  const overall = Math.round(counted.reduce((acc: number, i: any) =>
-    acc + Math.min(100, ((Number(i.value) || 0) / Number(i.target)) * 100), 0) / counted.length)
-  return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
-}
-
-/** Строка чипов-фильтров: на компьютере переносится, на телефоне — одна
- *  строка с прокруткой вбок от края до края экрана. py-1 — запас под рамку
- *  выбранного чипа, иначе её срезает прокрутка. */
-const CHIP_ROW = 'flex flex-wrap gap-2 items-center max-sm:flex-nowrap max-sm:overflow-x-auto hide-scrollbar max-sm:-mx-4 max-sm:px-4 max-sm:py-1'
-/** Короткие подписи статусов для строки на телефоне. */
-const SHORT_STATUS: Record<string, string> = { 'Ожидание ответа': 'Ожидание', 'В переговорах': 'Переговоры' }
-
-/** Выбранный чип — в начало строки (только когда строка листается). */
-function useScrollActiveChip(ref: RefObject<HTMLDivElement>, key: unknown) {
-  useEffect(() => {
-    const row = ref.current
-    if (!row || row.scrollWidth <= row.clientWidth + 1) return
-    const chip = row.querySelector<HTMLElement>('[data-active="true"]')
-    if (!chip) return
-    const left = chip.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - 16
-    row.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
-  }, [ref, key])
-}
-
+/**
+ * «Клиенты» (15.11.2026, макеты «Единая воронка» и «Клиенты» на телефоне).
+ * Одна воронка вместо двух (база + онбординг): вид «Воронка» — доска по
+ * этапам, вид «Список» — серверная пагинация с сортировкой по ближайшему
+ * действию. Лид открывается в карточке справа (на телефоне — шторкой);
+ * ?lead=<id> (и старое ?id=<id>) открывает её сразу — так ведут
+ * уведомления, Календарь, Директ и окно дублей.
+ * Фильтры, вид и страница — в адресе: «Назад» возвращает список как был.
+ */
 export default function ClientsPage() {
-  const qc = useQueryClient()
-  // Поиск, статус, интерес, сфера, «К звонку», страница и вид — в адресе с
-  // заменой шага (08.11.2026): вернулись «Назад» — список как был.
+  const user = useAuthStore(s => s.user)
+  const top = isTopRole(user)
+  const isSales = !!salesDirectionOf(user)
+  // «Все» — руководству (и тем, кому раздел открыт доступом без роли
+  // продаж: своих лидов у них нет). МП видит только свои.
+  const canSeeAll = top || !isSales
+  const desktop = useIsDesktop()
   const patchUrl = usePatchUrl()
   const patchRef = useRef(patchUrl)
   patchRef.current = patchUrl
-  // Дебаунсим поисковую строку — иначе при каждом keystroke стартует
-  // новый запрос /clients и весь список перерисовывается (мигает).
-  // 250 мс — компромисс между «отзывчивостью» и «не дёргать сервер».
-  // Поле печатает своим состоянием, в адрес (?q=) уходит уже после паузы.
-  const [debouncedSearch] = useUrlState<string>('q', '')
-  const [search, setSearch] = useState(debouncedSearch)
-  const lastQ = useRef(debouncedSearch)
+
+  const [view, setView] = useUrlState<'board' | 'list'>('view', desktop ? 'board' : 'list', VIEWS)
+  const [ownerRaw] = useUrlState<'me' | 'all'>('owner', canSeeAll ? 'all' : 'me', OWNERS)
+  const owner: 'me' | 'all' = canSeeAll ? ownerRaw : 'me'
+  const [due] = useUrlState<DueFilter>('due', '', DUES)
+  const [source] = useUrlState<string>('source', '')
+  const [hold] = useUrlFlag('hold')
+  const [callFlag] = useUrlFlag('callRequested')
+  const [stage] = useUrlState<string>('stage', '', STAGE_FILTERS)
+  const [pageRaw, setPage] = useUrlNumber('page', 1)
+  const page = Math.max(1, pageRaw)
+
+  // Поиск печатает своим состоянием, в адрес (?q=) уходит после паузы —
+  // иначе каждая буква перерисовывала бы список и дёргала сервер.
+  const [qUrl] = useUrlState<string>('q', '')
+  const [search, setSearch] = useState(qUrl)
+  const lastQ = useRef(qUrl)
   useEffect(() => {
-    if (debouncedSearch !== lastQ.current) { lastQ.current = debouncedSearch; setSearch(debouncedSearch) }
-  }, [debouncedSearch])
+    if (qUrl !== lastQ.current) { lastQ.current = qUrl; setSearch(qUrl) }
+  }, [qUrl])
   useEffect(() => {
     const next = search.trim()
     if (next === lastQ.current) return
     const t = setTimeout(() => { lastQ.current = next; patchRef.current({ q: next || null, page: null }) }, 250)
     return () => clearTimeout(t)
   }, [search])
-  const [sphere] = useUrlState<string>('sphere', '')
-  const [editLead, setEditLead] = useState<any>(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [pageRaw, setPage] = useUrlNumber('page', 1)
-  // Переключатель вида: list (таблица клиентов) ↔ kanban (доска онбординга).
-  // В адресе (?view=); localStorage — запасной вариант, когда открыли из меню.
-  const [viewDefault] = useState<'list' | 'kanban'>(() => {
-    try { return localStorage.getItem('clients-view') === 'kanban' ? 'kanban' : 'list' } catch { return 'list' }
-  })
-  const [viewMode, setViewMode] = useUrlState('view', viewDefault, ['list', 'kanban'] as const)
-  const setViewModePersisted = (v: 'list' | 'kanban') => {
-    setViewMode(v)
-    try { localStorage.setItem('clients-view', v) } catch {}
-  }
-  // У МП по продажам и у основателя/сооснователя — по 10 клиентов на странице,
-  // у остальных ролей — 5.
-  const role = useAuthStore(s => s.user?.role)
-  const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
-  const isTopExec = role === 'founder' || role === 'admin'
-  // Руководитель (может назначать звонки менеджерам через чекбоксы).
-  const isBoss = role === 'admin' || role === 'founder'
-  const PAGE_SIZE = (isSalesManager || isTopExec) ? 10 : 5
 
-  // «Позвонить»: руководитель отмечает лида галочкой — звонок назначается
-  // менеджеру-владельцу СРАЗУ (без отдельной кнопки), плюс фильтр
-  // «только отмеченные к звонку».
-  // ?callRequested=1 — и deep-link из уведомления «📞 Звонки от руководителя».
-  const [callFlag, setOnlyCallRequested] = useUrlFlag('callRequested')
-  const [status] = useUrlState('status', '', ['', ...statusOptionsFor(role).map(o => o.value)])
-  const [interest] = useUrlState('interest', '', ['', ...INTEREST_CHIPS.map(c => c.value)])
-  const statusRow = useRef<HTMLDivElement>(null)
-  const interestRow = useRef<HTMLDivElement>(null)
-  useScrollActiveChip(statusRow, status)
-  useScrollActiveChip(interestRow, `${interest}|${callFlag}`)
-
-  const { data: leads, isLoading } = useQuery({
-    queryKey: ['clients', debouncedSearch, status, interest, sphere],
-    queryFn: () => clientsApi.list({ search: debouncedSearch || undefined, status: status || undefined, interest: interest || undefined, sphere: sphere || undefined }),
-    // Пока летит новый запрос — оставляем на экране предыдущий список,
-    // чтобы страница не «обновлялась» полным экраном PageLoader при каждом
-    // обновлении фильтров.
-    placeholderData: keepPreviousData,
-  })
-
-  // Список под рендер: при фильтре «К звонку» оставляем только отмеченных.
-  const callRequestedCount = (leads || []).filter((l: any) => l.callRequested).length
-  // Отмеченных больше нет (вернулись по старой ссылке) — кнопки «К звонку»
-  // не видно, поэтому и фильтр не держим, иначе список пуст без выхода.
-  const onlyCallRequested = callFlag && callRequestedCount > 0
-  const displayLeads = onlyCallRequested
-    ? (leads || []).filter((l: any) => l.callRequested)
-    : (leads || [])
-  // Страница из адреса — в пределах списка.
-  const page = Math.min(Math.max(1, pageRaw), Math.max(1, Math.ceil(displayLeads.length / PAGE_SIZE)))
-
-  // «Назад» на телефоне закрывает карточку клиента, а не страницу (08.11.2026).
-  useHistoryOverlay('client', editLead?.id ? String(editLead.id) : null, v => {
-    if (!v) { setEditLead(null); setShowCreate(false); return }
-    const list: any[] = Array.isArray(leads) ? leads : ((leads as any)?.items ?? [])
-    const found = list.find((l: any) => String(l.id) === v)
-    if (found) setEditLead(found)
-  })
-  const { data: stats } = useQuery({
-    queryKey: ['clients-stats'],
-    queryFn: clientsApi.stats,
-  })
-
-  const queryKey = ['clients', debouncedSearch, status, interest, sphere]
-
-  // Глубокий линк из KPI-модалки: /clients?id=<leadId> — открываем форму
-  // редактирования этого клиента сразу, а не оставляем юзера искать руками
-  // в общем списке. После открытия чистим query, чтобы при перезагрузке
-  // F5 не открывалась снова. Если лид не найден (удалили / нет доступа) —
-  // показываем toast, query тоже чистим.
-  const location = useLocation()
-  const navigate = useNavigate()
-  // Deep-link из уведомления «📞 Звонки от руководителя» (?callRequested=1)
-  // теперь сам и есть фильтр в адресе — отдельной обработки не нужно.
+  // ── Карточка лида ──────────────────────────────────────────────────
+  const [openId, setOpenId] = useState<string | null>(null)
+  // «Назад» на телефоне закрывает карточку, а не уходит со страницы.
+  useHistoryOverlay('lead', openId, v => setOpenId(v))
+  // ?lead= / ?id= из уведомлений: сначала убираем параметр из адреса
+  // (F5 не откроет снова), а карточку открываем следующим шагом — чтобы
+  // открытие легло отдельным шагом истории и «Назад» закрывал её с первого раза.
+  const [params] = useSearchParams()
+  const deepId = params.get('lead') || params.get('id')
+  const pendingDeep = useRef<string | null>(null)
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const leadId = params.get('id')
-    if (!leadId || !leads) return
-    const lead = leads.find((l: any) => l.id === leadId)
-    if (lead) {
-      setEditLead(lead)
-    } else {
-      toast('Клиент не найден или удалён', { icon: 'ℹ️' })
+    if (deepId) {
+      pendingDeep.current = deepId
+      patchRef.current({ lead: null, id: null })
+    } else if (pendingDeep.current) {
+      const id = pendingDeep.current
+      pendingDeep.current = null
+      setOpenId(id)
     }
-    // Убираем ?id из URL чтобы при F5 не триггерилось снова. Остальные
-    // параметры (фильтры, поиск) оставляем.
-    const rest = new URLSearchParams(location.search)
-    rest.delete('id')
-    const qs = rest.toString()
-    navigate(location.pathname + (qs ? `?${qs}` : ''), { replace: true })
+  }, [deepId])
+
+  // ── Данные ─────────────────────────────────────────────────────────
+  // Доска грузится всегда: из неё же — счётчики чипов и сводка шапки
+  // (в своей области «Мои/Все», а не по всему направлению).
+  const boardQ = useQuery({
+    queryKey: salesKeys.board({ owner }),
+    queryFn: () => leadsApi.board({ owner }),
+    staleTime: 30_000,
+  })
+  const statsQ = useQuery<LeadStats>({ queryKey: ['clients-stats'], queryFn: clientsApi.stats, staleTime: 60_000 })
+
+  const listParams: LeadListParams = {
+    owner,
+    search: qUrl || undefined,
+    due: due || undefined,
+    source: source || undefined,
+    hold: hold ? '1' : undefined,
+    status: stage === '' ? ACTIVE_STATUSES.join(',') : stage === 'all' ? undefined : stage,
+    page,
+    pageSize: PAGE_SIZE,
+    sort: 'next',
+  }
+  // «К звонку» сервер списком не фильтрует — берём отмеченных из доски.
+  const listOn = view === 'list' && !callFlag
+  const listQ = useQuery({
+    queryKey: salesKeys.list(listParams),
+    queryFn: () => leadsApi.page(listParams),
+    placeholderData: keepPreviousData,
+    enabled: listOn,
+  })
+  useEffect(() => {
+    const d = listQ.data
+    if (listOn && d && d.items.length === 0 && d.total > 0 && page > 1) setPage(1)
+  }, [listOn, listQ.data, page, setPage])
+
+  const boardItems = boardQ.data ?? []
+  const filters = { q: qUrl, due, source, hold, callRequested: callFlag }
+  const filtersActive = hasFilters(filters) || (view === 'list' && !!stage)
+  const visible = useMemo(() => boardItems.filter(l => matchBoard(l, filters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leads, location.search])
+    [boardItems, qUrl, due, source, hold, callFlag])
+  const counts = boardQ.data ? chipCounts(boardQ.data) : null
+  const sources = useMemo(() => {
+    const set = new Set(SOURCE_OPTIONS)
+    for (const l of boardItems) if (l.leadSource) set.add(l.leadSource)
+    if (source) set.add(source)
+    return Array.from(set)
+  }, [boardItems, source])
 
-  const createMut = useMutation({
-    mutationFn: clientsApi.create,
-    onMutate: async (newLead: any) => {
-      setShowCreate(false)
-      await qc.cancelQueries({ queryKey: ['clients'] })
-      const previous = qc.getQueryData(queryKey)
-      const tempLead = {
-        id: `temp-${Date.now()}`,
-        ...newLead,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-      qc.setQueryData(queryKey, (old: any[] = []) => [tempLead, ...old])
-      // Оптимистичные бампы KPI — мгновенный отклик до прихода ответа сервера.
-      // Создание клиента ВСЕГДА увеличивает new_companies (createdAt сегодня).
-      qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'new_companies', +1))
-      qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'new_companies', +1))
-      // Если сразу проставили callType='cold' — +1 к холодным звонкам.
-      if (String(newLead?.callType || '').toLowerCase() === 'cold') {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', +1))
-      }
-      // Если сразу проставили emailStatus='sent' — +1 к персональным письмам.
-      if (String(newLead?.emailStatus || '').toLowerCase() === 'sent') {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', +1))
-      }
-      // +1 к встречам ТОЛЬКО если встреча назначена на сегодня — KPI
-      // встреч привязан к ДАТЕ встречи, а не к дате создания записи.
-      if (isTodayLocal(newLead?.nextContactAt)) {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', +1))
-      }
-      // (Старая эвристика lastContactAt+email удалена — теперь
-      // KPI personal_emails считается строго по emailStatus='sent',
-      // bump для этого случая сделан выше.)
-      return { previous, tempLead }
-    },
-    onError: (e: any, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
-      toast.error(e?.response?.data?.message || 'Ошибка')
-    },
-    onSuccess: (server: any, _vars, ctx) => {
-      qc.setQueryData(queryKey, (old: any[] = []) =>
-        old.map(l => l.id === ctx?.tempLead.id ? server : l),
-      )
-      qc.invalidateQueries({ queryKey: ['clients-stats'] })
-      qc.invalidateQueries({ queryKey: ['clients'] })
-      // syncMeetingTask на бэке создал/обновил личную задачу — обновляем
-      // календарь и список «Мои задачи», чтобы новый лид сразу был виден.
-      qc.invalidateQueries({ queryKey: ['calendar'] })
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-      // Создание лида с продвинутым статусом / онбординг-этапом тоже
-      // считается прогрессом по воронке (бэк пишет LEAD_PROGRESS).
-      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
-      qc.invalidateQueries({ queryKey: ['kpi-user'] })
-      qc.invalidateQueries({ queryKey: ['kpi-all'] })
-      qc.invalidateQueries({ queryKey: ['kpi-details'] })
-      toast.success('Клиент добавлен')
-    },
-  })
-
-  const updateMut = useMutation({
-    mutationFn: ({ id, data }: any) => clientsApi.update(id, data),
-    onMutate: async ({ id, data }: any) => {
-      setEditLead(null)
-      await qc.cancelQueries({ queryKey: ['clients'] })
-      const previous = qc.getQueryData(queryKey)
-      // Оптимистичные бампы KPI: считаем дельты для всех 3-х метрик,
-      // которые могут поменяться через update (без перетаскивания).
-      // WebSocket leads:changed потом перетрёт точной серверной цифрой.
-      const lead = (previous as any[] | undefined)?.find(l => l.id === id)
-
-      // 1) callType: ПЕРЕХОД в «cold» = +1 холодный звонок (событие).
-      // Учёт событийный — уход из «cold» НЕ снимает звонок (он состоялся).
-      const beforeCall = String(lead?.callType || '').toLowerCase()
-      const afterCall = data?.callType !== undefined
-        ? String(data.callType || '').toLowerCase()
-        : beforeCall
-      if (afterCall === 'cold' && beforeCall !== 'cold') {
-        qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'cold_calls', +1))
-        qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'cold_calls', +1))
-      }
-
-      // 2) nextContactAt: KPI встреч считается на ДЕНЬ встречи. Сегодняшний
-      //    KPI трогаем только по признаку «встреча сегодня» (было/стало).
-      if (data?.nextContactAt !== undefined) {
-        const wasToday = isTodayLocal(lead?.nextContactAt)
-        const nowToday = isTodayLocal(data?.nextContactAt)
-        if (wasToday !== nowToday) {
-          const delta = nowToday ? +1 : -1
-          qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'meetings', delta))
-          qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'meetings', delta))
+  const summary: Summary | null = boardQ.data
+    ? summaryOf(boardQ.data)
+    : statsQ.data
+      ? {
+          inWork: [...ACTIVE_STATUSES, ...LEGACY_ACTIVE].reduce((a, s) => a + (statsQ.data!.byStatus?.[s] || 0), 0),
+          potential: Number(statsQ.data.totalPotential ?? statsQ.data.openPotential ?? 0),
+          forecast: Number(statsQ.data.forecast ?? NaN),
         }
-      }
+      : null
 
-      // 3) emailStatus: переход → 'sent' = +1, обратно = -1.
-      // По аналогии с callType — точный учёт по полю «Письмо» в форме.
-      if (data?.emailStatus !== undefined) {
-        const beforeMail = String(lead?.emailStatus || '').toLowerCase()
-        const afterMail = String(data?.emailStatus || '').toLowerCase()
-        if (beforeMail !== afterMail) {
-          const becameSent = afterMail === 'sent' && beforeMail !== 'sent'
-          const leftSent = beforeMail === 'sent' && afterMail !== 'sent'
-          if (becameSent || leftSent) {
-            const delta = becameSent ? +1 : -1
-            qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'personal_emails', delta))
-            qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'personal_emails', delta))
-          }
-        }
-      }
-      qc.setQueryData(queryKey, (old: any[] = []) =>
-        old.map(l => l.id === id ? { ...l, ...data, updatedAt: new Date().toISOString() } : l),
+  // ── Действия ───────────────────────────────────────────────────────
+  const { move, hold: holdMut, remove, callRequest } = useClientsActions()
+  const [showCreate, setShowCreate] = useState(false)
+  const [callLead, setCallLead] = useState<SalesLead | null>(null)
+  const [handoffLead, setHandoffLead] = useState<SalesLead | null>(null)
+  const [lostLead, setLostLead] = useState<SalesLead | null>(null)
+  const [deleteLead, setDeleteLead] = useState<SalesLead | null>(null)
+
+  // «→» и перетаскивание — по своим лидам и лидам без владельца; чужие в
+  // «Все» — вид для просмотра (руководство действует из карточки).
+  const canMove = (l: SalesLead) => canWorkLead(user, l) && (!l.ownerId || l.ownerId === user?.id)
+  const advance = (l: SalesLead) => {
+    const next = nextStage(l.status)
+    if (next) move.mutate({ id: l.id, status: next.value })
+    else if (normalizeStatus(l.status) === 'contract') setHandoffLead(l)
+  }
+  const dropTo = (l: SalesLead, to: LeadStatus) => {
+    if (to === 'won') setHandoffLead(l)
+    else if (to === 'lost') setLostLead(l)
+    else move.mutate({ id: l.id, status: to })
+  }
+  const resetFilters = () => {
+    setSearch('')
+    lastQ.current = ''
+    patchUrl({ q: null, due: null, source: null, hold: null, callRequested: null, stage: null, page: null })
+  }
+  const open = (l: SalesLead) => setOpenId(l.id)
+
+  const listHandlers = {
+    onOpen: open,
+    onCall: (l: SalesLead) => setCallLead(l),
+    onToggleHold: (l: SalesLead) => holdMut.mutate({ id: l.id, onHold: !l.onHold }),
+    onDelete: (l: SalesLead) => setDeleteLead(l),
+    onCallRequest: (ids: string[], flag: boolean) => callRequest.mutate({ ids, flag }),
+  }
+
+  // ── Отрисовка ──────────────────────────────────────────────────────
+  const nothingFound = (
+    <EmptyState
+      title="Ничего не найдено"
+      description="Попробуйте изменить поиск или фильтры."
+      action={<button type="button" onClick={resetFilters} className="btn-secondary min-h-[44px]">Сбросить фильтры</button>}
+    />
+  )
+  const noLeads = (
+    <EmptyState
+      title={owner === 'me' ? 'У вас пока нет лидов' : 'Пока нет лидов'}
+      description="Добавьте первого клиента — дальше воронка подскажет следующий шаг."
+      action={<button type="button" onClick={() => setShowCreate(true)} className="btn-primary min-h-[44px]"><Plus size={16} aria-hidden="true" /> Новый лид</button>}
+    />
+  )
+
+  let content: ReactNode
+  if (view === 'board' || callFlag) {
+    if (boardQ.isPending) content = view === 'board' ? <BoardSkeleton /> : <ListSkeleton />
+    else if (boardQ.isError) content = <LoadError onRetry={() => boardQ.refetch()} />
+    else if (boardItems.length === 0 && !filtersActive) content = noLeads
+    else if (visible.length === 0 && filtersActive) content = nothingFound
+    else if (view === 'board') {
+      content = <ClientsBoard items={visible} onOpen={open} onAdvance={advance} onDrop={dropTo} canMove={canMove} desktop={desktop} />
+    } else {
+      const total = visible.length
+      const p = Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE)))
+      content = (
+        <ClientsList items={visible.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)} total={total} page={p} pageSize={PAGE_SIZE}
+          onPage={setPage} fetching={boardQ.isFetching} showOwner={owner === 'all'} isBoss={top}
+          callPending={callRequest.isPending} h={listHandlers} />
       )
-      return { previous }
-    },
-    onError: (e: any, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
-      // Откат оптимистичного KPI — рефетчем.
-      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
-      qc.invalidateQueries({ queryKey: ['kpi-user'] })
-      toast.error(e?.response?.data?.message || 'Ошибка')
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['clients-stats'] })
-      // Любое изменение клиента (статус, стадия, контакты) должно
-      // отразиться и в Онбординге — инвалидируем общий префикс.
-      qc.invalidateQueries({ queryKey: ['clients'] })
-      // И в Календаре + Задачах: следом за update'ом бэк пересинхронит
-      // личную follow-up задачу (название/время/статус закрытия сделки).
-      qc.invalidateQueries({ queryKey: ['calendar'] })
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-      // KPI воронки/менеджера — продвижения по status/onboardingStage
-      // считаются из activity_logs бэком; виджеты дашборда должны
-      // обновиться сразу, без F5.
-      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
-      qc.invalidateQueries({ queryKey: ['kpi-user'] })
-      qc.invalidateQueries({ queryKey: ['kpi-all'] })
-      qc.invalidateQueries({ queryKey: ['kpi-details'] })
-      toast.success('Сохранено')
-    },
-  })
-
-  const deleteMut = useMutation({
-    mutationFn: clientsApi.remove,
-    onMutate: async (id: string) => {
-      setDeleteId(null)
-      await qc.cancelQueries({ queryKey: ['clients'] })
-      const previous = qc.getQueryData(queryKey)
-      qc.setQueryData(queryKey, (old: any[] = []) => old.filter(l => l.id !== id))
-      // Оптимистично убираем из ВСЕХ закешированных списков клиентов
-      // (с любыми фильтрами + ['clients'] на Онбординге).
-      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
-        Array.isArray(old) ? old.filter((l: any) => l.id !== id) : old,
+    }
+  } else {
+    const data = listQ.data
+    if (listQ.isError) content = <LoadError onRetry={() => listQ.refetch()} />
+    else if (!data) content = <ListSkeleton />
+    else if (data.items.length === 0) content = filtersActive ? nothingFound : noLeads
+    else {
+      content = (
+        <ClientsList items={data.items} total={data.total} page={data.page || page} pageSize={data.pageSize || PAGE_SIZE}
+          onPage={setPage} fetching={listQ.isFetching} showOwner={owner === 'all'} isBoss={top}
+          callPending={callRequest.isPending} h={listHandlers} />
       )
-      return { previous }
-    },
-    onError: (_e, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
-      toast.error('Ошибка')
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['clients-stats'] })
-      // Гарантируем что Онбординг подхватит удаление без F5.
-      qc.invalidateQueries({ queryKey: ['clients'] })
-      toast.success('Удалено')
-    },
-  })
-
-  // «Позвонить»: назначить/снять отметку обзвона.
-  const callRequestMut = useMutation({
-    mutationFn: ({ ids, flag }: { ids: string[]; flag: boolean }) => clientsApi.callRequest(ids, flag),
-    onMutate: async ({ ids, flag }) => {
-      await qc.cancelQueries({ queryKey: ['clients'] })
-      const idSet = new Set(ids)
-      qc.setQueriesData({ queryKey: ['clients'] }, (old: any) =>
-        Array.isArray(old) ? old.map((l: any) => idSet.has(l.id) ? { ...l, callRequested: flag } : l) : old,
-      )
-    },
-    onError: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.error('Не удалось обновить') },
-    onSuccess: (server: any, { flag }) => {
-      qc.invalidateQueries({ queryKey: ['clients'] })
-      if (!flag) { toast.success('Отметка снята'); return }
-      const d = server?.byDirection || {}
-      const parts: string[] = []
-      if (d.smm) parts.push(`СММ: ${d.smm}`)
-      if (d.development) parts.push(`Разработка: ${d.development}`)
-      if (d.none) parts.push(`без направления: ${d.none}`)
-      const breakdown = parts.length ? ` (${parts.join(', ')})` : ''
-      toast.success(`Назначено звонков: ${server?.updated ?? 0}${breakdown}`)
-    },
-  })
-
-  // Страницу сбрасываем в обработчиках фильтров (вместе с фильтром, одним
-  // шагом адреса), а не эффектом: эффект при возврате «Назад» сбросил бы
-  // запомненную страницу.
-
-  const spheres = useMemo(() => {
-    const set = new Set<string>()
-    leads?.forEach((l: any) => l.sphere && set.add(l.sphere))
-    // Выбранная сфера из адреса — всегда в списке, чтобы её можно было снять.
-    if (sphere) set.add(sphere)
-    return Array.from(set).sort()
-  }, [leads, sphere])
-
-  if (isLoading) return <PageLoader />
-
-  const totalPotentialFmt = Number(stats?.openPotential || 0).toLocaleString('ru-RU')
+    }
+  }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="page-title">База клиентов</h1>
-          <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-            {viewMode === 'kanban' ? (
-              <>Канбан-доска онбординга. Перетащите карточку, чтобы сменить этап.</>
-            ) : (() => {
-              const total = stats?.total ?? leads?.length ?? 0
-              const shown = leads?.length ?? 0
-              const filtered = !!(search || status || interest || sphere)
-              if (filtered && shown !== total) {
-                return <>Показано <b className="text-surface-800 dark:text-surface-200">{shown}</b> из {total} лидов · потенциал {totalPotentialFmt} сомони</>
-              }
-              return <>{total} лидов · потенциал {totalPotentialFmt} сомони</>
-            })()}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Переключатель: список ↔ канбан онбординга. */}
-          <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
-            <button
-              onClick={() => setViewModePersisted('list')}
-              title="База клиентов (список)"
-              className={clsx(
-                'p-2 transition-colors',
-                viewMode === 'list'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
+    <>
+      {/* Карточка лида на компьютере — панель справа 560 px; страница
+          отступает, чтобы список и доска оставались видны рядом. */}
+      <div className={clsx('space-y-4 transition-[margin] duration-200', openId && 'lg:mr-[552px]')}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="page-title">Клиенты</h1>
+            <p className="mt-0.5 text-sm text-surface-500 dark:text-surface-400">
+              {summary ? (
+                <>
+                  <b className="font-semibold text-surface-800 dark:text-surface-100">{summary.inWork}</b> в работе
+                  {' · '}в воронке {formatMoney(summary.potential)}
+                  {Number.isFinite(summary.forecast) && <> · с учётом вероятности ≈ {formatMoney(summary.forecast)}</>}
+                </>
+              ) : (
+                <span className="skeleton inline-block h-4 w-64 align-middle" aria-hidden="true" />
               )}
-            >
-              <List size={16} />
-            </button>
-            <button
-              onClick={() => setViewModePersisted('kanban')}
-              title="Онбординг (канбан)"
-              className={clsx(
-                'p-2 transition-colors',
-                viewMode === 'kanban'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200',
-              )}
-            >
-              <LayoutGrid size={16} />
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div role="group" aria-label="Вид" className="inline-flex overflow-hidden rounded-lg border border-surface-300 dark:border-surface-600">
+              {VIEWS.map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={view === v}
+                  onClick={() => setView(v)}
+                  className={clsx(
+                    'inline-flex min-h-[36px] items-center gap-1.5 px-3 text-sm font-medium transition-colors max-lg:min-h-[44px]',
+                    view === v
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-surface-50 text-surface-700 hover:bg-surface-100 dark:bg-surface-800 dark:text-surface-200 dark:hover:bg-surface-700',
+                  )}
+                >
+                  {v === 'board' ? <LayoutGrid size={15} aria-hidden="true" /> : <List size={15} aria-hidden="true" />}
+                  {v === 'board' ? 'Воронка' : 'Список'}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setShowCreate(true)} className="btn-primary min-h-[36px] max-lg:min-h-[44px]">
+              <Plus size={16} aria-hidden="true" /> Новый лид
             </button>
           </div>
-          {/* Кнопка «Добавить клиента» видна в обоих режимах (список и канбан),
-              чтобы header не «прыгал» при переключении view. В канбан-режиме
-              новый клиент создаётся сразу с onboardingStage = первый этап. */}
-          <button onClick={() => setShowCreate(true)} className="btn-primary">
-            <Plus size={16} /> Добавить клиента
-          </button>
         </div>
-      </div>
 
-      {/* Канбан-режим — отрисовываем встроенный OnboardingPage и скрываем
-          фильтры/таблицу клиентов. */}
-      {viewMode === 'kanban' && (
-        <Suspense fallback={<PageLoader />}>
-          <OnboardingPage embedded />
-        </Suspense>
-      )}
-
-      {viewMode === 'list' && (
-      <>
-      {/* Фильтры. На телефоне (вариант А, 05.11.2026) каждая группа — одна
-          строка, листается вбок; выбранный чип прокручивается в начало строки.
-          Раньше 14 чипов занимали 8 строк, и список начинался на втором экране. */}
-      <div ref={statusRow} className={CHIP_ROW}>
-        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Статус:</span>
-        <button
-          onClick={() => patchUrl({ status: null, page: null })}
-          data-active={!status}
-          className={clsx(
-            'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-            !status
-              ? 'bg-primary-600 text-white'
-              : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
+            <label htmlFor="clients-search" className="sr-only">Поиск клиентов</label>
+            <input
+              id="clients-search"
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Название, телефон, Instagram, сфера"
+              className="input pl-9"
+            />
+          </div>
+          {view === 'list' && !callFlag && (
+            <>
+              <label htmlFor="clients-stage" className="sr-only">Этап</label>
+              <select id="clients-stage" value={stage} onChange={e => patchUrl({ stage: e.target.value || null, page: null })} className="input sm:w-48">
+                <option value="">Активные этапы</option>
+                <option value="all">Все этапы</option>
+                {ALL_STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </>
           )}
-        >
-          Все
-          {stats?.total !== undefined && <> · {stats.total}</>}
-        </button>
-        {statusOptionsFor(role).map(s => {
-          const n = stats?.byStatus?.[s.value]
-          const active = status === s.value
-          return (
-            <button
-              key={s.value}
-              onClick={() => patchUrl({ status: active ? null : s.value, page: null })}
-              data-active={active}
-              className={clsx(
-                'shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                active ? 'ring-2 ring-primary-500 ' + s.color : s.color,
-              )}
-            >
-              <span className="sm:hidden">{SHORT_STATUS[s.label] ?? s.label}</span>
-              <span className="max-sm:hidden">{s.label}</span>
-              {n !== undefined && <> · {n}</>}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Interest chips — always visible. Counts come from backend stats
-          if available (byInterest field), otherwise omitted gracefully. */}
-      <div ref={interestRow} className={CHIP_ROW}>
-        <span className="text-xs font-medium text-surface-500 dark:text-surface-400 mr-1 max-sm:hidden">Интерес:</span>
-        <button
-          onClick={() => patchUrl({ interest: null, page: null })}
-          data-active={!interest}
-          className={clsx(
-            'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-            !interest
-              ? 'bg-primary-600 text-white'
-              : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-300 border border-surface-200 dark:border-surface-700',
-          )}
-        >
-          {/* На телефоне строки без подписей — «Любой интерес» отличает эту строку от статусов. */}
-          <span className="sm:hidden">Любой интерес</span>
-          <span className="max-sm:hidden inline-flex items-center gap-1.5">
-            <Circle size={12} /> Все
-            {stats?.byInterest && (
-              <> · {(stats.byInterest.cold || 0) + (stats.byInterest.warm || 0) + (stats.byInterest.hot || 0) + (stats.byInterest.none || 0)}</>
-            )}
-          </span>
-        </button>
-        {INTEREST_CHIPS.map(c => {
-          const n = stats?.byInterest?.[c.value]
-          const active = interest === c.value
-          const Ico = c.Icon
-          return (
-            <button
-              key={c.value}
-              onClick={() => patchUrl({ interest: active ? null : c.value, page: null })}
-              data-active={active}
-              className={clsx(
-                'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                active ? c.bgActive + ' shadow-sm' : c.bg,
-              )}
-            >
-              <Ico size={12} /> {c.label}{n !== undefined && <> · {n}</>}
-            </button>
-          )
-        })}
-        {/* «📞 К звонку» — отмеченные руководителем для обзвона. */}
-        {callRequestedCount > 0 && (
-          <button
-            onClick={() => setOnlyCallRequested(!onlyCallRequested)}
-            data-active={onlyCallRequested}
-            className={clsx(
-              'shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-              onlyCallRequested
-                ? 'bg-amber-500 text-white shadow-sm'
-                : 'bg-amber-200 text-amber-900 dark:bg-amber-800/40 dark:text-amber-200',
-            )}
-          >
-            📞 К звонку · {callRequestedCount}
-          </button>
-        )}
-      </div>
-
-      {/* Search + sphere row */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1 min-w-0">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Поиск по названию / сфере / контакту / адресу"
-            className="input pl-9"
-          />
         </div>
-        <select value={sphere} onChange={e => patchUrl({ sphere: e.target.value || null, page: null })} className="input sm:w-48">
-          <option value="">Все сферы</option>
-          {spheres.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+
+        <ClientsFilters
+          canSeeAll={canSeeAll}
+          owner={owner}
+          onOwner={v => patchUrl({ owner: v === 'all' ? null : v, page: null })}
+          due={due}
+          onDue={v => patchUrl({ due: v || null, page: null })}
+          counts={counts}
+          source={source}
+          sources={sources}
+          onSource={v => patchUrl({ source: v || null, page: null })}
+          hold={hold}
+          onHold={v => patchUrl({ hold: v ? '1' : null, page: null })}
+          callFlag={callFlag}
+          onCallFlag={v => patchUrl({ callRequested: v ? '1' : null, page: null })}
+        />
+
+        {content}
       </div>
 
-      {/* Table */}
-      {!leads?.length ? (
-        <EmptyState
-          title="Нет клиентов"
-          description="Добавьте первого лида, чтобы начать ведение базы"
-          action={<button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={16} /> Добавить клиента</button>}
-        />
-      ) : (
-        <>
-        <div className="card p-0 overflow-x-auto animate-fade-in stagger-rows" style={{ WebkitOverflowScrolling: 'touch' }}>
-          <table className="w-full md:min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b border-surface-100 dark:border-surface-700 text-left">
-                <th className="px-2 sm:px-3 py-3 text-xs font-semibold text-surface-400 dark:text-surface-500 w-10 text-center">#</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400">Название / Сфера</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">ЛПР / Контакт</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Статус</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Интерес</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right hidden lg:table-cell">Потенциал</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden md:table-cell">Следующий контакт</th>
-                <th className="px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 hidden lg:table-cell">Последняя активность</th>
-                <th className="px-2 md:px-4 py-3 text-xs font-semibold text-surface-500 dark:text-surface-400 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    {isBoss && (() => {
-                      const rows = displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-                      const allChecked = rows.length > 0 && rows.every((l: any) => l.callRequested)
-                      return (
-                        <button
-                          type="button"
-                          title="Назначить звонок всем на странице"
-                          disabled={callRequestMut.isPending}
-                          onClick={() => {
-                            const ids = rows.map((l: any) => l.id)
-                            if (ids.length) callRequestMut.mutate({ ids, flag: !allChecked })
-                          }}
-                          className={clsx(
-                            'relative inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 disabled:opacity-50',
-                            "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden",
-                            allChecked
-                              ? 'bg-amber-500 border-amber-500 text-white'
-                              : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 text-transparent',
-                          )}
-                        >
-                          <Check size={12} strokeWidth={3.5} />
-                        </button>
-                      )
-                    })()}
-                    <span className="hidden md:inline">Действия</span>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayLeads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((l: any, idx: number) => {
-                const statusOpt = STATUS_OPTIONS.find(s => s.value === l.status)
-                const interestOpt = INTEREST_OPTIONS.find(i => i.value === l.interest)
-                const nextIsSoon = l.nextContactAt && new Date(l.nextContactAt) <= new Date(Date.now() + 2 * 86400000)
-                const nextIsOverdue = l.nextContactAt && new Date(l.nextContactAt) < new Date()
-                return (
-                  <tr
-                    key={l.id}
-                    onClick={() => setEditLead(l)}
-                    className={clsx(
-                      'border-b border-surface-50 dark:border-surface-700/50 hover:bg-surface-50 dark:hover:bg-surface-700/30 transition-colors cursor-pointer',
-                      l.callRequested && 'bg-amber-100/80 dark:bg-amber-900/25 border-l-4 border-l-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/30',
-                    )}
-                  >
-                    <td className="px-2 sm:px-3 py-3 text-center text-xs text-surface-400 dark:text-surface-500 tabular-nums font-medium align-top">
-                      {(page - 1) * PAGE_SIZE + idx + 1}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <div className="font-medium text-surface-900 dark:text-surface-100 flex flex-wrap items-center gap-1.5 break-words">
-                        {l.name}
-                        {l.direction && (
-                          <span className={clsx(
-                            'inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-                            l.direction === 'smm'
-                              ? 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400'
-                              : 'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400',
-                          )}>
-                            {l.direction === 'smm' ? 'СММ' : 'Разработка'}
-                          </span>
-                        )}
-                        {l.onboardingStage && (
-                          <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            {ONBOARDING_STAGE_LABELS[l.onboardingStage] || l.onboardingStage}
-                          </span>
-                        )}
-                        {l.callRequested && (
-                          <span
-                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-200 text-amber-900 dark:bg-amber-800/50 dark:text-amber-200"
-                            title={l.callRequestedByName ? `Отметил: ${l.callRequestedByName}` : 'Назначен звонок'}
-                          >
-                            📞 Позвонить
-                          </span>
-                        )}
-                      </div>
-                      {/* На телефоне колонки «Статус» нет — статус под названием. */}
-                      <div className="md:hidden mt-1">
-                        <span className={clsx('inline-flex text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap', statusOpt?.color)}>
-                          {statusOpt?.label || l.status}
-                        </span>
-                      </div>
-                      {l.contactPhone && (
-                        <a href={`tel:${String(l.contactPhone).replace(/[^+\d]/g, '')}`}
-                          onClick={e => e.stopPropagation()}
-                          className="md:hidden mt-1.5 inline-flex items-center gap-2 min-h-[44px] px-3 rounded-xl border border-surface-200 dark:border-surface-700 text-primary-600 dark:text-primary-400 font-semibold">
-                          <Phone size={15} /> {l.contactPhone}
-                        </a>
-                      )}
-                      {l.sphere && <div className="text-[11px] text-surface-400 dark:text-surface-500 mt-0.5">{l.sphere}</div>}
-                      {l.problem && <div className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5 italic truncate max-w-[200px]">{l.problem}</div>}
-                      {/* mobile: contact inline */}
-                      <div className="md:hidden mt-1 text-[11px] text-surface-500 dark:text-surface-400">
-                        {l.contactPerson && <span className="inline-flex items-center gap-1"><UserIcon size={11} /> {l.contactPerson}</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell align-top">
-                      {l.contactPerson && <div className="text-sm text-surface-800 dark:text-surface-200">{l.contactPerson}</div>}
-                      <div className="text-[11px] text-surface-500 dark:text-surface-400 space-y-0.5">
-                        {l.contactPhone && <div className="inline-flex items-center gap-1"><Phone size={11} /> {l.contactPhone}</div>}
-                        {l.contactInstagram && <div className="inline-flex items-center gap-1"><Instagram size={11} /> {l.contactInstagram}</div>}
-                        {l.contactEmail && <div className="inline-flex items-center gap-1"><Mail size={11} /> {l.contactEmail}</div>}
-                        {!l.contactPhone && !l.contactInstagram && !l.contactEmail && l.contactInfo && (
-                          <div className="whitespace-pre-line">{l.contactInfo}</div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top hidden md:table-cell">
-                      <span className={clsx('inline-flex text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap', statusOpt?.color)}>
-                        {statusOpt?.label || l.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell align-top text-sm">
-                      {interestOpt ? (
-                        <span className={clsx('inline-flex items-center gap-1', interestOpt.color)}>
-                          <interestOpt.Icon size={12} /> {interestOpt.label}
-                        </span>
-                      ) : <span className="text-surface-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell align-top text-right tabular-nums">
-                      {l.dealPotential ? `${Number(l.dealPotential).toLocaleString('ru-RU')}` : <span className="text-surface-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell align-top">
-                      {l.nextContactAt ? (
-                        <span className={clsx(
-                          'text-xs inline-flex items-center gap-1',
-                          nextIsOverdue ? 'text-red-500 font-semibold' : nextIsSoon ? 'text-surface-600 dark:text-surface-400' : 'text-surface-500 dark:text-surface-400',
-                        )}>
-                          {nextIsOverdue && <AlertCircle size={12} className="text-red-500" />}
-                          {nextIsSoon && !nextIsOverdue && <AlertCircle size={12} className="text-surface-500" />}
-                          {format(new Date(l.nextContactAt), 'dd.MM.yy HH:mm')}
-                        </span>
-                      ) : <span className="text-surface-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell align-top">
-                      {(() => {
-                        const act = formatLastActivity(l.lastActivityAt || l.updatedAt)
-                        return act
-                          ? <span className="text-xs text-surface-500 dark:text-surface-400" title={act.title}>{act.text}</span>
-                          : <span className="text-surface-400">—</span>
-                      })()}
-                    </td>
-                    <td className="px-2 md:px-4 py-3 text-right whitespace-nowrap align-top md:align-middle" onClick={e => e.stopPropagation()}>
-                      {/* На телефоне кнопки столбиком: в ряд они уезжали за край экрана. */}
-                      <div className="flex flex-col items-end gap-2 md:flex-row md:gap-1.5 md:justify-end md:items-center">
-                        {isBoss && (
-                          <button
-                            type="button"
-                            onClick={() => callRequestMut.mutate({ ids: [l.id], flag: !l.callRequested })}
-                            disabled={callRequestMut.isPending}
-                            aria-pressed={!!l.callRequested}
-                            title={l.callRequested ? 'Снять отметку «Позвонить»' : 'Назначить звонок менеджеру'}
-                            className={clsx(
-                              'relative inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border-2 transition-all duration-150 m-2.5 md:m-0 md:mr-1 disabled:opacity-50',
-                              "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden",
-                              l.callRequested
-                                ? 'bg-amber-500 border-amber-500 text-white shadow-sm shadow-amber-500/30'
-                                : 'border-surface-300 dark:border-surface-600 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-transparent',
-                            )}
-                          >
-                            <Check size={12} strokeWidth={3.5} />
-                          </button>
-                        )}
-                        {l.callRequested && (
-                          <button
-                            onClick={() => callRequestMut.mutate({ ids: [l.id], flag: false })}
-                            className="px-2 py-2 md:py-1 rounded-lg text-[11px] font-medium text-green-700 bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
-                            title="Снять отметку «Позвонить»"
-                          >
-                            ✓ Позвонил
-                          </button>
-                        )}
-                        {/* На телефоне карточку открывает нажатие на строку — отдельный карандаш не нужен. */}
-                        <button type="button" onClick={() => setEditLead(l)} aria-label="Изменить" title="Изменить" className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 text-surface-500"><Edit size={14} /></button>
-                        <button type="button" onClick={() => setDeleteId(l.id)} aria-label="Удалить" title="Удалить" className="p-2.5 md:p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={page} total={displayLeads.length} pageSize={PAGE_SIZE} onChange={setPage} />
-        </>
-      )}
-      </>
-      )}
-
-      {(showCreate || editLead) && (
-        <ClientForm
-          key={editLead?.id || 'new'}
-          initial={editLead}
-          onClose={() => { setShowCreate(false); setEditLead(null) }}
-          onSubmit={(data: any) => {
-            // Новый клиент на доску онбординга сам не встаёт — ни у СММ, ни у
-            // разработки. Раньше клиент СММ сразу помечался этапом «Встреча»:
-            // это осталось от старой воронки, где «Встреча» была первым этапом,
-            // и выглядело так, будто менеджер уже назначил встречу. На доску
-            // клиент попадает только по кнопке «В онбординг».
-            if (editLead) updateMut.mutate({ id: editLead.id, data })
-            else createMut.mutate(data)
-          }}
-          onSubmitWithOnboarding={
-            // «+ В онбординг» прямо из формы создания — для обоих направлений.
-            !editLead
-              ? (data: any) => createMut.mutate({ ...data, onboardingStage: 'negotiation' })
-              : undefined
-          }
-          onAddToOnboarding={
-            // Воронка едина для СММ и разработки, первый этап — «Переговор».
-            editLead && !editLead.onboardingStage
-              ? () => updateMut.mutate({
-                  id: editLead.id,
-                  data: { onboardingStage: 'negotiation' },
-                })
-              : undefined
-          }
-          loading={createMut.isPending || updateMut.isPending}
-        />
-      )}
-
+      <LeadDrawer leadId={openId} onClose={() => setOpenId(null)} />
+      <LeadCreateModal open={showCreate} onClose={() => setShowCreate(false)} />
+      <CallSheet lead={callLead} onClose={() => setCallLead(null)} />
+      <HandoffModal lead={handoffLead} onClose={() => setHandoffLead(null)} />
+      <LostReasonModal lead={lostLead} onClose={() => setLostLead(null)} />
       <ConfirmDialog
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={() => deleteId && deleteMut.mutate(deleteId)}
-        title="Удалить клиента?"
-        message="Все данные лида будут удалены безвозвратно."
+        open={!!deleteLead}
+        onClose={() => setDeleteLead(null)}
+        onConfirm={() => {
+          if (!deleteLead) return
+          if (openId === deleteLead.id) setOpenId(null)
+          remove.mutate(deleteLead.id)
+        }}
+        title="Удалить лид?"
+        message={deleteLead ? `«${deleteLead.name}» и его история будут удалены безвозвратно.` : undefined}
         danger
       />
-    </div>
+    </>
   )
 }
 
-export function ClientForm({ initial: editing, prefill, title: customTitle, onClose, onSubmit, onSubmitWithOnboarding, loading, onAddToOnboarding }: any) {
-  // prefill — заготовка НОВОГО клиента (например, из чата «Директа»): поля
-  // заполнены, но это не редактирование — заголовок и кнопка как у нового.
-  const initial = editing || prefill
-  // Роль — для скрытия статуса «Неизвестно» у МП по СММ (статус dev-направления).
-  const formRole = useAuthStore(s => s.user?.role)
-  // Старые лиды могли иметь contactInfo одной строкой — раскладываем
-  // эвристически: строка с @ — Instagram, с собакой — email, остальное — телефон.
-  const parseLegacyContactInfo = (raw: string) => {
-    const out = { phone: '', instagram: '', email: '' }
-    if (!raw) return out
-    for (const part of String(raw).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)) {
-      if (/^https?:\/\/(www\.)?instagram\.com/i.test(part) || /^@/.test(part)) out.instagram ||= part
-      else if (/@/.test(part) && /\./.test(part)) out.email ||= part
-      else out.phone ||= part
-    }
-    return out
-  }
-  const legacy = parseLegacyContactInfo(initial?.contactInfo)
-
-  const { register, handleSubmit, watch, control, setValue } = useForm({ defaultValues: {
-    name: initial?.name || '',
-    sphere: initial?.sphere || '',
-    problem: initial?.problem || '',
-    address: initial?.address || '',
-    contactPerson: initial?.contactPerson || '',
-    contactPhone: initial?.contactPhone || legacy.phone,
-    contactInstagram: initial?.contactInstagram || legacy.instagram,
-    contactEmail: initial?.contactEmail || legacy.email,
-    status: initial?.status || 'new',
-    interest: initial?.interest || '',
-    dealPotential: initial?.dealPotential || '',
-    leadSource: initial?.leadSource || '',
-    channel: initial?.channel || '',
-    callType: initial?.callType || '',
-    emailStatus: initial?.emailStatus || '',
-    nextStep: initial?.nextStep || '',
-    lastContactAt: initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : '',
-    // nextContactAt в БД — UTC (timestamptz). Пикеру нужно ЛОКАЛЬНОЕ
-    // настенное время YYYY-MM-DDTHH:mm, поэтому конвертируем UTC→локаль
-    // через date-fns (иначе показывало бы время на −5ч от заданного).
-    nextContactAt: initial?.nextContactAt ? format(new Date(initial.nextContactAt), "yyyy-MM-dd'T'HH:mm") : '',
-    // Повторный звонок — та же конвертация UTC→локальное время для пикера.
-    repeatCallAt: initial?.repeatCallAt ? format(new Date(initial.repeatCallAt), "yyyy-MM-dd'T'HH:mm") : '',
-    rejectionReason: initial?.rejectionReason || '',
-  } })
-
-  const currentStatus = watch('status')
-
-  // Адрес: селект «Душанбе / Другое». «Другое» открывает ручной ввод.
-  // Режим вычисляем из исходного значения: известный город → он сам,
-  // непустое неизвестное → «Другое» (ручной ввод со старым значением).
-  const addressVal = watch('address') || ''
-  const [addrOther, setAddrOther] = useState<boolean>(
-    !!(initial?.address && !ADDRESS_OPTIONS.includes(initial.address)),
-  )
-
-  const normalize = (data: any) => ({
-    ...data,
-    dealPotential: data.dealPotential ? Number(data.dealPotential) : null,
-    interest: data.interest || null,
-    callType: data.callType || null,
-    emailStatus: data.emailStatus || null,
-    lastContactAt: data.lastContactAt || null,
-    // datetime-local → ISO. Если время не выбрано, бэкенд получит null.
-    nextContactAt: data.nextContactAt ? new Date(data.nextContactAt).toISOString() : null,
-    repeatCallAt: data.repeatCallAt ? new Date(data.repeatCallAt).toISOString() : null,
-    // Старое поле больше не редактируется напрямую, но оставляем его в payload
-    // как «собранный текст» — для бэк-совместимости с местами, где оно ещё читается.
-    contactInfo: [data.contactPhone, data.contactInstagram, data.contactEmail]
-      .filter(Boolean).join('\n') || null,
-  })
-  const submit = (data: any) => onSubmit(normalize(data))
-  const submitWithOnb = (data: any) => onSubmitWithOnboarding(normalize(data))
-
-  // «+ Добавить в онбординг» — выносим в правый верхний угол модалки
-  // (через titleAction), чтобы кнопка не плавала рядом с Save/Cancel.
-  const onboardingAction = onAddToOnboarding ? (
-    <button
-      type="button"
-      onClick={onAddToOnboarding}
-      disabled={loading}
-      className="px-3 py-1.5 rounded-md text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
-    >
-      <Plus size={14} /> В онбординг
-    </button>
-  ) : (!editing && onSubmitWithOnboarding) ? (
-    <button
-      type="button"
-      onClick={handleSubmit(submitWithOnb)}
-      disabled={loading}
-      className="px-3 py-1.5 rounded-md text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
-    >
-      <Plus size={14} /> В онбординг
-    </button>
-  ) : null
-
+/** Ошибка загрузки — никогда не «Нет клиентов»: пустой список при сбое
+ *  выглядел бы как потерянная база. */
+function LoadError({ onRetry }: { onRetry: () => void }) {
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={customTitle || (editing ? 'Редактировать клиента' : 'Новый клиент')}
-      size="xl"
-      titleAction={onboardingAction}
-    >
-      <form onSubmit={handleSubmit(submit)} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2">
-            <label className="label">Название компании / клиента *</label>
-            <input {...register('name', { required: true })} className="input" placeholder="ООО Ромашка, @blogger_name" />
-          </div>
-          <div>
-            <label className="label">Сфера</label>
-            <input list="sphere-list" {...register('sphere')} className="input" placeholder="Ресторан, Клиника, Блогер..." />
-            <datalist id="sphere-list">
-              {SPHERE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
-            </datalist>
-          </div>
-          <CollapsibleField
-            label="Адрес"
-            defaultOpen={!!initial?.address}
-            hint={initial?.address || ''}
-          >
-            <select
-              className="input"
-              value={addrOther ? 'Другое' : (ADDRESS_OPTIONS.includes(addressVal) ? addressVal : '')}
-              onChange={e => {
-                const v = e.target.value
-                if (v === 'Другое') { setAddrOther(true); setValue('address', '') }
-                else { setAddrOther(false); setValue('address', v) }
-              }}
-            >
-              <option value="">— Выберите —</option>
-              {ADDRESS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              <option value="Другое">Другое</option>
-            </select>
-            {addrOther && (
-              <input
-                {...register('address')}
-                className="input mt-2"
-                placeholder="Введите город / адрес"
-                autoFocus
-              />
-            )}
-          </CollapsibleField>
-          <div className="sm:col-span-2">
-            <label className="label">Проблема / что нужно</label>
-            <textarea {...register('problem')} rows={2} className="input resize-none" placeholder="Разработка сайта, SMM-продвижение..." />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">ЛПР (кто принимает решение)</label>
-            <input {...register('contactPerson')} className="input" placeholder="Иван Иванов — директор" />
-          </div>
-          <div>
-            <label className="label inline-flex items-center gap-1"><Phone size={12} /> Телефон ЛПР</label>
-            <input type="tel" {...register('contactPhone')} className="input" placeholder="+992 900 00 00 00" />
-          </div>
-          <div>
-            <label className="label inline-flex items-center gap-1"><Instagram size={12} /> Instagram ЛПР</label>
-            <input {...register('contactInstagram')} className="input" placeholder="@instagram_handle" />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label inline-flex items-center gap-1"><Mail size={12} /> Email ЛПР</label>
-            <input type="email" {...register('contactEmail')} className="input" placeholder="email@domain.com" />
-          </div>
-          <div>
-            <label className="label">Статус *</label>
-            <select {...register('status')} className="input">
-              {statusOptionsFor(formRole, initial?.status).map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Степень интереса</label>
-            <select {...register('interest')} className="input">
-              <option value="">Не указано</option>
-              <option value="cold">Холодный</option>
-              <option value="warm">Тёплый</option>
-              <option value="hot">Горячий</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Потенциал сделки (сомони)</label>
-            <input type="number" min={0} step="0.01" {...register('dealPotential')} className="input" placeholder="10000" />
-          </div>
-          <CollapsibleField
-            label="Источник лида"
-            defaultOpen={!!initial?.leadSource}
-            hint={initial?.leadSource || ''}
-          >
-            <input list="source-list" {...register('leadSource')} className="input" placeholder="Instagram, Рекомендация..." />
-            <datalist id="source-list">
-              {SOURCE_OPTIONS.map(s => <option key={s} value={s} />)}
-            </datalist>
-          </CollapsibleField>
-          <CollapsibleField
-            label="Канал общения"
-            defaultOpen={!!initial?.channel}
-            hint={initial?.channel || ''}
-          >
-            <input list="channel-list" {...register('channel')} className="input" placeholder="WhatsApp, Telegram..." />
-            <datalist id="channel-list">
-              {CHANNEL_OPTIONS.map(s => <option key={s} value={s} />)}
-            </datalist>
-          </CollapsibleField>
-          <div>
-            <label className="label">Тип звонка</label>
-            <select {...register('callType')} className="input">
-              <option value="">Не указано</option>
-              <option value="cold">Холодный</option>
-              <option value="neutral">Нейтральный</option>
-              <option value="hot">Горячий</option>
-              {/* Легаси: у части лидов остался тип «Повторный звонок» с прошлой
-                  версии. Показываем его, только если он реально стоит — иначе
-                  селект был бы пустым и значение молча терялось при сохранении.
-                  Повторный звонок теперь задаётся отдельным полем с датой. */}
-              {watch('callType') === 'repeat' && (
-                <option value="repeat">Повторный звонок (устаревшее — задайте дату ниже)</option>
-              )}
-            </select>
-            <p className="text-[11px] text-surface-400 mt-1">
-              «Холодный» → +1 в KPI «Холодные звонки» за сегодня
-            </p>
-          </div>
-          <div>
-            <label className="label">Письмо</label>
-            <select {...register('emailStatus')} className="input">
-              <option value="">Не указано</option>
-              <option value="sent">Написал</option>
-              <option value="answered">Ответили</option>
-              <option value="no_reply">Не ответили</option>
-              <option value="rejected">Отказ</option>
-            </select>
-            <p className="text-[11px] text-surface-400 mt-1">
-              «Написал» → +1 в KPI «Персональные письма» за сегодня
-            </p>
-          </div>
-          <CollapsibleField
-            label="Дата последнего контакта"
-            defaultOpen={!!initial?.lastContactAt}
-            hint={initial?.lastContactAt ? String(initial.lastContactAt).slice(0, 10) : ''}
-          >
-            <Controller name="lastContactAt" control={control}
-              render={({ field }) => <DatePicker value={field.value || ''} onChange={field.onChange} />} />
-          </CollapsibleField>
-          <div>
-            <label className="label inline-flex items-center gap-1"><CalendarIcon size={12} /> Дата + время встречи / след. контакта</label>
-            <Controller name="nextContactAt" control={control}
-              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
-            <p className="text-[10px] text-surface-400 mt-1">
-              Появится в Календаре на выбранный час и придёт напоминание.
-            </p>
-          </div>
-          <div>
-            <label className="label inline-flex items-center gap-1">
-              <PhoneCall size={12} className="text-orange-500" /> Повторный звонок
-            </label>
-            <Controller name="repeatCallAt" control={control}
-              render={({ field }) => <DateTimePicker value={field.value || ''} onChange={field.onChange} />} />
-            <p className="text-[10px] text-surface-400 mt-1">
-              В вашем Календаре на этот день и час появится оранжевая отметка «Повторно позвонить».
-            </p>
-          </div>
-          <CollapsibleField
-            className="sm:col-span-2"
-            label="Следующий шаг"
-            defaultOpen={!!initial?.nextStep}
-            hint={initial?.nextStep ? 'заполнено' : ''}
-          >
-            <textarea {...register('nextStep')} rows={2} className="input resize-none" placeholder="Отправить коммерческое предложение..." />
-          </CollapsibleField>
-          {currentStatus === 'lost' && (
-            <div className="sm:col-span-2">
-              <label className="label">Причина отказа</label>
-              <textarea {...register('rejectionReason')} rows={2} className="input resize-none" placeholder="Дорого, уже есть подрядчик..." />
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-wrap gap-2 justify-end pt-2">
-          <button type="button" onClick={onClose} className="btn-secondary">Отмена</button>
-          <button type="submit" disabled={loading} className="btn-primary">
-            {loading ? 'Сохранение...' : (editing ? 'Сохранить' : 'Добавить')}
-          </button>
-        </div>
-      </form>
-    </Modal>
+    <div role="alert" className="card flex flex-col items-center gap-3 py-10 text-center">
+      <p className="font-medium text-surface-800 dark:text-surface-100">Не удалось загрузить клиентов</p>
+      <p className="text-sm text-surface-500 dark:text-surface-400">Проверьте связь и попробуйте ещё раз.</p>
+      <button type="button" onClick={onRetry} className="btn-secondary min-h-[44px]">Повторить</button>
+    </div>
   )
 }

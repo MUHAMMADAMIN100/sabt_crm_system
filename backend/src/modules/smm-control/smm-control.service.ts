@@ -5,19 +5,25 @@ import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
 import { SmmPaymentsService } from './smm-payments.service';
 import { TIKTOK_FROM } from '../../common/tiktok';
-import { patchSmmData } from '../projects/project-access';
+import { isAssignedSalesManager, patchSmmData } from '../projects/project-access';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-/** Кто видит и правит все проекты раздела. */
+/** Руководство SMM: галочки публикаций в любом проекте (canEditContent). */
 const MANAGE_ROLES = ['admin', 'founder', 'smm_director'];
-/** Кто видит оплату: владелец, админ и менеджеры по продажам (ниже). */
+/** Кто видит оплату всех проектов: владелец и админ. */
 const MONEY_ROLES = ['admin', 'founder'];
 /** Менеджеры по продажам — оба вида (решение владельца 11.10.2026,
- *  подтверждено 15.10.2026): видят все проекты, ставят отметки по любому из
- *  них и видят оплату — её они и так видят в карточке проекта
- *  (projects.payments.view). Остальной раздел «СММ» для них только на
- *  просмотр. */
+ *  подтверждено 15.10.2026): видят все проекты раздела. Остальной раздел
+ *  «СММ» для них только на просмотр. */
 const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
+/** Отметки «Контроля» (клиент доволен, на связи, отчёт, реклама) —
+ *  «Продажи, этап 2» (15.11.2026, SALES_SPEC §6): руководство SMM (admin,
+ *  founder, smm_director) — по любому проекту; SMM-специалист — по своим
+ *  (как и раньше); менеджер по продажам SMM (основной или второй ролью) —
+ *  только по своим проектам (ответственный в карточке). Раньше любой
+ *  менеджер продаж, в том числе разработки, отмечал любой SMM-проект. */
+const MARK_TOP_ROLES = MANAGE_ROLES;
+const MARK_SALES_ROLE = 'sales_manager_smm';
 const MOODS = ['good', 'meh', 'bad'];
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
@@ -54,6 +60,23 @@ export class SmmControlService {
 
   private rolesOf(a: Actor) { return [a.role, a.secondaryRole].filter(Boolean) as string[]; }
 
+  /** Может ли человек ставить отметки «Контроля» по проекту (15.11.2026). */
+  private canMark(
+    actor: Actor,
+    p: Pick<Project, 'salesManagerId' | 'smmData' | 'managerId'> & { members?: Array<{ id: string }> },
+  ): boolean {
+    const roles = this.rolesOf(actor);
+    if (roles.some(r => MARK_TOP_ROLES.includes(r))) return true;
+    if (roles.includes(MARK_SALES_ROLE) && isAssignedSalesManager(actor, p)) return true;
+    if (roles.includes('smm_specialist')) {
+      const spec: string[] = ((p.smmData as any)?.smmSpecialistIds || []);
+      return p.managerId === actor.id
+        || (p.members || []).some(x => x?.id === actor.id)
+        || spec.includes(actor.id);
+    }
+    return false;
+  }
+
   /**
    * Раздел «Контроль» за месяц: по каждому активному SMM-проекту — отметки
    * людей (клиент доволен, на связи, отчёт) и то, что считается само:
@@ -73,8 +96,10 @@ export class SmmControlService {
     const from7 = shiftDay(ref, -6);
     const roles = this.rolesOf(actor);
     const sales = roles.some(r => SALES_ROLES.includes(r));
-    const manage = roles.some(r => MANAGE_ROLES.includes(r)) || sales;
-    const seeMoney = roles.some(r => MONEY_ROLES.includes(r)) || sales;
+    const moneyAll = roles.some(r => MONEY_ROLES.includes(r));
+    // Менеджер продаж видит оплату только своих клиентов (15.11.2026,
+    // «деньги только своих»): у чужих проектов колонка пустая (null).
+    const seeMoney = moneyAll || sales;
 
     const projects = await this.projectRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.members', 'members')
@@ -227,7 +252,8 @@ export class SmmControlService {
         // Ответственный менеджер по продажам и признак «это мой проект» для него.
         manager: managerOf(p) ? { id: managerOf(p) as string, name: userName.get(managerOf(p) as string) || 'Менеджер' } : null,
         mineAsManager: managerOf(p) === actor.id,
-        canEdit: manage || isMine,
+        // Отметки — руководство и МП по SMM по своему проекту (15.11.2026).
+        canEdit: this.canMark(actor, p),
         canEditContent,
         // Реклама (21.10.2026, вариант А): «идёт / нет», держится, пока не
         // выключат; since — с какого дня идёт.
@@ -241,29 +267,26 @@ export class SmmControlService {
         reels: { done: n('reel'), norm: Number(sd.normReels) || 0 },
         posts: { done: n('post'), norm: Number(sd.normPosts) || 0 },
         plan,
-        payment: seeMoney ? (payOf.get(p.id) ?? null) : undefined,
+        payment: !seeMoney ? undefined
+          : moneyAll || isAssignedSalesManager(actor, p) ? (payOf.get(p.id) ?? null) : null,
       };
     }).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 
     return { ym: month, today, ref, seeMoney, projects: rows };
   }
 
-  /** Отметка по проекту за месяц: отзыв клиента, «на связи», «отчёт».
-   *  SMM-специалист — только по своим проектам, руководство — по всем. */
+  /** Отметка по проекту за месяц: отзыв клиента, «на связи», «отчёт»,
+   *  реклама. Руководство — по всем проектам, менеджер по продажам SMM —
+   *  только по своим (15.11.2026, см. MARK_TOP_ROLES). */
   async update(projectId: string, dto: any, actor: Actor) {
     const ym = String(dto?.ym || '');
     if (!YM_RE.test(ym)) throw new BadRequestException('Некорректный месяц');
     const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
     if (!project) throw new NotFoundException('Проект не найден');
-    const roles = this.rolesOf(actor);
-    if (!roles.some(r => MANAGE_ROLES.includes(r) || SALES_ROLES.includes(r))) {
-      const spec: string[] = ((project.smmData as any)?.smmSpecialistIds || []);
-      const mine = project.managerId === actor.id
-        || (project.members || []).some(x => x.id === actor.id)
-        || spec.includes(actor.id);
-      if (!roles.includes('smm_specialist') || !mine) {
-        throw new ForbiddenException('Отмечать можно только по своим проектам');
-      }
+    if (!this.canMark(actor, project)) {
+      throw new ForbiddenException(this.rolesOf(actor).includes(MARK_SALES_ROLE)
+        ? 'Отмечать можно только по своим проектам'
+        : 'Отметки «Контроля» ставят руководство SMM, специалист по своим проектам и менеджер по продажам SMM по своим');
     }
 
     // Реклама — состояние проекта, а не отметка месяца: держится, пока не

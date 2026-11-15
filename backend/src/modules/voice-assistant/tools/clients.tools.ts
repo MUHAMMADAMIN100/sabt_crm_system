@@ -4,19 +4,29 @@ import { addDays, checkDate, checkTime, dushanbeISO, fmtDateRu, fmtDeadline, isS
 import { ToolContext, ToolDef, ToolError, WriteOutcome } from './types';
 
 /**
- * Клиенты и лиды (страница «Клиенты», онбординг). Права — гранты
+ * Клиенты и лиды (страница «Клиенты»). Права — гранты
  * clients.view/create/edit/delete, как на сайте. Заметок у клиента в CRM
  * нет: «добавь заметку перезвонить в пятницу» — это «Следующий шаг»,
  * «Повторный звонок» или «Дата встречи / след. контакта».
+ *
+ * Единая воронка (15.11.2026, docs/SALES_SPEC.md): этап — только status
+ * (Новый → Контакт → Встреча → КП → Договор → Выиграно | Проиграно),
+ * «этапа онбординга» больше нет, «На паузе» — флаг onHold, а не этап.
  */
 
+/** Подписи этапов. Устаревшие значения (если миграция где-то не прошла) —
+ *  так, как их показывает сайт: negotiating/on_hold → «Контакт», unknown → «Новый». */
 export const LEAD_STATUS_RU: Record<string, string> = {
-  new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах', proposal: 'Предложение',
-  won: 'Клиент ✓', lost: 'Отказ', on_hold: 'На паузе', unknown: 'Неизвестно',
+  new: 'Новый', waiting: 'Контакт', meeting: 'Встреча', proposal: 'КП', contract: 'Договор',
+  won: 'Выиграно', lost: 'Проиграно',
+  negotiating: 'Контакт', on_hold: 'Контакт', unknown: 'Новый',
 };
-export const STAGE_RU: Record<string, string> = {
-  negotiation: 'Переговор', meeting: 'Встреча', kp_creation: 'КП', contract: 'Договор',
-  implementation: 'Реализация', cancelled: 'Отмена',
+/** Этапы, которые можно поставить (без устаревших — сервер их не примет). */
+export const LEAD_STATUSES = ['new', 'waiting', 'meeting', 'proposal', 'contract', 'won', 'lost'];
+/** Причина проигрыша — обязательна для lost (сервер без неё ответит 400). */
+export const LOST_REASON_RU: Record<string, string> = {
+  price: 'Дорого', competitor: 'Есть подрядчик', not_lpr: 'Говорили не с ЛПР',
+  no_response: 'Пропал, не отвечает', not_needed: 'Не нужно сейчас', other: 'Другое',
 };
 const INTEREST_RU: Record<string, string> = { cold: 'холодный', warm: 'тёплый', hot: 'горячий' };
 
@@ -29,12 +39,14 @@ function compactClient(ctx: ToolContext, c: any): Record<string, any> {
     name: c.name,
     status: LEAD_STATUS_RU[c.status] || c.status,
   };
-  if (c.onboardingStage) out.stage = STAGE_RU[c.onboardingStage] || c.onboardingStage;
+  if (c.onHold) out.onHold = true;
+  if (c.status === 'lost' && c.lostReason) out.lostReason = LOST_REASON_RU[c.lostReason] || c.lostReason;
   if (c.interest) out.interest = INTEREST_RU[c.interest] || c.interest;
   if (c.contactPerson) out.contact = c.contactPerson;
   if (c.contactPhone) out.phone = c.contactPhone;
   if (c.sphere) out.sphere = c.sphere;
   if (c.nextStep) out.nextStep = String(c.nextStep).slice(0, 200);
+  if (c.nextStepAt) out.nextStepAt = fmtDeadline(c.nextStepAt);
   if (c.nextContactAt) out.nextContact = fmtDeadline(c.nextContactAt);
   if (c.repeatCallAt) out.repeatCall = fmtDeadline(c.repeatCallAt);
   if (c.owner?.name) out.owner = c.owner.name;
@@ -58,13 +70,16 @@ export const findClients: ToolDef<FindClientsArgs> = {
   name: 'find_clients',
   kind: 'read',
   description:
-    'Найти клиентов/лидов: по имени, телефону, сфере; по статусу; только мои; созданные за период '
+    'Найти клиентов/лидов: по имени, телефону, сфере; по этапу воронки; только мои; созданные за период '
     + '(«сколько у меня новых лидов на этой неделе»). Возвращает метки C…',
   parameters: {
     type: 'object',
     properties: {
       text: { type: 'string', description: 'Имя клиента, контакт, сфера или телефон.' },
-      status: { type: 'string', enum: Object.keys(LEAD_STATUS_RU) },
+      status: {
+        type: 'string', enum: LEAD_STATUSES,
+        description: 'Этап: new — новый, waiting — контакт, meeting — встреча, proposal — КП, contract — договор, won — выиграно, lost — проиграно.',
+      },
       mine: { type: 'boolean', description: 'Только лиды, где я владелец.' },
       created_from: { type: 'string', description: 'Создан не раньше, ГГГГ-ММ-ДД.' },
       created_to: { type: 'string', description: 'Создан не позже, ГГГГ-ММ-ДД.' },
@@ -75,7 +90,7 @@ export const findClients: ToolDef<FindClientsArgs> = {
   available: can('clients.view'),
   async run(args, ctx) {
     const query: Record<string, any> = {};
-    if (args.status && LEAD_STATUS_RU[args.status]) query.status = args.status;
+    if (args.status && LEAD_STATUSES.includes(args.status)) query.status = args.status;
     if (args.mine) query.ownerId = ctx.user.id;
     const text = String(args.text || '').trim();
     const phone = digits(text);
@@ -111,6 +126,15 @@ interface LeadArgs {
   name: string; contact_person?: string; phone?: string; instagram?: string; email?: string;
   sphere?: string; problem?: string; source?: string; interest?: 'cold' | 'warm' | 'hot';
   next_step?: string; next_contact_date?: string; next_contact_time?: string;
+  /** Создать, хотя похожий лид уже есть, — только после явного «да». */
+  force?: boolean;
+}
+
+/** «Кафе Сафо» (Контакт, ведёт Алишер) — для ответа о дублях. */
+function duplicateLine(d: any): string {
+  const parts = [LEAD_STATUS_RU[d?.status] || d?.status, d?.ownerName ? `ведёт ${d.ownerName}` : 'без владельца']
+    .filter(Boolean).join(', ');
+  return `«${d?.name || 'Без названия'}» (${parts})`;
 }
 
 export const createLead: ToolDef<LeadArgs> = {
@@ -118,7 +142,8 @@ export const createLead: ToolDef<LeadArgs> = {
   kind: 'write',
   description:
     'Создать лида/клиента в базе: «создай лид Алишер, кофейня, телефон 900112233, интересует СММ». '
-    + 'Сначала проверь find_clients, нет ли уже такого (по имени или телефону).',
+    + 'Сначала проверь find_clients, нет ли уже такого (по имени или телефону). Если сервер нашёл похожий лид, '
+    + 'инструмент вернёт их список — скажи человеку и спроси; force=true — только после явного «да, создай новый».',
   parameters: {
     type: 'object',
     properties: {
@@ -134,6 +159,10 @@ export const createLead: ToolDef<LeadArgs> = {
       next_step: { type: 'string', description: 'Следующий шаг.' },
       next_contact_date: { type: 'string', description: 'Дата встречи/след. контакта ГГГГ-ММ-ДД.' },
       next_contact_time: { type: 'string', description: 'ЧЧ:ММ' },
+      force: {
+        type: 'boolean',
+        description: 'true — создать, хотя похожий лид уже есть. Только если человек прямо подтвердил после предупреждения о дубле.',
+      },
     },
     required: ['name'],
     additionalProperties: false,
@@ -161,9 +190,25 @@ export const createLead: ToolDef<LeadArgs> = {
     if (info) body.contactInfo = info;
     // Менеджер продаж — владелец своего лида (как форма на сайте).
     if (isSalesManager(ctx.user)) body.ownerId = ctx.user.id;
+    if (args.force === true) body.force = true;
 
     let created: any;
-    try { created = await ctx.api.post('/clients', body); } catch (e) { throw apiErr(e); }
+    try {
+      created = await ctx.api.post('/clients', body);
+    } catch (e) {
+      // Дубль (15.11.2026): сервер нашёл похожий лид того же направления —
+      // 409 { message: 'duplicate', duplicates }. Не создаём молча второй:
+      // называем найденных и ждём явного подтверждения (force).
+      const dups = e instanceof ApiError && e.status === 409 && Array.isArray(e.body?.duplicates) ? e.body.duplicates : null;
+      if (dups && dups.length) {
+        const list = dups.slice(0, 5).map(duplicateLine).join('; ');
+        throw new ToolError(
+          `Похожий лид уже есть: ${list}. Скажите, создать новый всё равно или обновить существующий `
+          + '(create_lead с force=true — только после явного «да, создай новый»).',
+        );
+      }
+      throw apiErr(e);
+    }
     if (created?.id) ctx.refs.add('C', created.id, name);
     return {
       summary: `🧾 Лид «${name}» создан${body.contactPhone ? `, тел. ${body.contactPhone}` : ''}${body.sphere ? `, ${body.sphere}` : ''}`,
@@ -173,28 +218,39 @@ export const createLead: ToolDef<LeadArgs> = {
 };
 
 interface UpdateClientArgs {
-  client: string; status?: string; stage?: string; interest?: string; next_step?: string;
+  client: string; status?: string; lost_reason?: string; on_hold?: boolean; interest?: string; next_step?: string;
+  next_step_date?: string; next_step_time?: string;
   next_contact_date?: string; next_contact_time?: string; repeat_call_date?: string; repeat_call_time?: string;
   phone?: string; contact_person?: string; rejection_reason?: string; deal_potential?: number;
 }
 
-const DATE_FIELDS = ['nextContactAt', 'repeatCallAt'];
+const DATE_FIELDS = ['nextContactAt', 'repeatCallAt', 'nextStepAt'];
 
 export const updateClient: ToolDef<UpdateClientArgs> = {
   name: 'update_client',
   kind: 'write',
   description:
-    'Изменить клиента: статус («переведи в переговоры», «клиент отказался» → lost, «стал клиентом» → won), '
-    + 'этап онбординга («на этап договор» → contract), интерес, следующий шаг («запиши: перезвонить в пятницу» → next_step и/или '
-    + 'repeat_call), дату встречи, телефон, причину отказа.',
+    'Изменить клиента: этап воронки («связались» → waiting, «назначили встречу» → meeting, «отправили КП» → proposal, '
+    + '«на договор» → contract, «стал клиентом» → won, «клиент отказался» → lost с lost_reason), пауза (on_hold), интерес, '
+    + 'следующий шаг и его срок («запиши: перезвонить в пятницу» → next_step и/или repeat_call), дату встречи, телефон, причину отказа.',
   parameters: {
     type: 'object',
     properties: {
       client: { type: 'string', description: 'Метка C…' },
-      status: { type: 'string', enum: Object.keys(LEAD_STATUS_RU) },
-      stage: { type: 'string', enum: Object.keys(STAGE_RU) },
+      status: {
+        type: 'string', enum: LEAD_STATUSES,
+        description: 'Этап: new — новый, waiting — контакт, meeting — встреча, proposal — КП, contract — договор, won — выиграно, lost — проиграно.',
+      },
+      lost_reason: {
+        type: 'string', enum: Object.keys(LOST_REASON_RU),
+        description: 'Причина проигрыша (обязательна для lost): price — дорого, competitor — есть подрядчик, not_lpr — говорили не с ЛПР, '
+          + 'no_response — пропал, not_needed — не нужно сейчас, other — другое (тогда и rejection_reason текстом).',
+      },
+      on_hold: { type: 'boolean', description: 'true — поставить на паузу, false — снять с паузы.' },
       interest: { type: 'string', enum: ['cold', 'warm', 'hot'] },
       next_step: { type: 'string' },
+      next_step_date: { type: 'string', description: 'Срок следующего шага ГГГГ-ММ-ДД.' },
+      next_step_time: { type: 'string' },
       next_contact_date: { type: 'string', description: 'Встреча/след. контакт ГГГГ-ММ-ДД.' },
       next_contact_time: { type: 'string' },
       repeat_call_date: { type: 'string', description: 'Повторный звонок ГГГГ-ММ-ДД.' },
@@ -215,15 +271,32 @@ export const updateClient: ToolDef<UpdateClientArgs> = {
     const patch: Record<string, any> = {};
     const parts: string[] = [];
     if (args.status) {
-      if (!LEAD_STATUS_RU[args.status]) throw new ToolError(`Неизвестный статус «${args.status}».`);
-      patch.status = args.status; parts.push(`статус → ${LEAD_STATUS_RU[args.status]}`);
+      if (!LEAD_STATUSES.includes(args.status)) throw new ToolError(`Неизвестный этап «${args.status}».`);
+      patch.status = args.status; parts.push(`этап → ${LEAD_STATUS_RU[args.status]}`);
     }
-    if (args.stage) {
-      if (!STAGE_RU[args.stage]) throw new ToolError(`Неизвестный этап «${args.stage}».`);
-      patch.onboardingStage = args.stage; parts.push(`этап → ${STAGE_RU[args.stage]}`);
+    if (args.lost_reason) {
+      if (!LOST_REASON_RU[args.lost_reason]) throw new ToolError(`Неизвестная причина проигрыша «${args.lost_reason}».`);
+      patch.lostReason = args.lost_reason; parts.push(`причина: ${LOST_REASON_RU[args.lost_reason]}`);
+    }
+    // «Проиграно» без причины сервер не примет (400) — спросим сразу.
+    if (patch.status === 'lost' && !patch.lostReason && !(old?.status === 'lost' && old?.lostReason)) {
+      throw new ToolError(
+        'Укажите причину проигрыша: дорого, есть подрядчик, говорили не с ЛПР, пропал, не нужно сейчас или другое (с пояснением).',
+      );
+    }
+    if (patch.lostReason === 'other' && !String(args.rejection_reason ?? old?.rejectionReason ?? '').trim()) {
+      throw new ToolError('Причина «Другое» — скажите, в чём именно причина отказа.');
+    }
+    if (typeof args.on_hold === 'boolean') {
+      patch.onHold = args.on_hold; parts.push(args.on_hold ? 'на паузе' : 'снят с паузы');
     }
     if (args.interest && INTEREST_RU[args.interest]) { patch.interest = args.interest; parts.push(`интерес → ${INTEREST_RU[args.interest]}`); }
     if (args.next_step) { patch.nextStep = String(args.next_step).slice(0, 2000); parts.push(`следующий шаг: «${patch.nextStep}»`); }
+    if (args.next_step_date) {
+      const d = checkDate(args.next_step_date);
+      const t = args.next_step_time ? checkTime(args.next_step_time) : '10:00';
+      patch.nextStepAt = dushanbeISO(d, t); parts.push(`срок шага → ${fmtDateRu(d)} ${t}`);
+    }
     if (args.next_contact_date) {
       const d = checkDate(args.next_contact_date);
       const t = args.next_contact_time ? checkTime(args.next_contact_time) : '10:00';
@@ -241,7 +314,10 @@ export const updateClient: ToolDef<UpdateClientArgs> = {
     if (!parts.length) throw new ToolError('Не понял, что изменить у клиента.');
 
     const undo: Record<string, any> = {};
-    for (const k of Object.keys(patch)) {
+    // Вернуть «Проиграно» можно только с прежней причиной — её тоже в отмену.
+    const undoKeys = Object.keys(patch);
+    if (patch.status && old?.status === 'lost') undoKeys.push('lostReason', 'rejectionReason');
+    for (const k of [...new Set(undoKeys)]) {
       const v = old?.[k];
       undo[k] = v === undefined ? null : v;
       // Пустые строки DTO не примет — null для дат, '' для текста не шлём.

@@ -34,6 +34,8 @@ function directionLink(direction?: string | null): string {
 }
 /** За сколько дней до срока начинать напоминать. */
 const REMIND_BEFORE_DAYS = 3;
+/** Сколько просроченных оплат перечислять менеджеру в утреннем списке. */
+const MANAGER_LATE_MAX = 5;
 /** Числа месяца, по которым напоминаем о невыплаченной ЗП. */
 const SALARY_REMIND_DAYS = [10, 15, 20, 25];
 const MONTHS_RU_PREP_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -214,20 +216,31 @@ export class FinanceScheduler {
 
     const projectList = await this.projRepo.find();
     const projects = new Map(projectList.map(p => [p.id, p]));
-    // Менеджеру — накануне и в день срока; у кого есть «Финансы», тот уже
-    // получил напоминание выше — второй раз не шлём.
-    const near = due.some(pp => { const d = daysUntil(today, pp.dueDate as string); return d === 0 || d === 1; });
+    // Менеджеру — накануне и в день срока, а просроченные — утренним
+    // списком (15.11.2026); у кого есть «Финансы», тот уже получил
+    // напоминание выше — второй раз не шлём.
+    const near = due.some(pp => daysUntil(today, pp.dueDate as string) <= 1);
     const managers = near ? await this.clientManagers(projectList) : new Map<string, { userId: string; name: string; link: string }>();
     const users = managers.size ? await this.userRepo.find({ where: { isActive: true, isBlocked: false } }) : [];
     const activeIds = new Set(users.map(u => u.id));
     const financeIds = new Set(users.filter(u => hasGrant(u, 'finance.manage')).map(u => u.id));
     let eligibleDue = 0, notified = 0;
+    /** Просроченные оплаты клиентов каждого менеджера — для одного списка. */
+    const lateByManager = new Map<string, Array<{ name: string; amount: number; dueDate: string; days: number; link: string }>>();
     for (const pp of due) {
       const project = projects.get(pp.projectId as string);
       // Пауза: платежи заморожены — не напоминаем, пока проект не вернут.
       if (!project || !isEarningFinanceProject(project)) continue;
       eligibleDue++;
       const days = daysUntil(today, pp.dueDate as string);
+      if (days < 0) {
+        const owner = managers.get(project.id);
+        if (owner && activeIds.has(owner.userId) && !financeIds.has(owner.userId)) {
+          const list = lateByManager.get(owner.userId) || [];
+          list.push({ name: owner.name, amount: Number(pp.amount) || 0, dueDate: pp.dueDate as string, days: -days, link: owner.link });
+          lateByManager.set(owner.userId, list);
+        }
+      }
       const what = pp.partNo === 2 ? 'вторая часть' : 'платёж';
       const when = days > 0
         ? `срок ${formatRu(pp.dueDate as string)} — через ${days} дн.`
@@ -250,7 +263,38 @@ export class FinanceScheduler {
         });
       }
     }
+    notified += await this.notifyManagersLate(lateByManager, today);
     return { due: eligibleDue, notified };
+  }
+
+  /**
+   * «Продажи, этап 2» (15.11.2026, SALES_SPEC §6): утром менеджеру по
+   * продажам — короткий список просроченных оплат СВОИХ клиентов (тот же
+   * ответственный, что у «Завтра/Сегодня клиент должен оплатить»): самые
+   * давние первыми, до MANAGER_LATE_MAX строк и «…и ещё N». Одно сообщение
+   * в день (alertKey с датой, дедуп 20 ч) — в колокольчик и Telegram.
+   */
+  private async notifyManagersLate(
+    lateByManager: Map<string, Array<{ name: string; amount: number; dueDate: string; days: number; link: string }>>,
+    today: string,
+  ): Promise<number> {
+    let notified = 0;
+    for (const [userId, list] of lateByManager) {
+      if (!list.length) continue;
+      const sorted = [...list].sort((a, b) => b.days - a.days || a.name.localeCompare(b.name, 'ru'));
+      const total = Math.round(sorted.reduce((s, x) => s + x.amount, 0) * 100) / 100;
+      const lines = sorted.slice(0, MANAGER_LATE_MAX)
+        .map(x => `• ${x.name}: ${fmtMoney(x.amount)} — просрочено на ${x.days} дн. (срок ${formatRu(x.dueDate)})`);
+      if (sorted.length > MANAGER_LATE_MAX) lines.push(`…и ещё ${sorted.length - MANAGER_LATE_MAX}`);
+      notified += await this.notifyUser(userId, {
+        title: `Просрочены оплаты клиентов: ${sorted.length}`,
+        message: `${lines.join('\n')}\nВсего ${fmtMoney(total)}. Напомните клиентам.`,
+        alertKey: `fin-pp-mgr-late:${userId}:${today}`,
+        // Один клиент — сразу его проект; разные — «Панель» с календарём денег.
+        link: sorted.every(x => x.link === sorted[0].link) ? sorted[0].link : '/',
+      });
+    }
+    return notified;
   }
 
   /** Аренда/подписки с днём оплаты: не оплачено за месяц (ни операцией,

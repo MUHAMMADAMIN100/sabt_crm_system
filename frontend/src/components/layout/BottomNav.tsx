@@ -1,19 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { MoreHorizontal, Plus, X, ClipboardCheck, FolderKanban, Image as ImageIcon,
   KanbanSquare, BarChart3, FileText, CalendarRange, Search, Wallet, TrendingUp, TrendingDown, Users,
-  Building2, Package, Activity, Settings, Car, Network, Target, Megaphone, Code2, ChevronDown } from 'lucide-react'
+  Building2, Package, Activity, Settings, Car, Network, Target, Megaphone, Code2, ChevronDown,
+  UserPlus, PhoneCall, CalendarPlus } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
 import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead, getRoleLabel, hasAnyRole } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import { tasksApi } from '@/services/api.service'
-import { useNavItems } from './navItems'
+import { invalidateSales } from '@/lib/salesQueries'
+import { useNavItems, isSalesUser } from './navItems'
 import ShiftButton from './ShiftButton'
 import { useHistoryOverlay } from '@/lib/navMemory'
 import useNarrow from '@/hooks/useNarrow'
+
+// Окна продаж для «+» менеджера (15.11.2026) — лениво: панель смонтирована
+// у всех ролей, а эти окна нужны только продажам и только по нажатию.
+const LeadCreateModal = lazy(() => import('@/components/sales/LeadCreateModal'))
+const LeadPickerModal = lazy(() => import('@/components/sales/LeadPickerModal'))
+const CallSheet = lazy(() => import('@/components/sales/CallSheet'))
+const LeadDrawer = lazy(() => import('@/components/sales/LeadDrawer'))
+
+type SalesFlow = 'lead' | 'pick-call' | 'pick-meet'
 
 /** Сколько разделов стоит прямо на панели. Остальные уходят под «Ещё». */
 const PINNED = 3
@@ -23,6 +34,10 @@ const PINNED = 3
  * Три раздела, кнопка «Ещё» и центральная кнопка «плюс»: она всегда означает
  * «создать» и раскрывает веером доступные действия. Список действий зависит
  * от прав, поэтому кнопка не меняет смысл от раздела к разделу.
+ *
+ * Менеджер продаж (основной или второй ролью, 15.11.2026): «Сегодня ·
+ * Клиенты · + · Директ · Ещё» (порядок задаёт navItems), «СММ» — в «Ещё»;
+ * «+» открывает шторку «Новый лид / Записать звонок / Назначить встречу».
  */
 export default function BottomNav() {
   const user = useAuthStore(s => s.user)
@@ -35,6 +50,15 @@ export default function BottomNav() {
   const [q, setQ] = useState('')
   const [fan, setFan] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const qc = useQueryClient()
+  // Продажи: «+» — шторка из трёх действий вместо веера.
+  const sales = isSalesUser(user) && userCan(user, 'clients.view')
+  const [salesFlow, setSalesFlow] = useState<SalesFlow | null>(null)
+  const [callLead, setCallLead] = useState<{ id: string; name: string; status: string; contactPhone?: string | null } | null>(null)
+  const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null)
+  // Шторка «+» закрывается (её шаг истории снимается), окно открывается сразу:
+  // окна продаж своих шагов истории при открытии не добавляют.
+  const startSales = (flow: SalesFlow) => { setFan(false); setSalesFlow(flow) }
   // Шторка «Ещё» и веер «+» — шаг истории (08.11.2026): системный «Назад»
   // закрывает их, а не уводит со страницы. Одна запись на обе: переключение
   // между ними заменяет шаг, а не копит.
@@ -57,7 +81,10 @@ export default function BottomNav() {
   const rest = items.slice(PINNED)
 
   // Закрываем всё при переходе: иначе лист остаётся открытым над новой страницей.
-  useEffect(() => { setMore(false); setFan(false); setQ('') }, [location.pathname])
+  useEffect(() => {
+    setMore(false); setFan(false); setQ('')
+    setSalesFlow(null); setCallLead(null); setDrawerLeadId(null)
+  }, [location.pathname])
 
   // Панель уезжает вниз при прокрутке вперёд и возвращается при прокрутке
   // назад — на маленьком экране это заметная прибавка полезной высоты.
@@ -97,7 +124,13 @@ export default function BottomNav() {
 
   // Действия веера — только те, что реально есть в системе и разрешены роли.
   const actions = useMemo(() => {
-    const list: { key: string; label: string; icon: any; run: () => void }[] = []
+    const list: { key: string; label: string; hint?: string; icon: any; run: () => void }[] = []
+    // Продажи — первыми: ради них «+» у менеджера и нажимают (15.11.2026).
+    if (sales) {
+      list.push({ key: 'lead', label: 'Новый лид', hint: 'Компания или человек', icon: UserPlus, run: () => startSales('lead') })
+      list.push({ key: 'call', label: 'Записать звонок', hint: 'Итог разговора и следующий шаг', icon: PhoneCall, run: () => startSales('pick-call') })
+      list.push({ key: 'meet', label: 'Назначить встречу', hint: 'Выберите лида — дату поставите в карточке', icon: CalendarPlus, run: () => startSales('pick-meet') })
+    }
     // Окно «отметить сторис» (/?day=today) есть только в кабинете
     // СММ-специалиста — у остальных панель другая, и пункт никуда не вёл.
     if (user?.role === 'smm_specialist') {
@@ -116,7 +149,7 @@ export default function BottomNav() {
       list.push({ key: 'project', label: 'Добавить проект', icon: FolderKanban, run: () => runAction('/smm/projects?new=1') })
     }
     return list
-  }, [user, navigate, fan, location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, sales, navigate, fan, location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasFan = actions.length > 0
   const tabCls = 'relative flex flex-col items-center gap-[3px] pt-1.5 pb-1 min-h-[44px] rounded-xl'
@@ -256,7 +289,7 @@ export default function BottomNav() {
           className={clsx(tabCls, isDevRoute ? 'text-white' : 'text-white/45')}>
           {isDevRoute && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
           <span className="relative"><i.icon size={20} /></span>
-          <span className="relative text-[9.5px] font-semibold">Разработка</span>
+          <span className="relative max-w-full truncate px-0.5 text-[11px] font-semibold">Разработка</span>
         </button>
       )
     }
@@ -269,17 +302,17 @@ export default function BottomNav() {
           <span className="relative">
             <i.icon size={20} />
             {!!i.badge && (
-              <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-white text-surface-900 text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
+              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-surface-900 text-[11px] leading-none font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
                 {i.badge > 9 ? '9+' : i.badge}
               </span>
             )}
             {i.to === '/tasks' && overdue > 0 && (
-              <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
+              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] leading-none font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
                 {overdue > 9 ? '9+' : overdue}
               </span>
             )}
           </span>
-          <span className="relative text-[9.5px] font-semibold">{i.label.split(' ')[0]}</span>
+          <span className="relative max-w-full truncate px-0.5 text-[11px] font-semibold">{i.label.split(' ')[0]}</span>
         </>
       )}
     </NavLink>
@@ -296,7 +329,35 @@ export default function BottomNav() {
         <div className="lg:hidden fixed inset-0 z-40" onClick={() => { setFan(false); setMore(false) }}>
           <div className="absolute inset-0 bg-black/50" />
 
-          {fan && (
+          {/* Продажи: шторка снизу с крупными строками — в неё попадают
+              пальцем не глядя, и у каждого действия есть подсказка. */}
+          {fan && sales && (
+            <div role="dialog" aria-label="Создать" className="absolute inset-x-0 bottom-0 rounded-t-[20px] bg-white dark:bg-surface-900 pb-[max(16px,env(safe-area-inset-bottom))]"
+              onClick={e => e.stopPropagation()}>
+              <div className="w-9 h-[5px] rounded-full bg-surface-300 dark:bg-surface-600 mx-auto my-2.5" />
+              <div className="flex items-center px-4 pb-1">
+                <b className="text-[15px] font-bold text-surface-900 dark:text-surface-100">Создать</b>
+                <button type="button" onClick={() => setFan(false)} aria-label="Закрыть"
+                  className="ml-auto -mr-1 w-11 h-11 rounded-xl bg-surface-100 dark:bg-surface-800 text-surface-500 flex items-center justify-center"><X size={17} /></button>
+              </div>
+              <div className="px-2 pb-1">
+                {actions.map(a => (
+                  <button key={a.key} type="button" onClick={() => a.run()}
+                    className="w-full flex items-center gap-3 rounded-xl px-3 min-h-[60px] text-left hover:bg-surface-50 dark:hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+                    <span className="w-10 h-10 rounded-xl shrink-0 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-300 flex items-center justify-center">
+                      <a.icon size={19} />
+                    </span>
+                    <span className="min-w-0">
+                      <b className="block text-[15px] font-semibold text-surface-900 dark:text-surface-100">{a.label}</b>
+                      {a.hint && <span className="block text-[12.5px] text-surface-500 dark:text-surface-400">{a.hint}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {fan && !sales && (
             <div className="absolute left-0 right-0 bottom-[104px] flex flex-col items-center gap-2 px-4"
               onClick={e => e.stopPropagation()}>
               {actions.length === 0 && (
@@ -433,13 +494,45 @@ export default function BottomNav() {
 
         {right.map(renderTab)}
 
-        <button type="button" onClick={() => { setFan(false); setMore(v => !v) }} aria-expanded={more}
+        <button type="button" onClick={() => { setFan(false); setMore(v => !v) }} aria-expanded={more} aria-label="Ещё разделы"
           className={clsx(tabCls, more ? 'text-white' : 'text-white/45')}>
           {more && <span className="absolute top-0.5 w-9 h-[26px] rounded-[9px] bg-primary-500/20" />}
           <span className="relative"><MoreHorizontal size={20} /></span>
-          <span className="relative text-[9.5px] font-semibold">Ещё</span>
+          <span className="relative max-w-full truncate px-0.5 text-[11px] font-semibold">Ещё</span>
         </button>
       </nav>
+
+      {/* Окна действий «+» менеджера продаж. Каждое — в своей границе
+          Suspense: подгрузка одного не прячет уже открытое другое. */}
+      {salesFlow === 'lead' && (
+        <Suspense fallback={null}>
+          <LeadCreateModal open onClose={() => setSalesFlow(null)} onCreated={() => invalidateSales(qc)} />
+        </Suspense>
+      )}
+      {(salesFlow === 'pick-call' || salesFlow === 'pick-meet') && (
+        <Suspense fallback={null}>
+          <LeadPickerModal open title={salesFlow === 'pick-call' ? 'Кому вы звонили?' : 'С кем встреча?'}
+            onClose={() => setSalesFlow(null)}
+            onPick={lead => {
+              const flow = salesFlow
+              setSalesFlow(null)
+              // Звонок — сразу шторка итога; встреча — карточка лида, где
+              // ставят дату и время.
+              if (flow === 'pick-call') setCallLead({ id: lead.id, name: lead.name, status: lead.status, contactPhone: lead.contactPhone })
+              else setDrawerLeadId(lead.id)
+            }} />
+        </Suspense>
+      )}
+      {callLead && (
+        <Suspense fallback={null}>
+          <CallSheet lead={callLead} onClose={() => setCallLead(null)} onSaved={() => invalidateSales(qc)} />
+        </Suspense>
+      )}
+      {drawerLeadId && (
+        <Suspense fallback={null}>
+          <LeadDrawer leadId={drawerLeadId} onClose={() => setDrawerLeadId(null)} />
+        </Suspense>
+      )}
     </>
   )
 }

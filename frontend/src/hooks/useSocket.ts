@@ -210,6 +210,11 @@ export function useSocket(authMarker: string | null) {
     // у founder, когда менеджер двигает лида / меняет «Тип звонка».
     socket.on('leads:changed', (payload: any) => {
       qc.invalidateQueries({ queryKey: ['clients'] })
+      // Единая воронка (15.11.2026): доска, список с пагинацией, карточка
+      // лида (['leads', …]) и «Сегодня»/история (['sales', …]) — тоже из
+      // этих данных; без этого чужая правка была видна только после F5.
+      qc.invalidateQueries({ queryKey: ['leads'] })
+      qc.invalidateQueries({ queryKey: ['sales'] })
       qc.invalidateQueries({ queryKey: ['clients-stats'] })
       qc.invalidateQueries({ queryKey: ['sales-kpi'] })
       qc.invalidateQueries({ queryKey: ['kpi-user'] })

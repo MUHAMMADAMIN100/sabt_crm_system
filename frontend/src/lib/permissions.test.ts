@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canAccessRoute, hasPermission, userCan, canSeeSmmSection, canSeeDevSection, isSmmViewOnly, isProductionOnly, hasAnyRole,
+  canSeeSalesAnalytics, canEditSalesNorms, canEditSalesCommission, canLinkHandoff, canCreateHandoffProject,
 } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
@@ -217,5 +218,41 @@ describe('проверяющий сторис с запретом', () => {
     expect(canAccessRoute('stories_checker', '/stories-check', null, [], [])).toBe(true)
     expect(canAccessRoute('stories_checker', '/stories-check', null, [], ['stories.view'])).toBe(false)
     expect(canAccessRoute('stories_checker', '/', null, [], ['stories.view'])).toBe(true)
+  })
+})
+
+// Раздел «Продажи» (15.11.2026, docs/SALES_SPEC.md §5): руководство и
+// руководители направлений; аналитика и настройки — только руководство,
+// комиссия — только основатель. Без правила маршрут открывался бы всем:
+// для путей без права canAccessRoute отвечает true.
+describe('раздел «Продажи» (/sales)', () => {
+  it.each(['founder', 'admin', 'smm_director', 'dev_director'] as UserRole[])('роль «%s» открывает /sales', (role) => {
+    expect(canAccessRoute(role, '/sales')).toBe(true)
+  })
+
+  it.each(['sales_manager_smm', 'sales_manager_dev', 'designer', 'developer', 'employee'] as UserRole[])('роль «%s» — /sales закрыт', (role) => {
+    expect(canAccessRoute(role, '/sales')).toBe(false)
+  })
+
+  it('вторая роль руководителя направления тоже открывает раздел', () => {
+    expect(canAccessRoute('sales_manager_dev', '/sales', 'dev_director')).toBe(true)
+  })
+
+  it('директорам — только «Заявки»; комиссия — только основателю', () => {
+    expect(canSeeSalesAnalytics('smm_director', null)).toBe(false)
+    expect(canSeeSalesAnalytics('admin', null)).toBe(true)
+    expect(canEditSalesNorms('admin', null)).toBe(true)
+    expect(canEditSalesCommission('admin', null)).toBe(false)
+    expect(canEditSalesCommission('founder', null)).toBe(true)
+    expect(canLinkHandoff('dev_director', null)).toBe(false)
+    expect(canLinkHandoff('founder', null)).toBe(true)
+  })
+
+  it('проект по заявке — руководство любой, директор — своего направления', () => {
+    expect(canCreateHandoffProject('founder', null, 'smm')).toBe(true)
+    expect(canCreateHandoffProject('smm_director', null, 'smm')).toBe(true)
+    expect(canCreateHandoffProject('smm_director', null, 'development')).toBe(false)
+    expect(canCreateHandoffProject('dev_director', null, 'development')).toBe(true)
+    expect(canCreateHandoffProject('sales_manager_smm', null, 'smm')).toBe(false)
   })
 })

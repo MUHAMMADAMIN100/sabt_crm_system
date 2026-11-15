@@ -10,17 +10,21 @@ import { useTranslation } from '@/i18n'
 import TaskForm from '@/components/tasks/TaskForm'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isSameMonth, subDays, addDays, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, X, User, Calendar as CalIcon, Flag, FolderKanban, Edit, Trash2, Lock, Briefcase, Globe, Check, Users as UsersIcon, ClipboardList, MapPin, Wallet, Phone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { useUrlState } from '@/lib/urlState'
+import { STATE_TONE } from '@/lib/salesStages'
 
 // Светофорная палитра: 🟢 старт = успех, 🔴 финиш = закрытие/риск, 🟡 задача = в работе.
 const TYPE_COLORS: Record<string, string> = {
   project_start: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
   project_end:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/50',
   task:          'bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50',
-  client_meeting:'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50',
+  // Встреча с лидом — фиолетовая, как на «Сегодня», в «Клиентах» и в
+  // карточке лида (STATE_TONE.meeting, 15.11.2026). Зелёной она путалась со
+  // «Стартом проекта».
+  client_meeting: `${STATE_TONE.meeting.badge} border-violet-200 dark:border-violet-800`,
   // 🟠 Повторный звонок клиенту — отдельная оранжевая отметка, чтобы менеджер
   // сразу видел: в этот день и час надо перезвонить.
   client_repeat_call: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800',
@@ -367,6 +371,10 @@ export default function CalendarPage() {
   const isPersonalView = PERSONAL_VIEW_ROLES.includes(user?.role || '') && user?.secondaryRole !== 'dev_director'
 
   const projectEvents = (events || []).filter((e: any) => {
+    // Встречи и перезвоны по закрытым лидам (выиграно / проиграно) не
+    // показываем — сервер их уже не отдаёт, это страховка для старого ответа
+    // (SALES_SPEC §4, 15.11.2026).
+    if ((e.type === 'client_meeting' || e.type === 'client_repeat_call') && (e.status === 'won' || e.status === 'lost')) return false
     if (isPersonalView) {
       // МП по продажам — встречи с клиентами из онбординга всегда показываем.
       if (e.type === 'client_meeting' || e.type === 'client_repeat_call') return true
@@ -698,7 +706,7 @@ export default function CalendarPage() {
                             }}
                           />
                         )}
-                        {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                        {(e.kind === 'meeting' || e.type === 'client_meeting') && <UsersIcon className="shrink-0" size={9} />}
                         <PayMark e={e} size={9} />
                         {e.scope === 'personal' && <Lock className="shrink-0" size={9} />}
                         <span className="truncate flex-1 min-w-0">{e.title}</span>
@@ -781,7 +789,7 @@ export default function CalendarPage() {
                               }}
                             />
                           )}
-                          {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={10} />}
+                          {(e.kind === 'meeting' || e.type === 'client_meeting') && <UsersIcon className="shrink-0" size={10} />}
                           <PayMark e={e} size={10} />
                           {e.scope === 'personal' && <Lock className="shrink-0" size={10} />}
                           <span className="truncate flex-1 min-w-0">{e.title}</span>
@@ -799,19 +807,25 @@ export default function CalendarPage() {
       </>
       )}
 
-      {/* ─── Status legend (compact) ─────────────────────────────── */}
+      {/* ─── Легенда ───────────────────────────────────────────────
+          15.11.2026: значки вместо эмодзи; встреча с клиентом — фиолетовая
+          (как на «Сегодня»); менеджеру продаж не показываем то, чего в его
+          календаре не бывает («Общая», старт и конец проектов), зато
+          показываем оплаты клиентов. */}
       <div className="card p-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-xs font-semibold text-surface-700 dark:text-surface-200">Легенда:</span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
-          🔒 Личная
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300 border-surface-200 dark:border-surface-700">
+          <Lock size={11} /> Личная
         </span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
-          💼 Для бизнеса
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300 border-surface-200 dark:border-surface-700">
+          <Briefcase size={11} /> Для бизнеса
         </span>
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-400 border-surface-200 dark:border-surface-900/50">
-          🌐 Общая
-        </span>
-        {!scopeFilter && (
+        {!isSalesManager && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border bg-surface-100 text-surface-700 dark:bg-surface-900/30 dark:text-surface-300 border-surface-200 dark:border-surface-700">
+            <Globe size={11} /> Общая
+          </span>
+        )}
+        {!scopeFilter && !isSalesManager && (
           <>
             <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/50">
               Старт проекта
@@ -821,11 +835,19 @@ export default function CalendarPage() {
             </span>
           </>
         )}
-        <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-800">
-          📞 Повторный звонок
+        <span className={clsx('inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border', TYPE_COLORS.client_meeting)}>
+          <UsersIcon size={11} /> Встреча с клиентом
         </span>
-        <span className="ml-auto text-[11px] text-surface-400 dark:text-surface-500">
-          💡 Задачи можно перетаскивать на другой день
+        <span className={clsx('inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border', TYPE_COLORS.client_repeat_call)}>
+          <Phone size={11} /> Повторный звонок
+        </span>
+        {isSalesManager && (
+          <span className={clsx('inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border', PAYMENT_COLORS.wait)}>
+            <Wallet size={11} /> Оплата клиента
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-surface-500 dark:text-surface-400">
+          Задачи и встречи можно перетаскивать на другой день
         </span>
       </div>
 
@@ -1070,7 +1092,7 @@ export default function CalendarPage() {
                       }}
                     />
                   )}
-                  {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={12} />}
+                  {(e.kind === 'meeting' || e.type === 'client_meeting') && <UsersIcon className="shrink-0" size={12} />}
                   <PayMark e={e} size={12} />
                   {e.scope === 'personal' && <Lock size={12} className="shrink-0" />}
                   <span className="flex-1 min-w-0 truncate">{e.title}</span>
@@ -1287,7 +1309,7 @@ function WeekView({
                           onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
                         />
                       )}
-                      {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                      {(e.kind === 'meeting' || e.type === 'client_meeting') && <UsersIcon className="shrink-0" size={9} />}
                       <PayMark e={e} size={9} />
                       {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                       <span className="truncate flex-1 min-w-0">{e.title}</span>
@@ -1371,7 +1393,7 @@ function WeekView({
                             onToggle={(ev) => { ev.stopPropagation(); onToggleStatus?.(e) }}
                           />
                         )}
-                        {e.kind === 'meeting' && <UsersIcon className="shrink-0" size={9} />}
+                        {(e.kind === 'meeting' || e.type === 'client_meeting') && <UsersIcon className="shrink-0" size={9} />}
                         <PayMark e={e} size={9} />
                         {e.scope === 'personal' && <Lock size={9} className="shrink-0" />}
                         <span className="text-[10px] tabular-nums opacity-70 shrink-0">{eventTime}</span>
@@ -2026,7 +2048,7 @@ function TaskDetailDrawer({
             )}
             <span className={clsx(
               'inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap',
-              SCOPE_COLORS[event.scope] || 'bg-surface-100 text-surface-600',
+              SCOPE_COLORS[event.scope] || 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300',
             )}>
               {SCOPE_LABEL[event.scope] || event.scope}
             </span>

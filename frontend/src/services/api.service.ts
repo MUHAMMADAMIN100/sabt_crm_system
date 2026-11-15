@@ -433,9 +433,21 @@ export type GoalsOfUser = {
  *  «получено» — оплаты клиентов менеджера по «Финансам». */
 export type SalesPlanRow = { id: string; name: string; avatar: string | null; role: string; plan: number | null; received: number }
 export type SalesPlans = { ym: string; prevYm: string; managers: SalesPlanRow[]; total: { plan: number; received: number } }
-export type MySalesPlan = { ym: string; plan: null } | {
-  ym: string; plan: number; received: number; day: number; daysInMonth: number; daysLeft: number
+/** Месяц истории плана: plan null — плана в тот месяц не было. */
+export type SalesPlanHistoryRow = { ym: string; plan: number | null; received: number }
+/** Добавлено в «Продажи, этап 2» (15.11.2026, SALES_SPEC §6): комиссия и
+ *  история за 6 прошлых месяцев. Поля необязательные — старый ответ сервера
+ *  без них тоже подходит. */
+export type MySalesPlanExtra = {
+  /** Процент от полученных оплат; null — комиссия не задана. */
+  commissionPercent?: number | null
+  /** = получено × процент / 100; null — комиссии нет. */
+  commissionAmount?: number | null
+  history?: SalesPlanHistoryRow[]
 }
+export type MySalesPlan = ({ ym: string; plan: null; received?: number } | {
+  ym: string; plan: number; received: number; day: number; daysInMonth: number; daysLeft: number
+}) & MySalesPlanExtra
 export const salesPlanApi = {
   list: (ym: string): Promise<SalesPlans> => api.get('/sales-plans', { params: { ym } }).then(r => r.data),
   set: (userId: string, ym: string, amount: number | null): Promise<SalesPlans> =>

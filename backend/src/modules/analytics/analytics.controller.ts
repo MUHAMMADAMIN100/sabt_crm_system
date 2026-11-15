@@ -182,8 +182,13 @@ export class AnalyticsController {
     const user = req.user;
     // Сегмент МП — по основной ИЛИ второй роли (15.11.2026): раньше МП второй
     // ролью видел продажи обоих направлений. Админ/основатель — всё.
-    const role = hasAnyRole(user, TOP_ROLES) ? user?.role : (salesRoleOf(user) ?? user?.role);
-    return this.service.getSalesStats(role, user?.id);
+    const top = hasAnyRole(user, TOP_ROLES);
+    const role = top ? user?.role : (salesRoleOf(user) ?? user?.role);
+    // «Продажи, этап 2» (15.11.2026): менеджер продаж — только свои проекты
+    // (где он ответственный), с их суммами. Руководство — без изменений.
+    const own = !top && !!salesRoleOf(user);
+    if (own && !user?.id) throw new ForbiddenException('Не удалось определить менеджера');
+    return this.service.getSalesStats(role, user?.id, own ? user : null);
   }
 
   @Get('payroll')

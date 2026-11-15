@@ -33,6 +33,7 @@ import { TaskResultsModule } from './modules/task-results/task-results.module';
 import { TaskChecklistsModule } from './modules/task-checklists/task-checklists.module';
 import { AiAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { ClientsModule } from './modules/clients/clients.module';
+import { SalesModule } from './modules/sales/sales.module';
 import { ProjectAdsModule } from './modules/project-ads/project-ads.module';
 import { ProjectAnnouncementsModule } from './modules/project-announcements/project-announcements.module';
 import { SmmTariffsModule } from './modules/smm-tariffs/smm-tariffs.module';
@@ -125,6 +126,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     TaskChecklistsModule,
     AiAssistantModule,
     ClientsModule,
+    SalesModule,
     ProjectAdsModule,
     ProjectAnnouncementsModule,
     SmmTariffsModule,

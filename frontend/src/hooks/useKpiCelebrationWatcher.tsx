@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { clientsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
 import KpiCelebration from '@/components/kpi/KpiCelebration'
+import { hasAnyRole } from '@/lib/permissions'
 
 /**
  * Глобальный мониторинг KPI менеджера продаж — для мгновенного
@@ -30,9 +31,12 @@ import KpiCelebration from '@/components/kpi/KpiCelebration'
  */
 export default function KpiCelebrationWatcher() {
   const role = useAuthStore(s => s.user?.role)
+  const secondaryRole = useAuthStore(s => s.user?.secondaryRole)
   const userId = useAuthStore(s => s.user?.id)
   const userName = useAuthStore(s => s.user?.name) || 'Сотрудник'
-  const isSales = role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  // Основная или вторая роль продаж (15.11.2026) — KPI у них один и тот же
+  // (SALES_SPEC §6), значит и поздравление тоже.
+  const isSales = hasAnyRole(role, secondaryRole, ['sales_manager_smm', 'sales_manager_dev'])
 
   // Окно — сегодня. Если юзер перешёл через полночь, useEffect ниже
   // увидит новую дату и сбросит baseline (новый день — новые KPI).

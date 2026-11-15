@@ -7,6 +7,8 @@
  *  появился сам. Правила повторяют finance.service (smmAlert, авто-планы),
  *  чтобы «просрочено» у менеджера и у владельца значило одно и то же. */
 
+import { DEV_PROJECT_TYPES } from '../../common/sales-segment';
+
 export type PayState = 'late' | 'today' | 'wait' | 'paid';
 
 /** Клиент «Финансов» (finance_projects) — только то, что нужно для сроков. */
@@ -124,6 +126,44 @@ export function resolveFinanceLinks<C extends { id: string; name: string; archiv
     if (named) out.set(p.id, { client: named, by: 'name' });
   }
   return out;
+}
+
+/** Направление клиента «Финансов» по типу проекта CRM (15.11.2026). */
+export function financeDirectionOf(projectType?: string | null): string | null {
+  if (projectType === 'SMM') return 'smm';
+  if (DEV_PROJECT_TYPES.includes(projectType || '')) return 'development';
+  if (projectType === 'Дизайн') return 'design';
+  return null;
+}
+
+/**
+ * Клиент «Финансов» одного проекта CRM любого направления (15.11.2026) —
+ * для письма «Запрос оплаты»: долг берём из «Финансов», а не из старых полей
+ * проекта (budget/paidAmount их больше никто не ведёт).
+ *  • SMM — та же связь, что у сроков на «Панели» (resolveFinanceLinks);
+ *  • разработка и дизайн — ручная связь (smmData.financeProjectId), иначе
+ *    однозначное совпадение названия с клиентом ТОГО ЖЕ направления. Чужое
+ *    направление не берём никогда (урок 14.11.2026: SMM «Alif» подхватывал
+ *    клиента разработки «Alif»). Живой клиент важнее архивного.
+ */
+export function resolveProjectClient<C extends { id: string; name: string; archived?: boolean; direction?: string | null }>(
+  project: { id: string; name: string; projectType?: string | null; financeProjectId?: string | null },
+  clients: C[],
+): { client: C; by: 'manual' | 'name' } | null {
+  const dir = financeDirectionOf(project.projectType);
+  if (dir === 'smm') return resolveFinanceLinks([project], clients).get(project.id) || null;
+  const manual = typeof project.financeProjectId === 'string'
+    ? clients.find(c => c.id === project.financeProjectId)
+    : undefined;
+  if (manual) return { client: manual, by: 'manual' };
+  const k = nameKey(project.name);
+  if (!dir || !k) return null;
+  const same = (archived: boolean) =>
+    clients.filter(c => !!c.archived === archived && c.direction === dir && nameKey(c.name) === k);
+  const live = same(false);
+  if (live.length) return live.length === 1 ? { client: live[0], by: 'name' } : null;
+  const old = same(true);
+  return old.length === 1 ? { client: old[0], by: 'name' } : null;
 }
 
 /** Запись истории ответственного менеджера: с этого дня (включительно)

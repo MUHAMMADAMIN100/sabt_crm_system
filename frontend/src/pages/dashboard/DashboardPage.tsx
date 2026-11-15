@@ -9,13 +9,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { format, startOfMonth } from 'date-fns'
 import { isTaskOverdue } from '@/lib/taskStatus'
 import { useChartColors } from '@/lib/theme'
-import { isDevDirector } from '@/lib/permissions'
+import { isDevDirector, hasAnyRole } from '@/lib/permissions'
 import { storiesDailyTarget } from '@/pages/smm/smmShared'
 
 const FounderDashboard = lazy(() => import('./components/FounderDashboard'))
 const PMDashboard = lazy(() => import('./components/PMDashboard'))
 
-// Менеджер по продажам: календарь денег клиентов, как у СММ (17.10.2026).
+// Менеджер по продажам: экран «Сегодня» — дела по лидам, оплаты клиентов,
+// свои задачи, план и KPI (Продажи, этап 2, 15.11.2026).
 const SalesManagerDashboard = lazy(() => import('./components/SalesManagerDashboard'))
 // Кабинет команды разработки: производственные карточки доски и обычные
 // поручения — ДВУМЯ отдельными блоками, чтобы одно не терялось в другом.
@@ -154,7 +155,6 @@ function DashboardContent() {
   // а не сводка РМ — панель и меню такие же, как у дизайнера (решение
   // владельца, 18.09.2026). Сводка РМ остаётся у руководителя SMM.
   const isPMView = role === 'smm_director'
-  const isSalesView = role === 'sales_manager_smm' || role === 'sales_manager_dev'
   // Руководитель разработки второй ролью поверх МП: тот же продажный дашборд
   // плюс KPI команды направления сверху.
   const isDevDirectorView = isDevDirector(user)
@@ -162,6 +162,14 @@ function DashboardContent() {
   // Команда разработки — разработчики и проект-менеджер по разработке.
   const isDevTeam = role === 'developer' || role === 'pm_dev'
   const isWorkerView = ['smm_specialist', 'designer', 'video_editor', 'developer', 'videographer', 'targetologist', 'employee'].includes(role)
+  // «Сегодня» менеджера продаж — по основной роли; по второй — если основная
+  // роль своего кабинета не имеет и иначе попала бы на общую панель
+  // (руководитель или ПМ разработки со второй ролью МП, 15.11.2026): меню
+  // продаж у них по второй роли тоже, и «Сегодня» не должно вести в пустоту.
+  const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev']
+  const isLegacyRole = !isFounderView && !isPMView && role !== 'producer' && !user?.isStoryMaker && !isWorkerView
+  const isSalesView = SALES_ROLES.includes(role)
+    || (isLegacyRole && hasAnyRole(role, user?.secondaryRole, SALES_ROLES))
   const isManagerPlus = ['admin', 'founder', 'smm_director'].includes(role)
   const isAdmin = ['admin', 'founder'].includes(role)
   // «Транспорт по работе» — SMM-специалист и видеограф (05.10.2026): строка
@@ -199,6 +207,12 @@ function DashboardContent() {
         {isDevDirectorView && (
           <Suspense fallback={null}>
             <DevTeamKpiWidget onCreateTask={uid => navigate(`/tasks?new=1&assignee=${uid}`)} />
+          </Suspense>
+        )}
+        {/* ПМ разработки со второй ролью МП — его карточки этапов остаются. */}
+        {isDevTeam && (
+          <Suspense fallback={null}>
+            <MyDevCards />
           </Suspense>
         )}
         <Suspense fallback={<PageLoader />}>

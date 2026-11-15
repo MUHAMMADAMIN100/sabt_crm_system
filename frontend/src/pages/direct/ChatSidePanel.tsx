@@ -17,11 +17,15 @@ import { remindLabel, useChatActions } from './chatActions'
 import { labelColor } from './labelColors'
 import { clockTime, dayLabel } from './directTime'
 import type { LightboxItem } from './Lightbox'
+import { stageMeta } from '@/lib/salesStages'
 
-export const LEAD_STATUS: Record<string, string> = {
-  new: 'Новый', waiting: 'Ожидание ответа', negotiating: 'В переговорах', proposal: 'КП отправлено',
-  won: 'Клиент', lost: 'Отказ', on_hold: 'На паузе', unknown: 'Неизвестно',
-}
+/** Название этапа лида — из единой воронки (15.11.2026, lib/salesStages):
+ *  Новый, Контакт, Встреча, КП, Договор, Выиграно, Проиграно; устаревшие
+ *  значения старых лидов показываются как их новый этап. */
+export const LEAD_STATUS: Record<string, string> = Object.fromEntries(
+  ['new', 'waiting', 'meeting', 'proposal', 'contract', 'won', 'lost', 'negotiating', 'on_hold', 'unknown']
+    .map(s => [s, stageMeta(s).label]),
+)
 
 const formatSize = (bytes: number | null) => {
   if (!bytes) return ''

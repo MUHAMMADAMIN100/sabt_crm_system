@@ -13,6 +13,7 @@ import { ContentPlanModule } from '../content-plan/content-plan.module';
 import { Task } from '../tasks/task.entity';
 import { Team } from '../teams/team.entity';
 import { Employee } from '../employees/employee.entity';
+import { SmmControlModule } from '../smm-control/smm-control.module';
 
 @Module({
   imports: [
@@ -20,6 +21,9 @@ import { Employee } from '../employees/employee.entity';
     NotificationsModule,
     GatewayModule,
     ContentPlanModule,
+    // Долг клиента по «Финансам» для запроса оплаты (15.11.2026). SmmControlModule
+    // никого не импортирует — кольца зависимостей нет.
+    SmmControlModule,
   ],
   controllers: [ProjectsController, PublicBriefController],
   providers: [ProjectsService],

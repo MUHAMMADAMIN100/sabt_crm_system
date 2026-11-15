@@ -168,7 +168,9 @@ export class CalendarService {
     //   • МП видит свои встречи (ownerId = он);
     //   • топ (admin/founder/co_founder) видит все;
     //   • остальным ролям встречи клиентов не показываем.
-    // Закрытые сделки (won/lost) и записи без даты — пропускаем.
+    // Закрытые сделки (won/lost) и записи без даты — пропускаем. С 15.11.2026
+    // (единая воронка) — ещё лиды «на паузе» и встречи, по которым уже
+    // отмечен итог («состоялась»/«не состоялась»): дела по ним нет.
     const role = viewerRole || '';
     const isTop = ['admin', 'founder'].includes(role);
     const showClientMeetings = !scope || scope === 'personal';
@@ -179,7 +181,9 @@ export class CalendarService {
         .leftJoinAndSelect('c.owner', 'owner')
         .where('c.nextContactAt IS NOT NULL')
         .andWhere('c.nextContactAt BETWEEN :from AND :to', { from, to })
-        .andWhere(`c.status NOT IN ('won', 'lost')`);
+        .andWhere(`c.status NOT IN ('won', 'lost')`)
+        .andWhere('c."onHold" = false')
+        .andWhere('c."meetingResult" IS NULL');
       if (salesSegment) {
         // МП — только свои лиды (+ совместимость со старыми без owner — нет).
         leadQb.andWhere('c.ownerId = :leadViewer', { leadViewer: viewerId ?? null });
@@ -199,7 +203,8 @@ export class CalendarService {
         .leftJoinAndSelect('c.owner', 'owner')
         .where('c."repeatCallAt" IS NOT NULL')
         .andWhere('c."repeatCallAt" BETWEEN :from AND :to', { from, to })
-        .andWhere(`c.status NOT IN ('won', 'lost')`);
+        .andWhere(`c.status NOT IN ('won', 'lost')`)
+        .andWhere('c."onHold" = false');
       if (salesSegment) {
         rcQb.andWhere('c.ownerId = :leadViewer', { leadViewer: viewerId ?? null });
       } else if (employeeId) {

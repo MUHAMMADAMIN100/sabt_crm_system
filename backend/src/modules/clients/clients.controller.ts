@@ -5,7 +5,9 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { ClientLeadStatus, ClientLeadInterest, ClientLeadDirection } from './client-lead.entity';
+import { ClientLeadDirection } from './client-lead.entity';
+import { LeadListQuery } from './lead-list';
+import type { LeadVia } from './clients.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
@@ -17,6 +19,12 @@ import { getSalesSegmentOfUser, salesRoleOf } from '../../common/sales-segment';
  *  лиды обоих направлений. */
 function leadDirectionFor(user?: { role?: string | null; secondaryRole?: string | null } | null): ClientLeadDirection | undefined {
   return getSalesSegmentOfUser(user)?.leadDirection as ClientLeadDirection | undefined;
+}
+
+/** Откуда запрос: голосовой помощник ходит в API с X-Sabt-Client
+ *  (internal-api.ts) — в ленте лида событие «создан» помечаем «голосом». */
+function viaOf(req: any): LeadVia {
+  return String(req?.headers?.['x-sabt-client'] || '') === 'telegram-voice' ? 'voice' : 'form';
 }
 
 @ApiTags('Client Leads')
@@ -84,13 +92,33 @@ export class ClientsController {
     return this.service.kpi(userId, direction, from, to);
   }
 
+  /** Список лидов с серверной пагинацией (15.11.2026, SALES_SPEC §4):
+   *  search, status (через запятую), interest, sphere, source,
+   *  owner = me | all | none | uuid, due = overdue | today | none, hold = 1 | 0,
+   *  page, pageSize (10..100), sort = next | updated | created | potential.
+   *  ВАЖНО: объявлен до @Get(':id'), иначе «list» ушёл бы в findOne как id. */
+  @Get('list')
+  @RequirePerm('clients.view')
+  list(@Request() req, @Query() query: LeadListQuery) {
+    return this.service.list(query || {}, req.user, leadDirectionFor(req.user));
+  }
+
+  /** Доска «Воронка»: все активные лиды + выигранные/проигранные за 30 дней.
+   *  Параметры owner, search. Тоже до @Get(':id'). */
+  @Get('board')
+  @RequirePerm('clients.view')
+  board(@Request() req, @Query('owner') owner?: string, @Query('search') search?: string) {
+    return this.service.board({ owner, search }, req.user, leadDirectionFor(req.user));
+  }
+
+  /** Массив до 500 лидов — голосовой помощник и старые экраны. */
   @Get()
   @RequirePerm('clients.view')
   findAll(
     @Request() req,
     @Query('search') search?: string,
-    @Query('status') status?: ClientLeadStatus,
-    @Query('interest') interest?: ClientLeadInterest,
+    @Query('status') status?: string,
+    @Query('interest') interest?: string,
     @Query('sphere') sphere?: string,
     @Query('ownerId') ownerId?: string,
     @Query('source') source?: string,
@@ -111,13 +139,22 @@ export class ClientsController {
   @RequirePerm('clients.create')
   create(@Body() dto: CreateClientDto, @Request() req) {
     // Направление лида задаётся автоматически по сегменту менеджера-создателя.
-    // meetingTaskId выставляется только сервером — игнорируем то, что прислал фронт.
+    // Владелец — по правилам (createWithAuth): МП — себе или МП своего
+    // направления; руководство — кого укажет. force — создать, несмотря на
+    // похожие лиды (иначе 409 { message: 'duplicate', duplicates }).
     const direction = leadDirectionFor(req.user);
-    return this.service.create(
+    return this.service.createWithAuth(
       { ...(dto as any), direction: direction ?? dto.direction },
-      req.user.id,
-      { id: req.user.id, name: req.user.name },
+      req.user,
+      { via: viaOf(req) },
     );
+  }
+
+  /** «Взять себе» лид без владельца своего направления (15.11.2026). */
+  @Post(':id/claim')
+  @RequirePerm('clients.edit')
+  claim(@Param('id') id: string, @Request() req) {
+    return this.service.claim(id, req.user);
   }
 
   /** «Позвонить»: руководитель отмечает лидов для обзвона менеджером

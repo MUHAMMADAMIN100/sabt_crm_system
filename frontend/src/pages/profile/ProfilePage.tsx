@@ -429,9 +429,11 @@ export default function ProfilePage() {
         {stats && <LevelBar stats={stats} className="sm:hidden mt-3.5" />}
       </div>
 
-      {/* План продаж менеджера — деньги, поэтому только на телефоне, как
-          зарплата (решение владельца 19.10.2026). Без плана не показывается. */}
-      {!onLeave && <SalesPlanCard className="lg:hidden" />}
+      {/* План продаж менеджера. Без плана не показывается. С 15.11.2026
+          (Продажи, этап 2) — и на компьютере: это свой план менеджера, он же
+          стоит на «Сегодня»; зарплата ниже по-прежнему только на телефоне.
+          Ширина — как у колонки смен, чтобы карточка не растягивалась. */}
+      {!onLeave && <SalesPlanCard className="lg:max-w-[420px]" />}
 
       {stats && !onLeave && <ProfileStatsBody stats={stats} />}
 

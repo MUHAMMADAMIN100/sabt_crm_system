@@ -9,7 +9,9 @@
  *    остального — не «60 %».
  */
 
-/** Дневные нормы KPI менеджера продаж (план на ОДИН рабочий день). */
+/** Дневные нормы KPI менеджера продаж (план на ОДИН рабочий день) — по
+ *  умолчанию. С 15.11.2026 нормы задаёт руководство по направлениям
+ *  (sales_settings, см. sales-settings.ts); эти числа — когда настроек нет. */
 export const SALES_DAILY_TARGETS = {
   funnel_progress: 20,
   new_companies:   15,
@@ -23,7 +25,9 @@ export type SalesKpiKey = keyof typeof SALES_DAILY_TARGETS;
 const LABELS: Record<SalesKpiKey, string> = {
   funnel_progress: 'Продвижения по воронке',
   new_companies:   'Новые компании в базе',
-  cold_calls:      'Холодные звонки',
+  // «Звонки» (15.11.2026): звонок пишется из шторки «Звонок» любого типа,
+  // а не только «холодный» — подпись как в макете. Ключ метрики прежний.
+  cold_calls:      'Звонки',
   personal_emails: 'Персональные письма',
   meetings:        'Встречи / созвоны',
 };
@@ -109,6 +113,19 @@ export function expandRanges(
   return out;
 }
 
+/** Текущий статус «В отпуске» из карточки сотрудника → отрезок отпуска
+ *  (15.11.2026). Статус говорит лишь, что человек в отпуске СЕЙЧАС: без даты
+ *  «с» отпуск считаем начавшимся сегодня. Раньше пустое «с» значило «шёл
+ *  всегда» — и прошлый месяц целиком превращался в выходные, норма — в 0. */
+export function currentVacationRange(
+  row: { from?: string | null; until?: string | null },
+  todayIso: string,
+): { from: string; until: string | null } {
+  const from = row.from && ISO_DAY.test(row.from) ? row.from : todayIso;
+  const until = row.until && ISO_DAY.test(row.until) ? row.until : null;
+  return { from, until };
+}
+
 /** Рабочие дни периода, которые уже наступили: пн–сб от fromIso до
  *  min(toIso, сегодня), без дней отпуска и отсутствий. */
 export function workingDays(
@@ -147,11 +164,18 @@ export interface SalesKpiResult {
 }
 
 /** Пункты KPI и общий процент. Норма = дневная × рабочие дни. Общий
- *  процент — среднее пунктов с нормой, каждый не больше 100 %. */
-export function buildSalesKpi(facts: Record<SalesKpiKey, number>, workDays: number): SalesKpiResult {
+ *  процент — среднее пунктов с нормой, каждый не больше 100 %.
+ *  daily — дневные нормы направления менеджера (15.11.2026, из
+ *  sales_settings); не передали — нормы по умолчанию. */
+export function buildSalesKpi(
+  facts: Record<SalesKpiKey, number>,
+  workDays: number,
+  daily: Readonly<Record<SalesKpiKey, number>> = SALES_DAILY_TARGETS,
+): SalesKpiResult {
   const days = Math.max(0, Math.floor(workDays));
   const items = ORDER.map(key => {
-    const target = SALES_DAILY_TARGETS[key] * days;
+    const perDay = Number(daily?.[key]);
+    const target = (Number.isFinite(perDay) && perDay >= 0 ? perDay : SALES_DAILY_TARGETS[key]) * days;
     const value = Math.max(0, Number(facts[key]) || 0);
     return {
       key,
@@ -175,50 +199,11 @@ export function buildSalesKpi(facts: Record<SalesKpiKey, number>, workDays: numb
   };
 }
 
-/** Встреча лида: когда и чья (владелец лида). */
-export interface MeetingState {
-  at: Date | string | null | undefined;
-  ownerId: string | null | undefined;
-}
-
-export interface MeetingSyncPlan {
-  /** Убрать ещё не наступившие встречи лида: их перенесли или отменили
-   *  до того, как они прошли. Прошедшие встречи остаются — они были. */
-  dropPending: boolean;
-  /** Записать встречу на новое время (владельцу лида). */
-  insert: { userId: string; at: Date } | null;
-}
-
-const timeOf = (v: Date | string | null | undefined): number | null => {
-  if (!v) return null;
-  const t = new Date(v).getTime();
-  return Number.isFinite(t) ? t : null;
-};
-
-/** Что сделать с журналом встреч, когда у лида поменялись дата встречи
- *  (nextContactAt) или владелец. null — ничего. before = null — лид новый.
- *  Встреча задним числом (15.11.2026): день встречи раньше сегодняшнего (по
- *  Душанбе) в журнал не идёт — иначе выставленная «на вчера» дата сразу
- *  давала встречу в KPI, по одной на каждый день. Сегодняшняя прошедшая
- *  засчитывается сразу, будущая — когда наступит её время. */
-export function meetingSyncPlan(before: MeetingState | null, after: MeetingState, now: Date): MeetingSyncPlan | null {
-  const oldAt = before ? timeOf(before.at) : null;
-  const newAt = timeOf(after.at);
-  const ownerChanged = (before?.ownerId ?? null) !== (after.ownerId ?? null);
-  if (oldAt === newAt && (!ownerChanged || newAt === null)) return null;
-  // Будущая встреча при смене владельца переходит к новому: проведёт её он.
-  const dropPending = oldAt !== null && oldAt > now.getTime();
-  const backdated = newAt !== null && dushanbeDay(new Date(newAt)) < dushanbeDay(now);
-  const insert = newAt !== null && after.ownerId && !backdated ? { userId: after.ownerId, at: new Date(newAt) } : null;
-  if (!dropPending && !insert) return null;
-  return { dropPending, insert };
-}
-
-/** Шаг воронки «вперёд» (15.11.2026): цель — реальный статус/этап (порядок
- *  > 0) и выше исходного. Из терминального (lost / on_hold / unknown /
- *  cancelled, порядок −1) или «нулевого» (new, пусто) — вперёд к любому
- *  реальному. Назад и в терминальные — нет. Повторный заход на уже взятую
- *  вершину отсекает проверка вех в lead_progress (ClientsService). */
+/** Шаг воронки «вперёд» (15.11.2026): цель — реальный этап (порядок > 0) и
+ *  выше исходного. Из терминального (lost, порядок −1) или «нулевого» (new,
+ *  пусто) — вперёд к любому реальному. Назад и в терминальные — нет.
+ *  Повторный заход на уже взятую вершину отсекает проверка вех в
+ *  lead_progress (ClientsService). */
 export function funnelStepIsForward(toOrder: number | undefined, fromOrder: number | undefined): boolean {
   const t = toOrder ?? 0;
   const f = Math.max(0, fromOrder ?? 0);
@@ -232,4 +217,38 @@ export function emailBecameSent(
 ): boolean {
   const sent = (v?: string | null) => String(v || '').toLowerCase() === 'sent';
   return !sent(before?.emailStatus) && sent(after.emailStatus);
+}
+
+/** Порядок этапов единой воронки (15.11.2026) — для «шага вперёд».
+ *  lost — терминальный (−1). Устаревшие значения — как то, во что их
+ *  перенесла миграция 1835: negotiating ≡ waiting, unknown ≡ new;
+ *  on_hold — «пауза», терминальный. */
+export const FUNNEL_ORDER: Record<string, number> = {
+  new:         0,
+  waiting:     1,
+  meeting:     2,
+  proposal:    3,
+  contract:    4,
+  won:         5,
+  lost:        -1,
+  negotiating: 1,
+  unknown:     0,
+  on_hold:     -1,
+};
+
+/** Чем в lead_progress уже могла быть взята веха этапа (15.11.2026, единая
+ *  воронка). Раньше было две воронки — статус и «этап онбординга»; веха,
+ *  взятая старым этапом, повторно не засчитывается: meeting ≡ этап meeting,
+ *  proposal ≡ kp_creation, contract ≡ contract, won ≡ implementation,
+ *  waiting ≡ negotiation (и старый статус negotiating — его перенесли в
+ *  waiting). */
+export function milestoneEquivalents(status: string): { statuses: string[]; stages: string[] } {
+  switch (status) {
+    case 'waiting':  return { statuses: ['waiting', 'negotiating'], stages: ['negotiation'] };
+    case 'meeting':  return { statuses: ['meeting'], stages: ['meeting'] };
+    case 'proposal': return { statuses: ['proposal'], stages: ['kp_creation'] };
+    case 'contract': return { statuses: ['contract'], stages: ['contract'] };
+    case 'won':      return { statuses: ['won'], stages: ['implementation'] };
+    default:         return { statuses: [status], stages: [] };
+  }
 }

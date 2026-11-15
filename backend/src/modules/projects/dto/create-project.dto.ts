@@ -18,6 +18,14 @@ export class CreateProjectDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() projectType?: string;
   @ApiProperty({ required: false }) @IsOptional() smmData?: Record<string, any>;
   @ApiProperty({ required: false }) @IsOptional() clientInfo?: Record<string, any>;
+  /** Лид продаж, по которому создаётся проект (15.11.2026, «Заявки от
+   *  продаж»): сервис связывает лид и проект (projects.leadId,
+   *  client_leads.projectId), пишет событие лида и сообщает менеджеру.
+   *  Менеджер продаж не выбран — им становится владелец лида (если у него
+   *  роль продаж): salesManagerId, а у SMM-проекта и smmData.salesManagerId.
+   *  В PATCH /projects/:id игнорируется — связь меняется только так или
+   *  через POST /sales/handoffs/:leadId/link. */
+  @ApiProperty({ required: false, format: 'uuid' }) @IsOptional() @IsUUID() leadId?: string;
   /** Разрешить создать SMM-проект без тарифа (новый упрощённый поток SMM-проектов). */
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() allowNoTariff?: boolean;
 

@@ -211,10 +211,37 @@ describe('FinanceScheduler: напоминание ответственному 
     expect(toMgr[0].message).toContain('Chrono');
   });
 
-  it('за 3 дня и после срока менеджеру не пишем — только «Финансам», как раньше', async () => {
+  it('за 3 дня менеджеру не пишем; просроченное — утренним списком (15.11.2026)', async () => {
     const { scheduler, created } = build([pp('a', 'f-smm', '2026-11-17'), pp('b', 'f-dev', '2026-11-10')]);
     await (scheduler as any).checkProjectPayments(TODAY);
-    expect(created.map(n => n.userId)).toEqual(['boss', 'boss']);
+    expect(created.map(n => n.userId)).toEqual(['boss', 'boss', 'mgr-dev']);
+    const late = created[2];
+    expect(late.title).toBe('Просрочены оплаты клиентов: 1');
+    expect(late.message).toContain('Сайт Alif: 4');
+    expect(late.message).toContain('просрочено на 4 дн.');
+    expect(late.data.alertKey).toBe('fin-pp-mgr-late:mgr-dev:2026-11-14');
+    expect(late.link).toBe('/');
+  });
+
+  it('просроченные оплаты своих клиентов — одно сообщение, самые давние первыми, до 5 строк', async () => {
+    const days = ['2026-11-13', '2026-11-01', '2026-11-12', '2026-11-05', '2026-11-11', '2026-11-08', '2026-11-09'];
+    const { scheduler, created } = build(days.map((d, i) => pp(`s${i}`, 'f-smm', d)));
+    await (scheduler as any).checkProjectPayments(TODAY);
+    const toMgr = created.filter(n => n.userId === 'mgr-smm');
+    expect(toMgr).toHaveLength(1);
+    expect(toMgr[0].title).toBe('Просрочены оплаты клиентов: 7');
+    const lines = String(toMgr[0].message).split('\n');
+    expect(lines.slice(0, 5).map(l => /на (\d+) дн/.exec(l)?.[1])).toEqual(['13', '9', '6', '5', '3']);
+    expect(lines[5]).toBe('…и ещё 2');
+    expect(lines[6]).toContain('Напомните клиентам');
+    // Все просрочки у одного клиента — ссылка сразу на его проект.
+    expect(toMgr[0].link).toBe('/smm/projects/crm-1');
+  });
+
+  it('владельцу с «Финансами» списка просрочек не шлём — он уже получил напоминания', async () => {
+    const { scheduler, created } = build([pp('c', 'f-boss', '2026-11-10')]);
+    await (scheduler as any).checkProjectPayments(TODAY);
+    expect(created.map(n => n.userId)).toEqual(['boss']);
   });
 
   it('у менеджера есть «Финансы» — второе напоминание не шлём', async () => {

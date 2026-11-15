@@ -14,6 +14,7 @@ import { WorkSession } from '../auth/work-session.entity';
 import { ProjectAd, BudgetSource } from '../project-ads/project-ad.entity';
 import { StoryLog } from '../stories/story.entity';
 import { getSalesSegment, isSalesManager } from '../../common/sales-segment';
+import { AccessUser, isAssignedSalesManager } from '../projects/project-access';
 import { DirectionScope } from '../../common/direction-scope';
 
 @Injectable()
@@ -532,7 +533,13 @@ export class AnalyticsService {
   /** Sales-manager dashboard data: every project with money + collections context.
    *  МП видит ТОЛЬКО проекты своего направления (СММ ↔ разработка) — и в
    *  таблице, и в итогах/графиках; топ-роли — всё. */
-  async getSalesStats(viewerRole?: string, viewerId?: string) {
+  /** Панель «Продажи». ownOf — менеджер продаж (основной или второй
+   *  ролью, не руководство): «Продажи, этап 2» (15.11.2026, деньги только
+   *  своих) — только проекты, где он ответственный менеджер
+   *  (salesManagerId или smmData.salesManagerId; то же правило, что у
+   *  оплат проекта и календаря денег). Раньше МП видел суммы всех проектов
+   *  своего направления. Руководство и прочие — как раньше (сегмент роли). */
+  async getSalesStats(viewerRole?: string, viewerId?: string, ownOf?: AccessUser | null) {
     // Архивные проекты в панели продаж не показываем (просьба отдела продаж):
     // это рабочий список, закрытые проекты живут в «Архиве». Итоги считаются
     // по тому же списку — цифры всегда сходятся с таблицей.
@@ -541,10 +548,15 @@ export class AnalyticsService {
       relations: ['manager', 'salesManager'],
       order: { createdAt: 'DESC' },
     });
-    const segment = getSalesSegment(viewerRole);
-    let projects = segment
-      ? allProjects.filter(p => segment.projectTypes.includes(p.projectType as string))
-      : allProjects;
+    const ownOnly = !!ownOf?.id;
+    // Свой проект — независимо от сегмента: ответственным за SMM-проект
+    // может быть и МП разработки (решение 11.10.2026).
+    const segment = ownOnly ? null : getSalesSegment(viewerRole);
+    let projects = ownOnly
+      ? allProjects.filter(p => isAssignedSalesManager(ownOf, p))
+      : segment
+        ? allProjects.filter(p => segment.projectTypes.includes(p.projectType as string))
+        : allProjects;
 
     // Личный архив менеджера продаж: скрытый им проект должен уйти и из панели
     // «Продажи» (и из таблицы, и из сумм), иначе он «пропал из проектов, но
@@ -635,7 +647,7 @@ export class AnalyticsService {
       .where('pp."paidAt" >= :from', { from: sixMonthsAgo })
       .groupBy('month')
       .orderBy('month', 'ASC');
-    if (segment) {
+    if (segment || ownOnly) {
       const ids = projects.map(p => p.id);
       if (ids.length === 0) revenueQb.andWhere('1 = 0');
       else revenueQb.andWhere('pp."projectId" IN (:...ids)', { ids });
@@ -661,6 +673,8 @@ export class AnalyticsService {
     const byTypeList = Object.entries(byType).map(([type, v]) => ({ type, ...v }));
 
     return {
+      // 'own' — только свои проекты менеджера (15.11.2026), 'all' — как раньше.
+      scope: ownOnly ? 'own' as const : 'all' as const,
       totalBudget,
       totalPaid,
       totalOutstanding,

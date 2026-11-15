@@ -3,15 +3,33 @@ import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import {
   canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, canCheckStories, isDevLead, userCan,
-  hasAnyRole, type Permission,
+  hasAnyRole, canAccessRoute, type Permission,
 } from '@/lib/permissions'
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
-  Archive, Users, ShieldCheck, Contact, UserPlus, Tag, Shield, Sparkles, Code2, UserCheck,
-  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen,
+  Archive, Users, ShieldCheck, Contact, Tag, Shield, Sparkles, Code2, UserCheck,
+  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun,
 } from 'lucide-react'
 import { useDirectUnread } from '@/hooks/useDirectUnread'
 import { notificationsApi } from '@/services/api.service'
+
+/** Роли менеджера продаж. */
+export const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'] as const
+
+/** Менеджер продаж — основной или второй ролью (15.11.2026). Руководство
+ *  со второй ролью продаж меню не меняет: у него свой набор разделов. */
+export function isSalesUser(user: { role?: string | null; secondaryRole?: string | null } | null | undefined): boolean {
+  if (!user || ['founder', 'admin'].includes(user.role || '')) return false
+  return hasAnyRole(user.role, user.secondaryRole, SALES_ROLES)
+}
+
+/** Порядок разделов менеджера продаж (Продажи, этап 2, 15.11.2026): рабочий
+ *  день начинается с «Сегодня» и «Клиентов», дальше «Директ» и «Календарь»;
+ *  остальное — в прежнем порядке. */
+export const SALES_NAV_ORDER = ['/', '/clients', '/direct', '/calendar']
+
+/** «Продажи» (аналитика, заявки, нормы) — руководство и директора направлений. */
+const SALES_ANALYTICS_ROLES = ['founder', 'admin', 'smm_director', 'dev_director']
 
 export interface NavItem {
   to: string
@@ -48,7 +66,7 @@ export function useNavItems(): NavItem[] {
   // В отпуске открыт только профиль (27.10.2026).
   if (user?.vacation) return [{ to: '/profile', icon: UserIcon, label: 'Профиль', permission: 'dashboard' }]
   const isTopExec = role === 'founder'
-  const isSalesManager = role === 'sales_manager_smm' || role === 'sales_manager_dev'
+  const isSales = isSalesUser(user)
   // «Проверка сторис» открыта, только пока у человека есть право stories.view.
   const canStoriesCheck = canCheckStories(role, secondaryRole) && userCan(user, 'stories.view')
 
@@ -56,7 +74,8 @@ export function useNavItems(): NavItem[] {
   // Страницы и маршруты остались в коде — вернуть можно одной строкой здесь
   // и снятием запрета в canAccessRoute.
   const items: NavItem[] = [
-    { to: '/',                icon: LayoutDashboard, label: t('nav.dashboard'), permission: 'dashboard', exact: true },
+    // У менеджера продаж главная — экран «Сегодня» (15.11.2026).
+    { to: '/',                icon: isSales ? Sun : LayoutDashboard, label: isSales ? 'Сегодня' : t('nav.dashboard'), permission: 'dashboard', exact: true },
     // «Директ» — переписка Instagram (04.11.2026). Доступ как у Базы клиентов.
     { to: '/direct',          icon: MessageCircle,   label: 'Директ',            permission: 'clients.view', badge: directUnread },
     { to: '/finance',         icon: Wallet,          label: 'Финансы',           permission: 'finance.manage' },
@@ -69,8 +88,11 @@ export function useNavItems(): NavItem[] {
     { to: '/archive',         icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',       icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,     label: 'Доступы сотрудников', permission: 'users.manage' },
-    { to: '/clients',         icon: Contact,         label: 'База клиентов',     permission: 'clients.view' },
-    { to: '/onboarding',      icon: UserPlus,        label: 'Онбординг',         permission: 'clients.view' },
+    // «Клиенты» у продаж — воронка и список лидов. «Онбординг» убран
+    // (15.11.2026): старый адрес ведёт в «Клиенты → Воронка».
+    { to: '/clients',         icon: Contact,         label: isSales ? 'Клиенты' : 'База клиентов', permission: 'clients.view' },
+    // «Продажи» — аналитика, заявки от продаж и нормы (15.11.2026).
+    { to: '/sales',           icon: TrendingUp,      label: 'Продажи',           permission: 'dashboard' },
     { to: '/tariffs',         icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/security-log',    icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
     { to: '/ai',              icon: Sparkles,        label: 'ИИ-помощник',       permission: 'ai.chat' },
@@ -82,8 +104,13 @@ export function useNavItems(): NavItem[] {
   ]
 
   // Роли разделов — основная ИЛИ вторая (15.11.2026), как в canAccessRoute.
-  return items.filter(item => {
-    if (item.to === '/onboarding' && !hasAnyRole(role, secondaryRole, ['sales_manager_dev'])) return false
+  const visible = items.filter(item => {
+    // Только руководству и директорам направлений; и только если маршрут
+    // их пускает (страницу и гард делает отдельная задача) — без мёртвых ссылок.
+    if (item.to === '/sales') {
+      return hasAnyRole(role, secondaryRole, SALES_ANALYTICS_ROLES)
+        && canAccessRoute(role, '/sales', secondaryRole, user?.extraPermissions, user?.deniedPermissions, user?.isStoryMaker)
+    }
     if (item.to === '/my-notes') return canSeeProjectStories(user?.isStoryMaker) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)
     if (item.to === '/stories-check') return canStoriesCheck
@@ -97,4 +124,8 @@ export function useNavItems(): NavItem[] {
     if (item.to === '/test-new') return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
     return userCan(user, item.permission)
   })
+  if (!isSales) return visible
+  // Менеджеру продаж — свой порядок; сортировка устойчивая, прочее как было.
+  const rank = (to: string) => { const i = SALES_NAV_ORDER.indexOf(to); return i < 0 ? SALES_NAV_ORDER.length : i }
+  return visible.map((item, i) => ({ item, i })).sort((a, b) => rank(a.item.to) - rank(b.item.to) || a.i - b.i).map(x => x.item)
 }

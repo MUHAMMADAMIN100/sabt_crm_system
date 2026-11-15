@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
 import { hasGrant } from '../auth/permissions';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, In } from 'typeorm';
@@ -25,12 +25,25 @@ import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel, g
 import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-limits';
 import { devClientFromSmm, CLIENT_MOVED_FLAG } from './dev-client.logic';
 import { withManagerChange } from '../smm-control/smm-payments.logic';
+import { SmmPaymentsService } from '../smm-control/smm-payments.service';
+import { recordLeadEvent } from '../clients/lead-events';
 import { escapeHtml } from '../../common/html-escape';
 import { dushanbeToday } from '../employees/vacation';
 import {
   AccessUser, assertCanViewProject, canEditSmmProject, directionTypesOf, hasAnyRole, inDirection,
-  isAssignedSalesManager, isOwnProject, isSmmManagement, isTop, patchSmmData,
+  isAssignedSalesManager, isOwnProject, isSmmManagement, isTop, patchSmmData, rolesOf,
 } from './project-access';
+
+/** Руководители направлений: деньги (оплаты, запрос оплаты) — по всему
+ *  своему направлению, основной или второй ролью (15.11.2026). */
+const DIRECTOR_MONEY_TYPES: Record<string, readonly string[]> = {
+  smm_director: ['SMM'],
+  dev_director: DEV_PROJECT_TYPES,
+};
+
+/** Кто связывает новый проект с лидом продаж (15.11.2026): руководство и
+ *  руководители направлений — те, кто видит «Заявки от продаж». */
+const LEAD_LINK_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
 
 /** Ключи smmData, у которых есть свои ручки (цикл, профиль, менеджер,
  *  TikTok, авторасстановка, реклама «Контроля», связь с «Финансами»).
@@ -230,6 +243,8 @@ export class ProjectsService implements OnModuleInit {
     private telegramService: TelegramService,
     private gateway: AppGateway,
     private contentPlanService: ContentPlanService,
+    // Долг клиента по «Финансам» для письма «Запрос оплаты» (15.11.2026).
+    private smmPayments: SmmPaymentsService,
   ) {}
 
   /** Заполняет проект полями из выбранного тарифа (snapshot имени и цены).
@@ -520,7 +535,7 @@ export class ProjectsService implements OnModuleInit {
       details: { brief: true },
     }).catch(() => {});
     this.gateway.broadcast('projects:changed', { projectId });
-    return this.findOne(projectId, user.role);
+    return this.findOne(projectId, user);
   }
 
   /** Генерирует (или возвращает существующий) публичный токен для брифа.
@@ -683,7 +698,7 @@ export class ProjectsService implements OnModuleInit {
       details: { briefCleared: true },
     }).catch(() => {});
     this.gateway.broadcast('projects:changed', { projectId });
-    return this.findOne(projectId, user.role);
+    return this.findOne(projectId, user);
   }
 
   // ─── Wave 13: автопересчёт финансовых полей ─────────────────────────
@@ -955,19 +970,31 @@ export class ProjectsService implements OnModuleInit {
   }
 
   /** Удаляет финансовые поля из проекта/списка для тех ролей которые
-   *  не должны их видеть. Полный доступ — только founder/co_founder.
-   *  Sales_manager видит paidAmount/budget/outstanding (для работы с
-   *  клиентами), но НЕ видит маржу/себестоимость/тариф-цену.
-   *  Назначенный менеджер проекта / smm_director / video_director видят ТОЛЬКО budget
-   *  (планирование объёма работ), всё остальное финансовое — скрыто.
-   *  Прочие роли — финансы полностью скрыты. */
-  stripFinance<T extends Project | Project[]>(data: T, role?: string): T {
+   *  не должны их видеть. Полный доступ — только founder.
+   *  Менеджер по продажам (основной или второй ролью) видит
+   *  paidAmount/budget/totalContractValue/outstanding/monthlyFee и цену
+   *  индивидуального тарифа ТОЛЬКО у своих проектов — где он ответственный
+   *  (salesManagerId или smmData.salesManagerId; «Продажи, этап 2»,
+   *  15.11.2026: деньги только своих клиентов). Маржу/себестоимость/
+   *  тариф-цену не видит нигде.
+   *  Руководители направлений (smm_director / dev_director) видят ТОЛЬКО
+   *  budget (планирование объёма работ), всё остальное финансовое — скрыто.
+   *  Прочие роли — финансы полностью скрыты.
+   *  viewer — пользователь (нужен id для «своих») или, по-старому, роль:
+   *  по одной роли «свой» не определить, и МП суммы не получает. */
+  stripFinance<T extends Project | Project[]>(data: T, viewer?: string | (AccessUser & { role?: string | null }) | null): T {
+    const user: AccessUser | null = typeof viewer === 'string' ? { role: viewer } : (viewer ?? null);
+    const role = user?.role ?? undefined;
     const isFinance = role === 'founder';
     if (isFinance) return data;
-    const isSales = role === 'sales_manager_smm' || role === 'sales_manager_dev';
-    const isProjectManager = role === 'smm_director' || role === 'dev_director';
+    const isSales = !!salesRoleOf(user);
+    const isProjectManager = typeof viewer === 'string'
+      ? role === 'smm_director' || role === 'dev_director'
+      : hasAnyRole(user, ['smm_director', 'dev_director']);
     const strip = (p: any) => {
       if (!p) return p;
+      // Деньги проекта менеджеру продаж — только у своего клиента.
+      const salesMoney = isSales && !!user?.id && isAssignedSalesManager(user, p);
       // Поля связанные с маржой/прибыльностью — только finance role видит
       delete p.internalCostEstimate;
       delete p.marginEstimate;
@@ -976,23 +1003,23 @@ export class ProjectsService implements OnModuleInit {
       delete p.discount;
       delete p.discountType;
       // paidAmount/totalContractValue/outstandingAmount/monthlyFee —
-      // только sales + finance (МП нужна сумма следующей оплаты).
-      if (!isSales) {
+      // только finance и менеджер этого проекта (сумма следующей оплаты).
+      if (!salesMoney) {
         delete p.paidAmount;
         delete p.totalContractValue;
         delete p.outstandingAmount;
         delete p.monthlyFee;
       }
-      // budget — sales + руководители направлений (smm_director/video_director),
-      // прочим скрываем
-      if (!isSales && !isProjectManager) {
+      // budget — свой менеджер продаж + руководители направлений, прочим скрываем
+      if (!salesMoney && !isProjectManager) {
         delete p.budget;
       }
       // customTariff держит и лимиты, и цену индивидуального тарифа. Лимиты
       // нужны всем (по ним рисуется доска), а цену — только тем, кто её и
-      // задаёт. Остальным отдаём объект без цены.
-      if (p.customTariff && typeof p.customTariff === 'object'
-          && !CUSTOM_PRICE_ROLES.includes(role as string)) {
+      // задаёт; менеджеру продаж — только у своего проекта. Остальным
+      // отдаём объект без цены.
+      const seePrice = CUSTOM_PRICE_ROLES.includes(role as string) && (!isSales || salesMoney);
+      if (p.customTariff && typeof p.customTariff === 'object' && !seePrice) {
         const { monthlyPrice: _hidden, ...rest } = p.customTariff as Record<string, any>;
         p.customTariff = rest;
       }
@@ -1156,7 +1183,8 @@ export class ProjectsService implements OnModuleInit {
       }
     }
 
-    const stripped = this.stripFinance(projects, requestUser?.role);
+    // Деньги — по пользователю (15.11.2026): МП видит суммы только своих проектов.
+    const stripped = this.stripFinance(projects, requestUser ?? null);
     // Лёгкий состав для списка (фронт рисует стек без второго запроса):
     // manager в том же виде, что в карточке + membersCount + первые 5.
     // members уже загружены одним join выше — новых запросов нет (N+1 нет).
@@ -1178,7 +1206,10 @@ export class ProjectsService implements OnModuleInit {
     });
   }
 
-  async findOne(id: string, requestUserRole?: string) {
+  /** viewer — роль (как раньше) или пользователь: по пользователю деньги
+   *  отдаются менеджеру продаж у его проектов (15.11.2026). */
+  async findOne(id: string, viewer?: string | (AccessUser & { role?: string | null })) {
+    const requestUserRole: string | undefined = typeof viewer === 'string' ? viewer : (viewer?.role ?? undefined);
     // Мусорный UUID в :id → 400, а не 500 от Postgres (invalid input syntax).
     if (typeof id !== 'string' || !ProjectsService.UUID_RE.test(id)) {
       throw new BadRequestException(`Некорректный UUID проекта: ${String(id)}`);
@@ -1232,7 +1263,7 @@ export class ProjectsService implements OnModuleInit {
     // members [{id,name,role,avatar}]. Маппим по УЖЕ загруженным relations
     // (один запрос выше) — N+1 не плодим. Остальные поля (tasks/files/smm…)
     // не трогаем.
-    const withFinance = requestUserRole ? this.stripFinance(project, requestUserRole) : project;
+    const withFinance = viewer ? this.stripFinance(project, viewer) : project;
     const rawMembers = Array.isArray((withFinance as any).members)
       ? (withFinance as any).members
       : [];
@@ -1253,7 +1284,7 @@ export class ProjectsService implements OnModuleInit {
   async findOneForUser(id: string, user: AccessUser & { role?: string }) {
     this.assertUuidOr400(id, 'id');
     await assertCanViewProject(this.repo.manager, user, id);
-    const project: any = this.stripFinance(await this.findOne(id) as any, user?.role);
+    const project: any = this.stripFinance(await this.findOne(id) as any, user);
     if (!this.canManageBrief(user, project)) delete project.briefShareToken;
     return project;
   }
@@ -1264,14 +1295,24 @@ export class ProjectsService implements OnModuleInit {
     return assertCanViewProject(this.repo.manager, user, id);
   }
 
-  /** Деньги проекта (оплаты, запрос оплаты клиенту) — только в своём
-   *  направлении (15.11.2026). Менеджер по продажам — по сегменту любой из
-   *  двух ролей или если назначен на этот проект; руководители направлений —
-   *  своё направление. Руководство компании — без ограничений. */
+  /** Деньги проекта (оплаты, запрос оплаты клиенту).
+   *  • Руководство компании — без ограничений.
+   *  • Руководитель направления (основной или второй ролью) — всё своё
+   *    направление (15.11.2026).
+   *  • Менеджер по продажам — только СВОЙ проект, где он ответственный
+   *    (salesManagerId или smmData.salesManagerId): «Продажи, этап 2»,
+   *    15.11.2026 — раньше хватало своего направления, и МП видел оплаты
+   *    чужих клиентов.
+   *  • Прочие (право выдано грантом) — своё направление, как раньше. */
   private assertMoneyScope(user: AccessUser | null | undefined, p: { projectType?: string | null; salesManagerId?: string | null; smmData?: any }) {
     if (!user || isTop(user)) return;
+    const directorTypes = rolesOf(user).flatMap(r => DIRECTOR_MONEY_TYPES[r] || []);
+    if (directorTypes.includes(p.projectType || '')) return;
+    if (salesRoleOf(user)) {
+      if (isAssignedSalesManager(user, p)) return;
+      throw new ForbiddenException('Это не ваш клиент: оплаты видит ответственный менеджер проекта');
+    }
     if (inDirection(user, p.projectType)) return;
-    if (salesRoleOf(user) && isAssignedSalesManager(user, p)) return;
     throw new ForbiddenException('Проект не относится к вашему направлению');
   }
 
@@ -1418,6 +1459,10 @@ export class ProjectsService implements OnModuleInit {
     // правке (15.11.2026). Раньше `...dto` клал в проект любые финансовые
     // поля от всякого, у кого есть projects.create.
     const actor: AccessUser = { id: userId, role: userRole ?? null, secondaryRole: userSecondaryRole ?? null };
+    // Проект по заявке продаж (15.11.2026): лид проверяем ДО создания —
+    // иначе проект появился бы, а связь с лидом молча не встала.
+    const lead = dto.leadId ? await this.leadForNewProject(dto.leadId, actor) : null;
+    if (!lead) delete (dto as any).leadId;
     if (!hasAnyRole(actor, ['founder'])) {
       for (const f of this.FINANCE_FIELDS) delete (dto as any)[f];
     }
@@ -1446,8 +1491,17 @@ export class ProjectsService implements OnModuleInit {
     if (resolvedManagerId) memberIds.add(resolvedManagerId);
     // МП сам автоматически становится salesManager своих проектов —
     // он же продал, у него же напоминание об оплате через 2 недели.
+    // Проект по заявке продаж (15.11.2026): менеджер не выбран — им
+    // становится владелец лида (если он менеджер продаж): он клиента продал,
+    // и по правилу «деньги только своих» должен видеть его оплаты. Выбранный
+    // основателем в smmData — важнее владельца лида.
+    const keptSmmManager = typeof (dto as any).smmData?.salesManagerId === 'string' && (dto as any).smmData.salesManagerId
+      ? (dto as any).smmData.salesManagerId as string
+      : undefined;
+    const leadManagerId = lead?.ownerIsSales ? (lead.ownerId as string) : undefined;
     const resolvedSalesManagerId = dto.salesManagerId
-      || (createSegment ? userId : undefined);
+      || (createSegment ? userId : undefined)
+      || (lead ? keptSmmManager || leadManagerId : undefined);
     const custom = await this.normalizeCustomTariff(dto, null, userRole, null);
     const project = this.repo.create({
       ...dto,
@@ -1485,10 +1539,25 @@ export class ProjectsService implements OnModuleInit {
     if (project.projectType === 'SMM') {
       const sd: any = { ...(project.smmData || {}) };
       if (sd.storiesPerMonth == null) { sd.storiesPerMonth = 20; sd.storiesPerDay = 1; }
+      // Ответственный SMM-проекта по заявке — тот же владелец лида и в
+      // smmData (по нему календарь денег и оплаты на «Панели»), с первой
+      // записью истории назначений. Только когда менеджер не выбран вручную.
+      if (leadManagerId && resolvedSalesManagerId === leadManagerId
+          && !(typeof sd.salesManagerId === 'string' && sd.salesManagerId)) {
+        sd.salesManagerId = leadManagerId;
+        sd.salesManagerHistory = withManagerChange(null, null, leadManagerId, dushanbeToday());
+      }
       project.smmData = sd;
     }
 
     const saved = await this.repo.save(project);
+
+    // Связь с лидом продаж: лид → проект, событие в ленте лида, менеджеру —
+    // «Проект создан». Сбой здесь проект не откатывает (он уже создан).
+    if (lead) {
+      await this.linkLeadToProject(lead, saved, userId).catch((e: any) =>
+        this.logger.warn(`Связь лида ${lead.id} с проектом ${saved.id} не записана: ${e?.message || e}`));
+    }
 
     // Транши оплаты: создаём ProjectPayment записи и суммируем в paidAmount.
     // Доступно ролям, которые могут создавать/редактировать проект (включая
@@ -1593,7 +1662,91 @@ export class ProjectsService implements OnModuleInit {
     return saved;
   }
 
+  /** Лид для нового проекта (15.11.2026): только руководство и руководители
+   *  направлений; лид есть и ещё не связан с живым проектом. */
+  private async leadForNewProject(
+    leadId: string, actor: AccessUser,
+  ): Promise<{ id: string; name: string; ownerId: string | null; ownerIsSales: boolean }> {
+    if (!hasAnyRole(actor, LEAD_LINK_ROLES)) {
+      throw new ForbiddenException('Связать проект с лидом может руководство или руководитель направления');
+    }
+    const rows: Array<{
+      id: string; name: string; ownerId: string | null; projectId: string | null; projectName: string | null;
+      ownerRole: string | null; ownerSecondaryRole: string | null; ownerActive: boolean | null;
+    }> =
+      await this.repo.manager.query(
+        `SELECT cl.id, cl.name, cl."ownerId" AS "ownerId", cl."projectId" AS "projectId", p.name AS "projectName",
+                u.role::text AS "ownerRole", u."secondaryRole"::text AS "ownerSecondaryRole", u."isActive" AS "ownerActive"
+           FROM client_leads cl
+           LEFT JOIN projects p ON p.id = cl."projectId"
+           LEFT JOIN users u ON u.id = cl."ownerId"
+          WHERE cl.id = $1`,
+        [leadId],
+      );
+    const lead = rows?.[0];
+    if (!lead) throw new NotFoundException('Лид не найден');
+    // Связанный проект удалили (projectName пуст) — лид снова свободен.
+    if (lead.projectId && lead.projectName != null) {
+      throw new ConflictException(`Лид «${lead.name}» уже связан с проектом «${lead.projectName}»`);
+    }
+    // Владелец лида — менеджер продаж (основной или второй ролью) и не уволен:
+    // только такого можно сделать ответственным за проект по умолчанию.
+    const ownerIsSales = !!lead.ownerId && lead.ownerActive !== false
+      && !!salesRoleOf({ role: lead.ownerRole, secondaryRole: lead.ownerSecondaryRole });
+    return { id: lead.id, name: lead.name, ownerId: lead.ownerId ?? null, ownerIsSales };
+  }
+
+  /** Записать связь лида и созданного проекта (как POST /sales/handoffs/:leadId/link):
+   *  client_leads.projectId (projects.leadId уже сохранён с проектом),
+   *  событие project_linked, уведомление владельцу лида в CRM и Telegram. */
+  private async linkLeadToProject(lead: { id: string; name: string; ownerId: string | null }, saved: Project, actorId: string) {
+    // Условие — от гонки двух созданий по одной заявке: связь получает первый.
+    const res: any = await this.repo.manager.query(
+      `UPDATE client_leads SET "projectId" = $1
+        WHERE id = $2
+          AND ("projectId" IS NULL OR "projectId" = $1
+               OR NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = client_leads."projectId"))
+        RETURNING id`,
+      [saved.id, lead.id],
+    );
+    const updated = Array.isArray(res?.[0]) ? res[0] : res;
+    if (Array.isArray(updated) && updated.length === 0) {
+      this.logger.warn(`Лид ${lead.id} уже связан с другим проектом — проект ${saved.id} остался без обратной связи`);
+      return;
+    }
+    await recordLeadEvent(this.repo.manager, {
+      leadId: lead.id, userId: actorId, kind: 'project_linked', data: { projectId: saved.id, projectName: saved.name },
+    }).catch((e: any) => this.logger.warn(`Событие project_linked не записано: ${e?.message || e}`));
+    // Задача «Создать проект» из заявки продаж выполнена (как в
+    // SalesService.closeHandoffTask при связывании с готовым проектом).
+    await this.repo.manager.query(
+      `UPDATE tasks SET status = 'done', "completedAt" = now()
+        WHERE id::text = (SELECT "handoffData"->>'taskId' FROM client_leads WHERE id = $1)
+          AND status::text NOT IN ('done', 'cancelled')`,
+      [lead.id],
+    ).catch((e: any) => this.logger.warn(`Задача заявки не закрыта: ${e?.message || e}`));
+    try { this.gateway.broadcast('leads:changed', { leadId: lead.id, ownerId: lead.ownerId }); } catch { /* сокет — не главное */ }
+    if (!lead.ownerId || lead.ownerId === actorId) return;
+    const link = `/projects/${saved.id}`;
+    await this.notificationsService.create({
+      userId: lead.ownerId,
+      type: NotificationType.PROJECT_ASSIGNED,
+      title: 'Проект создан',
+      message: `Проект создан: ${saved.name}`,
+      link,
+    }).catch(() => undefined);
+    await this.telegramService.sendToUser(
+      lead.ownerId,
+      `✅ <b>Проект создан: ${escapeHtml(saved.name)}</b>\n`
+      + `По вашему клиенту «${escapeHtml(lead.name)}» руководитель завёл проект.`
+      + `\n\n👉 ${this.telegramService.appUrl}${link}`,
+    ).catch(() => undefined);
+  }
+
   async update(id: string, dto: UpdateProjectDto, user: AccessUser & { id: string; role: string; name?: string }) {
+    // Связь с лидом PATCH не меняет (15.11.2026): старая карточка присылает
+    // проект целиком, и leadId из него не должен перезаписывать связь.
+    delete (dto as any).leadId;
     const project = await this.findOne(id);
     // Менеджер по продажам проекты не правит (решение владельца 14.11.2026):
     // раньше «своё направление» давало ему полную правку, в т.ч. smmData.
@@ -2070,7 +2223,7 @@ export class ProjectsService implements OnModuleInit {
 
     this.gateway.broadcast('projects:changed', {});
     // Return fresh project with relations loaded
-    const fresh: any = await this.findOne(id, user.role);
+    const fresh: any = await this.findOne(id, user);
     if (!this.canManageBrief(user, fresh)) delete fresh.briefShareToken;
     return fresh;
   }
@@ -2622,7 +2775,7 @@ export class ProjectsService implements OnModuleInit {
         details: { personal: true, note: 'Скрыт из личного списка (проект остался активным)' },
       });
       this.gateway.broadcast('projects:changed', {});
-      return this.findOne(id, user?.role);
+      return this.findOne(id, user);
     }
     await this.repo.update(id, { isArchived: true, status: ProjectStatus.ARCHIVED });
     await this.activityLog.log({
@@ -2632,7 +2785,7 @@ export class ProjectsService implements OnModuleInit {
       entityName: project.name,
     });
     this.gateway.broadcast('projects:changed', {});
-    return this.findOne(id, user?.role);
+    return this.findOne(id, user);
   }
 
   async restore(id: string, user?: { id: string; role: string; name?: string }) {
@@ -2666,7 +2819,7 @@ export class ProjectsService implements OnModuleInit {
         details: { personal: true, note: 'Возвращён в личный список' },
       });
       this.gateway.broadcast('projects:changed', {});
-      return this.findOne(id, user?.role);
+      return this.findOne(id, user);
     }
     // При восстановлении НЕ форсируем COMPLETED — возвращаем в IN_PROGRESS
     // как safe default. Если был completed до архива — пользователь может
@@ -2680,7 +2833,7 @@ export class ProjectsService implements OnModuleInit {
       entityName: project.name,
     });
     this.gateway.broadcast('projects:changed', {});
-    return this.findOne(id, user?.role);
+    return this.findOne(id, user);
   }
 
   async remove(id: string, user?: { id: string; role: string; name?: string }) {
@@ -2782,16 +2935,22 @@ export class ProjectsService implements OnModuleInit {
       .getRawMany();
   }
 
-  /** Send a payment-request email to the project's client.
-   *  Available to founder, admin and sales_manager. */
+  /** Письмо клиенту «Запрос оплаты». Руководство — по любому проекту,
+   *  менеджер по продажам — только по своему (assertMoneyScope).
+   *  Сумма — из «Финансов» (15.11.2026, «Продажи, этап 2»): к оплате —
+   *  просроченное и со сроком сегодня у клиента «Финансов», связанного с
+   *  проектом; оплачено — полученное за те же месяцы. Поля проекта
+   *  totalContractValue/budget/paidAmount больше не используются — их
+   *  никто не ведёт, и письмо уходило с выдуманным долгом. Проект не связан
+   *  с «Финансами» — 400 с объяснением, что сделать. */
   async sendPaymentRequest(
     id: string,
     actor: { id: string; name?: string; role: string; secondaryRole?: string | null },
     customMessage?: string,
   ) {
+    this.assertUuidOr400(id, 'id');
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
-    // Запрос оплаты — только по проектам своего направления (15.11.2026).
     this.assertMoneyScope(actor, project);
 
     const clientInfo = (project.clientInfo || {}) as any;
@@ -2801,23 +2960,28 @@ export class ProjectsService implements OnModuleInit {
       throw new ForbiddenException('У проекта не указан email клиента. Добавьте его во вкладке "О клиенте".');
     }
 
-    // Используем totalContractValue (Wave 13 — каноническое поле договора),
-    // budget оставлен только для совместимости со старыми проектами без TCV.
-    const totalAmount = Number(project.totalContractValue || project.budget || 0);
-    const paid = Number(project.paidAmount || 0);
-    const remaining = Math.max(0, totalAmount - paid);
-
-    if (remaining <= 0) {
-      throw new ForbiddenException('По этому проекту нет задолженности');
+    const debt = await this.smmPayments.projectDebt(project);
+    if (!debt) {
+      // Что делать — зависит от направления: SMM-проект связывают вручную в
+      // карточке, клиента разработки и дизайна находим только по названию.
+      throw new BadRequestException(
+        'Проект не связан с клиентом в «Финансах», поэтому сумму долга взять неоткуда. '
+        + (project.projectType === 'SMM'
+          ? 'Попросите руководителя связать проект с клиентом «Финансов» (карточка проекта → «Оплата клиента»).'
+          : 'Название проекта в CRM должно совпадать с названием клиента в «Финансах» того же направления — попросите руководителя проверить.'),
+      );
+    }
+    if (debt.remaining <= 0) {
+      throw new BadRequestException('По данным «Финансов» у клиента сейчас нет долга — просроченных или сегодняшних оплат нет');
     }
 
     const ok = await this.mailService.sendPaymentRequestToClient(
       clientEmail,
       clientName,
       project.name,
-      totalAmount,
-      paid,
-      remaining,
+      debt.total,
+      debt.paid,
+      debt.remaining,
       actor.name || 'Менеджер по продажам',
       customMessage,
     );
@@ -2829,9 +2993,12 @@ export class ProjectsService implements OnModuleInit {
       entity: 'project',
       entityId: id,
       entityName: project.name,
-      details: { kind: 'payment_request_sent', to: clientEmail, remaining, byRole: actor.role },
+      details: {
+        kind: 'payment_request_sent', to: clientEmail, remaining: debt.remaining, byRole: actor.role,
+        source: 'finance', financeProjectId: debt.client.id,
+      },
     });
 
-    return { sent: ok, to: clientEmail, remaining };
+    return { sent: ok, to: clientEmail, remaining: debt.remaining, total: debt.total, paid: debt.paid };
   }
 }

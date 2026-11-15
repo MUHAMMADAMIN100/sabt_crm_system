@@ -55,7 +55,9 @@ const FilesPage         = lazy(() => import('@/pages/files/FilesPage'))
 const AiChatPage        = lazy(() => import('@/pages/ai/AiChatPage'))
 const ClientsPage       = lazy(() => import('@/pages/clients/ClientsPage'))
 const DirectPage        = lazy(() => import('@/pages/direct/DirectPage'))
-const OnboardingPage    = lazy(() => import('@/pages/onboarding/OnboardingPage'))
+// «Продажи» (15.11.2026): аналитика продаж, заявки от продаж, настройки норм
+// и комиссии — руководство; руководителям направлений — только «Заявки».
+const SalesPage         = lazy(() => import('@/pages/sales/SalesPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const TestNewPage       = lazy(() => import('@/pages/test-new/TestNewPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
@@ -211,7 +213,10 @@ export default function App() {
           <Route path="ai" element={<RoleGuard><AiChatPage /></RoleGuard>} />
           <Route path="clients" element={<RoleGuard><ClientsPage /></RoleGuard>} />
           <Route path="direct" element={<RoleGuard><DirectPage /></RoleGuard>} />
-          <Route path="onboarding" element={<RoleGuard><OnboardingPage /></RoleGuard>} />
+          {/* «Онбординг» убран (15.11.2026): этап лида — только status, доска
+              живёт видом «Воронка» в «Клиентах». Старые ссылки ведут туда. */}
+          <Route path="onboarding" element={<Navigate to="/clients?view=board" replace />} />
+          <Route path="sales" element={<RoleGuard><SalesPage /></RoleGuard>} />
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="test-new" element={<RoleGuard><TestNewPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />

@@ -1096,7 +1096,16 @@ export class DirectService implements OnApplicationBootstrap {
     const segment = getSalesSegment(owner.role) ?? getSalesSegment(owner.secondaryRole);
     const direction = (segment?.leadDirection as ClientLeadDirection | undefined) ?? dto.direction;
     // ownerId — всегда тот, кто ведёт: чужое значение из запроса не принимаем.
-    const lead = await this.clients.create({ ...dto, direction, ownerId: owner.id }, owner.id, { id: user.id, name: user.name });
+    // Дубли (15.11.2026): ClientsService.create ищет похожий лид того же
+    // направления (телефон, Instagram, название) и отвечает 409
+    // { message: 'duplicate', duplicates } — как форма Базы клиентов; создать
+    // всё равно — тот же запрос с force: true (поле CreateClientDto).
+    const lead = await this.clients.create(
+      { ...dto, direction, ownerId: owner.id },
+      owner.id,
+      { id: user.id, name: user.name },
+      { via: 'direct' },
+    );
     await this.conversations.update(id, { leadId: lead.id });
     await this.pushConversation(id);
     return { leadId: lead.id };

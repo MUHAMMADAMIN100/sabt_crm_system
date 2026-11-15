@@ -10,7 +10,9 @@ import { directApi, type DirectAttachment, type DirectMessage } from '@/services
 import { Spinner } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { isSocketConnected, useSocketConnected } from '@/lib/socketState'
-import { ClientForm } from '@/pages/clients/ClientsPage'
+import { ClientForm } from '@/components/sales/ClientForm'
+import { duplicatesOf } from '@/services/sales.api'
+import { invalidateSales } from '@/lib/salesQueries'
 import ContactAvatar from './ContactAvatar'
 import MessageItem, { isPictureAttachment } from './MessageItem'
 import Composer, { quoteOf, type ComposerHandle } from './Composer'
@@ -421,18 +423,24 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   })
   const onReact = useCallback((m: DirectMessage, on: boolean) => react.mutate({ m, on }), [react])
   const onReply = useCallback((m: DirectMessage) => setReplyTo(m), [])
+  // «Создать лид» (15.11.2026): сервер проверяет дубли (телефон, Instagram,
+  // название) и отвечает 409 — форма показывает найденных и даёт создать
+  // всё равно (force). Тост — только для прочих ошибок.
   const createLead = useMutation({
-    mutationFn: (data: any) => directApi.createLead(id, data),
+    mutationFn: ({ data, force }: { data: any; force?: boolean }) =>
+      directApi.createLead(id, force ? { ...data, force: true } : data),
     onSuccess: () => {
       setShowLead(false)
-      toast.success('Лид создан в Базе клиентов')
+      toast.success('Лид создан в «Клиентах»')
       refresh()
-      qc.invalidateQueries({ queryKey: ['clients'] })
-      qc.invalidateQueries({ queryKey: ['clients-stats'] })
-      qc.invalidateQueries({ queryKey: ['sales-kpi'] })
+      invalidateSales(qc)
       qc.invalidateQueries({ queryKey: ['kpi-user'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Лид не создан'),
+    onError: (e: any) => {
+      if (duplicatesOf(e)) return
+      const m = e?.response?.data?.message
+      toast.error(Array.isArray(m) ? m.join('. ') : (typeof m === 'string' && m) || 'Лид не создан')
+    },
   })
 
   // Фото ленты — для просмотра на весь экран с листанием.
@@ -834,7 +842,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
           prefill={prefill}
           title="Новый лид из Директа"
           onClose={() => setShowLead(false)}
-          onSubmit={(data: any) => createLead.mutate(data)}
+          onSubmit={(data, opts) => createLead.mutateAsync({ data, force: opts?.force })}
           loading={createLead.isPending}
         />
       )}

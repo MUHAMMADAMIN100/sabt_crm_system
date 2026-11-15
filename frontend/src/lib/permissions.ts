@@ -392,6 +392,60 @@ export function canSeeDevSection(role?: string | null, secondaryRole?: string | 
   return hasAnyRole(role, secondaryRole, ['founder', 'admin', 'dev_director', 'pm_dev', 'developer'])
 }
 
+// ─── Раздел «Продажи» (/sales) — 15.11.2026 ──────────────────────────
+// Аналитика продаж, заявки от продаж (передачи в работу) и настройки норм
+// и комиссии. Договор — docs/SALES_SPEC.md §5. Помощник администратора
+// приходит с ролью admin (effectiveRoleOf на сервере), co_founder слит в
+// admin миграцией 1809 — держим его в списке на случай старых токенов.
+
+/** Руководство компании в разделе «Продажи». */
+const SALES_TOP_ROLES = ['founder', 'co_founder', 'admin'] as const
+/** Руководители направлений: видят только «Заявки» своего направления. */
+const SALES_DIRECTOR_ROLES = ['smm_director', 'dev_director'] as const
+
+/** Открыт ли раздел «Продажи» (маршрут /sales и пункт меню). */
+export function canSeeSalesHub(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, [...SALES_TOP_ROLES, ...SALES_DIRECTOR_ROLES])
+}
+
+/** «Аналитика» и «Настройки» раздела — только руководство. */
+export function canSeeSalesAnalytics(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+}
+
+/** «Заявки от продаж» — руководство и руководители направлений. */
+export function canSeeSalesHandoffs(role?: string | null, secondaryRole?: string | null): boolean {
+  return canSeeSalesHub(role, secondaryRole)
+}
+
+/** Нормы KPI правят основатель и админ (PUT /sales/settings, §5). */
+export function canEditSalesNorms(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+}
+
+/** Комиссию менеджеров меняет только основатель. */
+export function canEditSalesCommission(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, ['founder'])
+}
+
+/** Связать заявку с уже существующим проектом — руководство
+ *  (POST /sales/handoffs/:leadId/link). */
+export function canLinkHandoff(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+}
+
+/** Создать проект по заявке: руководство — любой, руководитель SMM —
+ *  SMM, руководитель разработки — разработку (так же проверяет сервер при
+ *  создании проекта). */
+export function canCreateHandoffProject(
+  role: string | null | undefined,
+  secondaryRole: string | null | undefined,
+  direction: 'smm' | 'development',
+): boolean {
+  if (hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)) return true
+  return hasAnyRole(role, secondaryRole, [direction === 'smm' ? 'smm_director' : 'dev_director'])
+}
+
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
 export function getCombinedRoleLabel(
   role: string | undefined | null,
@@ -513,6 +567,9 @@ export function canAccessRoute(
   // отчётов: только manage (как алиас /dev/reports, меню и API).
   if (route === '/dev-board/reports') return userCan(u, 'dev-tracker.manage')
   if (route === '/dev-board' || route.startsWith('/dev-board/')) return userCan(u, 'dev-tracker.view')
+  // «Продажи» (15.11.2026): руководство и руководители направлений; вкладки
+  // внутри страницы режет сама страница (директорам — только «Заявки»).
+  if (route === '/sales' || route.startsWith('/sales/')) return canSeeSalesHub(role, secondaryRole)
   // «Активность команды» — мониторинг для основателя/админа.
   if (route === '/team-activity') return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
   // «Тест новый» — черновой раздел: основатель и админ.

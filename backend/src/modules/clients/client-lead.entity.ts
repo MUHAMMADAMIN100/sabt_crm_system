@@ -4,19 +4,47 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
+/**
+ * Единая воронка (15.11.2026, миграции 1834–1835): этап лида — только
+ * status. Порядок: new → waiting → meeting → proposal → contract → won;
+ * lost — проигрыш. «На паузе» — флаг onHold, не этап.
+ * NEGOTIATING, ON_HOLD, UNKNOWN — устаревшие значения pg-enum: данные
+ * перенесены, новые записи их не получают (DTO не принимает).
+ */
 export enum ClientLeadStatus {
   NEW         = 'new',           // Новый
-  WAITING     = 'waiting',       // Ожидание ответа
-  NEGOTIATING = 'negotiating',   // В переговорах
-  PROPOSAL    = 'proposal',      // Предложение отправлено
-  WON         = 'won',           // Сделка закрыта / клиент
-  LOST        = 'lost',          // Отказ
-  ON_HOLD     = 'on_hold',       // На паузе
-  /** Неизвестно — статус для направления разработки (просьба МП по dev).
-   *  На проде значение добавляется в pg-enum идемпотентным ALTER TYPE
-   *  в ClientsService.onModuleInit. */
-  UNKNOWN     = 'unknown',       // Неизвестно
+  WAITING     = 'waiting',       // Контакт (связались, идёт разговор)
+  MEETING     = 'meeting',       // Встреча
+  PROPOSAL    = 'proposal',      // КП
+  CONTRACT    = 'contract',      // Договор
+  WON         = 'won',           // Выиграно
+  LOST        = 'lost',          // Проиграно
+  /** @deprecated перенесено в waiting (миграция 1835) */
+  NEGOTIATING = 'negotiating',
+  /** @deprecated теперь флаг onHold (миграция 1835) */
+  ON_HOLD     = 'on_hold',
+  /** @deprecated перенесено в new (миграция 1835) */
+  UNKNOWN     = 'unknown',
 }
+
+/** Этапы единой воронки по порядку (без проигрыша). */
+export const LEAD_FUNNEL: readonly ClientLeadStatus[] = [
+  ClientLeadStatus.NEW, ClientLeadStatus.WAITING, ClientLeadStatus.MEETING,
+  ClientLeadStatus.PROPOSAL, ClientLeadStatus.CONTRACT, ClientLeadStatus.WON,
+];
+
+/** Статусы, которые можно ставить (устаревшие — нельзя). */
+export const LEAD_STATUSES_SETTABLE: readonly ClientLeadStatus[] = [...LEAD_FUNNEL, ClientLeadStatus.LOST];
+
+/** Вероятность сделки по этапу, %, если менеджер не указал свою. */
+export const STAGE_PROBABILITY: Record<string, number> = {
+  new: 10, waiting: 25, meeting: 40, proposal: 60, contract: 80, won: 100, lost: 0,
+  negotiating: 25, on_hold: 25, unknown: 10,
+};
+
+/** Причина проигрыша — код (текст «Другое» — в rejectionReason). */
+export const LOST_REASONS = ['price', 'competitor', 'not_lpr', 'no_response', 'not_needed', 'other'] as const;
+export type LostReason = typeof LOST_REASONS[number];
 
 export enum ClientLeadInterest {
   COLD = 'cold',     // Холодный
@@ -179,6 +207,47 @@ export class ClientLead {
    *  При обнулении nextContactAt — задача удаляется. */
   @Column({ type: 'uuid', nullable: true })
   meetingTaskId: string | null;
+
+  // ─── Продажи, этап 2 (15.11.2026, миграция 1834) ──────────────────────
+
+  /** На паузе — флаг поверх этапа (раньше был статусом on_hold). */
+  @Column({ default: false })
+  onHold: boolean;
+
+  /** Срок следующего шага (текст шага — nextStep). */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  nextStepAt: Date | null;
+
+  /** Вероятность сделки, % (null — по этапу, STAGE_PROBABILITY). */
+  @Column({ type: 'int', nullable: true })
+  probability: number | null;
+
+  /** Ожидаемая дата закрытия сделки. */
+  @Column({ type: 'date', nullable: true })
+  expectedCloseAt: string | null;
+
+  /** Причина проигрыша — код из LOST_REASONS. */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  lostReason: LostReason | null;
+
+  /** Итог текущей встречи (nextContactAt): held — состоялась, missed — нет.
+   *  Сбрасывается, когда встречу переносят. */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  meetingResult: 'held' | 'missed' | null;
+
+  /** «Передать в работу»: когда, кто и что передано (см. SalesService). */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  handoffAt: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  handoffById: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  handoffData: Record<string, any> | null;
+
+  /** Проект, созданный по этому лиду. */
+  @Column({ type: 'uuid', nullable: true })
+  projectId: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

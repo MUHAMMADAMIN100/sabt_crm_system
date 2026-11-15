@@ -1,14 +1,20 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { Between, DataSource, In, Repository } from 'typeorm';
 import { SalesPlan } from './sales-plan.entity';
 import { SmmPaymentsService } from './smm-payments.service';
+import { loadSalesSettings } from '../clients/sales-settings';
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
 
 /** Менеджеры по продажам — оба вида. */
 const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 const YM = /^\d{4}-\d{2}$/;
+/** Сколько прошлых месяцев в истории плана (15.11.2026). */
+const HISTORY_MONTHS = 6;
+
+/** Прошлый месяц в окошке плана: план (null — не ставили) и получено. */
+export interface SalesPlanHistoryItem { ym: string; plan: number | null; received: number }
 
 const todayDushanbe = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
 const shiftYm = (ym: string, delta: number) => {
@@ -103,20 +109,56 @@ export class SalesPlanService {
     return this.list(ym);
   }
 
-  /** Окошко в профиле менеджера: без плана на месяц — plan: null (не показываем). */
+  /**
+   * Окошко «План продаж» менеджера: без плана на месяц — plan: null
+   * (окошко плана не показываем).
+   *
+   * «Продажи, этап 2» (15.11.2026, SALES_SPEC §6) — в ответе ещё:
+   *  • commissionPercent — процент комиссии менеджера из «Настроек продаж»
+   *    (sales_settings.commission), null — комиссия не задана;
+   *  • commissionAmount — получено за месяц × процент / 100, до целых
+   *    сомони; null без процента;
+   *  • history — 6 прошлых месяцев, от старого к новому:
+   *    { ym, plan: сумма плана | null (плана не было), received } — получено
+   *    тем же правилом, что текущий месяц (оплаты клиентов по «Финансам»).
+   * Комиссия и история есть и без плана текущего месяца: комиссия от плана
+   * не зависит. Прежние поля не менялись.
+   */
   async mine(actor: Actor) {
     const today = todayDushanbe();
     const ym = today.slice(0, 7);
-    const row = await this.repo.findOne({ where: { userId: actor.id, ym } });
-    if (!row) return { ym, plan: null };
+    const firstYm = shiftYm(ym, -HISTORY_MONTHS);
+    const [row, pastPlans, received, settings] = await Promise.all([
+      this.repo.findOne({ where: { userId: actor.id, ym } }),
+      this.repo.find({ where: { userId: actor.id, ym: Between(firstYm, shiftYm(ym, -1)) } }).catch(() => [] as SalesPlan[]),
+      // Один расчёт на 7 месяцев (6 прошлых + текущий) вместо семи.
+      this.payments.receivedByMonth(actor.id, firstYm, ym).catch((e: any) => {
+        this.logger.warn(`sales plan received failed: ${e?.message || e}`);
+        return {} as Record<string, number>;
+      }),
+      loadSalesSettings(this.ds),
+    ]);
+    const receivedNow = received[ym] ?? 0;
+    const percent = settings.commission[actor.id];
+    const commissionPercent = typeof percent === 'number' && percent > 0 ? percent : null;
+    const commissionAmount = commissionPercent === null ? null : Math.round(receivedNow * commissionPercent / 100);
+    const planOf = new Map(pastPlans.map(p => [p.ym, Number(p.amount) || 0]));
+    const history: SalesPlanHistoryItem[] = [];
+    for (let i = HISTORY_MONTHS; i >= 1; i--) {
+      const m = shiftYm(ym, -i);
+      history.push({ ym: m, plan: planOf.has(m) ? planOf.get(m)! : null, received: received[m] ?? 0 });
+    }
+    const extra = { commissionPercent, commissionAmount, history };
+    if (!row) return { ym, plan: null, received: receivedNow, ...extra };
     const day = Number(today.slice(8, 10));
     return {
       ym,
       plan: Number(row.amount) || 0,
-      received: await this.payments.receivedOf(actor.id, ym).catch(() => 0),
+      received: receivedNow,
       day,
       daysInMonth: daysIn(ym),
       daysLeft: daysIn(ym) - day,
+      ...extra,
     };
   }
 }

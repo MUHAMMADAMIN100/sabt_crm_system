@@ -32,7 +32,7 @@ export function Metric({ value, label, tone, bar }: { value: string; label: stri
         tone === 'danger' ? 'text-red-500 dark:text-red-400'
           : tone === 'ok' ? 'text-green-600 dark:text-green-400'
           : 'text-surface-900 dark:text-surface-100')}>{value}</div>
-      <div className="text-[10.5px] text-surface-400 dark:text-surface-500">{label}</div>
+      <div className="text-[11px] text-surface-500 dark:text-surface-400">{label}</div>
       {bar !== undefined && (
         <div className="h-1 rounded-full bg-surface-200 dark:bg-surface-700 mt-1 overflow-hidden">
           <div className="h-full rounded-full bg-green-500" style={{ width: `${Math.round(bar * 100)}%` }} />
