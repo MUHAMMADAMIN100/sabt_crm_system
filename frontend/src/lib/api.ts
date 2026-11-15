@@ -243,6 +243,15 @@ api.interceptors.response.use(
     const url: string = err.config?.url || ''
     const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/register')
 
+    // Неверный текущий пароль при смене пароля сервер отдаёт как 401
+    // («Wrong current password»). Это ответ формы, а не конец сессии: без
+    // этой проверки шли продление, повтор и выход на экран входа
+    // (15.11.2026). Ошибку отдаём форме как есть.
+    if (status === 401 && url.includes('/auth/change-password')
+      && typeof raw === 'string' && /wrong current password|неверный текущий пароль/i.test(raw)) {
+      return Promise.reject(err)
+    }
+
     // Один раз пробуем refresh при 401 (access-токен живёт всего 15 мин).
     // Не для /auth/* — иначе бесконечный цикл.
     let refreshOutcome: RefreshResult | null = null
@@ -298,24 +307,38 @@ api.interceptors.response.use(
       // Причину выхода показываем на экране входа: человек не должен гадать,
       // сломалась система или его действительно вывели.
       const msg: string = err.response?.data?.message || ''
-      const low = msg.toLowerCase()
-      if (msg.includes('заблокировал') || low.startsWith('blocked')) {
-        sessionStorage.setItem('blocked-message', msg.replace(/^BLOCKED:\s*/i, ''))
-      } else if (low.includes('reuse') || low.includes('revoked') || low.includes('password')) {
-        sessionStorage.setItem('session-message',
-          'Пароль был изменён или выполнен вход на другом устройстве. Войдите заново.')
-      } else {
-        // Обычное истечение — спокойная подсказка, а не красная тревога.
-        sessionStorage.setItem('session-message', 'Войдите заново, чтобы продолжить работу.')
-      }
+      const notice = sessionEndNotice(msg)
+      try { sessionStorage.setItem(notice.key, notice.text) } catch {}
       try { localStorage.removeItem('token') } catch {}
       try { localStorage.removeItem('auth-storage') } catch {}
+      // Личная память навигации (15.11.2026): шаги «Назад» (ключ из
+      // lib/navMemory.tsx) и последний подраздел «Разработки» — следующему
+      // вошедшему на этом устройстве не достаются. Как и в logout().
+      try { sessionStorage.removeItem('sabt-nav-mem-v1') } catch {}
+      try { localStorage.removeItem('last-dev-route') } catch {}
       tokenStore.clear()
       window.location.href = '/auth'
     }
     return Promise.reject(err)
   },
 )
+
+/** Какую подсказку показать на экране входа после окончательного 401
+ *  (вынесено из interceptor'а 15.11.2026, чтобы проверять тестом).
+ *  «парол» — сервер пишет по-русски («Пароль был изменён — войдите
+ *  заново»), и по одному английскому слову password причину не узнавали. */
+export function sessionEndNotice(message: string): { key: 'blocked-message' | 'session-message'; text: string } {
+  const msg = String(message || '')
+  const low = msg.toLowerCase()
+  if (msg.includes('заблокировал') || low.startsWith('blocked')) {
+    return { key: 'blocked-message', text: msg.replace(/^BLOCKED:\s*/i, '') }
+  }
+  if (low.includes('reuse') || low.includes('revoked') || low.includes('password') || low.includes('парол')) {
+    return { key: 'session-message', text: 'Пароль был изменён или выполнен вход на другом устройстве. Войдите заново.' }
+  }
+  // Обычное истечение — спокойная подсказка, а не красная тревога.
+  return { key: 'session-message', text: 'Войдите заново, чтобы продолжить работу.' }
+}
 
 /** Вкладка вернулась из сна (крышку закрыли, ушли на встречу) — access-токен
  *  за это время протух. Обновляем сессию заранее, до того как страница

@@ -198,7 +198,7 @@ export class AnalyticsService {
     return data.map(d => ({ ...d, totalHours: parseFloat(d.totalHours || '0') }));
   }
 
-  async getHoursPerDay(employeeId?: string, days = 30) {
+  async getHoursPerDay(employeeId?: string, days = 30, scope?: DirectionScope | null) {
     const safeDays = Math.max(1, Math.min(365, Number(days) || 30));
     const qb = this.timeRepo
       .createQueryBuilder('tl')
@@ -209,6 +209,14 @@ export class AnalyticsService {
       .orderBy('tl.date::date', 'ASC');
 
     if (employeeId) qb.andWhere('tl.employeeId = :employeeId', { employeeId });
+    // Руководитель направления — часы только своей команды (15.11.2026):
+    // чужой ?employeeId= даёт пустой график, как и прочие ручки со скоупом.
+    if (scope) {
+      qb.andWhere(
+        `tl."employeeId" IN (SELECT id FROM users WHERE role IN (:...dirRoles) OR "secondaryRole" IN (:...dirRoles))`,
+        { dirRoles: scope.teamRoles },
+      );
+    }
 
     const data = await qb.getRawMany();
     return data.map(d => ({ ...d, hours: parseFloat(d.hours || '0') }));
@@ -240,23 +248,24 @@ export class AnalyticsService {
 
   async getEmployeeEfficiency(page = 1, limit = 10, scope?: DirectionScope | null) {
     const offset = (page - 1) * limit;
+    // Задачи и часы — отдельными подзапросами (15.11.2026). Раньше задачи и
+    // time_logs джойнились в один GROUP BY: строки перемножались, и «сделано»
+    // умножалось на число записей времени, а часы — на число задач.
     const qb = this.userRepo
       .createQueryBuilder('u')
       .innerJoin(Employee, 'e', 'e.userId = u.id AND e.status = :empStatus', { empStatus: 'active' })
-      .leftJoin('u.tasks', 't')
-      .leftJoin('u.timeLogs', 'tl')
       .select('u.id', 'id')
       .addSelect('e.id', 'employeeEntityId')
       .addSelect('u.name', 'name')
       .addSelect('e.fullName', 'fullName')
       .addSelect('e.position', 'position')
-      .addSelect('COUNT(DISTINCT t.id)', 'totalTasks')
-      .addSelect("SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END)", 'doneTasks')
-      .addSelect('SUM(tl.timeSpent)', 'totalHours')
+      .addSelect('(SELECT COUNT(*) FROM tasks tk WHERE tk."assigneeId" = u.id)', 'totalTasks')
+      .addSelect(`(SELECT COUNT(*) FROM tasks tk WHERE tk."assigneeId" = u.id AND tk.status = 'done')`, 'doneTasks')
+      .addSelect('(SELECT COALESCE(SUM(tlg."timeSpent"), 0) FROM time_logs tlg WHERE tlg."employeeId" = u.id)', 'totalHours')
       .where('u.isActive = true')
       .andWhere('u.role NOT IN (:...adminRoles)', { adminRoles: ['admin', 'founder'] })
-      .groupBy('u.id, u.name, e.fullName, e.position, e.id')
       .orderBy('"doneTasks"', 'DESC')
+      .addOrderBy('u.id', 'ASC') // стабильная пагинация при равных значениях
       .limit(limit)
       .offset(offset);
     this.scopeTeam(qb, 'u', scope);

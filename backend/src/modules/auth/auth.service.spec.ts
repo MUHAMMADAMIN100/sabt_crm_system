@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
@@ -22,7 +23,8 @@ const mockUserRepo = () => ({
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
-  // Регистрация открыта, только пока нет основателя: по умолчанию — первая установка.
+  // Регистрация открыта, только пока в базе нет ни одного пользователя:
+  // по умолчанию — первая установка.
   manager: { query: jest.fn().mockResolvedValue([{ count: 0 }]) },
 });
 
@@ -58,6 +60,7 @@ describe('AuthService', () => {
   let employeeRepo: ReturnType<typeof mockEmployeeRepo>;
   let sessionRepo: ReturnType<typeof mockSessionRepo>;
   let jwtService: ReturnType<typeof mockJwtService>;
+  let mailService: ReturnType<typeof mockMailService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -89,12 +92,15 @@ describe('AuthService', () => {
     employeeRepo = module.get(getRepositoryToken(Employee));
     sessionRepo = module.get(getRepositoryToken(WorkSession));
     jwtService = module.get(JwtService);
+    mailService = module.get(MailService);
   });
 
   describe('register', () => {
     const dto = { name: 'Test User', email: 'test@example.com', password: 'password123' };
 
-    it('should refuse registration once a founder exists', async () => {
+    // 15.11.2026: регистрация закрыта, как только в базе есть хоть один
+    // пользователь (раньше — только пока не было основателя).
+    it('should refuse registration once any user exists', async () => {
       userRepo.manager.query.mockResolvedValue([{ count: 1 }]);
 
       await expect(service.register(dto)).rejects.toThrow(ForbiddenException);
@@ -199,6 +205,11 @@ describe('AuthService', () => {
         password: 'hashed-password',
         resetPasswordToken: 'some-token',
         resetPasswordExpires: new Date(),
+        twoFactorSecret: 'TOTP-SECRET',
+        fcmTokens: ['device-token'],
+        avatarImage: 'data:image/png;base64,AAAA',
+        backgroundImage: 'data:image/png;base64,BBBB',
+        twoFactorEnabled: true,
         role: UserRole.EMPLOYEE,
       };
       userRepo.findOne.mockResolvedValue(null);
@@ -217,6 +228,45 @@ describe('AuthService', () => {
       expect(result.user).not.toHaveProperty('password');
       expect(result.user).not.toHaveProperty('resetPasswordToken');
       expect(result.user).not.toHaveProperty('resetPasswordExpires');
+      // 15.11.2026: секрет 2FA и тяжёлые поля тоже не уходят наружу.
+      expect(result.user).not.toHaveProperty('twoFactorSecret');
+      expect(result.user).not.toHaveProperty('fcmTokens');
+      expect(result.user).not.toHaveProperty('avatarImage');
+      expect(result.user).not.toHaveProperty('backgroundImage');
+      expect(result.user).toHaveProperty('twoFactorEnabled', true);
+    });
+  });
+
+  describe('2FA setup (15.11.2026)', () => {
+    it('should refuse to re-setup while 2FA is enabled', async () => {
+      userRepo.findOne.mockResolvedValue({ id: 'user-1', email: 'a@b.c', twoFactorEnabled: true, twoFactorSecret: 'S' });
+
+      await expect(service.setup2FA('user-1')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('forgotPassword (15.11.2026)', () => {
+    it('stores only sha256 of the reset token, raw token goes to the mail', async () => {
+      const user: any = { id: 'user-1', email: 'a@b.c', name: 'A' };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const res = await service.forgotPassword('a@b.c');
+
+      expect(res).toEqual({ message: 'If email exists, reset link was sent' });
+      expect(mailService.sendPasswordReset).toHaveBeenCalledTimes(1);
+      const rawToken = mailService.sendPasswordReset.mock.calls[0][2];
+      expect(user.resetPasswordToken).not.toEqual(rawToken);
+      expect(user.resetPasswordToken).toEqual(crypto.createHash('sha256').update(rawToken).digest('hex'));
+    });
+
+    it('resetPassword looks the user up by token hash', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.resetPassword('raw-token', 'new-password-1')).rejects.toThrow(UnauthorizedException);
+      expect(userRepo.findOne).toHaveBeenCalledWith({
+        where: { resetPasswordToken: crypto.createHash('sha256').update('raw-token').digest('hex') },
+      });
     });
   });
 });

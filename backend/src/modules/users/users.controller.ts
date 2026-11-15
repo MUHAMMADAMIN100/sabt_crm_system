@@ -121,13 +121,15 @@ export class UsersController {
   @Patch(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   update(@Param('id') id: string, @Body() dto: UpdateUserDto, @Request() req) {
-    return this.usersService.update(id, dto, req.user?.role);
+    // Весь req.user, а не только роль: защита учёток руководства смотрит и
+    // вторую роль, и «себя ли правят» (15.11.2026).
+    return this.usersService.update(id, dto, req.user);
   }
 
   @Patch(':id/toggle-active')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   toggleActive(@Param('id') id: string, @Request() req) {
-    return this.usersService.toggleActive(id, req.user?.role, req.user?.id);
+    return this.usersService.toggleActive(id, req.user);
   }
 
   @Patch(':id/block')
@@ -159,7 +161,7 @@ export class UsersController {
   @Delete(':id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
   remove(@Param('id') id: string, @Request() req) {
-    return this.usersService.remove(id, req.user?.role, req.user?.id);
+    return this.usersService.remove(id, req.user);
   }
 
   @Post('cleanup-orphans')
@@ -243,6 +245,6 @@ export class UsersController {
   @UseInterceptors(FileInterceptor('avatar', AVATAR_MULTER_CONFIG))
   updateAvatarFor(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Request() req) {
     if (!file) throw new BadRequestException('Файл не загружен');
-    return this.usersService.updateAvatarFile(id, file, { id: req.user.id, role: req.user.role });
+    return this.usersService.updateAvatarFile(id, file, { id: req.user.id, role: req.user.role, secondaryRole: req.user.secondaryRole });
   }
 }

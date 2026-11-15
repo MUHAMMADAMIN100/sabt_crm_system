@@ -154,6 +154,14 @@ export class ContentPlanItem {
   @Column({ type: 'timestamptz', nullable: true })
   tiktokAt: Date | null;
 
+  /** Когда карточка стала «опубликовано/готово» (15.11.2026). Ставится при
+   *  переходе статуса в published и снимается, когда статус из него уходит
+   *  (ContentPlanService, publishedAtPatch). KPI «в срок» считает по
+   *  COALESCE("publishedAt", "updatedAt"). Колонку добавляет onModuleInit
+   *  сервиса (ADD COLUMN IF NOT EXISTS) + разовое заполнение из updatedAt. */
+  @Column({ type: 'timestamptz', nullable: true })
+  publishedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -64,3 +64,25 @@ export function getSalesSegment(role?: string | null): SalesSegment | null {
 export function isSalesManager(role?: string | null): boolean {
   return role === 'sales_manager_smm' || role === 'sales_manager_dev';
 }
+
+/**
+ * Роль МП пользователя с учётом второй роли (15.11.2026).
+ * Раньше сегмент считали только по основной роли: сотрудник с ВТОРОЙ ролью
+ * «Менеджер продаж» получал clients.view, но без фильтра направления видел
+ * лиды обоих направлений. Основная роль МП важнее второй.
+ */
+export function salesRoleOf(
+  user?: { role?: string | null; secondaryRole?: string | null } | null,
+): string | null {
+  if (!user) return null;
+  if (isSalesManager(user.role)) return user.role as string;
+  if (isSalesManager(user.secondaryRole)) return user.secondaryRole as string;
+  return null;
+}
+
+/** Сегмент МП пользователя по основной ИЛИ второй роли. */
+export function getSalesSegmentOfUser(
+  user?: { role?: string | null; secondaryRole?: string | null } | null,
+): SalesSegment | null {
+  return getSalesSegment(salesRoleOf(user));
+}

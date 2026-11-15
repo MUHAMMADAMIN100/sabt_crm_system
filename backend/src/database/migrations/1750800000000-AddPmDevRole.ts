@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 /** Роль «Проект-менеджер по разработке» (pm_dev) — тестировщик направления:
  *  видит все dev-проекты, ставит задачи-замечания. Колонка users.role в
@@ -8,16 +9,9 @@ export class AddPmDevRole1750800000000 implements MigrationInterface {
   name = 'AddPmDevRole1750800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const enumNames = ['user_role_enum', 'users_role_enum'];
-    for (const enumName of enumNames) {
-      try {
-        await queryRunner.query(
-          `ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS 'pm_dev'`,
-        );
-      } catch (e) {
-        // skip if enum doesn't exist
-      }
-    }
+    // Имя enum-типа — из каталога по колонке; колонка varchar — пропускаем
+    // (15.11.2026): перебор имён через try/catch портил транзакцию миграции.
+    await addEnumValues(queryRunner, 'users', 'role', ['pm_dev']);
   }
 
   public async down(): Promise<void> {

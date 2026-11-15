@@ -13,6 +13,11 @@ export const AppDataSource = new DataSource({
   url: process.env.DATABASE_URL,
   entities: [join(__dirname, '../**/*.entity.{ts,js}')],
   migrations: [join(__dirname, './migrations/*.{ts,js}')],
+  // Как в app.module (15.11.2026): каждая миграция — в своей транзакции.
+  // С режимом по умолчанию ('all') TypeORM отказывается запускать миграции
+  // с `transaction = false` (ALTER TYPE … ADD VALUE), и CLI падал там, где
+  // приложение проходит.
+  migrationsTransactionMode: 'each',
   ssl:
     process.env.DATABASE_SSL === 'true'
       ? { rejectUnauthorized: false }

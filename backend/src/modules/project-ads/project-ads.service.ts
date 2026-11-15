@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { escapeHtml } from '../../common/html-escape';
 
 const CHANNEL_LABELS: Record<string, string> = {
   instagram: 'Instagram',
@@ -122,6 +123,8 @@ export class ProjectAdsService implements OnModuleInit {
       const daily = (ad as any).dailyBudget ? `${Number((ad as any).dailyBudget).toLocaleString('ru-RU')}/день` : '';
       const period = `${new Date(ad.startDate).toLocaleDateString('ru-RU')} → ${new Date(ad.endDate).toLocaleDateString('ru-RU')}`;
       const msg = `Кампания «${ad.title}» · ${channel} · ${total}${daily ? ` (${daily})` : ''} · ${period}`;
+      // В Telegram (parse_mode HTML) — экранированный текст (15.11.2026).
+      const msgHtml = escapeHtml(msg);
       await this.notificationsService.create({
         userId: targetId,
         type: NotificationType.NEW_TASK,
@@ -129,7 +132,7 @@ export class ProjectAdsService implements OnModuleInit {
         message: msg,
         link: `/projects/${ad.projectId}`,
       }).catch(() => {});
-      await this.telegramService.sendToUser(targetId, `🎯 <b>Реклама назначена</b>\n${msg}`).catch(() => {});
+      await this.telegramService.sendToUser(targetId, `🎯 <b>Реклама назначена</b>\n${msgHtml}`).catch(() => {});
     } catch { /* best-effort */ }
   }
 
@@ -166,14 +169,15 @@ export class ProjectAdsService implements OnModuleInit {
       // Email
       try {
         if (project.manager.email) {
+          // Всё, что вводят люди, — через escapeHtml (15.11.2026).
           const html =
-            `<b>Создал:</b> ${creatorName}<br/>` +
-            `<b>Проект:</b> ${project.name}<br/><br/>` +
-            `<b>Название:</b> ${ad.title}<br/>` +
-            `<b>Канал:</b> ${channel}<br/>` +
+            `<b>Создал:</b> ${escapeHtml(creatorName)}<br/>` +
+            `<b>Проект:</b> ${escapeHtml(project.name)}<br/><br/>` +
+            `<b>Название:</b> ${escapeHtml(ad.title)}<br/>` +
+            `<b>Канал:</b> ${escapeHtml(channel)}<br/>` +
             `<b>Бюджет:</b> ${budgetStr} (${sourceLabel})<br/>` +
             `<b>Период:</b> ${startStr} → ${endStr}<br/>` +
-            (ad.note ? `<b>Заметка:</b> ${ad.note}<br/>` : '');
+            (ad.note ? `<b>Заметка:</b> ${escapeHtml(ad.note)}<br/>` : '');
           await this.mailService.sendGenericNotification(
             project.manager.email,
             project.manager.name,
@@ -187,14 +191,14 @@ export class ProjectAdsService implements OnModuleInit {
       try {
         const tgMsg =
           `📢 <b>Новая реклама</b>\n\n` +
-          `👤 Создал: <b>${creatorName}</b>\n` +
-          `📁 Проект: <b>${project.name}</b>\n\n` +
-          `📋 ${ad.title}\n` +
-          `📺 Канал: ${channel}\n` +
+          `👤 Создал: <b>${escapeHtml(creatorName)}</b>\n` +
+          `📁 Проект: <b>${escapeHtml(project.name)}</b>\n\n` +
+          `📋 ${escapeHtml(ad.title)}\n` +
+          `📺 Канал: ${escapeHtml(channel)}\n` +
           `💰 Бюджет: ${budgetStr} (${sourceLabel})\n` +
           `📅 ${startStr}\n` +
           `   → ${endStr}` +
-          (ad.note ? `\n📝 ${ad.note}` : '') +
+          (ad.note ? `\n📝 ${escapeHtml(ad.note)}` : '') +
           `\n\n👉 ${this.telegramService.appUrl}/projects/${ad.projectId}`;
         await this.telegramService.sendToUser(project.managerId, tgMsg);
       } catch {}

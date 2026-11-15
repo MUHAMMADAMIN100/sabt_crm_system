@@ -10,7 +10,21 @@ import { SecurityAuditService } from '../auth/security-audit.service';
 import { SecurityEventType } from '../auth/security-event.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
 import { sanitizeGrants, hasGrant, GRANTABLE } from '../auth/permissions';
+import { generateTempPassword } from '../../common/temp-password';
 import { v4 as uuidv4 } from 'uuid';
+
+/** Кто совершает действие: req.user целиком или (по-старому) только роль. */
+type Actor = { id?: string; name?: string; role?: string | null; secondaryRole?: string | null } | string | null | undefined;
+
+/** Привести «актора» к одному виду — по старым вызовам приходила строка роли. */
+const actorOf = (actor: Actor): { id?: string; name?: string; role?: string | null; secondaryRole?: string | null } =>
+  typeof actor === 'string' ? { role: actor } : (actor || {});
+
+/** Основатель ли действующий — по основной или второй роли. */
+const isFounderActor = (actor: Actor): boolean => {
+  const a = actorOf(actor);
+  return a.role === UserRole.FOUNDER || a.secondaryRole === UserRole.FOUNDER;
+};
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -90,9 +104,9 @@ export class UsersService implements OnModuleInit {
    *  permissions — что ДОБАВИТЬ поверх роли, denied — что ОТНЯТЬ из того,
    *  что есть по роли. Ключ, попавший в оба списка, оставляем только в
    *  запретах: запрет сильнее (см. hasGrant). */
-  async setAccess(id: string, permissions: any, actor?: { id?: string; role?: string }, denied?: any) {
+  async setAccess(id: string, permissions: any, actor?: { id?: string; role?: string; secondaryRole?: string | null }, denied?: any) {
     const user = await this.findOne(id);
-    this.assertCanManage(user, actor?.role);
+    await this.assertCanManage(user, actor);
     // Себе доступы не правят: иначе админ выдавал бы себе то, что по замыслу
     // доступно только основателю (финансы, ФОТ, зарплаты).
     if (actor?.id && actor.id === id) {
@@ -124,25 +138,46 @@ export class UsersService implements OnModuleInit {
     return { id, extraPermissions: clean, deniedPermissions: cleanDenied };
   }
 
-  /** Защита: учётной записью основателя может управлять только он сам.
-   *  Админ — НЕТ. Бросает ForbiddenException. */
-  private assertCanManage(target: User, actorRole?: string) {
-    const isTargetTop = target.role === UserRole.FOUNDER;
-    const isActorTop = actorRole === 'founder';
-    if (isTargetTop && !isActorTop) {
+  /** Защита учёток руководства. Бросает ForbiddenException.
+   *  - Учётку основателя трогает только основатель.
+   *  - Учётку администратора (роль или вторая роль admin, а также помощника
+   *    админа) — тоже только основатель (15.11.2026): раньше один админ
+   *    мог заблокировать, разжаловать или сбросить пароль другому — при
+   *    взломе одной админской учётки это перехват всей системы.
+   *  Свою учётку админ правит по прежним правилам (самоблокировка,
+   *  самоудаление и пр. запрещены отдельно в самих методах). */
+  private async assertCanManage(target: User, actor?: Actor): Promise<void> {
+    if (isFounderActor(actor)) return;
+    const targetRoles: Array<string | null | undefined> = [target.role, target.secondaryRole];
+    if (targetRoles.includes(UserRole.FOUNDER)) {
       throw new ForbiddenException(
         'Управлять учётной записью основателя может только сам основатель',
       );
     }
+    const a = actorOf(actor);
+    if (a.id && a.id === target.id) return;
+    const targetEmp = await this.employeeRepo.findOne({ where: { userId: target.id } });
+    if (targetRoles.includes(UserRole.ADMIN) || !!targetEmp?.isSubAdmin) {
+      throw new ForbiddenException(
+        'Управлять учётной записью администратора может только основатель',
+      );
+    }
   }
 
-  async update(id: string, dto: Partial<User>, actorRole?: string) {
+  async update(id: string, dto: Partial<User>, actor?: Actor) {
     const user = await this.findOne(id);
-    this.assertCanManage(user, actorRole);
+    await this.assertCanManage(user, actor);
+    const actorRole = actorOf(actor).role;
     const oldRole = user.role;
 
     // Enforce single founder in the system when role is changed.
     if (dto.role && dto.role !== user.role) {
+      // Роли admin/founder назначает только основатель — как в карточке
+      // сотрудника (employees.update), иначе админ плодил бы админов,
+      // которых потом никто, кроме основателя, не может тронуть (15.11.2026).
+      if ([UserRole.ADMIN, UserRole.FOUNDER].includes(dto.role) && !isFounderActor(actor)) {
+        throw new ForbiddenException('Назначать роль администратора или основателя может только основатель');
+      }
       if (dto.role === UserRole.FOUNDER) {
         const [{ count }] = await this.repo.manager.query(
           `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
@@ -178,14 +213,15 @@ export class UsersService implements OnModuleInit {
     return this.findOne(id);
   }
 
-  async remove(id: string, actorRole?: string, actorId?: string) {
+  async remove(id: string, actor?: Actor) {
     const user = await this.findOne(id);
     // Защита от самоудаления — admin/founder не должен случайно стереть
     // собственный аккаунт и потерять доступ к системе.
+    const actorId = actorOf(actor).id;
     if (actorId && user.id === actorId) {
       throw new ForbiddenException('Нельзя удалить самого себя');
     }
-    this.assertCanManage(user, actorRole);
+    await this.assertCanManage(user, actor);
     // Delete linked employee record first (FK references user)
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
     if (employee) await this.employeeRepo.remove(employee);
@@ -193,14 +229,15 @@ export class UsersService implements OnModuleInit {
     return { message: 'User deleted' };
   }
 
-  async toggleActive(id: string, actorRole?: string, actorId?: string) {
+  async toggleActive(id: string, actor?: Actor) {
     const user = await this.findOne(id);
     // Защита от само-деактивации — иначе admin может выключить себя
     // и потерять доступ.
+    const actorId = actorOf(actor).id;
     if (actorId && user.id === actorId) {
       throw new ForbiddenException('Нельзя деактивировать самого себя');
     }
-    this.assertCanManage(user, actorRole);
+    await this.assertCanManage(user, actor);
     user.isActive = !user.isActive;
     await this.repo.save(user);
 
@@ -228,22 +265,19 @@ export class UsersService implements OnModuleInit {
    * If newPassword is not provided, generates a random one.
    * Returns the plain new password so admin can share it with the user.
    */
-  async resetPassword(id: string, resetBy: { id: string; name?: string; role: string }, newPassword?: string) {
+  async resetPassword(id: string, resetBy: { id: string; name?: string; role: string; secondaryRole?: string | null }, newPassword?: string) {
     const user = await this.findOne(id);
-    this.assertCanManage(user, resetBy.role);
-    // Дополнительно: даже founder не может сбросить пароль другому admin
-    // (только тот сам себе и founder/co_founder себе или другому top-tier).
-    if (['admin', 'founder'].includes(user.role) && user.id !== resetBy.id
-        && !['founder'].includes(resetBy.role)) {
-      throw new ForbiddenException('Нельзя сбросить пароль другого администратора');
-    }
-    // Validate custom password length (auto-generated is always 10 chars)
+    // Пароль другого администратора (в т.ч. по второй роли и помощника
+    // админа) и основателя сбрасывает только основатель; свой — можно.
+    await this.assertCanManage(user, resetBy);
+    // Validate custom password length (auto-generated is 12 chars)
     const trimmed = newPassword?.trim();
     if (trimmed && trimmed.length < 8) {
       throw new Error('Пароль должен содержать минимум 8 символов');
     }
-    // Generate random password if not provided
-    const finalPassword = trimmed || this.generateRandomPassword(10);
+    // Generate random password if not provided — криптостойкий генератор
+    // (15.11.2026), раньше был Math.random.
+    const finalPassword = trimmed || generateTempPassword(12);
     user.password = finalPassword; // BeforeUpdate hook will hash it
     // Отзываем и бессрочные рабочие токены: всё выданное до этой метки
     // перестаёт действовать (см. jwt.strategy).
@@ -269,27 +303,15 @@ export class UsersService implements OnModuleInit {
     return { newPassword: finalPassword, user: { id: user.id, name: user.name, email: user.email } };
   }
 
-  private generateRandomPassword(length: number): string {
-    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let pwd = '';
-    for (let i = 0; i < length; i++) {
-      pwd += charset[Math.floor(Math.random() * charset.length)];
-    }
-    return pwd;
-  }
-
-  async block(id: string, blockedBy: { id: string; name?: string; role: string }, reason?: string) {
+  async block(id: string, blockedBy: { id: string; name?: string; role: string; secondaryRole?: string | null }, reason?: string) {
     const user = await this.findOne(id);
     if (user.id === blockedBy.id) {
       throw new ForbiddenException('Нельзя заблокировать самого себя');
     }
-    // Основателя/сооснователя может блокировать только основатель/сооснователь.
-    this.assertCanManage(user, blockedBy.role);
-    // Админа никто не блокирует автоматом — только основатель/сооснователь
-    // (защита от перехвата системы при компрометации одного админа).
-    if (user.role === UserRole.ADMIN && !['founder'].includes(blockedBy.role)) {
-      throw new ForbiddenException('Заблокировать администратора может только основатель/сооснователь');
-    }
+    // Основателя и администратора (в т.ч. по второй роли и помощника
+    // админа) блокирует только основатель — защита от перехвата системы
+    // при компрометации одного админа (см. assertCanManage).
+    await this.assertCanManage(user, blockedBy);
 
     user.isBlocked = true;
     user.blockedAt = new Date();
@@ -338,9 +360,9 @@ export class UsersService implements OnModuleInit {
     return this.findOne(id);
   }
 
-  async unblock(id: string, unblockedBy: { id: string; name?: string; role: string }) {
+  async unblock(id: string, unblockedBy: { id: string; name?: string; role: string; secondaryRole?: string | null }) {
     const user = await this.findOne(id);
-    this.assertCanManage(user, unblockedBy.role);
+    await this.assertCanManage(user, unblockedBy);
     user.isBlocked = false;
     user.blockedAt = null;
     user.blockedById = null;
@@ -534,7 +556,7 @@ export class UsersService implements OnModuleInit {
   async updateAvatarFile(
     id: string,
     file: Express.Multer.File,
-    actor?: { id: string; role?: string },
+    actor?: { id: string; role?: string; secondaryRole?: string | null },
   ) {
     if (!file?.buffer?.length) throw new BadRequestException('Файл пустой');
     // Размер считаем до кодирования: base64 раздувает данные на треть.
@@ -555,7 +577,7 @@ export class UsersService implements OnModuleInit {
   async updateAvatar(
     id: string,
     avatar: string,
-    actor?: { id: string; role?: string },
+    actor?: { id: string; role?: string; secondaryRole?: string | null },
     avatarImage?: string,
   ) {
     const user = await this.findOne(id);
@@ -566,7 +588,7 @@ export class UsersService implements OnModuleInit {
     // когда actor.id совпадает с id целевого юзера. Без этого admin мог
     // менять аватарку founder/co_founder в обход документированной политики.
     if (actor && actor.id !== id) {
-      this.assertCanManage(user, actor.role);
+      await this.assertCanManage(user, actor);
     }
     await this.repo.update(id, avatarImage ? { avatar, avatarImage } : { avatar });
 

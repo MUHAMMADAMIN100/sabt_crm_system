@@ -3,60 +3,8 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth.store'
 import Layout from '@/components/layout/Layout'
 import { PageLoader } from '@/components/ui'
+import PageErrorBoundary from '@/components/layout/PageErrorBoundary'
 import { canAccessRoute, userCan } from '@/lib/permissions'
-
-/** Граница ошибок для lazy-чанков. После деплоя браузер с устаревшим
- *  index.html пытается подгрузить chunk, которого уже нет, и React-роутер
- *  молча рендерит пустоту. Перехватываем ChunkLoadError и автоматически
- *  перезагружаем страницу — пользователь получает свежий index.html и
- *  правильные ссылки на чанки. */
-class ChunkErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: Error | null }
-> {
-  state = { error: null as Error | null }
-  static getDerivedStateFromError(error: Error) {
-    return { error }
-  }
-  componentDidCatch(error: Error) {
-    const msg = String(error?.message || error?.name || '')
-    const isChunkError = error?.name === 'ChunkLoadError'
-      || /Loading chunk \S+ failed/i.test(msg)
-      || /Failed to fetch dynamically imported module/i.test(msg)
-      || /Importing a module script failed/i.test(msg)
-    if (isChunkError && typeof window !== 'undefined') {
-      // Перезагружаем максимум раз в 8 сек. Если СРАЗУ после reload снова та же
-      // ошибка — reload не помог (устаревший/удалённый чанк), и мы НЕ зацикливаемся:
-      // показываем экран с кнопкой обновления. Раньше флаг снимался в componentDidMount
-      // на каждом маунте → защита не работала и получался бесконечный релоад.
-      let last = 0
-      try { last = Number(sessionStorage.getItem('__chunkReloadTs') || '0') } catch { /* ignore */ }
-      if (Date.now() - last > 8000) {
-        try { sessionStorage.setItem('__chunkReloadTs', String(Date.now())) } catch { /* ignore */ }
-        window.location.reload()
-      }
-    }
-  }
-  render() {
-    if (this.state.error) {
-      const msg = String(this.state.error?.message || this.state.error?.name || '')
-      const isChunk = this.state.error?.name === 'ChunkLoadError'
-        || /Loading chunk|dynamically imported module|module script failed/i.test(msg)
-      // Пока идёт авто-reload — лоадер; если reload не помог (throttle) — кнопка «Обновить».
-      if (!isChunk) return <PageLoader />
-      return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
-          <p style={{ color: '#8b93a1', fontSize: 14, maxWidth: 360 }}>Не удалось загрузить обновлённую версию страницы. Обновите её.</p>
-          <button
-            onClick={() => { try { sessionStorage.removeItem('__chunkReloadTs') } catch { /* ignore */ }; window.location.reload() }}
-            style={{ padding: '9px 18px', borderRadius: 10, background: '#4f46e5', color: '#fff', fontWeight: 700, fontSize: 14, border: 0, cursor: 'pointer' }}
-          >Обновить страницу</button>
-        </div>
-      )
-    }
-    return this.props.children
-  }
-}
 
 const AuthPage          = lazy(() => import('@/pages/auth/AuthPage'))
 const DashboardPage     = lazy(() => import('@/pages/dashboard/DashboardPage'))
@@ -170,10 +118,15 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 /** Главная. «Проверяющему сторис» показывать общую панель нечем — у роли
  *  нет ни задач, ни проектов, поэтому сразу ведём на его единственную
- *  страницу «Проверка сторис». */
+ *  страницу «Проверка сторис». Но только если она ему открыта: с запретом
+ *  stories.view RoleGuard вернул бы его на «/», и адрес крутился бы по
+ *  кругу «/» ↔ «/stories-check» (15.11.2026) — тогда показываем панель. */
 function HomeRoute() {
-  const role = useAuthStore(s => s.user?.role)
-  if (role === 'stories_checker') return <Navigate to="/stories-check" replace />
+  const user = useAuthStore(s => s.user)
+  if (user?.role === 'stories_checker'
+    && canAccessRoute(user.role, '/stories-check', user.secondaryRole, user.extraPermissions, user.deniedPermissions, user.isStoryMaker)) {
+    return <Navigate to="/stories-check" replace />
+  }
   return <DashboardPage />
 }
 
@@ -197,7 +150,11 @@ export default function App() {
   const authenticated = useAuthStore(s => s.authenticated)
 
   return (
-    <ChunkErrorBoundary>
+    // Верхняя граница ошибок (15.11.2026) — та же, что вокруг страницы в
+    // Layout: чанк после деплоя лечит перезагрузкой (не чаще раза в 8 сек),
+    // любую другую ошибку показывает экраном «Обновить страницу / На главную»
+    // — раньше вместо него был вечный лоадер.
+    <PageErrorBoundary fullScreen>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/auth" element={authenticated ? <Navigate to="/" replace /> : <AuthPage />} />
@@ -278,6 +235,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
-    </ChunkErrorBoundary>
+    </PageErrorBoundary>
   )
 }

@@ -20,7 +20,10 @@ export type AutoRules = {
 }
 export const DEFAULT_RULES: AutoRules = {
   reelDays: [0, 2, 4], postDays: [1, 3], reelTime: '19:00', postTime: '12:00',
-  shootLead: 2, shootTime: '11:00', sep: true, spread: true, auto: true,
+  // auto: false — как умолчание сервера (sanitizeAutoPlan, 15.11.2026): раньше
+  // окно показывало «каждый цикл — автоматически» включённым, хотя у проекта
+  // он выключен, и галочка молча включала автозапуск при сохранении.
+  shootLead: 2, shootTime: '11:00', sep: true, spread: true, auto: false,
 }
 
 type CEv = {

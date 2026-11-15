@@ -61,7 +61,10 @@ export class ReportsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) {
+    // Свой отчёт или право reports.view (15.11.2026).
+    return this.service.findOneForViewer(id, req.user);
+  }
 
   @Post()
   @RequirePerm('reports.create')

@@ -7,7 +7,9 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
-import { DirectionScope } from '../../common/direction-scope';
+import { DirectionScope, directionScopeOf, isInDirection } from '../../common/direction-scope';
+import { hasGrant } from '../auth/permissions';
+import { PROJECT_LIST_FIELDS } from '../../common/project-list-fields';
 import { AppGateway } from '../gateway/app.gateway';
 
 @Injectable()
@@ -55,6 +57,26 @@ export class ReportsService {
       relations: ['employee', 'project', 'task'],
     });
     if (!report) throw new NotFoundException('Report not found');
+    return report;
+  }
+
+  /** Отчёт для GET /reports/:id (15.11.2026). Раньше любой сотрудник читал
+   *  чужой отчёт по id, а вместе с ним — проект целиком (деньги, бриф). Свой
+   *  отчёт — всегда; чужой — по праву reports.view, руководителю направления
+   *  — только своей команды. Проект — лишь поля для списков. */
+  async findOneForViewer(id: string, viewer: any) {
+    const report = await this.findOne(id);
+    if (report.employeeId !== viewer?.id) {
+      if (!hasGrant(viewer, 'reports.view')) throw new ForbiddenException('Нет доступа к отчёту');
+      const scope = directionScopeOf(viewer);
+      if (scope && !isInDirection(scope, report.employee)) {
+        throw new ForbiddenException('Нет доступа к отчёту');
+      }
+    }
+    if (report.project) {
+      const p: any = report.project;
+      (report as any).project = Object.fromEntries(PROJECT_LIST_FIELDS.map(f => [f, p[f]]));
+    }
     return report;
   }
 

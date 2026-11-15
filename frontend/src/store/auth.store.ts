@@ -4,6 +4,12 @@ import api, { markJustAuthed, isJustAuthed, tokenStore, impersonationLocal } fro
 import { syncThemeFromServer, resetTheme } from '@/lib/theme'
 import { queryClient } from '@/lib/queryClient'
 import { wipePersistedCache } from '@/lib/persistCache'
+import { clearNavMemory } from '@/lib/navMemory'
+
+/** Сколько ждём ответа сервера на «Выйти» (15.11.2026). Раньше — до общего
+ *  таймаута axios в 90 сек: при плохой связи кнопка «висела». Локальный
+ *  выход делаем в любом случае. */
+const LOGOUT_WAIT_MS = 5000
 
 export type UserRole =
   | 'admin'
@@ -71,8 +77,8 @@ export class TwoFactorRequiredError extends Error {
 
 interface AuthState {
   /** true когда сервер вернул валидный /auth/me — единственный показатель,
-   *  что пользователь авторизован. JWT теперь живёт в httpOnly cookie и
-   *  фронт его не видит вообще. */
+   *  что пользователь авторизован. JWT живёт в httpOnly cookie и копией в
+   *  localStorage (tokenStore, lib/api.ts) — см. Security note ниже. */
   authenticated: boolean
   user: User | null
   loading: boolean
@@ -94,15 +100,18 @@ interface AuthState {
 }
 
 /**
- * Security note:
- *  - JWT хранится только в httpOnly cookie (ставится бэком на login/register,
- *    чистится на logout). Из JavaScript прочитать нельзя.
- *  - Никаких user / role / token в localStorage. Подмена user.role через
- *    DevTools больше ничего не даёт — фронт каждый раз тянет /auth/me
- *    при старте и берёт роль оттуда.
- *  - В localStorage сохраняем ТОЛЬКО флаг authenticated, чтобы при
- *    F5 не мигал экран логина пока идёт /auth/me. Даже если кто-то выставит
- *    его в true — реальный fetch свалится 401 и состояние сбросится.
+ * Security note (сверено с кодом 15.11.2026):
+ *  - JWT ставится бэком в httpOnly cookie (login/register, чистится на
+ *    logout) И приходит в теле ответа: access/refresh-токены лежат в
+ *    localStorage (tokenStore, lib/api.ts) как Bearer-фоллбэк для браузеров
+ *    без сторонних cookie и ради постоянного входа. «Выйти» их стирает.
+ *  - user / role в localStorage не храним. Подмена user.role через
+ *    DevTools ничего не даёт — фронт каждый раз тянет /auth/me
+ *    при старте и берёт роль оттуда, права проверяет сервер.
+ *  - Из стора в localStorage (auth-storage) уходит ТОЛЬКО флаг
+ *    authenticated, чтобы при F5 не мигал экран логина, пока идёт /auth/me.
+ *    Даже если кто-то выставит его в true — реальный fetch свалится 401 и
+ *    состояние сбросится.
  */
 /** Состояние загрузки /auth/me. Живут вне стора, потому что это не данные,
  *  а защита от шторма: один запрос за раз (mePending), нарастающая пауза
@@ -121,9 +130,10 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password, twoFactorCode) => {
         // Backend ставит httpOnly cookie + возвращает токены в теле ответа.
-        // Тело сохраняем в sessionStorage как Bearer-фоллбэк — нужно для
-        // Chrome/incognito, где third-party cookies блокируются. Cookie
-        // и Bearer работают в параллель, backend принимает любой источник.
+        // Токены из тела сохраняем в localStorage (tokenStore, lib/api.ts) как
+        // Bearer-фоллбэк — нужно для Chrome/incognito, где third-party cookies
+        // блокируются; localStorage — ради постоянного входа на устройстве.
+        // Cookie и Bearer работают в параллель, backend принимает любой источник.
         let resp: any
         try {
           resp = await api.post('/auth/login', { email, password, twoFactorCode })
@@ -161,11 +171,23 @@ export const useAuthStore = create<AuthState>()(
         // Снимок данных на устройстве (08.11.2026) стираем первым делом: если
         // запрос выхода повиснет, а приложение закроют, данные не останутся.
         wipePersistedCache()
-        try { await api.post('/auth/logout') } catch {}
+        // Ждём сервер не дольше LOGOUT_WAIT_MS (15.11.2026): и таймаут самого
+        // запроса, и общий предел — 401 запускает продление с повторами, оно
+        // само может идти дольше.
+        try {
+          await Promise.race([
+            api.post('/auth/logout', undefined, { timeout: LOGOUT_WAIT_MS }).catch(() => {}),
+            new Promise<void>(resolve => setTimeout(resolve, LOGOUT_WAIT_MS)),
+          ])
+        } catch {}
         // Сносим всё локальное — даже если cookie не очистилась (другой домен,
         // ошибка сети), пользователь должен видеть экран логина.
         try { localStorage.removeItem('auth-storage') } catch {}
         try { localStorage.removeItem('token') } catch {} // legacy ключ
+        // Последний подраздел «Разработки» (BottomNav) и память шагов «Назад»
+        // (sessionStorage) — личное, следующему вошедшему не достаются.
+        try { localStorage.removeItem('last-dev-route') } catch {}
+        try { clearNavMemory() } catch {}
         tokenStore.clear()
         // React Query кэш ОБЯЗАТЕЛЬНО чистим: иначе следующий пользователь
         // на этом же устройстве увидит из кэша чужие приватные данные
@@ -234,6 +256,8 @@ export const useAuthStore = create<AuthState>()(
           // данных на устройстве (08.11.2026).
           try { localStorage.removeItem('auth-storage') } catch {}
           try { localStorage.removeItem('token') } catch {}
+          try { localStorage.removeItem('last-dev-route') } catch {}
+          try { clearNavMemory() } catch {}
           tokenStore.clear()
           wipePersistedCache()
           set({ authenticated: false, user: null, loading: false })
@@ -255,27 +279,6 @@ export const useAuthStore = create<AuthState>()(
   ),
 )
 
-// ── Role helper hooks ─────────────────────────────────────────────────────────
-export function useRole() {
-  return useAuthStore(s => s.user?.role)
-}
-
-export function useIsAdmin() {
-  return useAuthStore(s => s.user?.role === 'admin')
-}
-
-export function useIsFounder() {
-  return useAuthStore(s => ['admin', 'founder'].includes(s.user?.role || ''))
-}
-
-export function useIsPM() {
-  return useAuthStore(s => ['admin', 'founder', 'smm_director'].includes(s.user?.role || ''))
-}
-
-export function useIsWorker() {
-  return useAuthStore(s => ['smm_specialist', 'designer', 'video_editor', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'targetologist', 'employee'].includes(s.user?.role || ''))
-}
-
-export function useCanManageTasks() {
-  return useAuthStore(s => ['admin', 'founder', 'smm_director'].includes(s.user?.role || ''))
-}
+// Хуки ролей (useRole, useIsAdmin, useIsFounder, useIsPM, useIsWorker,
+// useCanManageTasks) удалены 15.11.2026: их никто не импортировал, а списки
+// ролей в них давно разошлись с lib/permissions.ts.

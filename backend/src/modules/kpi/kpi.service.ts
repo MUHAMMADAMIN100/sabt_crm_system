@@ -12,7 +12,7 @@ import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity
 import { ClientsService } from '../clients/clients.service';
 import { DirectionScope, isInDirection } from '../../common/direction-scope';
 import { cachedResponse } from '../../common/response-cache';
-import { COLD_CALL_EVENTS_SINCE, salesPeriod } from '../clients/sales-kpi.logic';
+import { COLD_CALL_EVENTS_SINCE, expandRanges, salesPeriod, workingDays } from '../clients/sales-kpi.logic';
 import { KpiItem, salesActivityItem, salesDeadlineItem, salesKpiItems } from './kpi.logic';
 
 /** Короткий кэш KPI (08.11.2026): расчёт — десяток агрегаций, а просят его
@@ -61,16 +61,20 @@ const PRODUCTION_LABEL: Record<string, string> = {
  * Сдача в срок по контент-плану (17.10.2026, профиль сотрудника). Правило то
  * же, что у задач разработки: ПЛАН — карточки с днём в периоде, день которых
  * уже наступил, либо уже сданные; ЗАЧЁТ — сдано в свой день 1.0, позже 0.4,
- * не сдано 0. Отменённые не считаются. День сдачи — последнее изменение
- * карточки (отдельной даты «сдано» в контент-плане нет).
+ * не сдано 0. Отменённые не считаются. День сдачи — момент публикации
+ * (publishedAt, по Душанбе; 15.11.2026), у старых карточек без него —
+ * последнее изменение: любая поздняя правка делала бы сданное просрочкой.
+ * Несданная карточка с днём в отпуске/отгуле сотрудника в план не идёт.
  *  · SMM-специалист — публикации своих проектов (назначен или участник);
  *  · видеограф, монтажёр, дизайнер — карточки подготовки, где он исполнитель.
- * $1 = userIds, $2/$3 = границы периода, $4 = сегодня (Душанбе).
+ * $1 = userIds, $2/$3 = границы периода, $4 = сегодня (Душанбе),
+ * $5 = { userId: ['YYYY-MM-DD', …] } — дни отсутствия (jsonb).
  */
 export const CONTENT_ON_TIME_SQL = `
   WITH mine AS (
     SELECT ci.id, ci."publishDate"::date AS due, ci.status::text AS status,
-           ci."updatedAt"::date AS closed, u.uid
+           (COALESCE(ci."publishedAt", ci."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe')::date AS closed,
+           u.uid
     FROM content_plan_items ci
     JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false AND p."projectType" = 'SMM'
     JOIN LATERAL unnest($1::uuid[]) AS u(uid) ON (
@@ -83,12 +87,38 @@ export const CONTENT_ON_TIME_SQL = `
       AND ci."publishDate" IS NOT NULL
       AND ci."publishDate"::date BETWEEN $2::date AND $3::date
       AND (ci."publishDate"::date <= $4::date OR ci.status::text = 'published')
+      AND (ci.status::text = 'published' OR NOT jsonb_exists(
+            COALESCE($5::jsonb -> u.uid::text, '[]'::jsonb), to_char(ci."publishDate"::date, 'YYYY-MM-DD')))
   )
   SELECT uid,
          COUNT(*)::int AS planned,
          ROUND(SUM(CASE WHEN status <> 'published' THEN 0
                         WHEN closed <= due THEN 1.0 ELSE 0.4 END), 2)::float AS earned
   FROM mine GROUP BY uid`;
+
+/**
+ * «Активных дней» (15.11.2026): дни по Душанбе, когда человек работал —
+ * была рабочая смена (work_shifts.date уже хранит дату Душанбе) или он был
+ * в системе (вход или последний сигнал сессии; loginAt/lastSeenAt — timestamptz).
+ * $1 = userIds (text[]), $2/$3 = границы периода 'YYYY-MM-DD'.
+ */
+export const ACTIVE_DAYS_SQL = `
+  SELECT uid, COUNT(DISTINCT day)::int AS days FROM (
+    SELECT ws."employeeId"::text AS uid, ws.date::date AS day
+    FROM work_shifts ws
+    WHERE ws."employeeId"::text = ANY($1::text[]) AND ws.date::date BETWEEN $2::date AND $3::date
+    UNION ALL
+    SELECT s."userId"::text, (s."loginAt" AT TIME ZONE 'Asia/Dushanbe')::date
+    FROM work_sessions s
+    WHERE s."userId"::text = ANY($1::text[])
+      AND (s."loginAt" AT TIME ZONE 'Asia/Dushanbe')::date BETWEEN $2::date AND $3::date
+    UNION ALL
+    SELECT s."userId"::text, (s."lastSeenAt" AT TIME ZONE 'Asia/Dushanbe')::date
+    FROM work_sessions s
+    WHERE s."userId"::text = ANY($1::text[]) AND s."lastSeenAt" IS NOT NULL
+      AND (s."lastSeenAt" AT TIME ZONE 'Asia/Dushanbe')::date BETWEEN $2::date AND $3::date
+  ) x
+  GROUP BY uid`;
 
 /** Истории ведут SMM-специалисты (роль сторисмейкера упразднена, оставлена
  *  для совместимости) — метрика «План сторис» показывается им (основная или
@@ -192,12 +222,17 @@ export class KpiService {
    *  проваленным из-за ещё не наступивших дней.
    *
    *  $1 = userId, $2/$3 = границы периода, $4 = сегодня (Душанбе),
-   *  $5 = покрывает ли сотрудник ВСЕ SMM-проекты (флаг «сторисмейкер»). */
+   *  $5 = покрывает ли сотрудник ВСЕ SMM-проекты (флаг «сторисмейкер»),
+   *  $7 = дни отпуска/отгула/больничного (date[]) — в план не идут
+   *  (15.11.2026: раньше отпуск «проваливал» план сторис). */
   private storiesPlanSql(): string {
     return `WITH bounds AS (SELECT $2::date AS d_from, LEAST($3::date, $4::date) AS d_to),
       days AS (
-        SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
-        FROM bounds b WHERE b.d_to >= b.d_from
+        SELECT g.day FROM (
+          SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
+          FROM bounds b WHERE b.d_to >= b.d_from
+        ) g
+        WHERE NOT (g.day = ANY($7::date[]))
       ),
       proj AS (
         -- Ждём сторис с НАЧАЛА РАБОТЫ с клиентом; дата записи проекта в CRM —
@@ -244,6 +279,38 @@ export class KpiService {
         COUNT(*) FILTER (WHERE COALESCE(l.mine, 0) > 0)::int AS closed,
         COUNT(*) FILTER (WHERE COALESCE(l.total, 0) = 0 OR COALESCE(l.mine, 0) > 0)::int AS planned
       FROM grid g LEFT JOIN logs l ON l.pid = g.pid AND l.day = g.day`;
+  }
+
+  /** Дни отсутствия сотрудников за период (15.11.2026) — как у KPI продаж
+   *  (ClientsService.offDays): отметки табеля (shift_absences: отгул, отпуск,
+   *  больничный, праздник), отпуска из карточки (employee_vacations) и
+   *  текущий статус «В отпуске». Каждый источник отдельно: нет таблицы —
+   *  считаем без него. */
+  private async offDaysBulk(userIds: string[], fromIso: string, toIso: string): Promise<Map<string, Set<string>>> {
+    const out = new Map<string, Set<string>>();
+    if (!userIds.length || fromIso > toIso) return out;
+    const q = (sql: string, params: unknown[]): Promise<any[]> =>
+      this.taskRepo.manager.query(sql, params).catch(() => [] as any[]);
+    const [absences, vacations, current] = await Promise.all([
+      q(`SELECT "employeeId"::text AS uid, to_char(date, 'YYYY-MM-DD') AS day FROM shift_absences
+         WHERE "employeeId"::text = ANY($1::text[]) AND date BETWEEN $2::date AND $3::date`, [userIds, fromIso, toIso]),
+      q(`SELECT "userId"::text AS uid, to_char("dateFrom", 'YYYY-MM-DD') AS "from", to_char("dateUntil", 'YYYY-MM-DD') AS until
+         FROM employee_vacations
+         WHERE "userId"::text = ANY($1::text[]) AND "dateFrom" <= $3::date AND "dateUntil" >= $2::date`, [userIds, fromIso, toIso]),
+      q(`SELECT "userId"::text AS uid, to_char("vacationFrom", 'YYYY-MM-DD') AS "from", to_char("vacationUntil", 'YYYY-MM-DD') AS until
+         FROM employees WHERE "userId"::text = ANY($1::text[]) AND status::text = 'vacation'`, [userIds]),
+    ]);
+    const add = (uid: string, day: string) => {
+      if (!uid || !day) return;
+      let set = out.get(uid);
+      if (!set) { set = new Set(); out.set(uid, set); }
+      set.add(day);
+    };
+    for (const r of absences) add(String(r.uid), String(r.day));
+    for (const r of [...vacations, ...current]) {
+      for (const d of expandRanges([{ from: r.from, until: r.until }], fromIso, toIso)) add(String(r.uid), d);
+    }
+    return out;
   }
 
   /** Локальная дата YYYY-MM-DD (границы периода — локальные полуночи). */
@@ -317,39 +384,57 @@ export class KpiService {
     preloadedUsers?: User[],
   ): Promise<UserKpi[]> {
     if (userIds.length === 0) return [];
-    const { periodFrom, periodTo, days } = this.periodRange(from, to);
+    const { periodFrom, periodTo } = this.periodRange(from, to);
 
     // 1) Юзеры — если не передали, грузим сами
     const users = preloadedUsers
       ?? await this.userRepo.find({ where: { id: In(userIds) } });
     const userMap = new Map(users.map(u => [u.id, u]));
 
+    // Дни отсутствия (отпуск, отгул, больничный) — не идут в нормы и планы.
+    const fromIso = this.isoDay(periodFrom);
+    const toIso = this.isoDay(periodTo);
+    const todayIso = this.todayLocal();
+    const offByUid = await this.offDaysBulk(userIds, fromIso, toIso);
+    const offJson = JSON.stringify(Object.fromEntries([...offByUid].map(([uid, days]) => [uid, [...days]])));
+
     // 2) Параллельно гонимся за всеми агрегациями.
     // Wave 14: убрали запрос hours/time_logs — метрика «Часов залогировано»
     // выпилена, считать её больше не нужно.
     const [tasksRows, sessionRows, storyRows, projectRows, deliveryRows, contentRows] = await Promise.all([
+      // «Соблюдено дедлайнов» (15.11.2026): момент закрытия — completedAt
+      // (запасной — reviewedAt/updatedAt), задачи без срока не участвуют,
+      // исполнитель — и основной, и со-исполнители. Раньше брали updatedAt
+      // (поздняя правка = просрочка), бессрочные шли «в срок», а со-
+      // исполнители не считались вовсе.
       this.taskRepo.manager.query(
-        `SELECT "assigneeId" AS uid,
+        `WITH mine AS (
+           SELECT t.deadline, COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") AS closed_at, u.uid
+           FROM tasks t
+           JOIN LATERAL (
+             SELECT t."assigneeId" AS uid
+             UNION
+             SELECT ta."userId" FROM task_assignees ta WHERE ta."taskId" = t.id
+           ) u ON u.uid IS NOT NULL
+           WHERE u.uid = ANY($1::uuid[])
+             AND t.status::text = 'done'
+             AND t.deadline IS NOT NULL
+             AND COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") BETWEEN $2 AND $3
+         )
+         SELECT uid,
                 COUNT(*)::int AS done_count,
-                COUNT(*) FILTER (
-                  WHERE deadline IS NULL OR COALESCE("reviewedAt", "updatedAt") <= deadline
-                )::int AS on_time_count,
-                COUNT(*) FILTER (WHERE deadline IS NOT NULL)::int AS with_deadline
-         FROM tasks
-         WHERE "assigneeId" = ANY($1::uuid[])
-           AND status::text = 'done'
-           AND "updatedAt" BETWEEN $2 AND $3
-         GROUP BY "assigneeId"`,
+                COUNT(*) FILTER (WHERE closed_at <= deadline)::int AS on_time_count,
+                COUNT(*)::int AS with_deadline
+         FROM mine GROUP BY uid`,
         [userIds, periodFrom, periodTo],
       ),
-      this.sessionRepo.manager.query(
-        `SELECT "userId" AS uid, COUNT(DISTINCT date)::int AS days
-         FROM work_sessions
-         WHERE "userId" = ANY($1::uuid[])
-           AND date::date BETWEEN $2::date AND $3::date
-         GROUP BY "userId"`,
-        [userIds, periodFrom, periodTo],
-      ),
+      // «Активных дней» (15.11.2026) — дни по Душанбе, когда человек работал:
+      // была смена (work_shifts.date — уже дата Душанбе) или он был в
+      // системе (вход или последний сигнал сессии). Раньше считали только
+      // work_sessions.date — сессия заводится лишь при входе по паролю, а
+      // дата в ней по UTC.
+      this.sessionRepo.manager.query(ACTIVE_DAYS_SQL, [userIds, fromIso, toIso])
+        .catch(e => { this.logger.warn(`activity days KPI query failed: ${e?.message || e}`); return [] as any[]; }),
       this.storyRepo.manager.query(
         `SELECT "employeeId" AS uid, COALESCE(SUM("storiesCount"), 0)::int AS total
          FROM story_logs
@@ -392,6 +477,10 @@ export class KpiService {
              AND t.deadline IS NOT NULL
              AND t.deadline BETWEEN $2 AND $3
              AND (t.deadline <= $4 OR t.status::text = 'done')
+             -- Несданная задача со сроком в день отсутствия в план не идёт.
+             AND (t.status::text = 'done' OR NOT jsonb_exists(
+                   COALESCE($5::jsonb -> u.uid::text, '[]'::jsonb),
+                   to_char((t.deadline AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD')))
          )
          SELECT uid,
                 COUNT(*)::int AS planned,
@@ -401,12 +490,12 @@ export class KpiService {
                        ELSE 0.4 END
                 ), 2)::float AS earned
          FROM mine GROUP BY uid`,
-        [userIds, periodFrom, periodTo, new Date()],
+        [userIds, periodFrom, periodTo, new Date(), offJson],
       ).catch(e => { this.logger.warn(`task delivery KPI query failed: ${e?.message || e}`); return [] as any[]; }),
       // Публикации и карточки производства в срок — SMM и производство.
       this.taskRepo.manager.query(
         CONTENT_ON_TIME_SQL,
-        [userIds, this.isoDay(periodFrom), this.isoDay(periodTo), this.todayLocal()],
+        [userIds, fromIso, toIso, todayIso, offJson],
       ).catch(e => { this.logger.warn(`content on-time KPI query failed: ${e?.message || e}`); return [] as any[]; }),
     ]);
 
@@ -457,7 +546,8 @@ export class KpiService {
       await Promise.all(storyUserIds.map(async (uid) => {
         const rows = await this.storyRepo.manager.query(
           this.storiesPlanSql(),
-          [uid, periodFrom, periodTo, this.todayLocal(), coversAll.get(uid) ?? false, storiesAssignedOnly(userMap.get(uid)!)],
+          [uid, periodFrom, periodTo, this.todayLocal(), coversAll.get(uid) ?? false, storiesAssignedOnly(userMap.get(uid)!),
+            [...(offByUid.get(uid) ?? [])]],
         ).catch(e => { this.logger.warn(`stories KPI query failed: ${e?.message || e}`); return [] as any[]; });
         const r = rows?.[0];
         if (r) storyPlanByUid.set(uid, { closed: Number(r.closed) || 0, planned: Number(r.planned) || 0 });
@@ -526,24 +616,17 @@ export class KpiService {
           const deadline = salesDeadlineItem(t, deliveryByUid.get(uid)?.planned ?? 0, targets.deadlineRate);
           if (deadline) items.push(deadline);
         }
-        // Продажи: норма активных дней — рабочие дни их KPI (пн–сб, уже
-        // наступившие, без отпуска); выходной — без пункта. Нет ответа KPI
-        // продаж или это разработка — прежняя норма от длины периода.
+        // Норма активных дней — рабочие дни периода (пн–сб), которые уже
+        // наступили, без отпуска и отметок табеля; выходной — без пункта.
+        // Продажи берут их из своего KPI, разработка — тем же правилом
+        // (15.11.2026: раньше норма разработки считалась от длины всего
+        // периода, и текущий месяц выглядел проваленным из-за будущих дней).
         const salesWorkDays = isDevTeam ? undefined : salesKpis.get(uid)?.workDays;
-        if (typeof salesWorkDays === 'number') {
-          const activity = salesActivityItem(actDays, salesWorkDays);
-          if (activity) items.push(activity);
-        } else {
-          const activityTarget = Math.min(days, this.scaleTarget(targets.activityDays, days));
-          items.push({
-            key: 'activity_days',
-            label: 'Активных дней',
-            target: activityTarget,
-            value: actDays,
-            percent: Math.min(100, Math.round(actDays / activityTarget * 100)),
-            done: actDays >= activityTarget,
-          });
-        }
+        const workDays = typeof salesWorkDays === 'number'
+          ? salesWorkDays
+          : workingDays(fromIso, toIso, todayIso, offByUid.get(uid) ?? []).length;
+        const activity = salesActivityItem(actDays, workDays);
+        if (activity) items.push(activity);
       }
 
       // Сторис — проекто-дни: сколько дней-проектов закрыто из закреплённых.
@@ -626,6 +709,10 @@ export class KpiService {
       : user.role === UserRole.SALES_MANAGER_DEV ? ClientLeadDirection.DEVELOPMENT
       : undefined;
 
+    // Дни отсутствия сотрудника — как в KPI (план сторис, сдача в срок).
+    const offDays = async (): Promise<string[]> =>
+      [...((await this.offDaysBulk([userId], this.isoDay(periodFrom), this.isoDay(periodTo))).get(userId) ?? [])];
+
     // Общий хелпер: где есть direction — фильтруем лиды по нему + старые без направления.
     const applyDirection = (qb: any) => {
       if (direction) qb.andWhere('(c.direction = :dir OR c.direction IS NULL)', { dir: direction });
@@ -651,8 +738,11 @@ export class KpiService {
         const rows: any[] = await this.storyRepo.manager.query(
           `WITH bounds AS (SELECT $2::date AS d_from, LEAST($3::date, $4::date) AS d_to),
            days AS (
-             SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
-             FROM bounds b WHERE b.d_to >= b.d_from
+             SELECT g.day FROM (
+               SELECT generate_series(b.d_from, b.d_to, interval '1 day')::date AS day
+               FROM bounds b WHERE b.d_to >= b.d_from
+             ) g
+             WHERE NOT (g.day = ANY($7::date[]))
            ),
            proj AS (
              SELECT p.id, p.name, COALESCE(p."startDate"::date, p."createdAt"::date) AS since FROM projects p
@@ -684,7 +774,7 @@ export class KpiService {
            WHERE days.day >= proj.since
              AND (COALESCE(l.total, 0) = 0 OR COALESCE(l.mine, 0) > 0)
            ORDER BY days.day DESC, proj.name ASC`,
-          [userId, periodFrom, periodTo, this.todayLocal(), !!emp?.isStoryMaker, storiesAssignedOnly(user)],
+          [userId, periodFrom, periodTo, this.todayLocal(), !!emp?.isStoryMaker, storiesAssignedOnly(user), await offDays()],
         ).catch(() => []);
         return rows.map(r => ({
           id: `${r.pid}-${r.day}`,
@@ -857,18 +947,23 @@ export class KpiService {
 
       // ─── Универсальное: соблюдено дедлайнов (по задачам) ──────────────
       case 'deadline_rate': {
+        // Как в KPI (15.11.2026): закрытые в периоде по completedAt, только
+        // со сроком, исполнитель — основной или со-исполнитель.
         const tasks = await this.taskRepo.manager.query(
-          `SELECT id, title, deadline, "updatedAt", "reviewedAt", status
-           FROM tasks
-           WHERE "assigneeId" = $1
-             AND status::text = 'done'
-             AND "updatedAt" BETWEEN $2 AND $3
-           ORDER BY "updatedAt" DESC`,
+          `SELECT t.id, t.title, t.deadline,
+                  COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") AS closed_at
+           FROM tasks t
+           WHERE (t."assigneeId" = $1::uuid
+                  OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta."taskId" = t.id AND ta."userId" = $1::uuid))
+             AND t.status::text = 'done'
+             AND t.deadline IS NOT NULL
+             AND COALESCE(t."completedAt", t."reviewedAt", t."updatedAt") BETWEEN $2 AND $3
+           ORDER BY closed_at DESC`,
           [userId, periodFrom, periodTo],
         );
         return (tasks as any[]).map(t => {
-          const closedAt = t.reviewedAt || t.updatedAt;
-          const onTime = !t.deadline || new Date(closedAt) <= new Date(t.deadline);
+          const closedAt = t.closed_at;
+          const onTime = new Date(closedAt) <= new Date(t.deadline);
           return {
             id: t.id,
             title: t.title,
@@ -886,19 +981,21 @@ export class KpiService {
           `SELECT ci.id, COALESCE(NULLIF(ci.topic, ''), 'Без названия') AS title, p.name AS project,
                   ci."projectId" AS "projectId", ci.status::text AS status,
                   to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS due,
-                  to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS closed
+                  -- День публикации по Душанбе (15.11.2026), у старых — правка.
+                  to_char((COALESCE(ci."publishedAt", ci."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD') AS closed
            FROM content_plan_items ci
            JOIN projects p ON p.id = ci."projectId" AND p."isArchived" = false AND p."projectType" = 'SMM'
            WHERE ci.status::text <> 'cancelled'
              AND ci."publishDate" IS NOT NULL
              AND ci."publishDate"::date BETWEEN $2::date AND $3::date
              AND (ci."publishDate"::date <= $4::date OR ci.status::text = 'published')
+             AND (ci.status::text = 'published' OR NOT (to_char(ci."publishDate"::date, 'YYYY-MM-DD') = ANY($5::text[])))
              AND ((ci."shootForItemId" IS NULL AND ci."contentType"::text <> 'story' AND (
                     jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::text)
                     OR EXISTS (SELECT 1 FROM project_members pm WHERE pm."projectsId" = p.id AND pm."usersId" = $1::uuid)))
                   OR (ci."shootForItemId" IS NOT NULL AND ci."assigneeId" = $1::uuid))
            ORDER BY ci."publishDate" DESC`,
-          [userId, this.isoDay(periodFrom), this.isoDay(periodTo), this.todayLocal()],
+          [userId, this.isoDay(periodFrom), this.isoDay(periodTo), this.todayLocal(), await offDays()],
         ).catch(() => []);
         return rows.map(r => {
           const done = r.status === 'published';
@@ -926,8 +1023,10 @@ export class KpiService {
              AND t.deadline IS NOT NULL
              AND t.deadline BETWEEN $2 AND $3
              AND (t.deadline <= $4 OR t.status::text = 'done')
+             AND (t.status::text = 'done' OR NOT (
+                   to_char((t.deadline AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD') = ANY($5::text[])))
            ORDER BY t.deadline DESC`,
-          [userId, periodFrom, periodTo, new Date()],
+          [userId, periodFrom, periodTo, new Date(), await offDays()],
         ).catch(() => []);
         return rows.map(t => {
           const done = t.status === 'done';
@@ -945,22 +1044,38 @@ export class KpiService {
 
       // ─── Универсальное: активные дни (work_sessions) ───────────────────
       case 'activity_days': {
+        // Как в KPI (15.11.2026): дни по Душанбе со сменой или работой в
+        // системе (вход / последний сигнал сессии).
         const rows = await this.sessionRepo.manager.query(
-          `SELECT date, COUNT(*)::int AS sessions,
-                  MIN("loginAt") AS first_login,
-                  COALESCE(SUM("durationHours"), 0)::float AS total_hours
-           FROM work_sessions
-           WHERE "userId" = $1
-             AND date::date BETWEEN $2::date AND $3::date
-           GROUP BY date
-           ORDER BY date DESC`,
-          [userId, periodFrom, periodTo],
-        );
+          `SELECT to_char(day, 'YYYY-MM-DD') AS day,
+                  SUM(shifts)::int AS shifts, SUM(sessions)::int AS sessions, MIN(first_at) AS first_at
+           FROM (
+             SELECT ws.date::date AS day, 1 AS shifts, 0 AS sessions, ws."startedAt" AT TIME ZONE 'UTC' AS first_at
+             FROM work_shifts ws
+             WHERE ws."employeeId"::text = $1 AND ws.date::date BETWEEN $2::date AND $3::date
+             UNION ALL
+             SELECT (s."loginAt" AT TIME ZONE 'Asia/Dushanbe')::date, 0, 1, s."loginAt"
+             FROM work_sessions s
+             WHERE s."userId"::text = $1
+               AND (s."loginAt" AT TIME ZONE 'Asia/Dushanbe')::date BETWEEN $2::date AND $3::date
+             UNION ALL
+             SELECT (s."lastSeenAt" AT TIME ZONE 'Asia/Dushanbe')::date, 0, 0, s."lastSeenAt"
+             FROM work_sessions s
+             WHERE s."userId"::text = $1 AND s."lastSeenAt" IS NOT NULL
+               AND (s."lastSeenAt" AT TIME ZONE 'Asia/Dushanbe')::date BETWEEN $2::date AND $3::date
+           ) x
+           GROUP BY day
+           ORDER BY day DESC`,
+          [String(userId), this.isoDay(periodFrom), this.isoDay(periodTo)],
+        ).catch(() => [] as any[]);
         return (rows as any[]).map(r => ({
-          id: String(r.date),
-          title: new Date(r.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', weekday: 'short' }),
-          subtitle: `${r.sessions} вход(а/ов) · ${Number(r.total_hours).toFixed(1)} ч`,
-          date: r.first_login ? new Date(r.first_login).toISOString() : null,
+          id: String(r.day),
+          title: new Date(`${r.day}T12:00:00Z`).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', weekday: 'short' }),
+          subtitle: [
+            Number(r.shifts) > 0 ? `смен: ${r.shifts}` : null,
+            Number(r.sessions) > 0 ? `входов: ${r.sessions}` : null,
+          ].filter(Boolean).join(' · ') || 'в системе',
+          date: r.first_at ? new Date(r.first_at).toISOString() : null,
           link: null,
         }));
       }

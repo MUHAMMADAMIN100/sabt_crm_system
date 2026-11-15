@@ -8,6 +8,18 @@ function make(smmData: any = {}) {
   svc.repo = {
     findOne: jest.fn(async () => project),
     update: jest.fn(async (_id: string, set: any) => Object.assign(project, set)),
+    // 15.11.2026: smmData пишется атомарно (patchSmmData) — имитируем слияние.
+    manager: {
+      query: jest.fn(async (sql: string, params: any[]) => {
+        if (/UPDATE projects/.test(sql)) {
+          const set = JSON.parse(params[0]);
+          const unset: string[] = params[2] || [];
+          project.smmData = { ...(project.smmData || {}), ...set };
+          for (const k of unset) delete project.smmData[k];
+        }
+        return [];
+      }),
+    },
   };
   svc.userRepo = { findOne: jest.fn(async ({ where }: any) => ({ id: where.id, role: 'sales_manager_smm', isActive: true })) };
   return { svc: svc as ProjectsService, project };

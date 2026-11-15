@@ -7,6 +7,8 @@ import { ContentPlanItem, ContentItemType, ContentPlanStatus } from '../content-
 import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
 import { User, UserRole } from '../users/user.entity';
 import { DirectionScope, isInDirection } from '../../common/direction-scope';
+import { effectiveLimits } from '../projects/tariff-limits';
+import { dushanbeDay, dushanbeDayStart } from '../clients/sales-kpi.logic';
 import {
   PlanFactRow,
   EmployeeWorkload,
@@ -29,13 +31,47 @@ const FINISHED_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.CANCELLED,
 ];
 
-/** Маппинг типа контента к лимиту в тарифе. */
-const TARIFF_LIMIT_BY_TYPE: Partial<Record<ContentItemType, keyof SmmTariff>> = {
-  [ContentItemType.STORY]:  'storiesPerMonth',
-  [ContentItemType.REEL]:   'reelsPerMonth',
-  [ContentItemType.POST]:   'postsPerMonth',
-  [ContentItemType.DESIGN]: 'designsPerMonth',
-};
+/** Действующие помесячные лимиты проекта по типам контента (15.11.2026).
+ *  У индивидуального тарифа цифры лежат в project.customTariff (в
+ *  справочнике нули) — раньше любой опубликованный пост такого проекта
+ *  считался перерасходом. Нулевой лимит = тип в тариф не входит, перерасходом
+ *  не считаем (как tariffLimitOveruseCost в projects.service). */
+export function monthlyLimitsOf(
+  tariff: SmmTariff | null | undefined,
+  customTariff: Record<string, any> | null | undefined,
+): Partial<Record<ContentItemType, number>> {
+  if (!tariff) return {};
+  const lim = effectiveLimits(tariff as any, customTariff);
+  const all: Array<[ContentItemType, number]> = [
+    [ContentItemType.STORY, lim.storiesPerMonth],
+    [ContentItemType.REEL, lim.reelsPerMonth],
+    [ContentItemType.POST, lim.postsPerMonth],
+    // Отдельного счётчика дизайнов у индивидуального тарифа нет.
+    [ContentItemType.DESIGN, tariff.isCustom ? 0 : Number(tariff.designsPerMonth) || 0],
+  ];
+  const out: Partial<Record<ContentItemType, number>> = {};
+  for (const [type, n] of all) if (n > 0) out[type] = n;
+  return out;
+}
+
+/** Текущий календарный месяц по Душанбе как [from, to) в UTC (15.11.2026).
+ *  Отдельного цикла тарифа в системе нет (startBillingDate + durationDays
+ *  нужны только для первой генерации плана), лимиты тарифа — «в месяц». */
+export function dushanbeMonthRange(now: Date = new Date()): { from: Date; to: Date } {
+  const [y, m] = dushanbeDay(now).split('-').map(Number);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    from: dushanbeDayStart(`${y}-${pad(m)}-01`),
+    to: m === 12 ? dushanbeDayStart(`${y + 1}-01-01`) : dushanbeDayStart(`${y}-${pad(m + 1)}-01`),
+  };
+}
+
+/** SQL-условие «опубликовано в текущем месяце» для алиаса c (параметры
+ *  :monthFrom/:monthTo). Дата публикации — publishedAt, у старых строк без
+ *  неё — updatedAt (15.11.2026). */
+const PUBLISHED_IN_MONTH_SQL =
+  `c.status = 'published' AND COALESCE(c."publishedAt", c."updatedAt") >= :monthFrom`
+  + ` AND COALESCE(c."publishedAt", c."updatedAt") < :monthTo`;
 
 @Injectable()
 export class RiskAnalyticsService {
@@ -63,48 +99,52 @@ export class RiskAnalyticsService {
       ? await this.tariffRepo.findOne({ where: { id: project.tariffId } })
       : null;
 
+    // Лимиты тарифа помесячные — перерасход считаем по публикациям текущего
+    // месяца по Душанбе, а не за всё время (15.11.2026).
+    const { from: monthFrom, to: monthTo } = dushanbeMonthRange();
     const rows = await this.cpiRepo
       .createQueryBuilder('c')
       .select('c.contentType', 'contentType')
       .addSelect(`SUM(CASE WHEN c.status != 'cancelled' THEN 1 ELSE 0 END)`, 'planned')
       .addSelect(`SUM(CASE WHEN c.status = 'published' THEN 1 ELSE 0 END)`, 'actual')
+      .addSelect(`SUM(CASE WHEN ${PUBLISHED_IN_MONTH_SQL} THEN 1 ELSE 0 END)`, 'actualMonth')
       .addSelect(`SUM(CASE WHEN c.status = 'cancelled' THEN 1 ELSE 0 END)`, 'cancelled')
       .where('c.projectId = :pid', { pid: projectId })
+      .setParameters({ monthFrom, monthTo })
       .groupBy('c.contentType')
       .getRawMany();
 
-    const byType = new Map<string, { planned: number; actual: number; cancelled: number }>();
+    const byType = new Map<string, { planned: number; actual: number; actualMonth: number; cancelled: number }>();
     for (const r of rows) {
       byType.set(r.contentType, {
         planned: Number(r.planned),
         actual: Number(r.actual),
+        actualMonth: Number(r.actualMonth) || 0,
         cancelled: Number(r.cancelled),
       });
     }
 
     // Гарантируем, что строки из тарифа всегда присутствуют (даже если в плане 0).
-    const tariffTypes: ContentItemType[] = tariff
-      ? (Object.keys(TARIFF_LIMIT_BY_TYPE) as ContentItemType[]).filter(t => {
-          const field = TARIFF_LIMIT_BY_TYPE[t]!;
-          return Number((tariff as any)[field]) > 0;
-        })
-      : [];
-    for (const t of tariffTypes) {
-      if (!byType.has(t)) byType.set(t, { planned: 0, actual: 0, cancelled: 0 });
+    const limits = monthlyLimitsOf(tariff, project.customTariff as any);
+    for (const t of Object.keys(limits)) {
+      if (!byType.has(t)) byType.set(t, { planned: 0, actual: 0, actualMonth: 0, cancelled: 0 });
     }
 
     const result: PlanFactRow[] = [];
     for (const [contentType, agg] of byType.entries()) {
-      const limitField = TARIFF_LIMIT_BY_TYPE[contentType as ContentItemType];
-      const tariffLimit = tariff && limitField ? Number((tariff as any)[limitField]) : null;
-      const denominator = tariffLimit && tariffLimit > 0 ? tariffLimit : agg.planned;
-      const percent = denominator > 0 ? Math.round((agg.actual / denominator) * 100) : 0;
-      const overuse = tariffLimit != null ? Math.max(0, agg.actual - tariffLimit) : 0;
-      const underuse = tariffLimit != null ? Math.max(0, tariffLimit - agg.actual) : 0;
+      const tariffLimit = limits[contentType as ContentItemType] ?? null;
+      // С лимитом — % от месячного лимита за текущий месяц; без лимита —
+      // % выполнения плана за всё время, как раньше.
+      const percent = tariffLimit != null
+        ? Math.round((agg.actualMonth / tariffLimit) * 100)
+        : (agg.planned > 0 ? Math.round((agg.actual / agg.planned) * 100) : 0);
+      const overuse = tariffLimit != null ? Math.max(0, agg.actualMonth - tariffLimit) : 0;
+      const underuse = tariffLimit != null ? Math.max(0, tariffLimit - agg.actualMonth) : 0;
       result.push({
         contentType,
         planned: agg.planned,
         actual: agg.actual,
+        actualMonth: agg.actualMonth,
         cancelled: agg.cancelled,
         remaining: Math.max(0, agg.planned - agg.actual - agg.cancelled),
         tariffLimit,
@@ -380,21 +420,31 @@ export class RiskAnalyticsService {
     }
 
     // ─── Батч 3: агрегаты контент-плана по проекту+типу ──────────────
-    const cpiRows: Array<{ projectId: string; contentType: string; planned: string; actual: string; total: string }> =
+    // actualMonth — публикации текущего месяца по Душанбе: лимиты тарифа
+    // помесячные, всё время сравнивать с ними нельзя (15.11.2026).
+    const { from: monthFrom, to: monthTo } = dushanbeMonthRange();
+    const cpiRows: Array<{ projectId: string; contentType: string; planned: string; actual: string; actualMonth: string; total: string }> =
       await this.cpiRepo.createQueryBuilder('c')
         .select('c.projectId', 'projectId')
         .addSelect('c.contentType', 'contentType')
         .addSelect(`SUM(CASE WHEN c.status != 'cancelled' THEN 1 ELSE 0 END)`, 'planned')
         .addSelect(`SUM(CASE WHEN c.status = 'published' THEN 1 ELSE 0 END)`, 'actual')
+        .addSelect(`SUM(CASE WHEN ${PUBLISHED_IN_MONTH_SQL} THEN 1 ELSE 0 END)`, 'actualMonth')
         .addSelect('COUNT(*)', 'total')
         .where('c.projectId IN (:...ids)', { ids: projectIds })
+        .setParameters({ monthFrom, monthTo })
         .groupBy('c.projectId').addGroupBy('c.contentType')
         .getRawMany();
-    const cpiByProject = new Map<string, Array<{ contentType: string; planned: number; actual: number }>>();
+    const cpiByProject = new Map<string, Array<{ contentType: string; planned: number; actual: number; actualMonth: number }>>();
     const cpiCountByProject = new Map<string, number>();
     for (const r of cpiRows) {
       const arr = cpiByProject.get(r.projectId) || [];
-      arr.push({ contentType: r.contentType, planned: Number(r.planned), actual: Number(r.actual) });
+      arr.push({
+        contentType: r.contentType,
+        planned: Number(r.planned),
+        actual: Number(r.actual),
+        actualMonth: Number(r.actualMonth) || 0,
+      });
       cpiByProject.set(r.projectId, arr);
       cpiCountByProject.set(r.projectId, (cpiCountByProject.get(r.projectId) || 0) + Number(r.total));
     }
@@ -428,7 +478,7 @@ export class RiskAnalyticsService {
     project: Project,
     tasks: Task[],
     memberIds: string[],
-    cpiAgg: Array<{ contentType: string; planned: number; actual: number }>,
+    cpiAgg: Array<{ contentType: string; planned: number; actual: number; actualMonth: number }>,
     cpiCount: number,
     tariff: SmmTariff | null,
     overloadedUserIds: Set<string>,
@@ -460,21 +510,25 @@ export class RiskAnalyticsService {
       triggered: recentTasks.length === 0 && tasks.length > 0, weight: 1,
     });
 
-    // Факт. 4 — нет новых задач за неделю
-    const recentlyCreated = tasks.filter(t => t.createdAt && new Date(t.createdAt) > cutoff7d);
-    factors.push({
-      key: 'no_week_tasks', label: 'На неделю нет новых задач',
-      triggered: recentlyCreated.length === 0, weight: 1,
-    });
+    // Факт. 4 — нет новых задач за неделю. SMM-проекты работают через
+    // контент-план, а не задачи: у них фактор срабатывал всегда (15.11.2026).
+    if (project.projectType !== 'SMM') {
+      const recentlyCreated = tasks.filter(t => t.createdAt && new Date(t.createdAt) > cutoff7d);
+      factors.push({
+        key: 'no_week_tasks', label: 'На неделю нет новых задач',
+        triggered: recentlyCreated.length === 0, weight: 1,
+      });
+    }
 
-    // Факт. 5 — превышение лимита тарифа (расчёт из cpiAgg)
+    // Факт. 5 — превышение месячного лимита тарифа публикациями текущего
+    // месяца (расчёт из cpiAgg)
     let tariffOveruse = false;
     if (tariff && project.projectType === 'SMM') {
-      for (const row of cpiAgg) {
-        const limitField = TARIFF_LIMIT_BY_TYPE[row.contentType as ContentItemType];
-        const limit = limitField ? Number((tariff as any)[limitField]) : null;
-        if (limit != null && row.actual - limit > 0) { tariffOveruse = true; break; }
-      }
+      const limits = monthlyLimitsOf(tariff, project.customTariff as any);
+      tariffOveruse = cpiAgg.some(row => {
+        const limit = limits[row.contentType as ContentItemType];
+        return limit != null && row.actualMonth > limit;
+      });
     }
     factors.push({ key: 'tariff_overuse', label: 'Превышение лимита тарифа', triggered: tariffOveruse, weight: 2 });
 
@@ -550,14 +604,17 @@ export class RiskAnalyticsService {
       weight: 1,
     });
 
-    // Факт. 4 — нет задач созданных за неделю
-    const recentlyCreated = tasks.filter(t => t.createdAt && new Date(t.createdAt) > cutoff7d);
-    factors.push({
-      key: 'no_week_tasks',
-      label: 'На неделю нет новых задач',
-      triggered: recentlyCreated.length === 0,
-      weight: 1,
-    });
+    // Факт. 4 — нет задач созданных за неделю. SMM-проекты пропускаем: они
+    // работают через контент-план, фактор срабатывал всегда (15.11.2026).
+    if (project.projectType !== 'SMM') {
+      const recentlyCreated = tasks.filter(t => t.createdAt && new Date(t.createdAt) > cutoff7d);
+      factors.push({
+        key: 'no_week_tasks',
+        label: 'На неделю нет новых задач',
+        triggered: recentlyCreated.length === 0,
+        weight: 1,
+      });
+    }
 
     // Факт. 5 — превышение лимита тарифа
     let tariffOveruse = false;

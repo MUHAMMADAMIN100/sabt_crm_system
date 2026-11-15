@@ -4,11 +4,23 @@ import * as bcrypt from 'bcryptjs'
 import * as dotenv from 'dotenv'
 dotenv.config()
 
+/* Демо-данные для локальной разработки (15.11.2026):
+ *  - synchronize выключен: раньше seed сам перестраивал схему под entity —
+ *    запущенный по ошибке на проде, он менял боевые таблицы мимо миграций.
+ *    Схему создают миграции (npm run migration:run) или запуск приложения
+ *    в dev-режиме.
+ *  - на проде (NODE_ENV=production) не запускается без явного SEED_ALLOW=1:
+ *    демо-учётки с известными паролями там не нужны никогда. */
+if (process.env.NODE_ENV === 'production' && process.env.SEED_ALLOW !== '1') {
+  console.error('❌ Seed отключён при NODE_ENV=production. Если это действительно нужно — запустите с SEED_ALLOW=1.')
+  process.exit(1)
+}
+
 const AppDataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL || 'postgresql://erp_user:erp_password@localhost:5432/erp_db',
   entities: [__dirname + '/../../**/*.entity.{ts,js}'],
-  synchronize: true,
+  synchronize: false,
 })
 
 async function seed() {
@@ -36,9 +48,11 @@ async function seed() {
     password: hashedAdmin, role: 'admin', isActive: true,
   })
 
+  // Роли «manager» в системе нет давно: менеджер проекта — любой сотрудник,
+  // назначенный в project.managerId. Демо-менеджер — руководитель SMM.
   const manager = userRepo.create({
     name: 'Алексей Смирнов', email: 'manager@erp.com',
-    password: hashedPass, role: 'manager', isActive: true,
+    password: hashedPass, role: 'smm_director', isActive: true,
   })
 
   const emp1 = userRepo.create({
@@ -98,7 +112,8 @@ async function seed() {
   const tasks = [
     taskRepo.create({ title: 'Настройка авторизации', description: 'JWT авторизация с refresh токенами', projectId: savedProj1.id, assigneeId: savedEmp2.id, createdById: savedManager.id, priority: 'high', status: 'done', deadline: new Date('2024-03-01'), estimatedHours: 8 }),
     taskRepo.create({ title: 'Разработка дашборда', description: 'Главная страница с графиками и статистикой', projectId: savedProj1.id, assigneeId: savedEmp1.id, createdById: savedManager.id, priority: 'high', status: 'in_progress', deadline: new Date('2024-08-01'), estimatedHours: 16 }),
-    taskRepo.create({ title: 'Дизайн UI-компонентов', description: 'Создание библиотеки UI-компонентов', projectId: savedProj1.id, assigneeId: savedEmp3.id, createdById: savedManager.id, priority: 'medium', status: 'review', deadline: new Date('2024-07-15'), estimatedHours: 12 }),
+    // Статуса «review» больше нет (их четыре: new / in_progress / done / cancelled).
+    taskRepo.create({ title: 'Дизайн UI-компонентов', description: 'Создание библиотеки UI-компонентов', projectId: savedProj1.id, assigneeId: savedEmp3.id, createdById: savedManager.id, priority: 'medium', status: 'in_progress', deadline: new Date('2024-07-15'), estimatedHours: 12 }),
     taskRepo.create({ title: 'API интеграция', description: 'Подключение фронтенда к backend API', projectId: savedProj1.id, assigneeId: savedEmp1.id, createdById: savedManager.id, priority: 'critical', status: 'in_progress', deadline: new Date('2024-09-01'), estimatedHours: 20 }),
     taskRepo.create({ title: 'Исследование рынка', description: 'Анализ конкурентов мобильных приложений', projectId: savedProj2.id, assigneeId: savedManager.id, createdById: savedAdmin.id, priority: 'medium', status: 'done', estimatedHours: 6 }),
     taskRepo.create({ title: 'Прототип экранов', description: 'Figma прототип основных экранов', projectId: savedProj2.id, assigneeId: savedEmp3.id, createdById: savedManager.id, priority: 'high', status: 'in_progress', deadline: new Date('2024-10-01'), estimatedHours: 24 }),

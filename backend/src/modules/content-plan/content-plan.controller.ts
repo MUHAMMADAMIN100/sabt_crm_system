@@ -32,10 +32,12 @@ const EDIT_ROLES = [
 export class ContentPlanController {
   constructor(private service: ContentPlanService) {}
 
-  /** Список — любой авторизованный (фильтрация на стороне UI по доступному проекту).
-   *  TODO: добавить фильтрацию по доступным проектам пользователя на сервере. */
+  /** Список — только по проектам, которые пользователь видит (15.11.2026):
+   *  с projectId — 403 на чужой проект; без него — только видимые проекты
+   *  и свои карточки (ContentPlanService.findAll). */
   @Get()
   findAll(
+    @Request() req,
     @Query('projectId') projectId?: string,
     @Query('status') status?: ContentPlanStatus,
     @Query('approvalStatus') approvalStatus?: ContentApprovalStatus,
@@ -44,7 +46,7 @@ export class ContentPlanController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.service.findAll({ projectId, status, approvalStatus, assigneeId, contentType, from, to });
+    return this.service.findAll({ projectId, status, approvalStatus, assigneeId, contentType, from, to }, req.user);
   }
 
   /** «Мои задачи производства» — карточки, где я исполнитель: съёмки у
@@ -93,8 +95,8 @@ export class ContentPlanController {
   }
 
   @Get('plan-fact/:projectId')
-  getPlanFact(@Param('projectId') projectId: string) {
-    return this.service.getPlanFactByProject(projectId);
+  getPlanFact(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.getPlanFactByProject(projectId, req.user);
   }
 
   /** Календарь производства СММ за месяц: публикации + съёмки, только
@@ -122,23 +124,25 @@ export class ContentPlanController {
    *  drag в умном календаре. Литеральный сегмент объявлен ДО ':id'. */
   @Patch('shoot-session/:id')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST, UserRole.PRODUCER)
-  updateShootSession(@Param('id') id: string, @Body() body: any) {
-    return this.service.updateShootSession(id, body || {});
+  updateShootSession(@Param('id') id: string, @Body() body: any, @Request() req) {
+    // Свой проект / продюсер / руководство — проверяет сервис (15.11.2026).
+    return this.service.updateShootSession(id, body || {}, req.user);
   }
 
   /** Умный календарь: догенерировать заготовки под норму цикла (рилсы/посты)
    *  в «Не запланировано». Только SMM-роли и только SMM-проекты. */
   @Post('smart-generate')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
-  smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }) {
-    return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0);
+  smartGenerate(@Body() body: { projectId: string; reels?: number; posts?: number }, @Request() req) {
+    return this.service.smartGenerateStubs(body?.projectId, body?.reels ?? 0, body?.posts ?? 0, req.user);
   }
 
   /** Умный календарь: полностью очистить контент проекта (сброс теста). */
   @Post('smart-clear')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
-  smartClear(@Body() body: { projectId: string }) {
-    return this.service.smartClearProject(body?.projectId);
+  smartClear(@Body() body: { projectId: string }, @Request() req) {
+    // Удаляет ВЕСЬ контент проекта — только свой проект или руководство.
+    return this.service.smartClearProject(body?.projectId, req.user);
   }
 
   /** Умный календарь: быстрый апдейт позиции (перенос даты / статус) без
@@ -148,7 +152,7 @@ export class ContentPlanController {
   @Post('auto-plan/:projectId')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER, UserRole.SMM_DIRECTOR, UserRole.SMM_SPECIALIST)
   applyAutoPlan(@Param('projectId') projectId: string, @Body() body: any, @Request() req) {
-    return this.service.applyAutoPlan(projectId, body || {}, { id: req.user?.id, name: req.user?.name });
+    return this.service.applyAutoPlan(projectId, body || {}, req.user);
   }
 
   @Patch('smart-item/:id')
@@ -163,24 +167,26 @@ export class ContentPlanController {
 
   /** История задачи: перенос, закрытие, отмена. Видна всем, кто видит задачу. */
   @Get('item/:id/history')
-  itemHistory(@Param('id') id: string) { return this.service.itemHistory(id); }
+  itemHistory(@Param('id') id: string, @Request() req) { return this.service.itemHistory(id, req.user); }
 
+  /** Карточка — исполнителю и тем, кто видит проект; проект в ответе —
+   *  только «списочные» поля (без денег и брифа), 15.11.2026. */
   @Get(':id')
-  findOne(@Param('id') id: string) { return this.service.findOne(id); }
+  findOne(@Param('id') id: string, @Request() req) { return this.service.findOneForUser(id, req.user); }
 
   @Post()
   @RequirePerm('content-plan.create')
   create(@Body() dto: CreateContentPlanDto, @Request() req) {
-    return this.service.create(dto as any, req.user?.id);
+    return this.service.create(dto as any, req.user?.id, req.user);
   }
 
   @Patch(':id')
   @RequirePerm('content-plan.edit')
   update(@Param('id') id: string, @Body() dto: UpdateContentPlanDto, @Request() req) {
-    return this.service.update(id, dto as any, req.user?.id);
+    return this.service.update(id, dto as any, req.user?.id, req.user);
   }
 
   @Delete(':id')
   @RequirePerm('content-plan.delete')
-  remove(@Param('id') id: string) { return this.service.remove(id); }
+  remove(@Param('id') id: string, @Request() req) { return this.service.remove(id, req.user); }
 }

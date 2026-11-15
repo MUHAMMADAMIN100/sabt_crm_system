@@ -69,7 +69,7 @@ export default function NotificationsPage() {
       await qc.cancelQueries({ queryKey: ['notifications'] })
       const previous = qc.getQueryData(['notifications'])
       qc.setQueryData(['notifications'], (old: any[]) => old?.map((n: any) => n.id === id ? { ...n, isRead: true } : n) ?? [])
-      qc.setQueryData(['unread-count'], (old: number) => Math.max(0, (old || 0) - 1))
+      qc.setQueryData(['unread-count'], (old: any) => ({ count: Math.max(0, (Number(typeof old === 'number' ? old : old?.count) || 0) - 1) }))
       return { previous }
     },
     onError: (_err: any, _vars: any, context: any) => {
@@ -86,7 +86,7 @@ export default function NotificationsPage() {
       await qc.cancelQueries({ queryKey: ['notifications'] })
       const previous = qc.getQueryData(['notifications'])
       qc.setQueryData(['notifications'], (old: any[]) => old?.map((n: any) => ({ ...n, isRead: true })) ?? [])
-      qc.setQueryData(['unread-count'], 0)
+      qc.setQueryData(['unread-count'], { count: 0 })
       return { previous }
     },
     onError: (_err: any, _vars: any, context: any) => {
@@ -105,7 +105,7 @@ export default function NotificationsPage() {
       const notif = (previous as any[])?.find((n: any) => n.id === id)
       qc.setQueryData(['notifications'], (old: any[]) => old?.filter((n: any) => n.id !== id) ?? [])
       if (notif && !notif.isRead) {
-        qc.setQueryData(['unread-count'], (old: number) => Math.max(0, (old || 0) - 1))
+        qc.setQueryData(['unread-count'], (old: any) => ({ count: Math.max(0, (Number(typeof old === 'number' ? old : old?.count) || 0) - 1) }))
       }
       return { previous }
     },

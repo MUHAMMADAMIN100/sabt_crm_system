@@ -5,10 +5,11 @@ import { TaskResult } from './task-result.entity';
 import { Task } from '../tasks/task.entity';
 import { CreateTaskResultDto } from './dto/create-task-result.dto';
 import { AppGateway } from '../gateway/app.gateway';
+import { TaskViewer, assertTaskReadable, canWorkOnTask, isPmForTask, loadTaskAccess } from '../tasks/task-access';
 
-// Руководитель разработки — такой же приёмщик работ, как руководители SMM
-// и видео: может приложить/снять результат по задаче своего направления.
-const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
+// Руководители (в т.ч. руководитель разработки и pm_dev — основной или второй
+// ролью, в своей сфере) — приёмщики работ: могут приложить/снять результат.
+// Общий список и правило — tasks/task-access.ts (15.11.2026).
 
 @Injectable()
 export class TaskResultsService {
@@ -18,13 +19,15 @@ export class TaskResultsService {
     private gateway: AppGateway,
   ) {}
 
-  async create(taskId: string, submittedById: string, role: string, dto: CreateTaskResultDto): Promise<TaskResult> {
-    if (!PM_ROLES.includes(role)) {
-      const task = await this.taskRepo.findOne({ where: { id: taskId } });
-      if (!task) throw new NotFoundException('Task not found');
-      if (task.assigneeId !== submittedById && task.createdById !== submittedById) {
-        throw new ForbiddenException('Нельзя прикреплять результат к чужой задаче');
-      }
+  async create(
+    taskId: string, submittedById: string, role: string, dto: CreateTaskResultDto, secondaryRole?: string | null,
+  ): Promise<TaskResult> {
+    const viewer: TaskViewer = { id: submittedById, role, secondaryRole };
+    const row = await loadTaskAccess(this.taskRepo.manager, taskId, submittedById);
+    if (!row) throw new NotFoundException('Task not found');
+    // Исполнитель, со-исполнитель, автор или руководитель своей сферы.
+    if (!canWorkOnTask(row, viewer)) {
+      throw new ForbiddenException('Нельзя прикреплять результат к чужой задаче');
     }
     const result = this.repo.create({ taskId, submittedById, ...dto });
     const saved = await this.repo.save(result);
@@ -33,7 +36,10 @@ export class TaskResultsService {
     return saved;
   }
 
-  findByTask(taskId: string): Promise<TaskResult[]> {
+  /** Результаты задачи. С viewer — та же проверка доступа, что у карточки
+   *  задачи (15.11.2026: раньше отдавали результаты любой задачи по id). */
+  async findByTask(taskId: string, viewer?: TaskViewer): Promise<TaskResult[]> {
+    if (viewer) await assertTaskReadable(this.taskRepo.manager, taskId, viewer);
     return this.repo.find({
       where: { taskId },
       order: { createdAt: 'DESC' },
@@ -44,11 +50,15 @@ export class TaskResultsService {
     return this.repo.count({ where: { taskId } });
   }
 
-  async remove(id: string, userId: string, role: string): Promise<{ message: string }> {
+  async remove(id: string, userId: string, role: string, secondaryRole?: string | null): Promise<{ message: string }> {
     const result = await this.repo.findOne({ where: { id } });
     if (!result) throw new NotFoundException('Result not found');
-    if (!PM_ROLES.includes(role) && result.submittedById !== userId) {
-      throw new ForbiddenException('Not allowed');
+    if (result.submittedById !== userId) {
+      // Чужой результат снимает только руководитель своей сферы.
+      const row = await loadTaskAccess(this.taskRepo.manager, result.taskId, userId);
+      if (!isPmForTask({ id: userId, role, secondaryRole }, row?.projectType)) {
+        throw new ForbiddenException('Not allowed');
+      }
     }
     const { taskId } = result;
     await this.repo.remove(result);

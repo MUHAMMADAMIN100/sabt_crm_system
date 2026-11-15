@@ -106,8 +106,9 @@ export class TasksController {
   getOverdue(@Request() req) { return this.service.getOverdueTasks(req.user); }
 
   @Get('stats')
-  getStats(@Query('projectId') projectId?: string) {
-    return this.service.getStats(projectId);
+  getStats(@Query('projectId') projectId: string | undefined, @Request() req) {
+    // Счётчики — по видимым пользователю задачам (15.11.2026).
+    return this.service.getStats(projectId, req.user);
   }
 
   @Get(':id')
@@ -128,8 +129,9 @@ export class TasksController {
   }
 
   @Get(':id/assignees')
-  getAssignees(@Param('id') id: string) {
-    return this.service.getAssignees(id);
+  getAssignees(@Param('id') id: string, @Request() req) {
+    // Та же проверка доступа, что у карточки задачи (15.11.2026).
+    return this.service.getAssignees(id, req.user);
   }
 
   @Post(':id/my-part-done')

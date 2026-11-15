@@ -80,11 +80,13 @@ export default function KpiCelebrationWatcher() {
   useEffect(() => {
     if (!isSales || !kpi?.items?.length || !userId) return
 
+    // Пункт без нормы (выходной, target 0) праздником не считается (15.11.2026).
     const currentDone = new Set<string>(
-      (kpi.items as any[]).filter(it => it.done).map(it => it.key),
+      (kpi.items as any[]).filter(it => it.done && Number(it.target) > 0).map(it => it.key),
     )
     const overall = Number(kpi.overallPercent || 0)
-    const now100 = overall >= 100
+    const hasTargets = (kpi.items as any[]).some(it => Number(it.target) > 0)
+    const now100 = overall >= 100 && hasTargets && !kpi.restDay
 
     // Первый приход KPI — это «снимок», не повод праздновать.
     // Запоминаем baseline и выходим.

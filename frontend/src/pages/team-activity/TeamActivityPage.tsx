@@ -148,12 +148,16 @@ function dayLabel(iso: string) {
 }
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
+/** Начало периода ленты. С точностью до дня (15.11.2026): раньше «7 дней» и
+ *  «30 дней» давали новое ISO с миллисекундами на каждый рендер — значение
+ *  входит в ключ запроса, и лента перезапрашивалась бесконечно. */
 function periodFrom(period: string): string | undefined {
   if (period === 'all') return undefined
-  const now = new Date()
-  if (period === 'today') { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.toISOString() }
-  if (period === '7d') { const d = new Date(now); d.setDate(now.getDate() - 7); return d.toISOString() }
-  if (period === '30d') { const d = new Date(now); d.setDate(now.getDate() - 30); return d.toISOString() }
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (period === 'today') return d.toISOString()
+  if (period === '7d') { d.setDate(d.getDate() - 7); return d.toISOString() }
+  if (period === '30d') { d.setDate(d.getDate() - 30); return d.toISOString() }
   return undefined
 }
 
@@ -178,7 +182,8 @@ export default function TeamActivityPage() {
   const [limit, setLimit] = useState(40)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  const from = periodFrom(period)
+  // Стабильное значение для ключа запроса (15.11.2026).
+  const from = useMemo(() => periodFrom(period), [period])
 
   const { data: usersRaw } = useQuery({ queryKey: ['users-all'], queryFn: () => usersApi.list() })
   const users: any[] = useMemo(() => {
@@ -415,7 +420,10 @@ function LateFines() {
   })
   const pending: any[] = data?.pending ?? []
   const fined: any[] = data?.fined ?? []
-  const amount = Number(data?.amountPerLate) || 100
+  // 0 в настройках смен = штраф за опоздание выключен (15.11.2026). Раньше
+  // «|| 100» подставлял 100 и проводил штраф, который выключили.
+  const amount = Number(data?.amountPerLate) > 0 ? Number(data?.amountPerLate) : 0
+  const fineOff = !(amount > 0)
 
   // По умолчанию отмечены все, кого вообще можно оштрафовать.
   const [off, setOff] = useState<Set<string>>(new Set())
@@ -460,7 +468,9 @@ function LateFines() {
         <div className="rounded-2xl border border-red-500/35 bg-red-500/[0.06] p-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2.5">
             <span className="text-sm font-semibold">Опоздали {dayLabel} · {pending.length}</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">приход после {data?.lateAfter ?? '09:30'} · по {amount} с.</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              приход после {data?.lateAfter ?? '09:30'} · {fineOff ? 'штраф выключен в настройках смен' : `по ${amount} с.`}
+            </span>
           </div>
           <div className="flex flex-col gap-1.5 mb-3">
             {pending.map(i => (
@@ -480,15 +490,19 @@ function LateFines() {
                   </span>
                 </span>
                 <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400 tabular-nums">+{i.lateMinutes} мин</span>
-                <span className="shrink-0 w-[70px] text-right text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">−{amount} с.</span>
+                {!fineOff && (
+                  <span className="shrink-0 w-[70px] text-right text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">−{amount} с.</span>
+                )}
               </label>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <button disabled={apply.isPending || !chosen.length} onClick={() => apply.mutate()}
-              className="h-11 px-4 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-50">
-              {chosen.length ? `Провести штраф на ${total} с.` : 'Никто не выбран'}
-            </button>
+            {!fineOff && (
+              <button disabled={apply.isPending || !chosen.length} onClick={() => apply.mutate()}
+                className="h-11 px-4 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-50">
+                {chosen.length ? `Провести штраф на ${total} с.` : 'Никто не выбран'}
+              </button>
+            )}
             <button disabled={forgive.isPending} onClick={() => forgive.mutate()}
               className="h-11 px-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300 disabled:opacity-60">
               Простить всем

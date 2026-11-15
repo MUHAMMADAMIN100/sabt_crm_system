@@ -182,3 +182,23 @@ describe('«Назад» — ровно на шаг', () => {
     await waitFor(() => expect(window.location.search).toBe('?ym=2026-12'))
   })
 })
+
+// Выход (15.11.2026): память шагов — с адресами и заголовками страниц —
+// стирается, чтобы следующий вошедший на этом устройстве её не унаследовал.
+describe('clearNavMemory — выход', () => {
+  it('стирает сохранённую память шагов из sessionStorage', async () => {
+    sessionStorage.setItem('sabt-nav-mem-v1', JSON.stringify({
+      stack: ['k1'], pages: { k1: { path: '/clients', title: 'База клиентов' } }, scroll: { k1: 120 }, mark: {},
+    }))
+    vi.resetModules()
+    nav = await import('./navMemory')
+    nav.clearNavMemory()
+    expect(sessionStorage.getItem('sabt-nav-mem-v1')).toBeNull()
+  })
+
+  it('не бросает, если sessionStorage недоступен', () => {
+    const spy = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(() => nav.clearNavMemory()).not.toThrow()
+    spy.mockRestore()
+  })
+})

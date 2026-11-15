@@ -7,6 +7,9 @@ import { Camera, ChevronLeft, ChevronRight, Sun } from 'lucide-react'
 import { getUserPositionLabel } from '@/lib/permissions'
 import toast from 'react-hot-toast'
 import TaskCelebrationSection from '@/components/profile/TaskCelebrationSection'
+import TwoFactorSection from '@/components/profile/TwoFactorSection'
+import ThemeEditorSection from '@/components/profile/ThemeEditorSection'
+import { ChangePasswordSection, TelegramLinkSection } from '@/components/profile/SecuritySection'
 import { prepareAvatar } from '@/lib/imageCompress'
 import { money, shiftYm, currentSalaryYm, pluralRu, formatDate } from '@/pages/finance/finlib'
 import ProfileStatsBody, { useProfileStats, LevelBar, LevelBadge, tenureText } from './ProfileStats'
@@ -632,6 +635,23 @@ export default function ProfilePage() {
 
       {/* «Печать успеха» за выполненную задачу — с ролевой проверкой внутри */}
       {!onLeave && <TaskCelebrationSection />}
+
+      {/* Безопасность и связь (15.11.2026): смена пароля, Telegram и 2FA —
+          компоненты были, а в профиле их не показывали. В кабинете
+          сотрудника («Войти как») не показываем: сервер эти действия за
+          другого не выполняет. Нужны и в отпуске. */}
+      {!user?.impersonator && (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+            <ChangePasswordSection />
+            <TelegramLinkSection />
+          </div>
+          <TwoFactorSection />
+        </>
+      )}
+
+      {/* Цвета интерфейса — только основатель: его тема расходится всем. */}
+      {isFounder && !user?.impersonator && <ThemeEditorSection />}
     </div>
   )
 }

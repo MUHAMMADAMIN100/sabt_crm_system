@@ -8,7 +8,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { LocalStrategy } from './strategies/local.strategy';
 import { User } from '../users/user.entity';
 import { Employee } from '../employees/employee.entity';
 import { WorkSession } from './work-session.entity';
@@ -45,7 +44,9 @@ import { GatewayModule } from '../gateway/gateway.module';
   ],
   controllers: [AuthController],
   providers: [
-    AuthService, JwtStrategy, LocalStrategy,
+    // LocalStrategy удалена (15.11.2026): ни один маршрут её не использовал,
+    // вход идёт через AuthService.login с блокировкой и 2FA.
+    AuthService, JwtStrategy,
     // «Войти как»: запреты, пометка журналов и след каждого изменения —
     // для всех запросов приложения.
     { provide: APP_INTERCEPTOR, useClass: ImpersonationInterceptor },

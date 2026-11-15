@@ -64,7 +64,7 @@ export async function fetchFile(url: string, maxBytes: number, apiHost: string):
 
 /** Запрос к Graph API: ответ или MessengerError с кодом Meta. Ключ — в
  *  заголовке, не в адресе: адреса попадают в журналы. */
-export async function graphRequest<T>(url: URL, init: { method?: 'GET' | 'POST'; token: string; body?: unknown; timeoutMs?: number }): Promise<T> {
+export async function graphRequest<T>(url: URL, init: { method?: 'GET' | 'POST' | 'DELETE'; token: string; body?: unknown; timeoutMs?: number }): Promise<T> {
   const response = await fetch(url, {
     method: init.method ?? 'GET',
     headers: { Authorization: `Bearer ${init.token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },

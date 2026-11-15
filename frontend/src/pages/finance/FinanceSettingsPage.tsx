@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import './finance.css';
-import { money, todayISO, formatDate, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE, apiErr } from './finlib';
+import { money, todayISO, formatDate, INCOME_GROUPS, TYPE_LABEL, COLOR_PALETTE, apiErr, parseAmount } from './finlib';
 import FinIcon, { CatIcon, PICKER_ICONS } from './FinIcon';
 import { FinModal, FinLoading, FinLoadError, finConfirm, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal, EmployeeFormModal, SubFormModal, DebtFormModal } from './FinForms';
@@ -431,7 +431,8 @@ function StartBalanceEditor({ account, onSaved }: { account: any; onSaved: () =>
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(String(account.startBalance ?? 0));
   const [busy, setBusy] = useState(false);
-  const parsed = Number(value.replace(',', '.'));
+  // «3 500» и «1,234.56» (15.11.2026): общий разбор суммы; пусто — 0, как раньше.
+  const parsed = value.trim() === '' ? 0 : parseAmount(value);
   const changed = Number.isFinite(parsed) && parsed !== Number(account.startBalance);
 
   function cancel() {

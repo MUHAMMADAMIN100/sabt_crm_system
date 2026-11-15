@@ -262,6 +262,11 @@ export default function ProjectDetailPage() {
       qc.setQueryData(['project', id], (old: any) => {
         if (!old) return old
         const updated = { ...old, ...data }
+        // smmData уходит только изменёнными ключами (15.11.2026) — в кэше
+        // сливаем их с прежними, а не заменяем весь объект.
+        if (data.smmData && typeof data.smmData === 'object') {
+          updated.smmData = { ...(old.smmData || {}), ...data.smmData }
+        }
         // Update manager object when managerId changes
         if (data.managerId !== undefined) {
           if (!data.managerId) {
@@ -307,7 +312,11 @@ export default function ProjectDetailPage() {
   })
 
   const handleSaveProject = () => {
-    updateProject.mutate({
+    // smmData — только изменённые ключи (15.11.2026): форма держит снимок,
+    // снятый при открытии, и раньше отправляла его целиком — откатывала цикл,
+    // норму и специалистов, которые за это время поменяли в «СММ». Сервер
+    // сам сливает присланные ключи с текущими.
+    const payload: Record<string, any> = {
       name: projectForm.name,
       projectType: projectForm.projectType,
       description: projectForm.description,
@@ -315,8 +324,17 @@ export default function ProjectDetailPage() {
       startDate: projectForm.startDate || undefined,
       endDate: projectForm.endDate || undefined,
       budget: projectForm.budget ? Number(projectForm.budget) : undefined,
-      smmData: projectForm.projectType === 'SMM' ? (projectForm.smmData || {}) : undefined,
-    })
+    }
+    if (projectForm.projectType === 'SMM') {
+      const before: Record<string, any> = (project?.smmData as any) || {}
+      const after: Record<string, any> = projectForm.smmData || {}
+      const changed: Record<string, any> = {}
+      for (const k of Object.keys(after)) {
+        if (JSON.stringify(after[k]) !== JSON.stringify(before[k])) changed[k] = after[k]
+      }
+      if (Object.keys(changed).length) payload.smmData = changed
+    }
+    updateProject.mutate(payload)
   }
 
   const updateSmmField = (key: string, value: string) =>

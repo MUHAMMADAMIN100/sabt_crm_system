@@ -13,8 +13,9 @@ export class RemoveMonthExpensesDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID()
   subscriptionId?: string;
 
-  /** Только определённый тип выплаты ЗП: 'advance' — авансы, 'bonus' — бонусы.
+  /** Только определённый тип выплаты ЗП: 'advance' — авансы, 'bonus' — бонусы,
+   *  'salary' — только выплаты зарплаты, без авансов и бонусов (15.11.2026).
    *  Без него удаляются все зарплатные операции месяца (полная отмена). */
-  @ApiPropertyOptional({ enum: ['advance', 'bonus'] }) @IsOptional() @IsIn(['advance', 'bonus'])
-  kind?: 'advance' | 'bonus';
+  @ApiPropertyOptional({ enum: ['advance', 'bonus', 'salary'] }) @IsOptional() @IsIn(['advance', 'bonus', 'salary'])
+  kind?: 'advance' | 'bonus' | 'salary';
 }

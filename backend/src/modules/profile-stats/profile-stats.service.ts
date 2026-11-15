@@ -149,7 +149,10 @@ export class ProfileStatsService {
       ),
       kind === 'tasks' ? Promise.resolve([]) : this.q(
         `SELECT to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS due,
-                (ci.status::text = 'published' AND ci."updatedAt"::date <= ci."publishDate"::date) AS "onTime"
+                -- День публикации по Душанбе (publishedAt; у старых — правка), 15.11.2026.
+                (ci.status::text = 'published'
+                 AND (COALESCE(ci."publishedAt", ci."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe')::date
+                     <= ci."publishDate"::date) AS "onTime"
          FROM content_plan_items ci
          JOIN projects p ON p.id = ci."projectId" AND p."projectType" = 'SMM'
          WHERE ci.status::text <> 'cancelled'

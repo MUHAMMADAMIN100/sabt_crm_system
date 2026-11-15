@@ -21,7 +21,8 @@ import { isTaskOverdue } from '@/lib/taskStatus'
 import { stripLeadingEmoji } from '@/lib/stripEmoji'
 import { useBackTarget } from '@/lib/navMemory'
 
-const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
+// pm_dev — руководитель направления разработки, как dev_director (15.11.2026).
+const PM_ROLES = ['admin', 'founder', 'smm_director', 'dev_director', 'pm_dev']
 const WORKER_ROLES = ['smm_specialist', 'designer', 'video_editor', 'sales_manager_smm', 'sales_manager_dev', 'developer', 'videographer', 'targetologist', 'employee']
 
 /** Доступные tech tags + их цвета. Можно вводить и свои — fallback цвет

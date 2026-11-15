@@ -128,7 +128,8 @@ describe('FinanceScheduler: срок подписки и напоминание 
     const notify = jest.spyOn(scheduler, 'notifyFinanceUsers').mockResolvedValue(1);
     const result = await (scheduler as any).checkSalaryDue('2026-11-10');
     expect(result).toEqual({ due: 1, notified: 1 });
-    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('salaryYm'), { ym: '2026-10', from: '2026-10-11', to: '2026-11-10' });
+    // Старые строки без salaryYm — по календарному месяцу, как в ведомости (15.11.2026).
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('salaryYm'), { ym: '2026-10', from: '2026-10-01', to: '2026-10-31' });
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Зарплата за октябрь не выплачена полностью',
       message: expect.stringContaining('К выплате осталось 2'),
@@ -148,6 +149,24 @@ describe('FinanceScheduler: срок подписки и напоминание 
     const notify = jest.spyOn(scheduler, 'notifyFinanceUsers').mockResolvedValue(1);
     expect(await (scheduler as any).checkSalaryDue('2026-11-15')).toEqual({ due: 0, notified: 0 });
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('FinanceScheduler: Telegram-текст экранируется (15.11.2026)', () => {
+  it('название проекта с «<» и «&» уходит в Telegram экранированным', async () => {
+    const sendToUser = jest.fn().mockResolvedValue(undefined);
+    const scheduler = new FinanceScheduler(
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn() } as any,
+      { find: jest.fn().mockResolvedValue([{ id: 'boss', role: 'founder', isActive: true, isBlocked: false }]) } as any,
+      { createIfNotRecent: jest.fn().mockResolvedValue(true) } as any,
+      { sendToUser } as any,
+    );
+    await scheduler.notifyFinanceUsers({ title: 'Оплата <b>', message: 'ООО «A&B» <script>', alertKey: 'k' });
+    expect(sendToUser).toHaveBeenCalledWith('boss', '💰 <b>Оплата &lt;b&gt;</b>\nООО «A&amp;B» &lt;script&gt;');
   });
 });
 

@@ -4,9 +4,10 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../../users/user.entity';
+import { User, UserRole } from '../../users/user.entity';
 import { Employee } from '../../employees/employee.entity';
 import { impersonationDenial } from '../impersonation';
+import { effectiveRoleOf } from '../roles.helper';
 import type { Request } from 'express';
 
 /** Берём JWT из httpOnly cookie (`auth_token`), а если её нет — пытаемся
@@ -86,12 +87,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       if (impersonationDenial(actor as any, user as any, targetEmp)) throw ended('not_allowed');
       return {
         ...user,
-        role: user.role,
+        role: effectiveRoleOf(user.role, targetEmp?.isSubAdmin),
         impersonatorId: actor.id,
         impersonatorName: actor.name,
         impersonatorRole: actor.role,
       };
     }
-    return { ...user, role: user.role };
+    return { ...user, role: await this.effectiveRole(user) };
+  }
+
+  /** Помощник администратора работает как admin — та же роль, что отдают
+   *  /auth/login и /auth/me (15.11.2026, см. effectiveRoleOf). Основателю и
+   *  админу лишний запрос не нужен. */
+  private async effectiveRole(user: User): Promise<UserRole> {
+    if (user.role === UserRole.FOUNDER || user.role === UserRole.ADMIN) return user.role;
+    const emp = await this.employeeRepo.findOne({
+      where: { userId: user.id },
+      select: { id: true, isSubAdmin: true },
+    });
+    return effectiveRoleOf(user.role, emp?.isSubAdmin);
   }
 }

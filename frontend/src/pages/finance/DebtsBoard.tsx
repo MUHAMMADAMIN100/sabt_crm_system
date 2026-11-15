@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, todayISO, apiErr, pluralRu } from './finlib';
+import { money, todayISO, apiErr, pluralRu, parseAmount } from './finlib';
 import { FinLoading, FinLoadError, FinModal, finConfirm, invalidateFinanceAll } from './FinKit';
 import { DebtFormModal } from './FinForms';
 import FinIcon from './FinIcon';
@@ -247,7 +247,8 @@ function DebtPayModal({ row, preset, onClose }: { row: FinDebtRow; preset?: numb
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
-  const amt = Math.round((parseFloat(amount.replace(',', '.').replace(/\s/g, '')) || 0) * 100) / 100;
+  // Общий разбор суммы (15.11.2026): «1,234.56» раньше читалось как 1.23.
+  const amt = parseAmount(amount) || 0;
   const over = amt > remaining + 0.005;
   const left = Math.max(0, Math.round((remaining - amt) * 100) / 100);
   const future = date > todayISO();

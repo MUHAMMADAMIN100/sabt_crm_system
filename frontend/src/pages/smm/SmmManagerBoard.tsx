@@ -54,8 +54,9 @@ export default function SmmManagerBoard({ cardById }: { cardById: (id: string) =
   const unassigned = data?.unassigned ?? []
   const maxLoad = Math.max(1, ...managers.map(m => m.projects.length), unassigned.length)
 
-  const role = useAuthStore(s => s.user?.role)
-  const canReassign = role === 'founder'
+  // Основная или вторая роль (15.11.2026) — так проверяет сервер.
+  const user = useAuthStore(s => s.user)
+  const canReassign = [user?.role, (user as any)?.secondaryRole].includes('founder')
 
   const dragRef = useRef<{ project: Proj; fromId: string | null } | null>(null)
   const [overCol, setOverCol] = useState<string | null>(null)

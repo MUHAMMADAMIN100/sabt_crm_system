@@ -5,13 +5,14 @@ export type RiskLevel = 'green' | 'yellow' | 'red';
 export interface PlanFactRow {
   contentType: string;
   planned: number;       // позиций в контент-плане (status != cancelled)
-  actual: number;        // фактически опубликовано
+  actual: number;        // фактически опубликовано (за всё время)
+  actualMonth: number;   // опубликовано в текущем месяце по Душанбе (15.11.2026)
   cancelled: number;     // отменено
   remaining: number;     // ещё не выпущено и не отменено
-  tariffLimit: number | null; // лимит из тарифа (null если тариф не задан)
-  percent: number;       // % выполнения = actual / max(planned, tariffLimit)
-  overuse: number;       // насколько фактический выпуск превысил лимит тарифа
-  underuse: number;      // насколько недотянули до лимита тарифа
+  tariffLimit: number | null; // месячный лимит тарифа (null — тарифа нет или тип в него не входит)
+  percent: number;       // с лимитом: actualMonth / tariffLimit; без лимита: actual / planned
+  overuse: number;       // превышение месячного лимита в текущем месяце
+  underuse: number;      // недобор до месячного лимита в текущем месяце
 }
 
 export interface EmployeeWorkload {

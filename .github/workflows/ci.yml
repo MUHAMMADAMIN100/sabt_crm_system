@@ -1,0 +1,53 @@
+# Сборка и тесты на серверах GitHub при каждом пуше и PR (15.11.2026).
+# Локально Node не нужен: если сборка или тесты упали — ветка красная,
+# и мержить в main (а значит выкатывать на Railway) нельзя.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — build + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # Монорепо (npm workspaces): lock-файл в корне.
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Build (nest build = проверка типов)
+        run: npm run build --workspace backend
+      - name: Unit tests
+        run: npm test --workspace backend -- --ci
+        env:
+          TZ: UTC
+
+  frontend:
+    name: Frontend — build + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Build (tsc + vite build)
+        run: npm run build --workspace frontend
+        env:
+          VITE_API_URL: https://api.example.invalid
+      - name: Unit tests
+        run: npm test --workspace frontend

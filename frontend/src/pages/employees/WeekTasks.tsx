@@ -114,7 +114,10 @@ export default function WeekTasks() {
   // Публикации СММ в неделе — только тем, кому открыт раздел «СММ».
   // Руководитель разработки видит здесь задачи без контент-плана: календарь
   // СММ команде разработки не отдаётся (14.10.2026).
-  const seesSmm = canSeeSmmSection(useAuthStore(s => s.user?.role))
+  // Вторая роль тоже считается (15.11.2026), как в меню и на сервере.
+  const myRole = useAuthStore(s => s.user?.role)
+  const mySecondRole = useAuthStore(s => s.user?.secondaryRole)
+  const seesSmm = canSeeSmmSection(myRole, mySecondRole)
   const narrow = useNarrow(900)
   // Неделя, «Кого показать» и поиск — в адресе с заменой шага (08.11.2026):
   // вернулись «Назад» из карточки сотрудника — та же неделя и тот же отбор.

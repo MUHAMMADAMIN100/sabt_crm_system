@@ -26,6 +26,12 @@ describe('salesDeadlineItem — исключение, как у разработ
   it('закрыта задача с прошлым сроком (срок вне периода) — пункт есть', () => {
     expect(salesDeadlineItem({ done: 1, onTime: 0, withDeadline: 1 }, 0, 85)).toMatchObject({ value: 0, percent: 0 });
   });
+
+  it('задачи без срока в долю не входят (15.11.2026)', () => {
+    // 5 закрыто, со сроком 2, обе в срок — 100 %, а не 3/5 «бесплатных».
+    expect(salesDeadlineItem({ done: 5, onTime: 2, withDeadline: 2 }, 2, 85))
+      .toMatchObject({ value: 100, percent: 100, done: true });
+  });
 });
 
 describe('salesActivityItem — активные дни продаж', () => {

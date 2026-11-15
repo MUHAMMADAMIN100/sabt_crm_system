@@ -10,11 +10,13 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { UserRole } from '../users/user.entity';
-import { getSalesSegment } from '../../common/sales-segment';
+import { getSalesSegmentOfUser, salesRoleOf } from '../../common/sales-segment';
 
-/** Направление лида для роли МП (как enum-значение ClientLeadDirection). */
-function leadDirectionFor(role?: string): ClientLeadDirection | undefined {
-  return getSalesSegment(role)?.leadDirection as ClientLeadDirection | undefined;
+/** Направление лида для МП (как enum-значение ClientLeadDirection) — по
+ *  основной ИЛИ второй роли (15.11.2026): МП второй ролью без фильтра видел
+ *  лиды обоих направлений. */
+function leadDirectionFor(user?: { role?: string | null; secondaryRole?: string | null } | null): ClientLeadDirection | undefined {
+  return getSalesSegmentOfUser(user)?.leadDirection as ClientLeadDirection | undefined;
 }
 
 @ApiTags('Client Leads')
@@ -28,7 +30,7 @@ export class ClientsController {
   @Get('stats')
   @RequirePerm('clients.view')
   getStats(@Request() req) {
-    return this.service.stats(leadDirectionFor(req.user?.role));
+    return this.service.stats(leadDirectionFor(req.user));
   }
 
   @Get('kpi')
@@ -38,7 +40,7 @@ export class ClientsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.service.kpi(req.user.id, leadDirectionFor(req.user?.role), from, to);
+    return this.service.kpi(req.user.id, leadDirectionFor(req.user), from, to);
   }
 
   /** KPI всех менеджеров продаж — для виджета на дашборде основателя.
@@ -73,9 +75,10 @@ export class ClientsController {
     // иначе founder не увидит правильный сегмент чужого МП.
     const target = await this.service.findOwnerInfo(userId);
     if (!target) return null;
-    const direction = target.role === 'sales_manager_smm'
+    const targetSales = salesRoleOf(target);
+    const direction = targetSales === 'sales_manager_smm'
       ? 'smm' as any
-      : target.role === 'sales_manager_dev'
+      : targetSales === 'sales_manager_dev'
         ? 'development' as any
         : undefined;
     return this.service.kpi(userId, direction, from, to);
@@ -94,14 +97,14 @@ export class ClientsController {
   ) {
     return this.service.findAll({
       search, status, interest, sphere, ownerId, source,
-      direction: leadDirectionFor(req.user?.role),
+      direction: leadDirectionFor(req.user),
     });
   }
 
   @Get(':id')
   @RequirePerm('clients.view')
   findOne(@Param('id') id: string, @Request() req) {
-    return this.service.findOne(id, leadDirectionFor(req.user?.role));
+    return this.service.findOne(id, leadDirectionFor(req.user));
   }
 
   @Post()
@@ -109,7 +112,7 @@ export class ClientsController {
   create(@Body() dto: CreateClientDto, @Request() req) {
     // Направление лида задаётся автоматически по сегменту менеджера-создателя.
     // meetingTaskId выставляется только сервером — игнорируем то, что прислал фронт.
-    const direction = leadDirectionFor(req.user?.role);
+    const direction = leadDirectionFor(req.user);
     return this.service.create(
       { ...(dto as any), direction: direction ?? dto.direction },
       req.user.id,

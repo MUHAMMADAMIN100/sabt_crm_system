@@ -1,7 +1,7 @@
 import { projectListFields } from '../../common/project-list-fields';
 import { shootPlaceKind, shootPlaceLabel } from '../../common/shoot-place';
 import { tiktokNeeded } from '../../common/tiktok';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional, OnModuleInit } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { dushanbeToday, VACATION_NOW_SQL } from '../employees/vacation';
@@ -19,6 +19,28 @@ import { Project } from '../projects/project.entity';
 import { User, UserRole } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
 import { emitTasksChanged as sendTasksChanged, TasksChangedPayload } from '../gateway/tasks-changed';
+import { hasGrant } from '../auth/permissions';
+import {
+  AccessUser, assertCanEditSmmProject, assertCanViewProject, canViewProjectRow, directionTypesOf,
+  hasAnyRole, isSmmManagement, isTop, loadAccessRow, ownProjectSql, patchSmmData,
+} from '../projects/project-access';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** publishedAt (15.11.2026): когда карточка стала «опубликовано/готово».
+ *  Ставим в момент перехода в published, снимаем, когда статус уходит из
+ *  published. По этой отметке KPI считает «в срок»
+ *  (COALESCE(c."publishedAt", c."updatedAt")) — updatedAt сдвигался любой
+ *  правкой карточки. Повторный published отметку не двигает. */
+export function publishedAtPatch(
+  nextStatus: string | null | undefined, prevStatus: string | null | undefined, now = new Date(),
+): { publishedAt?: Date | null } {
+  if (!nextStatus) return {};
+  const PUB = 'published';
+  if (nextStatus === PUB && prevStatus !== PUB) return { publishedAt: now };
+  if (nextStatus !== PUB && prevStatus === PUB) return { publishedAt: null };
+  return {};
+}
 
 export interface ContentPlanFilters {
   projectId?: string;
@@ -71,7 +93,7 @@ export interface ShootChangedEvent {
 }
 
 @Injectable()
-export class ContentPlanService {
+export class ContentPlanService implements OnModuleInit {
   private readonly logger = new Logger(ContentPlanService.name);
 
   constructor(
@@ -80,6 +102,40 @@ export class ContentPlanService {
     private gateway: AppGateway,
     @Optional() private events?: EventEmitter2,
   ) {}
+
+  /** Идемпотентно (15.11.2026): колонка publishedAt — момент публикации
+   *  (см. publishedAtPatch) и разовое заполнение у уже опубликованных:
+   *  лучшее, что есть, — updatedAt (timestamp в UTC). Условие
+   *  "publishedAt" IS NULL делает повторный запуск пустым. */
+  async onModuleInit() {
+    try {
+      await this.repo.manager.query(
+        `ALTER TABLE content_plan_items ADD COLUMN IF NOT EXISTS "publishedAt" timestamptz NULL`,
+      );
+      await this.repo.manager.query(
+        `UPDATE content_plan_items
+            SET "publishedAt" = ("updatedAt" AT TIME ZONE 'UTC')
+          WHERE status = 'published' AND "publishedAt" IS NULL`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`content_plan_items.publishedAt: ${e?.message || e}`);
+    }
+  }
+
+  /** Править SMM-контент проекта может руководство SMM или «свой»
+   *  (менеджер, участник, назначенный специалист) — 15.11.2026. Раньше
+   *  SMM-специалист правил, расставлял и очищал контент ЛЮБОГО SMM-проекта.
+   *  production — производственная операция: продюсеру разрешена везде
+   *  (его права — только производство, их проверяют вызывающие).
+   *  Без actor — внутренний вызов, не ограничиваем. */
+  private async assertOwnContent(
+    projectId: string | null | undefined, actor?: AccessUser | null, opts: { production?: boolean } = {},
+  ): Promise<void> {
+    if (!actor || !projectId) return;
+    if (isSmmManagement(actor)) return;
+    if (opts.production && hasAnyRole(actor, ['producer'])) return;
+    await assertCanEditSmmProject(this.repo.manager, actor, projectId);
+  }
 
   /** Съёмка изменилась (день, время, место, исполнитель, статус). Слушает
    *  ProducerService: если видеографу уже ушло сообщение о ней — пришлёт
@@ -122,7 +178,7 @@ export class ContentPlanService {
       const today = dushanbeToday();
       for (const s of open) {
         const day = this.dayOf(s.publishDate);
-        const set: Partial<ContentPlanItem> = { status: ContentPlanStatus.PUBLISHED };
+        const set: Partial<ContentPlanItem> = { status: ContentPlanStatus.PUBLISHED, ...publishedAtPatch(ContentPlanStatus.PUBLISHED, s.status) };
         if (day && day > today) set.publishDate = new Date(`${today}T00:00:00`);
         await this.repo.update(s.id, set);
         await this.logItemAction(s, ActivityAction.TASK_STATUS,
@@ -362,14 +418,16 @@ export class ContentPlanService {
        WHERE p.id = ci."projectId"
          AND ci."prepStage" = 'shoot'
          AND ci."publishDate" IS NOT NULL
-         AND ci."publishDate"::date >= CURRENT_DATE
+         AND ci."publishDate"::date >= $2::date
          AND ci.status NOT IN ('published', 'cancelled')
          AND ci."assigneeId" IS DISTINCT FROM $1
          AND (CASE WHEN jsonb_typeof(p."smmData"->'videographerIds') = 'array'
                    THEN jsonb_array_length(p."smmData"->'videographerIds')
                    ELSE 0 END) = 0
        RETURNING ci.id`,
-      [userId],
+      // «Сегодня» — по Душанбе (15.11.2026): CURRENT_DATE базы в UTC, и до
+      // 05:00 по Душанбе вчерашние съёмки ещё считались будущими.
+      [userId, dushanbeToday()],
     ).catch((e: any) => { this.logger.warn(`setDefaultVideographer backfill failed: ${e?.message || e}`); return []; });
 
     this.emitTasksChanged(undefined, { actorId: actor.id });
@@ -472,7 +530,8 @@ export class ContentPlanService {
        LEFT JOIN LATERAL (
          SELECT s.status::text AS status,
                 to_char(s."publishDate"::date, 'YYYY-MM-DD') AS d,
-                to_char((s."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD') AS done_at
+                -- Когда сняли — по отметке публикации (15.11.2026), иначе updatedAt.
+                to_char(COALESCE(s."publishedAt", s."updatedAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe', 'YYYY-MM-DD') AS done_at
            FROM content_plan_items s
           WHERE ci."prepStage" = 'edit' AND s."shootForItemId" = ci."shootForItemId" AND s.id <> ci.id
             AND COALESCE(s."prepStage", 'shoot') = 'shoot'
@@ -530,6 +589,7 @@ export class ContentPlanService {
       upd.status = ContentPlanStatus.PLANNED;              // перенесённая — снова в работе
     }
     if (!Object.keys(upd).length) return { id, status: item.status };
+    Object.assign(upd, publishedAtPatch(upd.status, item.status));
     await this.repo.update(id, upd);
     if (upd.status === ContentPlanStatus.PUBLISHED && item.status !== ContentPlanStatus.PUBLISHED) {
       await this.closeShootAfterEdit(item, { id: userId });
@@ -557,7 +617,10 @@ export class ContentPlanService {
    *  что была у единственной съёмки: при переносе/создании родителя с датой:
    *  — карточки нет (удалили) → создаём заново на своём смещении;
    *  — карточка есть НА ДАТЕ → не трогаем (двигается независимо от родителя);
-   *  — карточка есть БЕЗ даты (сняли в «Не запланировано») → возвращаем. */
+   *  — карточка есть БЕЗ даты (сняли в «Не запланировано») → возвращаем.
+   *  15.11.2026: готовые (published) и отменённые карточки не трогаем вовсе —
+   *  ни переносом на старт цикла, ни сбросом в «запланировано»; под уже
+   *  опубликованный или отменённый родитель подготовку заново не заводим. */
   private async ensurePrepForItem(
     parent: ContentPlanItem | null,
     // Авторасстановка: съёмка — за shootLead дней в своё время, монтаж и
@@ -568,12 +631,21 @@ export class ContentPlanService {
     if (parent.shootForItemId) return;                    // сама подготовка — не плодим задачу под задачей
     const stages = this.prepStagesFor(parent.contentType);
     if (!stages.length) return;
+    const isClosed = (st: any) => st === ContentPlanStatus.PUBLISHED || st === ContentPlanStatus.CANCELLED;
     if (!parent.publishDate) {
-      // Родителя вернули в «Не запланировано» → карточки подготовки должны
-      // исчезнуть с календаря (иначе остаются сиротами). Появятся при переносе.
-      await this.repo.delete({ shootForItemId: parent.id });
+      // Родителя вернули в «Не запланировано» → НЕЗАКРЫТЫЕ карточки подготовки
+      // исчезают с календаря (иначе остаются сиротами), вместе с их задачами.
+      // Готовые остаются (15.11.2026): работа сделана и идёт в KPI.
+      try {
+        const prep = await this.repo.find({ where: { shootForItemId: parent.id } });
+        const drop = prep.filter(x => x.status !== ContentPlanStatus.PUBLISHED);
+        await this.deleteWithTasks(drop);
+      } catch (e) {
+        this.logger.warn(`ensurePrepForItem: подготовка ${parent.id} не убрана: ${(e as Error).message}`);
+      }
       return;
     }
+    const parentClosed = isClosed(parent.status);
     try {
       // Клэмп по началу цикла: подготовка не должна уходить раньше старта
       // цикла проекта (рилс в первый день цикла → съёмка в тот же день).
@@ -600,18 +672,22 @@ export class ContentPlanService {
 
         if (cur) {
           if (!cur.prepStage) await this.repo.update(cur.id, { prepStage: st.stage });
-          if (!cur.assigneeId) {                          // карточка из прошлого — дозаполняем исполнителя
+          if (!cur.assigneeId && !isClosed(cur.status)) {  // карточка из прошлого — дозаполняем исполнителя
             const uid = await this.resolvePrepAssignee(st.stage, project);
             if (uid) await this.repo.update(cur.id, { assigneeId: uid });
           }
+          // Готовую или отменённую карточку не двигаем и статус не сбрасываем.
+          if (isClosed(cur.status)) continue;
           if (cur.publishDate) {
             // На дате — двигается независимо; трогаем ТОЛЬКО если уехала
-            // раньше старта цикла (невалидно) — подтягиваем на старт.
+            // раньше старта цикла (невалидно) — подтягиваем на старт, статус
+            // остаётся прежним.
             if (cycleStart && new Date(cur.publishDate) < cycleStart) {
-              await this.repo.update(cur.id, { publishDate: cycleStart, status: ContentPlanStatus.PLANNED });
+              await this.repo.update(cur.id, { publishDate: cycleStart });
             }
             continue;
           }
+          if (parentClosed) continue;                     // родитель закрыт — в календарь не возвращаем
           await this.repo.update(cur.id, {                // была снята с даты — возвращаем
             publishDate: date,
             publishTime: prepTime,
@@ -619,6 +695,8 @@ export class ContentPlanService {
           });
           continue;
         }
+
+        if (parentClosed) continue;                       // под закрытый родитель подготовку не заводим
 
         await this.repo.save(this.repo.create({           // карточки нет — создаём
           assigneeId: await this.resolvePrepAssignee(st.stage, project),
@@ -638,11 +716,42 @@ export class ContentPlanService {
     }
   }
 
-  async findAll(f: ContentPlanFilters = {}) {
+  /** Удалить карточки вместе с их авто-задачами (15.11.2026): раньше
+   *  удаление заготовки или подготовки оставляло задачу-сироту в канбане. */
+  private async deleteWithTasks(items: Array<Pick<ContentPlanItem, 'id' | 'taskId'>>): Promise<number> {
+    if (!items.length) return 0;
+    const taskIds = items.map(i => i.taskId).filter((x): x is string => !!x);
+    if (taskIds.length) {
+      await this.taskRepo.delete(taskIds).catch((e: any) =>
+        this.logger.warn(`Задачи удалённых карточек не удалены: ${e?.message || e}`));
+    }
+    await this.repo.delete(items.map(i => i.id));
+    return items.length;
+  }
+
+  async findAll(f: ContentPlanFilters = {}, user?: AccessUser | null) {
     const qb = this.repo.createQueryBuilder('c')
       .leftJoinAndSelect('c.assignee', 'assignee')
       .leftJoinAndSelect('c.pm', 'pm')
       .leftJoin('c.project', 'project').addSelect(projectListFields('project'));
+
+    // Доступ (15.11.2026, раньше — TODO «любой авторизованный»): план
+    // проекта — тем, кто видит проект (project-access); без projectId —
+    // только видимые проекты: направление, свои, свои карточки.
+    if (user) {
+      if (f.projectId) {
+        if (!UUID_RE.test(f.projectId)) return [];
+        await assertCanViewProject(this.repo.manager, user, f.projectId);
+      } else if (!isTop(user)) {
+        const dir = directionTypesOf(user);
+        if (dir) {
+          qb.andWhere(`(project.projectType IN (:...cpDir) OR c.assigneeId = :cpUid OR ${ownProjectSql('project', 'cpUid')})`,
+            { cpDir: dir, cpUid: user.id });
+        } else if (!hasGrant(user as any, 'projects.view')) {
+          qb.andWhere(`(c.assigneeId = :cpUid OR ${ownProjectSql('project', 'cpUid')})`, { cpUid: user.id });
+        }
+      }
+    }
 
     if (f.projectId) qb.andWhere('c.projectId = :pid', { pid: f.projectId });
     if (f.status) qb.andWhere('c.status = :st', { st: f.status });
@@ -693,17 +802,45 @@ export class ContentPlanService {
     return items;
   }
 
+  /** Карточка с проектом — только «списочные» поля проекта (15.11.2026):
+   *  раньше уезжал проект целиком — бюджет, абонплата, оплачено, бриф,
+   *  ссылка для клиента и контакты (common/project-list-fields). */
   async findOne(id: string) {
-    const item = await this.repo.findOne({
-      where: { id },
-      relations: ['assignee', 'pm', 'project'],
-    });
+    if (typeof id !== 'string' || !UUID_RE.test(id)) throw new NotFoundException('Content plan item not found');
+    const item = await this.repo.createQueryBuilder('c')
+      .leftJoinAndSelect('c.assignee', 'assignee')
+      .leftJoinAndSelect('c.pm', 'pm')
+      .leftJoin('c.project', 'project').addSelect(projectListFields('project'))
+      .where('c.id = :id', { id })
+      .getOne();
     if (!item) throw new NotFoundException('Content plan item not found');
     return item;
   }
 
-  async create(dto: Partial<ContentPlanItem>, createdById?: string) {
+  /** Видит ли пользователь карточку: исполнитель или тот, кто видит проект. */
+  private async assertCanViewItem(item: Pick<ContentPlanItem, 'projectId' | 'assigneeId'>, user?: AccessUser | null) {
+    if (!user) return;
+    if (user.id && item.assigneeId === user.id) return;
+    const row = await loadAccessRow(this.repo.manager, item.projectId);
+    if (!row || !(await canViewProjectRow(this.repo.manager, user, row))) {
+      throw new ForbiddenException('Нет доступа к этому проекту');
+    }
+  }
+
+  /** GET /content-plan/:id — с проверкой доступа (15.11.2026). */
+  async findOneForUser(id: string, user?: AccessUser | null) {
+    const item = await this.findOne(id);
+    await this.assertCanViewItem(item, user);
+    return item;
+  }
+
+  async create(dto: Partial<ContentPlanItem>, createdById?: string, actor?: AccessUser | null) {
     await this.assertSmmProject([dto.projectId]);
+    // Заводить контент — в своём проекте (руководство — в любом), 15.11.2026.
+    await this.assertOwnContent(dto.projectId, actor);
+    // Служебные отметки ставит сервер.
+    delete (dto as any).publishedAt;
+    if (dto.status === ContentPlanStatus.PUBLISHED) (dto as any).publishedAt = new Date();
     const item = this.repo.create(dto);
     const saved = await this.repo.save(item);
     // Авто-создание задачи под этот элемент (если есть assignee + дата).
@@ -725,7 +862,10 @@ export class ContentPlanService {
   async createMany(items: Partial<ContentPlanItem>[], createdById?: string) {
     if (!items.length) return [];
     await this.assertSmmProject(items.map(d => d.projectId));
-    const entities = items.map(d => this.repo.create(d));
+    const entities = items.map(d => this.repo.create({
+      ...d,
+      ...(d.status === ContentPlanStatus.PUBLISHED ? { publishedAt: new Date() } : {}),
+    }));
     const saved = await this.repo.save(entities);
     // Параллельно создаём задачи. Игнорируем ошибки отдельных элементов —
     // план уже сохранён, задачи это вторичный артефакт.
@@ -749,9 +889,16 @@ export class ContentPlanService {
     return saved;
   }
 
-  async update(id: string, dto: Partial<ContentPlanItem>, updatedById?: string) {
+  async update(id: string, dto: Partial<ContentPlanItem>, updatedById?: string, actor?: AccessUser | null) {
     const before = await this.findOne(id);
-    const { id: _id, createdAt, updatedAt, ...patch } = dto as any;
+    // Правка — в своём проекте (и в проекте, куда переносят), 15.11.2026.
+    await this.assertOwnContent(before.projectId, actor);
+    const { id: _id, createdAt, updatedAt, publishedAt: _pa, project: _p, assignee: _a, pm: _pm, ...patch } = dto as any;
+    if (patch.projectId && patch.projectId !== before.projectId) {
+      await this.assertSmmProject([patch.projectId]);
+      await this.assertOwnContent(patch.projectId, actor);
+    }
+    Object.assign(patch, publishedAtPatch(patch.status, before.status));
     await this.repo.update(id, patch);
     const after = await this.findOne(id);
     // Синхронизируем связанную задачу — title/assignee/dates могли измениться.
@@ -786,7 +933,7 @@ export class ContentPlanService {
    *  цикл (незапланированные + поставленные на даты В ОКНЕ цикла) держим ровно
    *  норму: лишние удаляем, недостающие создаём как незапланированные. Так
    *  «в корзине + в календаре» всегда не больше нормы. */
-  async smartGenerateStubs(projectId: string, reels: number, posts: number) {
+  async smartGenerateStubs(projectId: string, reels: number, posts: number, actor?: AccessUser | null) {
     if (!projectId) return { ok: true };
     const norm = (v: any) => Math.max(0, Math.min(999, Math.trunc(Number(v) || 0)));
     const project = await this.repo.manager.getRepository(Project).findOne({ where: { id: projectId } }).catch(() => null);
@@ -795,6 +942,8 @@ export class ContentPlanService {
     if (project && project.projectType !== 'SMM') {
       throw new BadRequestException('Рилсы и посты заводятся только в SMM-проектах');
     }
+    // Норму своего проекта (15.11.2026): специалист правит только свои.
+    await this.assertOwnContent(projectId, actor);
     const anchor = Number(project?.smmData?.cycleStartDay);
     const win = (Number.isFinite(anchor) && anchor >= 1) ? this.currentCycleBounds(anchor) : null;
     const changed = await this.reconcileStub(projectId, ContentItemType.REEL, 'Рилс', norm(reels), win)
@@ -807,29 +956,50 @@ export class ContentPlanService {
 
   /** Довести суммарное число авто-заготовок этого типа за цикл ровно до нормы.
    *  Считаем: без даты ИЛИ с датой в окне цикла [win.start, win.end]. Лишние
-   *  удаляем (сначала незапланированные, потом лишние в календаре), недостающие
-   *  создаём как незапланированные. Трогаем только авто-заготовки («Рилс N» /
-   *  «Пост N») — реальный контент не затрагиваем. */
+   *  удаляем, недостающие создаём как незапланированные. Трогаем только
+   *  авто-заготовки («Рилс N» / «Пост N») — реальный контент не затрагиваем.
+   *  15.11.2026: опубликованные не удаляем никогда (они и так считаются в
+   *  норму); удаляем сначала незапланированные, потом поставленные на дату,
+   *  но только в статусе «запланировано», начиная с самых поздних. Заготовку,
+   *  у которой уже сделана подготовка (снято/нарисовано), не трогаем. Вместе
+   *  с заготовкой уходят её карточки подготовки и авто-задачи. */
   /** Возвращает, сколько заготовок удалено или создано. */
   private async reconcileStub(projectId: string, type: ContentItemType, label: string, norm: number, win: { start: string; end: string } | null): Promise<number> {
     const params: any[] = [projectId, String(type), label];
-    let dateCond = `"publishDate" IS NULL`;
+    let dateCond = `ci."publishDate" IS NULL`;
     if (win) {
       params.push(win.start, win.end);
-      dateCond = `("publishDate" IS NULL OR ("publishDate"::date >= $4::date AND "publishDate"::date <= $5::date))`;
+      dateCond = `(ci."publishDate" IS NULL OR (ci."publishDate"::date >= $4::date AND ci."publishDate"::date <= $5::date))`;
     }
-    // Порядок: сначала оставляем поставленные на дату (в календаре), лишние
-    // удаляем начиная с незапланированных.
-    const auto: any[] = await this.repo.manager.query(
-      `SELECT id FROM content_plan_items
-       WHERE "projectId" = $1 AND "contentType"::text = $2
-         AND topic ~ ('^' || $3 || ' [0-9]+$') AND ${dateCond}
-       ORDER BY ("publishDate" IS NULL), id`,
-      params,
-    ).catch(() => []);
+    // Порядок кандидатов на удаление: незапланированные, затем поставленные
+    // на дату — от самых поздних к ранним.
+    const auto: Array<{ id: string; taskId: string | null; status: string; undated: boolean; prepDone: boolean }> =
+      await this.repo.manager.query(
+        `SELECT ci.id, ci."taskId", ci.status::text AS status, (ci."publishDate" IS NULL) AS undated,
+                EXISTS (SELECT 1 FROM content_plan_items s
+                         WHERE s."shootForItemId" = ci.id AND s.status = 'published') AS "prepDone"
+           FROM content_plan_items ci
+          WHERE ci."projectId" = $1 AND ci."contentType"::text = $2 AND ci."shootForItemId" IS NULL
+            AND ci.topic ~ ('^' || $3 || ' [0-9]+$') AND ${dateCond}
+          ORDER BY ci."publishDate" DESC NULLS FIRST, ci.id DESC`,
+        params,
+      ).catch(() => []);
     if (auto.length > norm) {
-      const del = auto.slice(norm).map((r: any) => r.id);
-      if (del.length) await this.repo.delete(del).catch(() => {});
+      const surplus = auto.length - norm;
+      const deletable = auto.filter(r => r.status !== ContentPlanStatus.PUBLISHED && !r.prepDone
+        && (r.undated || r.status === ContentPlanStatus.PLANNED));
+      const del = deletable.slice(0, surplus);
+      if (!del.length) return 0;
+      const ids = del.map(r => r.id);
+      const prep: Array<{ id: string; taskId: string | null }> = await this.repo.manager.query(
+        `SELECT id, "taskId" FROM content_plan_items WHERE "shootForItemId" = ANY($1::uuid[])`, [ids],
+      ).catch(() => []);
+      try {
+        await this.deleteWithTasks([...prep, ...del]);
+      } catch (e) {
+        this.logger.warn(`reconcileStub: заготовки не удалены: ${(e as Error).message}`);
+        return 0;
+      }
       return del.length;
     } else if (auto.length < norm) {
       const rows: ContentPlanItem[] = [];
@@ -841,11 +1011,20 @@ export class ContentPlanService {
   }
 
   /** Умный календарь: полностью очистить контент проекта (для сброса теста).
-   *  Удаляет ВСЕ элементы content_plan_items проекта. Доску не затрагивает. */
-  async smartClearProject(projectId: string) {
+   *  Удаляет ВСЕ элементы content_plan_items проекта. Доску не затрагивает.
+   *  15.11.2026: только руководство SMM или свой проект; задачи карточек —
+   *  вместе с ними. */
+  async smartClearProject(projectId: string, actor?: AccessUser | null) {
     if (!projectId) return { ok: true, deleted: 0 };
+    await this.assertOwnContent(projectId, actor);
+    const taskRows: Array<{ taskId: string }> = await this.repo.manager.query(
+      `SELECT "taskId" FROM content_plan_items WHERE "projectId" = $1 AND "taskId" IS NOT NULL`, [projectId],
+    ).catch(() => []);
     const res = await this.repo.delete({ projectId }).catch(() => ({ affected: 0 } as any));
-    if ((res?.affected ?? 0) > 0) this.emitTasksChanged(projectId);
+    if (taskRows.length && (res?.affected ?? 0) > 0) {
+      await this.taskRepo.delete(taskRows.map(r => r.taskId)).catch(() => undefined);
+    }
+    if ((res?.affected ?? 0) > 0) this.emitTasksChanged(projectId, taskRows.length ? { kind: 'delete' } : {});
     return { ok: true, deleted: res?.affected ?? 0 };
   }
 
@@ -878,8 +1057,15 @@ export class ContentPlanService {
     }
   }
 
-  /** История одной задачи контент-плана: перенос, закрытие, отмена. */
-  async itemHistory(id: string) {
+  /** История одной задачи контент-плана: перенос, закрытие, отмена.
+   *  15.11.2026: только тем, кто видит карточку (исполнитель или видит проект). */
+  async itemHistory(id: string, user?: AccessUser | null) {
+    if (user) {
+      if (typeof id !== 'string' || !UUID_RE.test(id)) return [];
+      const item = await this.repo.findOne({ where: { id }, select: ['id', 'projectId', 'assigneeId'] as any });
+      if (!item) return [];
+      await this.assertCanViewItem(item, user);
+    }
     const rows: any[] = await this.repo.manager.query(
       `SELECT a.action::text AS action, a.details AS details, a."userName" AS "userName",
               u.name AS "userFullName",
@@ -903,6 +1089,22 @@ export class ContentPlanService {
     if (actor && isProductionOnly(actor) && !before?.shootForItemId) {
       throw new ForbiddenException('Продюсер правит производство: съёмки, монтаж и дизайн. Публикации ведёт СММ-специалист');
     }
+    // Свой проект (15.11.2026): SMM-специалист правит календарь только своих
+    // проектов; руководство — любых; продюсер — производство любых.
+    if (actor && before) {
+      await this.assertOwnContent(before.projectId, actor, { production: !!before.shootForItemId });
+    }
+    // Окно переноса для продюсера — то же, что у исполнителя в «Моих
+    // задачах» (updateMyWork): не в прошлое и не позже выхода публикации.
+    // В коммите bdff091 это было обещано, но проверялось только там.
+    if (actor && before?.shootForItemId && isProductionOnly(actor) && patch.publishDate) {
+      const d = String(patch.publishDate).slice(0, 10);
+      if (!ISO_DAY_RE.test(d)) throw new BadRequestException('Некорректная дата');
+      if (d < dushanbeToday()) throw new BadRequestException('Нельзя перенести в прошлое');
+      const parent = await this.repo.findOne({ where: { id: before.shootForItemId } });
+      const out = this.dayOf(parent?.publishDate);
+      if (out && d > out) throw new BadRequestException(`Нельзя позже дня выхода (${out.slice(8, 10)}.${out.slice(5, 7)})`);
+    }
     const set: Partial<ContentPlanItem> = {};
     // Отменённой съёмке назначили новый день — она снова в работе (09.11.2026):
     // так съёмку, отменённую клиентом, переназначают, не заводя новую.
@@ -924,6 +1126,8 @@ export class ContentPlanService {
     const tiktokChanged = 'tiktok' in patch && !!before && !before.shootForItemId
       && before.contentType !== ContentItemType.STORY && !!patch.tiktok !== !!before.tiktokAt;
     if (tiktokChanged) set.tiktokAt = patch.tiktok ? new Date() : null;
+    // Отметка публикации (15.11.2026) — см. publishedAtPatch.
+    Object.assign(set, publishedAtPatch(set.status, before?.status));
     if (Object.keys(set).length) await this.repo.update(id, set);
     // Авто-съёмка при переносе рилса: если съёмки нет (удалили) или она без даты (сняли) —
     // создаём/возвращаем на X−1. Если съёмка на дате — НЕ двигаем (остаётся на месте).
@@ -955,12 +1159,15 @@ export class ContentPlanService {
     return { ok: true };
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor?: AccessUser | null) {
     const item = await this.findOne(id);
+    // Удалять — в своём проекте (руководство — в любом), 15.11.2026.
+    await this.assertOwnContent(item.projectId, actor);
     // Удаляем связанную задачу (если ещё жива).
     await this.removeTaskForItem(item);
-    // Каскад: удаляем авто-съёмку этого рилса (если есть).
-    await this.repo.delete({ shootForItemId: id });
+    // Каскад: удаляем авто-съёмку этого рилса (если есть) вместе с её задачами.
+    const prep = await this.repo.find({ where: { shootForItemId: id } });
+    await this.deleteWithTasks(prep);
     await this.repo.remove(item);
     // Шлём и без задачи: карточка пропадает из умного календаря у всех.
     this.emitTasksChanged(item.projectId, item.taskId ? { taskId: item.taskId, kind: 'delete' } : {});
@@ -969,7 +1176,9 @@ export class ContentPlanService {
 
   /** План-факт по проекту: сколько чего запланировано vs опубликовано.
    *  Используется в Wave 5 (план-факт) и в риск-скоринге. */
-  async getPlanFactByProject(projectId: string) {
+  async getPlanFactByProject(projectId: string, user?: AccessUser | null) {
+    // Только тем, кто видит проект (15.11.2026).
+    if (user) await assertCanViewProject(this.repo.manager, user, projectId);
     const rows = await this.repo
       .createQueryBuilder('c')
       .select('c.contentType', 'contentType')
@@ -994,9 +1203,11 @@ export class ContentPlanService {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dushanbe' }).slice(0, 7);
   }
 
-  /** Границы ТЕКУЩЕГО цикла (в котором сегодня) по дню старта anchor. */
+  /** Границы ТЕКУЩЕГО цикла (в котором сегодня) по дню старта anchor.
+   *  «Сегодня» — по Душанбе (15.11.2026): сервер в UTC, и с полуночи до 05:00
+   *  по Душанбе в день старта цикла заготовки считались по прошлому циклу. */
   private currentCycleBounds(anchor: number): { start: string; end: string } {
-    const today = new Date();
+    const today = new Date(`${dushanbeToday()}T00:00:00`);
     const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
     const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
     const anchorThis = Math.min(anchor, dim(y, m));
@@ -1113,11 +1324,15 @@ export class ContentPlanService {
   /** Сохранить правила проекта и поставить публикации на даты, которые
    *  показал планировщик. Позиция без itemId — недостающая до нормы: заводим
    *  заготовку «Рилс N» / «Пост N». */
-  async applyAutoPlan(projectId: string, body: any, actor?: { id?: string; name?: string }) {
+  async applyAutoPlan(projectId: string, body: any, actor?: AccessUser & { name?: string }) {
     const projectRepo = this.repo.manager.getRepository(Project);
+    if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) throw new NotFoundException('Проект не найден');
     const project = await projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Проект не найден');
     if (project.projectType !== 'SMM') throw new BadRequestException('Авторасстановка — только для SMM-проектов');
+    if (project.isOneOffSystem) throw new BadRequestException('Служебный проект не расставляется');
+    // Расставлять — только свой проект (руководство — любой), 15.11.2026.
+    await this.assertOwnContent(projectId, actor);
     const rules = this.sanitizeAutoPlan(body?.rules);
     const today = this.todayDushanbe();
     const win = this.activeCycleWindow(project, today);
@@ -1125,13 +1340,15 @@ export class ContentPlanService {
       ...(Array.isArray(body?.reels) ? body.reels : []).map((x: any) => ({ itemId: x?.itemId ?? null, date: x?.date, type: ContentItemType.REEL })),
       ...(Array.isArray(body?.posts) ? body.posts : []).map((x: any) => ({ itemId: x?.itemId ?? null, date: x?.date, type: ContentItemType.POST })),
     ].slice(0, 120);
-    const res = await this.placeItems(project, list, rules, win, today, actor);
+    const res = await this.placeItems(project, list, rules, win, today, actor ? { id: actor.id ?? undefined, name: actor.name } : undefined);
     // Правила — в проект. Этот цикл расставлен руками, поэтому автозапуск
     // отмечаем как сделанный: следующий сработает в начале нового цикла.
+    // Пишем только ключ autoPlan — атомарно (15.11.2026).
     const fresh = await projectRepo.findOne({ where: { id: projectId } });
-    const sd: any = { ...(fresh?.smmData || project.smmData || {}) };
-    sd.autoPlan = { ...rules, lastCycle: win?.start ?? sd.autoPlan?.lastCycle ?? null };
-    await projectRepo.update(projectId, { smmData: sd });
+    const prevAuto: any = (fresh?.smmData || project.smmData || {})?.autoPlan;
+    await patchSmmData(this.repo.manager, projectId, {
+      autoPlan: { ...rules, lastCycle: win?.start ?? prevAuto?.lastCycle ?? null },
+    });
     // Шлём и при placed = 0: правила авторасстановки сохранены в проект.
     this.emitTasksChanged(projectId, { actorId: actor?.id ?? null });
     return { ok: true, ...res };
@@ -1248,7 +1465,8 @@ export class ContentPlanService {
    *  (smmData.autoPlan.lastCycle). Возвращает, кого уведомить. */
   async autoPlanTick(): Promise<Array<{ projectName: string; placed: number; window: { start: string; end: string }; notify: string[] }>> {
     const projectRepo = this.repo.manager.getRepository(Project);
-    const projects = await projectRepo.find({ where: { projectType: 'SMM', isArchived: false } as any }).catch(() => [] as Project[]);
+    // Служебный проект «Одноразовые съёмки» не расставляем (15.11.2026).
+    const projects = await projectRepo.find({ where: { projectType: 'SMM', isArchived: false, isOneOffSystem: false } as any }).catch(() => [] as Project[]);
     const today = this.todayDushanbe();
     const out: Array<{ projectName: string; placed: number; window: { start: string; end: string }; notify: string[] }> = [];
     for (const p of projects) {
@@ -1262,7 +1480,8 @@ export class ContentPlanService {
         const fresh = await projectRepo.findOne({ where: { id: p.id } });
         const sd: any = { ...(fresh?.smmData || p.smmData || {}) };
         sd.autoPlan = { ...(sd.autoPlan || {}), lastCycle: win.start };
-        await projectRepo.update(p.id, { smmData: sd });
+        // Только ключ autoPlan — атомарно (15.11.2026).
+        await patchSmmData(this.repo.manager, p.id, { autoPlan: sd.autoPlan });
         const spec: string[] = Array.isArray(sd.smmSpecialistIds) ? sd.smmSpecialistIds.map(String) : [];
         const notify = spec.length ? spec : (p.managerId ? [p.managerId] : []);
         out.push({ projectName: p.name, placed, window: win, notify });
@@ -1294,12 +1513,17 @@ export class ContentPlanService {
 
     const projectRepo = this.repo.manager.getRepository(Project);
     const one = projectId && /^[0-9a-f-]{36}$/i.test(projectId) ? projectId : null;
-    const all = await projectRepo.find({ where: one ? { projectType: 'SMM', id: one } : { projectType: 'SMM' } });
+    // Служебный проект «Одноразовые съёмки» в календаре СММ не показываем —
+    // как и в списке проектов (15.11.2026).
+    const all = await projectRepo.find({ where: one
+      ? { projectType: 'SMM', id: one, isOneOffSystem: false }
+      : { projectType: 'SMM', isOneOffSystem: false } });
     const active = all.filter(p => String(p.status) !== 'archived');
     // Цвет проекта зависит от его места среди всех активных SMM-проектов.
     const colorIds: string[] | undefined = one
       ? (await this.repo.manager.query(
-          `SELECT id FROM projects WHERE "projectType" = 'SMM' AND COALESCE(status::text, '') <> 'archived'`,
+          `SELECT id FROM projects WHERE "projectType" = 'SMM' AND COALESCE(status::text, '') <> 'archived'
+             AND "isOneOffSystem" = false`,
         ).catch(() => [] as any[])).map((r: any) => String(r.id))
       : undefined;
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
@@ -1360,7 +1584,9 @@ export class ContentPlanService {
               ci.status AS status, ci."taskId" AS "taskId",
               ci.caption AS caption, ci."fileLink" AS "fileLink",
               to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt",
-              to_char(((ci."tiktokAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD') AS "tiktokAt",
+              -- tiktokAt — timestamptz: в местное время Душанбе переводит один
+              -- AT TIME ZONE (15.11.2026; двойной переводил в обратную сторону).
+              to_char((ci."tiktokAt" AT TIME ZONE 'Asia/Dushanbe')::date, 'YYYY-MM-DD') AS "tiktokAt",
               ci."publishTime" AS time, ci."durationMin" AS "durationMin",
               to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS date
        FROM content_plan_items ci
@@ -1463,9 +1689,13 @@ export class ContentPlanService {
 
     // «Не запланировано» — контент без даты публикации и съёмки без даты
     // (их перетаскивают на календарь из панели сверху). Диапазон не важен.
+    // caption / fileLink / changedAt раньше не выбирались — в «Не
+    // запланировано» они всегда приходили null (15.11.2026).
     const bpubs: any[] = await this.repo.manager.query(
       `SELECT ci."projectId" AS "projectId", ci.id AS "itemId",
-              ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText"
+              ci."contentType" AS "itemKind", ci.topic AS title, ci."scriptText" AS "scriptText",
+              ci.caption AS caption, ci."fileLink" AS "fileLink",
+              to_char(ci."updatedAt"::date, 'YYYY-MM-DD') AS "changedAt"
        FROM content_plan_items ci
        WHERE ci."projectId" = ANY($1::uuid[])
          AND ci."contentType" <> 'story' AND ci."shootForItemId" IS NULL AND ci."publishDate" IS NULL`,
@@ -1520,10 +1750,14 @@ export class ContentPlanService {
   async updateShootSession(
     id: string,
     dto: { date?: string; time?: string | null; location?: string | null; title?: string | null },
+    actor?: AccessUser | null,
   ) {
     const repo = this.repo.manager.getRepository(ShootSession);
     const session = await repo.findOne({ where: { id } });
     if (!session) throw new NotFoundException('Съёмка не найдена');
+    // Съёмка — производство: продюсер двигает любые, СММ-специалист — своих
+    // проектов, руководство — все (15.11.2026).
+    await this.assertOwnContent(session.projectId, actor, { production: true });
 
     const patch: any = {};
     if (dto.date !== undefined) patch.date = dto.date;

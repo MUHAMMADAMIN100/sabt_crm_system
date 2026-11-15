@@ -56,9 +56,11 @@ export class ProjectsController {
     return this.service.smmManagerLoad();
   }
 
+  /** Карточка проекта — только тем, кто его видит (15.11.2026): роль и
+   *  направление, свой проект, команда производства, исполнители. */
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req) {
-    return this.service.findOne(id, req.user?.role);
+    return this.service.findOneForUser(id, req.user);
   }
 
   @Post()
@@ -105,7 +107,9 @@ export class ProjectsController {
   /** Профиль клиента SMM-проекта: владелец, значимый день (дата + коммент),
    *  начало сотрудничества, предпочтения, история подписчиков по месяцам. */
   @Get(':id/smm-profile')
-  getSmmProfile(@Param('id') id: string, @Request() req) {
+  async getSmmProfile(@Param('id') id: string, @Request() req) {
+    // Профиль (адрес съёмок, команда, контакты) — тем, кто видит проект.
+    await this.service.assertCanView(id, req.user);
     return this.service.getSmmProfile(id, req.user);
   }
 
@@ -154,8 +158,9 @@ export class ProjectsController {
 
   @Get(':id/payments')
   @RequirePerm('projects.payments.view')
-  listPayments(@Param('id') id: string) {
-    return this.service.listPayments(id);
+  listPayments(@Param('id') id: string, @Request() req) {
+    // Оплаты — только по проектам своего направления (15.11.2026).
+    return this.service.listPayments(id, req.user);
   }
 
   @Post(':id/send-payment-request')
@@ -167,14 +172,15 @@ export class ProjectsController {
   ) {
     return this.service.sendPaymentRequest(
       id,
-      { id: req.user.id, name: req.user.name, role: req.user.role },
+      { id: req.user.id, name: req.user.name, role: req.user.role, secondaryRole: req.user.secondaryRole ?? null },
       body?.message,
     );
   }
 
   // ─── Wave 7: Launch Setup checklist ───────────────────────────────
   @Get(':id/launch-checklist')
-  getLaunchChecklist(@Param('id') id: string) {
+  async getLaunchChecklist(@Param('id') id: string, @Request() req) {
+    await this.service.assertCanView(id, req.user);
     return this.service.getLaunchChecklist(id);
   }
 

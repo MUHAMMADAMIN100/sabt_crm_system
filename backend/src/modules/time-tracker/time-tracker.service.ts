@@ -6,8 +6,7 @@ import { TimeLog } from './time-log.entity';
 import { Task } from '../tasks/task.entity';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
-
-const PM_ROLES = ['admin', 'founder', 'smm_director'];
+import { TaskViewer, assertTaskReadable, isPmForTask, loadTaskAccess } from '../tasks/task-access';
 
 @Injectable()
 export class TimeTrackerService {
@@ -17,11 +16,14 @@ export class TimeTrackerService {
     private activityLog: ActivityLogService,
   ) {}
 
-  private async assertCanLogTo(taskId: string, userId: string, role: string) {
-    if (PM_ROLES.includes(role)) return;
-    const task = await this.taskRepo.findOne({ where: { id: taskId } });
-    if (!task) throw new NotFoundException('Task not found');
-    if (task.assigneeId !== userId) {
+  /** Логировать время: исполнитель, со-исполнитель или руководитель своей
+   *  сферы — в т.ч. dev_director и pm_dev, основной или второй ролью
+   *  (15.11.2026: раньше PM-список был без руководителей разработки). */
+  private async assertCanLogTo(taskId: string, userId: string, role: string, secondaryRole?: string | null) {
+    const row = await loadTaskAccess(this.taskRepo.manager, taskId, userId);
+    if (!row) throw new NotFoundException('Task not found');
+    if (isPmForTask({ id: userId, role, secondaryRole }, row.projectType)) return;
+    if (row.assigneeId !== userId && !row.co) {
       throw new ForbiddenException('Нельзя логировать время в чужую задачу');
     }
   }
@@ -36,7 +38,10 @@ export class TimeTrackerService {
     await this.taskRepo.update(taskId, { loggedHours: Math.round(total * 100) / 100 });
   }
 
-  findByTask(taskId: string) {
+  /** Время по задаче. С viewer — та же проверка доступа, что у карточки
+   *  задачи (15.11.2026: раньше отдавали журнал любой задачи по id). */
+  async findByTask(taskId: string, viewer?: TaskViewer) {
+    if (viewer) await assertTaskReadable(this.taskRepo.manager, taskId, viewer);
     return this.repo.find({
       where: { taskId },
       relations: ['employee'],
@@ -54,13 +59,19 @@ export class TimeTrackerService {
     return qb.orderBy('tl.date', 'DESC').getMany();
   }
 
-  async startTimer(taskId: string, employeeId: string, role: string) {
-    await this.assertCanLogTo(taskId, employeeId, role);
-    // Stop any running timers
+  async startTimer(taskId: string, employeeId: string, role: string, secondaryRole?: string | null) {
+    await this.assertCanLogTo(taskId, employeeId, role, secondaryRole);
+    // Stop any running timers — и пересчитать часы задач, где они шли
+    // (15.11.2026): раньше loggedHours прошлой задачи оставался без этого
+    // отрезка, пока его не трогали снова.
+    const running = await this.repo.find({ where: { employeeId, isRunning: true }, select: ['id', 'taskId'] as any });
     await this.repo.update(
       { employeeId, isRunning: true },
       { isRunning: false, timeSpent: () => 'EXTRACT(EPOCH FROM (NOW() - "timerStartedAt")) / 3600' },
     );
+    for (const prevTaskId of new Set(running.map(r => r.taskId).filter(Boolean))) {
+      await this.syncLoggedHours(prevTaskId);
+    }
 
     const log = this.repo.create({
       taskId,
@@ -111,8 +122,11 @@ export class TimeTrackerService {
     });
   }
 
-  async logTime(taskId: string, employeeId: string, role: string, timeSpent: number, date: string, description?: string) {
-    await this.assertCanLogTo(taskId, employeeId, role);
+  async logTime(
+    taskId: string, employeeId: string, role: string, timeSpent: number, date: string, description?: string,
+    secondaryRole?: string | null,
+  ) {
+    await this.assertCanLogTo(taskId, employeeId, role, secondaryRole);
     if (timeSpent <= 0) throw new BadRequestException('Time must be positive');
     const log = this.repo.create({ taskId, employeeId, timeSpent, date: new Date(date), description });
     const saved = await this.repo.save(log);
@@ -129,11 +143,15 @@ export class TimeTrackerService {
     return saved;
   }
 
-  async remove(id: string, userId: string, role: string) {
+  async remove(id: string, userId: string, role: string, secondaryRole?: string | null) {
     const log = await this.repo.findOne({ where: { id } });
     if (!log) throw new NotFoundException('Time log not found');
-    if (!PM_ROLES.includes(role) && log.employeeId !== userId) {
-      throw new ForbiddenException('Нельзя удалять чужие записи времени');
+    if (log.employeeId !== userId) {
+      // Чужую запись удаляет только руководитель своей сферы.
+      const row = log.taskId ? await loadTaskAccess(this.taskRepo.manager, log.taskId, userId) : null;
+      if (!isPmForTask({ id: userId, role, secondaryRole }, row?.projectType)) {
+        throw new ForbiddenException('Нельзя удалять чужие записи времени');
+      }
     }
     await this.activityLog.log({
       userId: log.employeeId,
@@ -148,7 +166,9 @@ export class TimeTrackerService {
     return { message: 'Time log deleted' };
   }
 
-  async getTotalByTask(taskId: string) {
+  async getTotalByTask(taskId: string, viewer?: TaskViewer) {
+    // Проверка доступа к задаче (15.11.2026).
+    if (viewer) await assertTaskReadable(this.taskRepo.manager, taskId, viewer);
     const result = await this.repo
       .createQueryBuilder('tl')
       .select('SUM(tl.timeSpent)', 'total')

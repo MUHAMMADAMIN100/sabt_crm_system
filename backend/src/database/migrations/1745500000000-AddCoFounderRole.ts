@@ -1,22 +1,13 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 export class AddCoFounderRole1745500000000 implements MigrationInterface {
   name = 'AddCoFounderRole1745500000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_enum
-          WHERE enumlabel = 'co_founder'
-            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'users_role_enum')
-        ) THEN
-          ALTER TYPE "users_role_enum" ADD VALUE 'co_founder';
-        END IF;
-      END
-      $$;
-    `);
+    // Имя enum-типа users.role — из каталога (15.11.2026): на чистой базе
+    // это user_role_enum, и жёсткое имя роняло миграцию.
+    await addEnumValues(queryRunner, 'users', 'role', ['co_founder']);
   }
 
   async down(): Promise<void> {

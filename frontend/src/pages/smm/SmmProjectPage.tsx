@@ -19,7 +19,8 @@ import { isProductionOnly } from '@/lib/permissions'
 import { pubDone } from './tiktok'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
-type CalData = { projects: SmmProj[]; backlog: Ev[]; events: Ev[] }
+// mine — «мой проект» для смотрящего (менеджер, участник, назначенный специалист).
+type CalData = { projects: (SmmProj & { mine?: boolean })[]; backlog: Ev[]; events: Ev[] }
 type MKey = 'subs' | 'reach' | 'eng' | 'leads'
 type MPoint = { ym: string; subs: number | null; reach: number | null; eng: number | null; leads: number | null }
 type SmmSpec = { id: string; name: string; avatar: string | null; role: string }
@@ -45,7 +46,8 @@ type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNot
   // Ссылка на страницу клиента (видна всем) и можно ли смотреть логин/пароль.
   & { pageUrl?: string | null; canSeeAccess?: boolean }
 
-const EDIT_ROLES = ['founder', 'admin', 'smm_director', 'smm_specialist']
+/** Руководство СММ — правит любой проект (основной или второй ролью). */
+const MGMT_ROLES = ['founder', 'admin', 'smm_director']
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
 const MON_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
@@ -208,13 +210,12 @@ export default function SmmProjectPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
-  const canEdit = EDIT_ROLES.includes((user as any)?.role ?? '')
-  // Продюсер (09.11.2026) правит в карточке «О клиенте» только то, что для
-  // съёмок: адрес, карту и контакт на месте. Остальное — СММ-специалиста.
-  const canEditShootInfo = canEdit || isProductionOnly((user as any)?.role, (user as any)?.secondaryRole)
+  // Роли — основная и вторая (15.11.2026), как проверяет сервер.
+  const myRoles = [(user as any)?.role, (user as any)?.secondaryRole].filter(Boolean) as string[]
+  const isMgmt = myRoles.some(r => MGMT_ROLES.includes(r))
   // Переименование проекта идёт через общий PATCH /projects/:id (право projects.edit),
   // где smm_specialist не проходит — поэтому у имени более узкий набор ролей.
-  const canRename = ['admin', 'founder', 'smm_director'].includes((user as any)?.role ?? '')
+  const canRename = isMgmt
 
   const now = new Date()
   const from = iso(new Date(now.getFullYear(), now.getMonth(), 1))
@@ -230,6 +231,14 @@ export default function SmmProjectPage() {
     enabled: !!id,
   })
   const { data: profile } = useQuery<SmmProfile>({ queryKey: ['smm-profile', id], queryFn: () => projectsApi.getSmmProfile(id!), enabled: !!id })
+  // Править может руководство СММ — любой проект, СММ-специалист — только
+  // свой (projects[].mine из smm-calendar), 15.11.2026: раньше кнопки правки
+  // видел специалист любого проекта, а сервер теперь такие правки отклоняет.
+  const isMine = !!data?.projects?.find(p => p.id === id)?.mine
+  const canEdit = isMgmt || (myRoles.includes('smm_specialist') && isMine)
+  // Продюсер (09.11.2026) правит в карточке «О клиенте» только то, что для
+  // съёмок: адрес, карту и контакт на месте. Остальное — СММ-специалиста.
+  const canEditShootInfo = canEdit || isProductionOnly((user as any)?.role, (user as any)?.secondaryRole)
 
   const saveMut = useMutation({
     mutationFn: (patch: Partial<SmmProfile>) => projectsApi.setSmmProfile(id!, patch as any),
@@ -237,7 +246,7 @@ export default function SmmProjectPage() {
     onError: () => toast.error('Не удалось сохранить'),
   })
   // TikTok у проекта (14.11.2026): по умолчанию дублируем, выключает руководство.
-  const canTiktok = ['admin', 'founder', 'smm_director'].includes(user?.role || '')
+  const canTiktok = isMgmt
   const tiktokMut = useMutation({
     mutationFn: (on: boolean) => projectsApi.setSmmProfile(id!, { tiktok: on } as any),
     onMutate: async (on) => {
@@ -358,7 +367,7 @@ export default function SmmProjectPage() {
   // Назначает руководство (у него есть доступ к списку /users); руководитель SMM
   // и сам специалист видят назначенных, но не меняют. Выбор — специалисты и
   // руководитель SMM: свои проекты он ведёт как специалист (30.10.2026).
-  const canAssignSpec = ['admin', 'founder'].includes((user as any)?.role ?? '')
+  const canAssignSpec = myRoles.some(r => ['admin', 'founder'].includes(r))
   const { data: specialistUsers } = useQuery<SmmSpec[]>({
     queryKey: ['users', 'smm_specialist', 'smm_director'],
     queryFn: async () => {
@@ -418,7 +427,9 @@ export default function SmmProjectPage() {
   // Производственная команда проекта: кто снимает, монтирует и рисует. От
   // этого зависит, в чей кабинет попадёт карточка подготовки. Назначает и
   // СММ-специалист — распределить работу по своему проекту его задача.
-  const canAssignCrew = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer'].includes((user as any)?.role ?? '')
+  // 15.11.2026: специалист — только в своём проекте, продюсер — в любом
+  // (производство), обе роли считаются — так же проверяет сервер.
+  const canAssignCrew = canEditShootInfo
   const crewMut = useMutation({
     // Приведение нужно из-за вычисляемого ключа: TS не сопоставляет его с
     // конкретными полями dto, хотя набор ключей ограничен типом CrewField.

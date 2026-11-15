@@ -140,6 +140,12 @@ function StoriesWidget({ myProjects, todayStoryMap, monthTotalActual, monthTotal
   )
 }
 
+// Кабинет выбирается по ОСНОВНОЙ роли. Здесь только выбор и хуки, которые
+// нужны каждой ветке; запросы общей («старой») панели — в LegacyDashboard
+// (15.11.2026). Раньше они шли после ранних return, и когда ветка менялась
+// без перезагрузки (например, сняли флаг «сторисмейкер» — me:changed по
+// сокету), React падал: «Rendered more/fewer hooks than during the previous
+// render».
 function DashboardContent() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'employee'
@@ -162,9 +168,6 @@ function DashboardContent() {
   // над панелью, сама панель не меняется.
   const TRANSPORT_ROLES = ['smm_specialist', 'videographer']
   const canAskTransport = TRANSPORT_ROLES.includes(role) || TRANSPORT_ROLES.includes(user?.secondaryRole || '')
-  const { t } = useTranslation()
-  // Палитра графиков следует персональному цвету системы.
-  const PIE_COLORS = useChartColors()
 
   // Role-specific dashboards
   if (isFounderView) {
@@ -270,6 +273,23 @@ function DashboardContent() {
       </div>
     )
   }
+
+  return <LegacyDashboard isDevTeam={isDevTeam} isManagerPlus={isManagerPlus} isAdmin={isAdmin} />
+}
+
+/** Общая панель — для ролей без своего кабинета (руководитель и
+ *  проект-менеджер разработки, проверяющий сторис без доступа к проверке и
+ *  т. п.). Отдельный компонент, чтобы его хуки не зависели от ранних return
+ *  в DashboardContent (15.11.2026). */
+function LegacyDashboard({ isDevTeam, isManagerPlus, isAdmin }: {
+  isDevTeam: boolean
+  isManagerPlus: boolean
+  isAdmin: boolean
+}) {
+  const user = useAuthStore(s => s.user)
+  const { t } = useTranslation()
+  // Палитра графиков следует персональному цвету системы.
+  const PIE_COLORS = useChartColors()
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['analytics-overview'],

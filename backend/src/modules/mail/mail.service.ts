@@ -1,5 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as https from 'https';
+import { escapeHtml } from '../../common/html-escape';
+
+/** Экранирование для HTML писем (15.11.2026). Каждое значение, пришедшее
+ *  от людей (названия, имена, комментарии, сообщение клиенту), подставляем
+ *  только через него — иначе «<» в названии ломал письмо, а текст из CRM
+ *  мог вставить в письмо внешнему клиенту свою разметку и ссылки.
+ *  Вызывающие передают СЫРОЙ текст: повторное экранирование дало бы «&amp;».
+ *  Исключение — sendGenericNotification: его bodyHtml — уже разметка. */
+const e = escapeHtml;
 
 @Injectable()
 export class MailService {
@@ -82,7 +91,7 @@ export class MailService {
         <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
           <span style="font-size:28px;">📋</span>
         </div>
-        <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700;">${title}</h1>
+        <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700;">${e(title)}</h1>
         <p style="color:rgba(255,255,255,0.75);margin:6px 0 0;font-size:13px;">Sabt System — ERP уведомление</p>
       </div>`;
   }
@@ -96,12 +105,24 @@ export class MailService {
       </div>`;
   }
 
-  private row(label: string, value: string) {
+  /** Строка таблицы с ТЕКСТОМ — значение экранируется. */
+  private row(label: string, value: string | number | null | undefined) {
+    return this.rowHtml(label, e(value));
+  }
+
+  /** Строка таблицы с готовой разметкой — только для того, что собрали мы
+   *  сами из уже экранированных частей. */
+  private rowHtml(label: string, valueHtml: string) {
     return `
       <tr>
-        <td style="padding:8px 0;color:#64748b;font-size:14px;width:140px;vertical-align:top;">${label}</td>
-        <td style="padding:8px 0;color:#1e293b;font-size:14px;font-weight:500;">${value}</td>
+        <td style="padding:8px 0;color:#64748b;font-size:14px;width:140px;vertical-align:top;">${e(label)}</td>
+        <td style="padding:8px 0;color:#1e293b;font-size:14px;font-weight:500;">${valueHtml}</td>
       </tr>`;
+  }
+
+  /** Ссылка в атрибут href: экранируем кавычки и «&», адрес остаётся рабочим. */
+  private href(path: string) {
+    return e(`${this.appUrl}${path}`);
   }
 
   async sendGenericNotification(to: string, recipientName: string, subject: string, bodyHtml: string) {
@@ -130,7 +151,7 @@ export class MailService {
         ${this.header('Новый проект назначен')}
         <div style="padding:32px 40px;">
           <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             Вас добавили в новый проект в системе Sabt System.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
@@ -141,7 +162,7 @@ export class MailService {
               ${deadline ? this.row('📅 Дедлайн:', deadline) : ''}
             </table>
           </div>
-          <a href="${this.appUrl}${projectLink}"
+          <a href="${this.href(projectLink)}"
              style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
             Открыть проект →
           </a>
@@ -174,7 +195,7 @@ export class MailService {
         ${this.header('Вам назначена задача')}
         <div style="padding:32px 40px;">
           <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             Вам назначена новая задача в системе Sabt System.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
@@ -186,7 +207,7 @@ export class MailService {
               ${description ? this.row('📝 Описание:', description) : ''}
             </table>
           </div>
-          <a href="${this.appUrl}/tasks/${taskId}"
+          <a href="${this.href(`/tasks/${taskId}`)}"
              style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
             Открыть задачу →
           </a>
@@ -198,59 +219,6 @@ export class MailService {
       await this.sendViaBrevo(to, recipientName, `✅ Новая задача: ${taskTitle}`, html);
     } catch (err) {
       this.logger.error(`Failed to send task email to ${to}: ${err.message}`);
-    }
-  }
-
-  /** Назначение на производственную карточку доски (рилс/макет) — со всеми
-   *  данными: тип, проект, дедлайн, дата публикации, съёмка, описание. */
-  async sendCardAssigned(
-    to: string,
-    recipientName: string,
-    payload: {
-      title: string;
-      projectName?: string;
-      typeLabel?: string | null;
-      description?: string | null;
-      deadline?: string | null;
-      publishDate?: string | null;
-      shoot?: string | null;
-      assignedBy?: string | null;
-    },
-  ) {
-    const rows = [
-      payload.typeLabel ? this.row('🎬 Тип:', payload.typeLabel) : '',
-      payload.projectName ? this.row('📁 Проект:', payload.projectName) : '',
-      payload.deadline ? this.row('📅 Дедлайн:', payload.deadline) : '',
-      payload.publishDate ? this.row('🗓 Публикация:', payload.publishDate) : '',
-      payload.shoot ? this.row('🎥 Съёмка:', payload.shoot) : '',
-      payload.description ? this.row('📝 Описание:', payload.description) : '',
-      payload.assignedBy ? this.row('👤 Назначил:', payload.assignedBy) : '',
-    ].join('');
-    const html = `
-      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        ${this.header('Вам назначена карточка')}
-        <div style="padding:32px 40px;">
-          <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            Вам назначена карточка в производстве (Доска проектов).
-          </p>
-          <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
-            <table style="width:100%;border-collapse:collapse;">
-              ${this.row('✅ Карточка:', payload.title)}
-              ${rows}
-            </table>
-          </div>
-          <a href="${this.appUrl}/"
-             style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
-            Открыть систему →
-          </a>
-        </div>
-        ${this.footer()}
-      </div>`;
-    try {
-      await this.sendViaBrevo(to, recipientName, `🎬 Новая карточка: ${payload.title}`, html);
-    } catch (err) {
-      this.logger.error(`Failed to send card-assigned email to ${to}: ${err.message}`);
     }
   }
 
@@ -268,7 +236,7 @@ export class MailService {
         ${this.header('Новый комментарий к задаче')}
         <div style="padding:32px 40px;">
           <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             В вашей задаче появился новый комментарий.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:20px;">
@@ -279,9 +247,9 @@ export class MailService {
             </table>
           </div>
           <div style="border-left:3px solid #4f6ef7;padding:14px 18px;background:#eff6ff;border-radius:0 8px 8px 0;margin-bottom:24px;">
-            <p style="color:#1e40af;font-size:14px;margin:0;line-height:1.6;">${commentText}</p>
+            <p style="color:#1e40af;font-size:14px;margin:0;line-height:1.6;white-space:pre-line;">${e(commentText)}</p>
           </div>
-          <a href="${this.appUrl}/tasks/${taskId}"
+          <a href="${this.href(`/tasks/${taskId}`)}"
              style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
             Открыть задачу →
           </a>
@@ -297,13 +265,13 @@ export class MailService {
   }
 
   async sendPasswordReset(to: string, recipientName: string, resetToken: string) {
-    const resetUrl = `${this.appUrl}/auth?resetToken=${resetToken}`;
+    const resetUrl = this.href(`/auth?resetToken=${encodeURIComponent(resetToken)}`);
     const html = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         ${this.header('🔐 Сброс пароля')}
         <div style="padding:32px 40px;">
           <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             Мы получили запрос на сброс пароля от вашей учётной записи.
           </p>
           <p style="color:#64748b;font-size:14px;margin:0 0 24px;">Ссылка действительна 1 час. Если вы не запрашивали сброс — проигнорируйте это письмо.</p>
@@ -336,8 +304,8 @@ export class MailService {
         ${this.header('⏰ Напоминание о дедлайне')}
         <div style="padding:32px 40px;">
           <p style="color:#334155;font-size:15px;margin:0 0 24px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            Напоминаем: до дедлайна задачи осталось <strong style="color:${urgencyColor};">${daysLeft} ${daysLeft === 1 ? 'день' : 'дня'}</strong>.
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
+            Напоминаем: до дедлайна задачи осталось <strong style="color:${urgencyColor};">${e(daysLeft)} ${daysLeft === 1 ? 'день' : 'дня'}</strong>.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
             <table style="width:100%;border-collapse:collapse;">
@@ -346,7 +314,7 @@ export class MailService {
               ${this.row('📅 Дедлайн:', deadline)}
             </table>
           </div>
-          <a href="${this.appUrl}/tasks/${taskId}"
+          <a href="${this.href(`/tasks/${taskId}`)}"
              style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
             Открыть задачу →
           </a>
@@ -372,30 +340,33 @@ export class MailService {
     customMessage?: string,
   ) {
     const fmt = (n: number) => n.toLocaleString('ru-RU');
+    // Сообщение уходит ВНЕШНЕМУ клиенту — только экранированным текстом
+    // (15.11.2026): иначе из CRM можно было вставить в письмо от имени
+    // агентства свою разметку и фишинговые ссылки.
     const customBlock = customMessage
-      ? `<p style="color:#334155;font-size:14px;margin:0 0 20px;line-height:1.55;white-space:pre-line;">${customMessage}</p>`
+      ? `<p style="color:#334155;font-size:14px;margin:0 0 20px;line-height:1.55;white-space:pre-line;">${e(customMessage)}</p>`
       : '';
     const html = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         ${this.header('💰 Запрос оплаты')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 16px;">
-            Здравствуйте${clientName ? `, <strong>${clientName}</strong>` : ''}!
+            Здравствуйте${clientName ? `, <strong>${e(clientName)}</strong>` : ''}!
           </p>
           ${customBlock}
           <p style="color:#334155;font-size:14px;margin:0 0 18px;">
-            Напоминаем о необходимости оплаты по проекту <strong>${projectName}</strong>.
+            Напоминаем о необходимости оплаты по проекту <strong>${e(projectName)}</strong>.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
             <table style="width:100%;border-collapse:collapse;">
               ${this.row('📁 Проект:', projectName)}
               ${this.row('💼 Стоимость:', `${fmt(totalBudget)} сомони`)}
               ${this.row('✅ Оплачено:', `${fmt(paidAmount)} сомони`)}
-              ${this.row('⏳ К оплате:', `<strong style="color:#ef4444;">${fmt(remaining)} сомони</strong>`)}
+              ${this.rowHtml('⏳ К оплате:', `<strong style="color:#ef4444;">${e(fmt(remaining))} сомони</strong>`)}
             </table>
           </div>
           <p style="color:#64748b;font-size:13px;margin:0 0 4px;">
-            С уважением,<br><strong>${fromName}</strong>
+            С уважением,<br><strong>${e(fromName)}</strong>
           </p>
         </div>
         ${this.footer()}
@@ -423,8 +394,8 @@ export class MailService {
         ${this.header('👤 Изменены ваши данные')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 18px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            ${actorName ? `<strong>${actorName}</strong> обновил${actorName.endsWith('а') ? 'а' : ''} ваши должностные данные.` : 'Ваши должностные данные были обновлены.'}
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
+            ${actorName ? `<strong>${e(actorName)}</strong> обновил${actorName.endsWith('а') ? 'а' : ''} ваши должностные данные.` : 'Ваши должностные данные были обновлены.'}
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
             <table style="width:100%;border-collapse:collapse;">
@@ -433,7 +404,7 @@ export class MailService {
               ${newRoleLabel ? this.row('🎭 Новая роль:', newRoleLabel) : ''}
             </table>
           </div>
-          <a href="${this.appUrl}/profile" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href('/profile')}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть профиль →
           </a>
         </div>
@@ -469,10 +440,10 @@ export class MailService {
 
     const daysWord = daysOverdue === 1 ? 'день' : daysOverdue < 5 ? 'дня' : 'дней';
     const intro = role === 'assignee'
-      ? `Ваша задача просрочена на <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong>. Пожалуйста, закройте её как можно скорее.`
+      ? `Ваша задача просрочена на <strong style="color:#ef4444;">${e(daysOverdue)} ${daysWord}</strong>. Пожалуйста, закройте её как можно скорее.`
       : role === 'manager'
-        ? `Задача сотрудника <strong>${assigneeName || ''}</strong> не закрыта уже <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong> после дедлайна.`
-        : `Серьёзная просрочка в вашей компании: задача не закрыта <strong style="color:#ef4444;">${daysOverdue} ${daysWord}</strong>. Требуется внимание.`;
+        ? `Задача сотрудника <strong>${e(assigneeName || '')}</strong> не закрыта уже <strong style="color:#ef4444;">${e(daysOverdue)} ${daysWord}</strong> после дедлайна.`
+        : `Серьёзная просрочка в вашей компании: задача не закрыта <strong style="color:#ef4444;">${e(daysOverdue)} ${daysWord}</strong>. Требуется внимание.`;
 
     const statusLabels: Record<string, string> = {
       new: '🆕 Новая', in_progress: '⚙️ В работе', review: '🔍 На проверке',
@@ -494,7 +465,7 @@ export class MailService {
         ${this.header(headline)}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 22px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>${intro}
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>${intro}
           </p>
           <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:16px 22px;margin-bottom:22px;">
             <table style="width:100%;border-collapse:collapse;">
@@ -508,7 +479,7 @@ export class MailService {
               ${this.row('🔥 Просрочено:', `${daysOverdue} ${daysWord}`)}
             </table>
           </div>
-          <a href="${this.appUrl}/tasks/${taskId}" style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
+          <a href="${this.href(`/tasks/${taskId}`)}" style="display:inline-block;padding:13px 28px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-radius:10px;text-decoration:none;font-size:15px;font-weight:600;">
             Открыть задачу →
           </a>
         </div>
@@ -533,23 +504,23 @@ export class MailService {
   ) {
     const taskRows = tasks.slice(0, 20).map(t => `
       <tr>
-        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">${t.title}</td>
-        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${t.hours}ч</td>
+        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">${e(t.title)}</td>
+        <td style="padding:8px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${e(t.hours)}ч</td>
       </tr>`).join('');
     const html = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         ${this.header('📅 Ваши итоги недели')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 16px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             Вот что вы сделали за прошедшие 7 дней:
           </p>
           <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
             <span style="background:#ecfdf5;border:1px solid #86efac;color:#047857;border-radius:8px;padding:10px 14px;">
-              ✅ Выполнено: <b>${doneCount}</b>
+              ✅ Выполнено: <b>${e(doneCount)}</b>
             </span>
             <span style="background:#eef2ff;border:1px solid #c7d2fe;color:#4338ca;border-radius:8px;padding:10px 14px;">
-              ⏱ Часов: <b>${totalHours}</b>
+              ⏱ Часов: <b>${e(totalHours)}</b>
             </span>
           </div>
           ${tasks.length ? `
@@ -562,7 +533,7 @@ export class MailService {
             </thead>
             <tbody>${taskRows}</tbody>
           </table>` : ''}
-          <a href="${this.appUrl}/reports" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href('/reports')}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть отчёты →
           </a>
         </div>
@@ -584,27 +555,27 @@ export class MailService {
     const totalHours = stats.reduce((s, r) => s + r.totalHours, 0);
     const rows = stats.map(r => `
       <tr>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;font-weight:500;">${r.fullName}</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#047857;font-size:14px;font-weight:600;text-align:right;">${r.doneCount}</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${r.totalHours}ч</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;font-weight:500;">${e(r.fullName)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#047857;font-size:14px;font-weight:600;text-align:right;">${e(r.doneCount)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${e(r.totalHours)}ч</td>
       </tr>`).join('');
     const html = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         ${this.header('📊 Недельный отчёт по команде')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 16px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
             Сводка по всем сотрудникам за прошедшие 7 дней.
           </p>
           <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
             <span style="background:#ecfdf5;border:1px solid #86efac;color:#047857;border-radius:8px;padding:10px 14px;">
-              ✅ Задач: <b>${totalTasks}</b>
+              ✅ Задач: <b>${e(totalTasks)}</b>
             </span>
             <span style="background:#eef2ff;border:1px solid #c7d2fe;color:#4338ca;border-radius:8px;padding:10px 14px;">
-              ⏱ Часов: <b>${totalHours}</b>
+              ⏱ Часов: <b>${e(totalHours)}</b>
             </span>
             <span style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:10px 14px;">
-              👥 Активных: <b>${stats.length}</b>
+              👥 Активных: <b>${e(stats.length)}</b>
             </span>
           </div>
           <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:22px;">
@@ -617,7 +588,7 @@ export class MailService {
             </thead>
             <tbody>${rows}</tbody>
           </table>
-          <a href="${this.appUrl}/analytics" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href('/analytics')}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть аналитику →
           </a>
         </div>
@@ -645,8 +616,8 @@ export class MailService {
         ${this.header('👑 Вы — менеджер проекта')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 16px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            ${actorName ? `<strong>${actorName}</strong> назначил${actorName.endsWith('а') ? 'а' : ''} вас` : 'Вас назначили'} менеджером проекта.
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
+            ${actorName ? `<strong>${e(actorName)}</strong> назначил${actorName.endsWith('а') ? 'а' : ''} вас` : 'Вас назначили'} менеджером проекта.
           </p>
           <div style="background:#f1f5f9;border-radius:10px;padding:18px 22px;margin-bottom:22px;">
             <table style="width:100%;border-collapse:collapse;">
@@ -655,7 +626,7 @@ export class MailService {
               ${deadline ? this.row('📅 Дедлайн:', deadline) : ''}
             </table>
           </div>
-          <a href="${this.appUrl}/projects/${projectId}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href(`/projects/${projectId}`)}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть проект →
           </a>
         </div>
@@ -681,10 +652,10 @@ export class MailService {
         ${this.header('📋 Смена менеджера проекта')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 16px;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            Вы больше не являетесь менеджером проекта <strong>${projectName}</strong>${actorName ? ` — изменение сделал ${actorName}` : ''}.
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
+            Вы больше не являетесь менеджером проекта <strong>${e(projectName)}</strong>${actorName ? ` — изменение сделал ${e(actorName)}` : ''}.
           </p>
-          <a href="${this.appUrl}/projects/${projectId}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#64748b,#475569);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href(`/projects/${projectId}`)}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#64748b,#475569);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть проект →
           </a>
         </div>
@@ -709,8 +680,8 @@ export class MailService {
         ${this.header('👥 Вас убрали из проекта')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0;">
-            Здравствуйте, <strong>${recipientName}</strong>!<br>
-            Вас больше нет в составе проекта <strong>${projectName}</strong>${actorName ? ` — изменение сделал ${actorName}` : ''}.
+            Здравствуйте, <strong>${e(recipientName)}</strong>!<br>
+            Вас больше нет в составе проекта <strong>${e(projectName)}</strong>${actorName ? ` — изменение сделал ${e(actorName)}` : ''}.
           </p>
         </div>
         ${this.footer()}
@@ -754,11 +725,11 @@ export class MailService {
       return `
       <tr style="${prioBg}">
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;">
-          <a href="${this.appUrl}/tasks/${t.id}" style="color:#4f6ef7;text-decoration:none;font-weight:600;">${t.title}</a>
+          <a href="${this.href(`/tasks/${t.id}`)}" style="color:#4f6ef7;text-decoration:none;font-weight:600;">${e(t.title)}</a>
         </td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:13px;">${t.assigneeName}</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${statusLabels[t.status] || t.status}</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${priorityLabels[t.priority || 'medium'] || ''}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:13px;">${e(t.assigneeName)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${e(statusLabels[t.status] || t.status)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;">${e(priorityLabels[t.priority || 'medium'] || '')}</td>
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:right;">${Number(t.loggedHours || 0)}ч</td>
       </tr>`;
     }).join('');
@@ -768,10 +739,10 @@ export class MailService {
         ${this.header('📋 Итоги дня: невыполненные задачи')}
         <div style="padding:28px 36px;">
           <p style="color:#334155;font-size:15px;margin:0 0 6px;">
-            Здравствуйте, <strong>${recipientName}</strong>!
+            Здравствуйте, <strong>${e(recipientName)}</strong>!
           </p>
           <p style="color:#64748b;font-size:14px;margin:0 0 16px;">
-            По проекту <strong style="color:#1e293b;">${projectName}</strong> за ${dateStr}
+            По проекту <strong style="color:#1e293b;">${e(projectName)}</strong> за ${e(dateStr)}
             осталось <strong style="color:#ef4444;">${tasks.length}</strong>
             невыполненных задач${tasks.length === 1 ? 'а' : ''}.
           </p>
@@ -798,7 +769,7 @@ export class MailService {
             </thead>
             <tbody>${rows}</tbody>
           </table>
-          <a href="${this.appUrl}/projects" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
+          <a href="${this.href('/projects')}" style="display:inline-block;padding:12px 26px;background:linear-gradient(135deg,#4f6ef7,#7c3aed);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;">
             Открыть проекты →
           </a>
         </div>

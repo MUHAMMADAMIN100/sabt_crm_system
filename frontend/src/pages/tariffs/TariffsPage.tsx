@@ -104,8 +104,10 @@ export default function TariffsPage() {
       toast.success('Удалено')
     },
     onError: (e: any) => {
-      // Скорее всего FK от projects — даём подсказку.
-      const msg = e?.response?.status === 500
+      // Тариф с проектами сервер не удаляет и объясняет почему (15.11.2026) —
+      // показываем его текст; запасная подсказка — на случай старого сервера.
+      const status = e?.response?.status
+      const msg = status === 500
         ? 'На тариф ссылаются проекты. Используйте «выключить» вместо удаления.'
         : e?.response?.data?.message || 'Ошибка'
       toast.error(msg)

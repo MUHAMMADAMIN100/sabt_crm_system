@@ -116,12 +116,18 @@ const DEV_TAGS_FILTER_MAX = 20;
 /** Лимит детей при clone withSubtasks (DoS: родитель с 1000 детьми = 1000 INSERT). */
 const DEV_CLONE_MAX_SUBTASKS = 100;
 
+/** Внутренние DNS-суффиксы (15.11.2026): Railway private network (*.railway.internal),
+ *  mDNS (*.local), k8s (*.svc.cluster.local) и т. п. — в публичном интернете не резолвятся. */
+const INTERNAL_HOST_SUFFIXES = ['.internal', '.local', '.localhost', '.localdomain', '.lan', '.home.arpa'];
+
 /** SSRF-блок для webhook-URL (контракт E): только публичные http(s)-хосты.
  *  manage-право не должно превращаться в сканер внутренней сети / читалку
  *  metadata (169.254.169.254) через outbox. Проверяем литеральные IP,
- *  localhost и userinfo; DNS-rebinding остаётся остаточным риском (см. отчёт). */
+ *  localhost, однословные/внутренние имена и userinfo; DNS-rebinding
+ *  остаётся остаточным риском (см. отчёт). */
 function isBlockedWebhookHostname(hostname: string): boolean {
-  const h = (hostname ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  // Хвостовую точку FQDN ('postgres.') срезаем (15.11.2026): иначе обход проверок ниже.
+  const h = (hostname ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   if (!h) return true;
   // Unit-тесты (jest) поднимают локальный http-сервер на 127.0.0.1 для проверки
   // HMAC-подписи postWebhook: loopback разрешаем ТОЛЬКО под jest
@@ -146,10 +152,15 @@ function isBlockedWebhookHostname(hostname: string): boolean {
     if (a === 0) return true; // 0/8
     return false;
   }
-  // IPv6 с двоеточием без резолва: блокируем только очевидный loopback.
-  if (h.includes(':')) return h === '::1';
-  // Обычный DNS-хост: точечные блокировки выше не применимы без резолва.
-  if (h === '169.254.169.254') return true;
+  // IPv6-литерал без резолва: loopback, ULA fc00::/7, link-local fe80::/10,
+  // IPv4-mapped ::ffff:* (15.11.2026 — раньше только ::1).
+  if (h.includes(':')) {
+    return h === '::1' || /^f[cd][0-9a-f]{0,2}:/.test(h) || /^fe[89ab][0-9a-f]?:/.test(h) || h.startsWith('::ffff:');
+  }
+  // Однословные хосты (15.11.2026): 'postgres', 'redis', 'backend' — имена
+  // сервисов внутренней сети (docker/Railway), публичный хост всегда с точкой.
+  if (!h.includes('.')) return true;
+  if (INTERNAL_HOST_SUFFIXES.some(s => h.endsWith(s))) return true;
   return false;
 }
 
@@ -826,6 +837,14 @@ export class DevTasksService {
     if (parent.parentTaskId) {
       throw new BadRequestException('Подзадачи третьего уровня не поддерживаются');
     }
+    // update (15.11.2026): у задачи со своими подзадачами нельзя появиться
+    // родителю — её дети стали бы третьим уровнем (на create детей ещё нет).
+    if (excludeId) {
+      const ownChildren = await this.taskRepo.count({ where: { parentTaskId: excludeId } });
+      if (ownChildren > 0) {
+        throw new BadRequestException('Подзадачи третьего уровня не поддерживаются');
+      }
+    }
   }
 
   /** Санитизация причины блокировки (контракт A): trim, пустая → null,
@@ -970,8 +989,8 @@ export class DevTasksService {
     this.broadcast();
     // Перечитываем, чтобы eager-связи (assignee/createdBy) вернулись заполненными.
     const detail = await this.findOne(saved.id);
-    // Outbox вебхуков (контракт E): тихо, мутацию не роняет.
-    await this.emitDevEvent('task.created', detail);
+    // Outbox вебхуков (контракт E): тихо, в фоне (15.11.2026), мутацию не роняет.
+    this.emitDevEvent('task.created', detail);
     return detail;
   }
 
@@ -1125,15 +1144,23 @@ export class DevTasksService {
     // Прочие PATCH-правки отдельного события не имеют и не рассылаются.
     // Статус подмешиваем явно — payload отражает именно этот переход.
     if (!wasDone && (dto as any).status === DevTaskStatus.DONE) {
-      await this.emitDevEvent('task.done', { ...updated, status: DevTaskStatus.DONE });
+      this.emitDevEvent('task.done', { ...updated, status: DevTaskStatus.DONE });
     }
     return updated;
   }
 
   /** Перемещение карточки канбана (drag-and-drop): новая колонка + позиция.
    *  Отдельный метод, а не PATCH, потому что это единственная операция,
-   *  доступная исполнителю без права dev-tracker.manage. */
-  async move(id: string, status: DevTaskStatus, position?: number, actorId?: string): Promise<DevTask> {
+   *  доступная исполнителю без права dev-tracker.manage.
+   *  canManage (15.11.2026) — hasGrant(req.user, 'dev-tracker.manage') из
+   *  контроллера: без него актор двигает только карточки, где он исполнитель. */
+  async move(
+    id: string,
+    status: DevTaskStatus,
+    position?: number,
+    actorId?: string,
+    canManage = false,
+  ): Promise<DevTask> {
     if (status === undefined || status === null) {
       throw new BadRequestException('Статус обязателен');
     }
@@ -1147,6 +1174,11 @@ export class DevTasksService {
     }
     const task = await this.taskRepo.findOne({ where: { id } });
     if (!task) throw new NotFoundException('Задача не найдена');
+    // (15.11.2026) Раньше любой с dev-tracker.view мог закрыть/двигать чужую
+    // карточку. Без manage — только свою (assigneeId === актор).
+    if (actorId && !canManage && task.assigneeId !== actorId) {
+      throw new ForbiddenException('Перемещать можно только свои задачи');
+    }
     const oldStatus = task.status;
 
     const patch: Partial<DevTask> = { status };
@@ -1197,7 +1229,7 @@ export class DevTasksService {
     // Outbox вебхуков (контракт E): переход в done — task.done, иначе task.moved.
     // Новый статус подмешиваем явно: перечитанный detail в теории уже свежий,
     // но payload обязан отражать именно этот переход, а не гонку чтения.
-    await this.emitDevEvent(
+    this.emitDevEvent(
       status === DevTaskStatus.DONE && oldStatus !== DevTaskStatus.DONE ? 'task.done' : 'task.moved',
       { ...moved, status },
     );
@@ -1250,7 +1282,7 @@ export class DevTasksService {
     }
     this.broadcast();
     // Outbox вебхуков (контракт E): новый комментарий — task.commented.
-    await this.emitDevEvent('task.commented', task);
+    this.emitDevEvent('task.commented', task);
     // Автор — безопасной ссылкой (id/имя/аватар), не всей сущностью User:
     // у comment.author стоит eager, иначе наружу утекал бы hash пароля.
     return {
@@ -1330,13 +1362,15 @@ export class DevTasksService {
       this.broadcast();
       // Outbox вебхуков (контракт E): переход в done — task.done, иначе task.moved.
       // Подписки читаем один раз на весь bulk: иначе N задач × find — N+1.
-      const subs = await this.fetchActiveSubs();
+      // В фоне (15.11.2026): ответ bulk не ждёт доставку вебхуков.
       const ev = status === DevTaskStatus.DONE ? 'task.done' : 'task.moved';
-      await Promise.all(
-        (tasks ?? [])
-          .filter(t => t?.id && changedIds.has(t.id))
-          .map(t => this.deliverEvent(ev, { ...t, status }, subs)),
-      );
+      const changedTasks = (tasks ?? []).filter(t => t?.id && changedIds.has(t.id));
+      if (changedTasks.length > 0) {
+        this.runOutbox(async () => {
+          const subs = await this.fetchActiveSubs();
+          await Promise.all(changedTasks.map(t => this.deliverEvent(ev, { ...t, status }, subs)));
+        });
+      }
       return { updated, deleted: 0 };
     }
 
@@ -1496,6 +1530,16 @@ export class DevTasksService {
     }
     const orig = await this.taskRepo.findOne({ where: { id } });
     if (!orig) throw new NotFoundException('Задача не найдена');
+    // Детей читаем и кап проверяем ДО записи (15.11.2026): раньше копия
+    // родителя сохранялась первой, и 400 «слишком много подзадач» оставлял её сиротой.
+    const children = withSubtasks
+      ? ((await this.taskRepo.find({ where: { parentTaskId: id } })) ?? [])
+      : [];
+    if (children.length > DEV_CLONE_MAX_SUBTASKS) {
+      throw new BadRequestException(
+        `Слишком много подзадач для клонирования (макс. ${DEV_CLONE_MAX_SUBTASKS})`,
+      );
+    }
     const copy = this.taskRepo.create({
       title: `${orig.title} (копия)`,
       description: orig.description,
@@ -1520,15 +1564,11 @@ export class DevTasksService {
       parentTaskId: null,
       createdById: userId,
     } as Partial<DevTask>);
-    const saved = await this.taskRepo.save(copy);
-
-    if (withSubtasks) {
-      const children = (await this.taskRepo.find({ where: { parentTaskId: id } })) ?? [];
-      if (children.length > DEV_CLONE_MAX_SUBTASKS) {
-        throw new BadRequestException(
-          `Слишком много подзадач для клонирования (макс. ${DEV_CLONE_MAX_SUBTASKS})`,
-        );
-      }
+    // Копия и её дети — одной транзакцией (15.11.2026): сбой на N-м ребёнке
+    // откатывает всё, а не оставляет полуклон без части подзадач.
+    const saved = await this.taskRepo.manager.transaction(async em => {
+      const repo = em.getRepository(DevTask);
+      const savedCopy = await repo.save(copy);
       for (const child of children) {
         // Копия ребёнка — тоже новая работа: статус backlog, completedAt null,
         // блокер снят (как у родительской копии). Спринт/startDate сохраняем
@@ -1552,12 +1592,13 @@ export class DevTasksService {
           completedAt: null,
           assigneeId: child.assigneeId,
           projectId: (child as any).projectId ?? null,
-          parentTaskId: (saved as any).id,
+          parentTaskId: (savedCopy as any).id,
           createdById: userId,
         } as Partial<DevTask>);
-        await this.taskRepo.save(childCopy);
+        await repo.save(childCopy);
       }
-    }
+      return savedCopy;
+    });
 
     // Уведомление исполнителю копии — как в create (ему поставили задачу).
     await this.notifyTaskAssigned(
@@ -2473,6 +2514,23 @@ export class DevTasksService {
     return this.webhookRepo.save(row);
   }
 
+  /** Вкл/выкл подписки (15.11.2026, право manage). Раньше фронт делал
+   *  DELETE + POST: терялись HMAC-секрет (GET его не отдаёт) и журнал доставок.
+   *  Меняем только isActive; secret наружу не отдаём (как listWebhooks). */
+  async updateWebhook(
+    id: string,
+    dto: { isActive?: boolean },
+  ): Promise<Omit<DevWebhookSubscription, 'secret'>> {
+    if (typeof dto?.isActive !== 'boolean') {
+      throw new BadRequestException('Некорректный флаг isActive');
+    }
+    const sub = await this.webhookRepo.findOne({ where: { id } });
+    if (!sub) throw new NotFoundException('Подписка не найдена');
+    await this.webhookRepo.update(id, { isActive: dto.isActive });
+    const { secret, ...rest } = { ...sub, isActive: dto.isActive } as any;
+    return rest;
+  }
+
   /** Удаление подписки (контракт E, право manage). Журнал доставок сносится
    *  каскадом (FK ON DELETE CASCADE). */
   async deleteWebhook(id: string): Promise<{ message: string }> {
@@ -2589,9 +2647,26 @@ export class DevTasksService {
 
   /** Веерная рассылка события подпискам (контракт E). Подписка срабатывает,
    *  если (projectId null или равен задаче) И событие в её events (и она
-   *  активна). Вся функция best-effort: outbox никогда не роняет мутацию. */
-  private async emitDevEvent(event: string, task: any): Promise<void> {
-    await this.deliverEvent(event, task, await this.fetchActiveSubs());
+   *  активна). Вся функция best-effort: outbox никогда не роняет мутацию.
+   *  Fire-and-forget (15.11.2026): HTTP-запрос мутации больше не ждёт доставку
+   *  (до 8 с на подписку). Журнал доставок и ретраи — как раньше; ошибки
+   *  глотаются здесь, чтобы не было unhandled rejection. */
+  private emitDevEvent(event: string, task: any): void {
+    this.runOutbox(async () => {
+      await this.deliverEvent(event, task, await this.fetchActiveSubs());
+    });
+  }
+
+  /** Фоновый запуск outbox-работы (15.11.2026): не await'им в пути запроса,
+   *  любые ошибки (в т. ч. синхронные) глотаем — outbox вторичен. */
+  private runOutbox(job: () => Promise<unknown>): void {
+    try {
+      job().catch(() => {
+        // Outbox — вторичен по отношению к мутации доски.
+      });
+    } catch {
+      // Outbox — вторичен по отношению к мутации доски.
+    }
   }
 
   /** Доставка с ретраями (контракт E): сразу + через ~1 мин и ~5 мин.

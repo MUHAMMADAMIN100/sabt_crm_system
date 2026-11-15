@@ -1,10 +1,10 @@
-import { createHmac } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { describeWebhook, parseInstagramWebhook } from './instagram-events';
 import { isMediaLink, signedByMeta, MessengerError } from './meta-http';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { DirectFiles } from './direct-files';
 import { snippetOf } from './direct.service';
-import { openToken, sealToken } from './instagram.api';
+import { InstagramApi, openToken, sealToken } from './instagram.api';
 import { bindsOnReply, canLead, canReply, canTransfer, isSalesManager, isTop } from './direct-access';
 
 const ACCOUNT = '17841400000000001';
@@ -307,5 +307,50 @@ describe('ключи дополнительных аккаунтов Instagram',
     expect(openToken(parts.join('.'))).toBeNull();
     expect(openToken('мусор')).toBeNull();
     expect(openToken(null)).toBeNull();
+  });
+});
+
+describe('маркер основного аккаунта в базе (15.11.2026)', () => {
+  const saved = { ...process.env };
+  const fp = (t: string) => createHash('sha256').update(t).digest('hex').slice(0, 16);
+  beforeEach(() => {
+    process.env.INSTAGRAM_ACCESS_TOKEN = 'env-token';
+    process.env.INSTAGRAM_APP_SECRET = 'app-secret';
+    delete process.env.INSTAGRAM_ACCOUNT_ID;
+  });
+  afterEach(() => { process.env = { ...saved }; });
+
+  const repo = (value: any) => {
+    const store: any = { row: value === undefined ? null : { key: 'instagram', value } };
+    return {
+      store,
+      findOne: jest.fn(async () => store.row),
+      save: jest.fn(async (row: any) => { store.row = row; return row; }),
+    };
+  };
+
+  it('после продления маркер пишется шифром, открытого token в базе нет', async () => {
+    const r = repo({ source: fp('env-token'), username: 'webrand.tj' });
+    const api = new InstagramApi(r as any);
+    await api.update({ token: 'IGAA-fresh-token', refreshedAt: '2026-11-15T00:00:00Z' });
+    const value = r.store.row.value;
+    expect(value.token).toBeUndefined();
+    expect(JSON.stringify(value)).not.toContain('IGAA-fresh-token');
+    expect(openToken(value.tokenSealed)).toBe('IGAA-fresh-token');
+    expect((await api.state())?.token).toBe('IGAA-fresh-token');
+  });
+
+  it('старая запись с открытым маркером читается и перешифровывается', async () => {
+    const r = repo({ source: fp('env-token'), token: 'IGAA-legacy' });
+    const api = new InstagramApi(r as any);
+    expect((await api.state())?.token).toBe('IGAA-legacy');
+    await api.sealLegacyToken();
+    expect(r.store.row.value.token).toBeUndefined();
+    expect((await api.state())?.token).toBe('IGAA-legacy');
+  });
+
+  it('новый маркер в окружении побеждает сохранённый', async () => {
+    const r = repo({ source: fp('old-env'), tokenSealed: sealToken('IGAA-old') });
+    expect((await new InstagramApi(r as any).state())?.token).toBe('env-token');
   });
 });

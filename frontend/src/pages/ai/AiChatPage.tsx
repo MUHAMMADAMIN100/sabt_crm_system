@@ -261,6 +261,8 @@ export default function AiChatPage() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Задайте вопрос о проектах, задачах, сотрудниках..."
+            // Сервер принимает вопрос до 4000 символов (15.11.2026).
+            maxLength={4000}
             rows={1}
             className="flex-1 bg-transparent text-sm outline-none resize-none text-surface-800 dark:text-surface-200 placeholder-surface-400 max-h-32"
             style={{ minHeight: '24px' }}

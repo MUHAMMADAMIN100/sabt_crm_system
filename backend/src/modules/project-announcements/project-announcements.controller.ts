@@ -16,8 +16,8 @@ export class ProjectAnnouncementsController {
   constructor(private service: ProjectAnnouncementsService) {}
 
   @Get()
-  findAll(@Param('projectId') projectId: string) {
-    return this.service.findByProject(projectId);
+  findAll(@Param('projectId') projectId: string, @Request() req) {
+    return this.service.findByProject(projectId, req.user);
   }
 
   @Post()

@@ -54,3 +54,12 @@ describe('Finance employee employment dates', () => {
     },
   );
 });
+
+describe('Отмена выплат месяца: тип (15.11.2026)', () => {
+  it.each(['advance', 'bonus', 'salary'])('принимает kind=%s', async (kind) => {
+    await expect(propertyIsValid(RemoveMonthExpensesDto, { ym: '2026-10', kind }, 'kind')).resolves.toBe(true);
+  });
+  it('отклоняет неизвестный kind', async () => {
+    await expect(propertyIsValid(RemoveMonthExpensesDto, { ym: '2026-10', kind: 'all' }, 'kind')).resolves.toBe(false);
+  });
+});

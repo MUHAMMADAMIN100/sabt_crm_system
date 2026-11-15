@@ -67,6 +67,18 @@ const LABELS: Array<{ re: RegExp; method?: string; label: string }> = [
   { re: /\/reminders\/run/, label: 'Запустил проверку напоминаний' },
 ];
 
+/** Чтения, которые тоже пишем в журнал (15.11.2026): выгрузка всех данных и
+ *  открытие снимка — в них зарплаты всех сотрудников. Список снимков (без
+ *  данных) не пишем. */
+const AUDITED_READS: Array<{ re: RegExp; label: string }> = [
+  { re: /\/backup\/export(?:\?.*)?$/, label: 'Скачал резервную копию финансов' },
+  { re: /\/backups\/[^/?]+(?:\?.*)?$/, label: 'Открыл снимок данных финансов' },
+];
+
+export function auditedReadLabel(url: string): string | null {
+  return AUDITED_READS.find(r => r.re.test(url))?.label ?? null;
+}
+
 function labelFor(method: string, url: string): string {
   for (const l of LABELS) {
     if (l.method && l.method !== method) continue;
@@ -190,12 +202,32 @@ export class FinanceActivityInterceptor implements NestInterceptor {
     }
   }
 
+  /** Запись о чтении всех данных (выгрузка/снимок) — без тела ответа. */
+  private async writeRead(req: any, label: string) {
+    try {
+      const url = String(req?.originalUrl || req?.url || '');
+      await this.repo.save(this.repo.create({
+        userId: req?.user?.id ?? null,
+        action: label,
+        route: `GET ${url}`.slice(0, 200),
+        details: cleanValue({ objectId: req?.params?.id || null }),
+      }));
+    } catch (error: any) {
+      this.logger.warn(`finance activity log failed: ${error?.message || error}`);
+    }
+  }
+
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<any> {
     const req = ctx.switchToHttp().getRequest();
     const method = String(req?.method || '');
-    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return next.handle();
     // «Войти как» не оставляет следов (13.11.2026): действия из кабинета
     // сотрудника в финансовый журнал не пишем.
+    if (method === 'GET') {
+      const label = req?.user?.impersonatorId ? null : auditedReadLabel(String(req?.originalUrl || req?.url || ''));
+      if (!label) return next.handle();
+      return next.handle().pipe(tap(() => { void this.writeRead(req, label); }));
+    }
+    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return next.handle();
     if (req?.user?.impersonatorId) return next.handle();
 
     // Сначала фиксируем «до», затем пропускаем запрос. Ошибка снимка не должна

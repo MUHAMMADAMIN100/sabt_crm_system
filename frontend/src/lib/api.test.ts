@@ -131,3 +131,59 @@ describe('markJustAuthed / isJustAuthed (грейс-окно после логи
     vi.useRealTimers()
   })
 })
+
+// Подсказка на экране входа после окончательного 401 (15.11.2026): сервер
+// пишет «Пароль был изменён — войдите заново» по-русски, а проверка искала
+// только английское «password» — человек видел «обычное истечение».
+describe('sessionEndNotice — причина выхода', () => {
+  beforeEach(() => { vi.resetModules() })
+
+  it('русское «Пароль был изменён» — подсказка про смену пароля', async () => {
+    const { sessionEndNotice } = await import('./api')
+    expect(sessionEndNotice('Пароль был изменён — войдите заново')).toEqual({
+      key: 'session-message',
+      text: 'Пароль был изменён или выполнен вход на другом устройстве. Войдите заново.',
+    })
+  })
+
+  it('английские причины по-прежнему распознаются', async () => {
+    const { sessionEndNotice } = await import('./api')
+    expect(sessionEndNotice('Refresh token reused — session revoked').text).toMatch(/Пароль был изменён/)
+    expect(sessionEndNotice('Unauthorized').text).toBe('Войдите заново, чтобы продолжить работу.')
+  })
+
+  it('блокировка — отдельное сообщение без префикса BLOCKED:', async () => {
+    const { sessionEndNotice } = await import('./api')
+    expect(sessionEndNotice('BLOCKED: Вас заблокировал администратор')).toEqual({
+      key: 'blocked-message', text: 'Вас заблокировал администратор',
+    })
+  })
+})
+
+// Неверный текущий пароль при смене пароля сервер отдаёт как 401. Это ответ
+// формы: interceptor не должен продлевать сессию, повторять запрос и
+// выкидывать на экран входа (15.11.2026).
+describe('interceptor — 401 «Wrong current password»', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+
+  it('ошибка уходит форме: без продления, повтора и выхода', async () => {
+    const { default: api } = await import('./api')
+    const urls: string[] = []
+    ;(api.defaults as any).adapter = (config: any) => {
+      urls.push(config.url)
+      return Promise.reject({
+        config,
+        response: { status: 401, data: { message: 'Wrong current password' }, headers: {}, config },
+      })
+    }
+    window.history.replaceState(null, '', '/profile')
+    await expect(api.patch('/auth/change-password', { oldPassword: 'old', newPassword: 'new-password' }))
+      .rejects.toMatchObject({ response: { status: 401 } })
+    expect(urls).toEqual(['/auth/change-password'])
+    expect(sessionStorage.getItem('session-message')).toBeNull()
+  })
+})

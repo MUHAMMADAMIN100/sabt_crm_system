@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmmTariff } from './smm-tariff.entity';
@@ -104,6 +104,12 @@ export class SmmTariffsService implements OnModuleInit {
     //    считаются дубликатами канонического «Индивидуальный» и
     //    деактивируются. Существующие проекты сохраняют их в snapshot —
     //    данные не теряются.
+    //    Цифры канонических тарифов — из официальной таблицы услуг (комментарий
+    //    к CANON_TARIFFS: «при изменении значений просто меняем константы»),
+    //    поэтому их по-прежнему приводим к константам. А вот свои тарифы
+    //    (клоны, «Start (копия)», тариф под клиента) с 15.11.2026 НЕ
+    //    выключаем: раньше каждый перезапуск гасил всё, что создали в
+    //    интерфейсе, и тариф пропадал из выбора в проекте.
     try {
       const all = await this.repo.find();
       const canonNames = new Set(CANON_TARIFFS.map(t => (t.name || '').toLowerCase()));
@@ -113,10 +119,9 @@ export class SmmTariffsService implements OnModuleInit {
         const lower = String(t.name || '').toLowerCase();
         // Точно канонический — пропускаем (его обновит цикл ниже).
         if (canonNames.has(lower)) continue;
-        // Не канонический. Деактивируем если был активен, ИЛИ если это
-        // дубль «индивидуального» (даже если деактивирован — чтобы не
-        // путать в админке).
-        if (t.isActive || isIndividualLike(t.name)) {
+        // Не канонический: выключаем только дубль «индивидуального» —
+        // индивидуальный тариф один, цифры у него живут в проекте.
+        if (t.isActive && isIndividualLike(t.name)) {
           await this.repo.update(t.id, { isActive: false });
         }
       }
@@ -251,8 +256,21 @@ export class SmmTariffsService implements OnModuleInit {
     return this.stripPrice(saved, role);
   }
 
+  /** Удаление (15.11.2026): тариф, на который ссылаются проекты, не
+   *  удаляем — внешний ключ стоит ON DELETE SET NULL, и проекты молча
+   *  теряли тариф, а с ним лимиты и план. Интерфейс так и обещает:
+   *  «если на тариф ссылаются проекты, удаление не пройдёт». */
   async remove(id: string) {
     const t = await this.findOneInternal(id);
+    const rows: Array<{ n: number }> = await this.repo.manager.query(
+      `SELECT COUNT(*)::int AS n FROM projects WHERE "tariffId" = $1`, [id],
+    );
+    const used = Number(rows?.[0]?.n || 0);
+    if (used > 0) {
+      throw new BadRequestException(
+        `На тариф ссылаются проекты (${used}) — удалить нельзя. Выключите тариф: он останется в истории.`,
+      );
+    }
     await this.repo.remove(t);
     return { message: 'Tariff deleted' };
   }

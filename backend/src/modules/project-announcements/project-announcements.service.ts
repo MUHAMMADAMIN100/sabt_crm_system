@@ -7,6 +7,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { escapeHtml } from '../../common/html-escape';
+import { AccessUser, assertCanViewProject } from '../projects/project-access';
 
 @Injectable()
 export class ProjectAnnouncementsService {
@@ -18,7 +20,9 @@ export class ProjectAnnouncementsService {
     private telegramService: TelegramService,
   ) {}
 
-  findByProject(projectId: string) {
+  /** Объявления проекта — только тем, кто видит проект (15.11.2026). */
+  async findByProject(projectId: string, user?: AccessUser | null) {
+    if (user) await assertCanViewProject(this.repo.manager, user, projectId);
     return this.repo.find({
       where: { projectId },
       relations: ['createdBy'],
@@ -74,7 +78,8 @@ export class ProjectAnnouncementsService {
             member.email,
             member.name,
             `${icon} ${isUrgent ? 'СРОЧНО' : 'Важное объявление'} — ${project.name}`,
-            `<b>${dto.title}</b>${dto.description ? `<br/><br/>${dto.description}` : ''}<br/><br/>От: ${creatorName}`,
+            // Текст объявления — от людей: через escapeHtml (15.11.2026).
+            `<b>${escapeHtml(dto.title)}</b>${dto.description ? `<br/><br/>${escapeHtml(dto.description)}` : ''}<br/><br/>От: ${escapeHtml(creatorName)}`,
           );
         }
       } catch {}
@@ -83,10 +88,10 @@ export class ProjectAnnouncementsService {
       try {
         await this.telegramService.sendToUser(
           userId,
-          `${icon} <b>${isUrgent ? 'СРОЧНО' : 'Важное'}</b> — ${project.name}\n\n` +
-          `${dto.title}` +
-          (dto.description ? `\n${dto.description}` : '') +
-          `\n\n👤 ${creatorName}` +
+          `${icon} <b>${isUrgent ? 'СРОЧНО' : 'Важное'}</b> — ${escapeHtml(project.name)}\n\n` +
+          `${escapeHtml(dto.title)}` +
+          (dto.description ? `\n${escapeHtml(dto.description)}` : '') +
+          `\n\n👤 ${escapeHtml(creatorName)}` +
           `\n👉 ${this.telegramService.appUrl}/projects/${projectId}`,
         );
       } catch {}

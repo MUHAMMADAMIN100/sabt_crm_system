@@ -8,7 +8,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
 import { join } from 'path';
-import { LoggerModule } from './logger/logger.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -63,7 +62,9 @@ import { DbIndexesService } from './common/db-indexes.service';
   ],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    LoggerModule,
+    // LoggerModule удалён (15.11.2026): его логгер никто не внедрял, а он
+    // открывал второй DailyRotateFile на те же logs/*.log, что и логгер
+    // из main.ts, — два писателя ротировали одни файлы.
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

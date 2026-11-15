@@ -3,11 +3,13 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource, Repository } from 'typeorm';
 import { User } from '../users/user.entity';
+import { truncateTelegramHtml } from '../../common/html-escape';
 import { IncomingFile, TelegramService } from '../telegram/telegram.service';
 import { AllChatFailed, ChatMessage } from './ai/chat';
 import { AiProviderError, explainAllFailed } from './ai/providers';
 import { AllSpeechFailed, transcribe } from './ai/speech';
 import { AgentResult, Executed, PendingCall, runAgent, runPending } from './agent';
+import type { AgentAiFailed } from './agent';
 import { ApiError, UserApi } from './internal-api';
 import { buildSnapshot, systemPrompt } from './prompt';
 import { RefTable } from './refs';
@@ -19,7 +21,7 @@ import { CLIENT_TOOLS } from './tools/clients.tools';
 import { SMM_TOOLS } from './tools/smm.tools';
 import { FINANCE_TOOLS } from './tools/finance.tools';
 import { SALARY_TOOLS } from './tools/salary.tools';
-import { DB_TOOLS, DbRunner } from './tools/db.tools';
+import { DB_TOOLS, DbRunner, VOICE_RO_SCHEMA, ViewsUnavailable } from './tools/db.tools';
 import { ATTENDANCE_TOOLS } from './tools/attendance.tools';
 import { PROJECTS_TOOLS } from './tools/projects.tools';
 import { CONTENT_TOOLS } from './tools/content.tools';
@@ -131,14 +133,30 @@ export class VoiceAssistantService implements OnModuleInit {
     @InjectDataSource() private readonly ds: DataSource,
   ) {}
 
-  /** Чтение базы для основателя: транзакция READ ONLY + таймаут 8 с —
-   *  записать что-либо невозможно на уровне самой БД. */
-  private readonly dbRead: DbRunner = async (sql: string) => {
+  /** Чтение базы для основателя: транзакция + таймаут 8 с.
+   *  С 15.11.2026: в начале транзакции — доверенные команды prelude (схема
+   *  voice_ro с представлениями без секретных колонок), затем транзакция
+   *  переводится в READ ONLY, и только потом выполняется запрос ИИ — записать
+   *  он ничего не может, а «users» в нём — это voice_ro.users, не таблица с
+   *  паролями. ROLLBACK убирает и представления: постоянных объектов,
+   *  мешающих миграциям, не остаётся. */
+  private readonly dbRead: DbRunner = async (sql: string, prelude: string[] = []) => {
     const qr = this.ds.createQueryRunner();
     await qr.connect();
     try {
-      await qr.query('BEGIN READ ONLY');
+      await qr.query('BEGIN');
       await qr.query("SET LOCAL statement_timeout = '8000'");
+      try {
+        for (const stmt of prelude) await qr.query(stmt);
+      } catch (e: any) {
+        this.logger.error(`представления ${VOICE_RO_SCHEMA} не созданы: ${e?.message || e}`);
+        throw new ViewsUnavailable(String(e?.message || e));
+      }
+      // Перейти в «только чтение» посреди транзакции можно (обратно — нет).
+      await qr.query('SET TRANSACTION READ ONLY');
+      await qr.query(`SET LOCAL search_path = ${VOICE_RO_SCHEMA}, pg_catalog`);
+      // Обратная косая в '…' — обычный символ: так строки разбирает и проверка запроса.
+      await qr.query('SET LOCAL standard_conforming_strings = on');
       return await qr.query(sql);
     } finally {
       await qr.query('ROLLBACK').catch(() => undefined);
@@ -267,6 +285,12 @@ export class VoiceAssistantService implements OnModuleInit {
     if (action === 'undo') {
       const u = this.undos.get(key);
       if (!u || u.chatId !== chatId || u.userId !== user.id) return { toast: 'Отменить уже нельзя — измените на сайте' };
+      // Срок проверяем здесь же (15.11.2026): sweep() идёт только при новом
+      // ответе бота, и без этой проверки «Отменить» срабатывало через сутки.
+      if (Date.now() - u.at > UNDO_TTL_MS) {
+        this.undos.delete(key);
+        return { toast: 'Запрос устарел — отменить уже нельзя, измените на сайте', append: '⌛ Запрос устарел' };
+      }
       this.undos.delete(key);
       const api = new UserApi(this.jwt, user);
       const failed: string[] = [];
@@ -285,6 +309,7 @@ export class VoiceAssistantService implements OnModuleInit {
       const c = this.confirms.get(key);
       if (!c || c.chatId !== chatId || c.userId !== user.id) return { toast: 'Запрос устарел — скажите заново' };
       this.confirms.delete(key);
+      if (Date.now() - c.at > PENDING_TTL_MS) return { toast: 'Запрос устарел — скажите заново', append: '⌛ Запрос устарел' };
       if (action === 'no') return { toast: 'Отменено', append: '✕ Не стали делать' };
       return this.serial(chatId, async () => {
         const ctx = this.context(user, chatId, c.utterance, RefTable.fromJSON(c.refs), c.file);
@@ -298,6 +323,10 @@ export class VoiceAssistantService implements OnModuleInit {
     // Выбор варианта — заново разбираем ту же фразу с уточнением.
     const ch = this.choices.get(key);
     if (!ch || ch.chatId !== chatId || ch.userId !== user.id) return { toast: 'Запрос устарел — скажите заново' };
+    if (Date.now() - ch.at > PENDING_TTL_MS) {
+      this.choices.delete(key);
+      return { toast: 'Запрос устарел — скажите заново', append: '⌛ Запрос устарел' };
+    }
     const option = ch.options[Number(idx)];
     if (option === undefined) return { toast: 'Вариант не найден' };
     this.choices.delete(key);
@@ -346,15 +375,27 @@ export class VoiceAssistantService implements OnModuleInit {
     }
     const started = Date.now();
     let result: AgentResult;
+    /** ИИ отказал уже после выполненных действий — пояснение над их итогом. */
+    let failNote = '';
     try {
       result = await runAgent({ ctx, tools, system: systemPrompt(ctx, snapshot as any, session.history, ALL_TOOLS.filter((t) => !can(t)).map((t) => t.name)), history: [], userText: file ? `${userText}\n\n${fileNote(file)}` : userText, sections });
     } catch (e: any) {
-      if (e instanceof AllChatFailed) {
+      if (e instanceof AllChatFailed && (e as AgentAiFailed).done?.length) {
+        // Записи уже прошли, а на следующем шаге ИИ не ответил (15.11.2026):
+        // раньше человек видел только ошибку и не знал, что часть сделана,
+        // и не мог её отменить. Теперь — пояснение, итоги и «↩ Отменить».
+        // (AgentAiFailed — наследник AllChatFailed с done и buttons.)
+        const partial = e as AgentAiFailed;
+        this.logger.error(`ИИ не ответил после выполненных действий: ${partial.message}`);
+        result = { type: 'answer', text: '', done: partial.done, buttons: partial.buttons || [] };
+        failNote = `${explainAllFailed(partial.errors)}\n\nУже сделано:\n`;
+      } else if (e instanceof AllChatFailed) {
         this.logger.error(`ИИ не ответил: ${e.message}`);
         await this.telegram.sendMessage(chatId, (fromVoice ? `🎤 <i>«${esc(userText)}»</i>\n\n` : '') + explainAllFailed(e.errors));
         return;
+      } else {
+        throw e;
       }
-      throw e;
     }
     this.logger.log(
       `[voice] user=${user.id} ${fromVoice ? 'голос' : 'текст'} ${Date.now() - started}мс → ${result.type}`
@@ -368,7 +409,7 @@ export class VoiceAssistantService implements OnModuleInit {
     while (session.history.length > HISTORY_MAX) session.history.shift();
     session.at = Date.now();
 
-    const head = fromVoice && !isClarification ? `🎤 <i>«${esc(userText)}»</i>\n\n` : '';
+    const head = (fromVoice && !isClarification ? `🎤 <i>«${esc(userText)}»</i>\n\n` : '') + failNote;
     await this.sendResult(chatId, user, result, head, ctx, replyTaskId, file);
   }
 
@@ -413,7 +454,8 @@ export class VoiceAssistantService implements OnModuleInit {
     }
     if (!lines.length) lines.push('🤔 Не понял, что нужно сделать. Например: «Задачу "Макет" — на готово» или «Какие задачи у меня на завтра?»');
     this.sweep();
-    await this.telegram.sendMessage(chatId, `${head || ''}${lines.join('\n')}`.slice(0, 4000), buttons.length ? buttons : undefined);
+    // Обрезка уже размеченного текста — без разрыва сущности «&amp;» (15.11.2026).
+    await this.telegram.sendMessage(chatId, truncateTelegramHtml(`${head || ''}${lines.join('\n')}`, 4000), buttons.length ? buttons : undefined);
     await this.notifyPeople(notices);
   }
 

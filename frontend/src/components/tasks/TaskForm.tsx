@@ -24,6 +24,33 @@ const ASSIGNEE_GROUPS: Array<{ id: string; label: string; roles: string[] }> = [
 ]
 const OTHER_GROUP = { id: 'other', label: '👤 Прочие сотрудники' }
 
+/** Срок задачи в форме — «настенное» время Душанбе 'YYYY-MM-DDTHH:MM'
+ *  (15.11.2026). Раньше на сервер уходила наивная строка, и колонка
+ *  timestamp хранила её как UTC: введённые 18:00 показывались и напоминались
+ *  в 23:00. Теперь форма шлёт абсолютный момент (ISO с Z), как быстрая форма
+ *  календаря, а при правке показывает срок по Душанбе — так же, как списки. */
+const DUSHANBE_OFFSET = '+05:00' // круглый год, без перевода часов
+function deadlineToIso(v: string | undefined | null): string | undefined {
+  if (!v) return undefined
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return new Date(`${v}:00${DUSHANBE_OFFSET}`).toISOString()
+  // Голая дата (клик по дню календаря без выбора времени) — полдень, как в
+  // быстрой форме календаря.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(`${v}T12:00:00${DUSHANBE_OFFSET}`).toISOString()
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? v : d.toISOString()
+}
+function isoToDushanbeInput(v: string | Date | undefined | null): string {
+  if (!v) return ''
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Dushanbe', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d)
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '00'
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
+}
+
 interface TaskFormProps {
   onSubmit: (data: any) => void
   onClose: () => void
@@ -104,7 +131,7 @@ export default function TaskForm({
         projectId: initial.projectId || fixedProjectId || '',
         assigneeId: initial.assigneeId || '',
         priority: initial.priority || 'medium',
-        deadline: initial.deadline ? new Date(initial.deadline).toISOString().slice(0, 16) : (initialDeadline || ''),
+        deadline: initial.deadline ? isoToDushanbeInput(initial.deadline) : (initialDeadline || ''),
         targetCount: initial.targetCount || '',
         // Wave 17: расширенные поля задач (TZ п.5)
         reviewerId: initial.reviewerId || '',
@@ -150,6 +177,16 @@ export default function TaskForm({
       alert('Выберите хотя бы одного исполнителя')
       return
     }
+    // Правка: исполнителей шлём, только если их реально поменяли (15.11.2026).
+    // Раньше форма всегда отправляла assigneeIds — у не-руководителя это был
+    // [он сам], и правка чужой задачи переназначала её на него.
+    const isEdit = !!initial?.id
+    const initialIds: string[] = Array.isArray(initial?.assignees) && initial.assignees.length > 0
+      ? initial.assignees.map((a: any) => a.userId).filter(Boolean)
+      : (initial?.assigneeId ? [initial.assigneeId] : [])
+    const assigneesChanged = !isEdit || (isAdmin && (
+      finalIds.length !== initialIds.length || finalIds.some((id, i) => id !== initialIds[i])
+    ))
     onSubmit({
       title: data.title,
       description: data.description || undefined,
@@ -157,10 +194,9 @@ export default function TaskForm({
       // примет пустую строку и в БД останется некорректное значение.
       projectId: fixedProjectId || data.projectId || null,
       // Старое поле для совместимости + новый массив
-      assigneeId: finalIds[0],
-      assigneeIds: finalIds,
+      ...(assigneesChanged ? { assigneeId: finalIds[0], assigneeIds: finalIds } : {}),
       priority: data.priority,
-      deadline: data.deadline,
+      deadline: deadlineToIso(data.deadline),
       targetCount: data.targetCount ? Number(data.targetCount) : undefined,
       // Wave 17 поля
       reviewerId: data.reviewerId || undefined,

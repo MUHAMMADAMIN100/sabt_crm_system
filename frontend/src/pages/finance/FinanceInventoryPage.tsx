@@ -37,7 +37,11 @@ export default function FinanceInventoryPage() {
   const active = assets.filter((a: any) => a.status === 'in_use' || a.status === 'repair');
   const parkPrice = active.reduce((s: number, a: any) => s + (a.price || 0), 0);
   const parkResidual = active.reduce((s: number, a: any) => s + (a.residual || 0), 0);
-  const monthlyDep = active.reduce((s: number, a: any) => s + (a.monthlyDep || 0), 0);
+  // Амортизация в месяц (15.11.2026): только то, что ещё амортизируется —
+  // выработанный ресурс (wornOut, остаток 0) больше не начисляет.
+  const monthlyDep = Math.round(active
+    .filter((a: any) => !a.wornOut && Number(a.serviceMonths) > 0 && Number(a.residual) > 0)
+    .reduce((s: number, a: any) => s + (Number(a.monthlyDep) || 0), 0) * 100) / 100;
   const inRepair = assets.filter((a: any) => a.status === 'repair').length;
   const gone = assets.filter((a: any) => a.status === 'written_off' || a.status === 'sold').length;
 

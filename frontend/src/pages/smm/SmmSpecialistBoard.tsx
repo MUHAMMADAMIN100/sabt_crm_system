@@ -86,8 +86,9 @@ export default function SmmSpecialistBoard({ cardById }: { cardById: (id: string
 
   // Переставлять проекты (DnD-переназначение специалиста) может только
   // руководство. СММ-специалист схему ВИДИТ, но не перетаскивает.
-  const role = useAuthStore(s => s.user?.role)
-  const canReassign = ['admin', 'founder', 'smm_director'].includes(role || '')
+  // Основная или вторая роль (15.11.2026) — так проверяет сервер.
+  const user = useAuthStore(s => s.user)
+  const canReassign = [user?.role, (user as any)?.secondaryRole].some(r => !!r && ['admin', 'founder', 'smm_director'].includes(r))
 
   const dragRef = useRef<{ project: Proj; fromSpecId: string | null } | null>(null)
   const [overCol, setOverCol] = useState<string | null>(null)

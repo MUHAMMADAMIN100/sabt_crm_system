@@ -51,6 +51,12 @@ describe('доступность по ролям', () => {
     }
   });
 
+  it('суб-админа назначает только основатель (15.11.2026)', () => {
+    expect(names('founder')).toContain('set_sub_admin');
+    expect(names('admin')).not.toContain('set_sub_admin');
+    expect(names('admin')).toContain('set_story_maker');
+  });
+
   it('основатель видит всё, имена уникальны', () => {
     expect(names('founder')).toEqual(expect.arrayContaining(['activity_feed', 'sales_plan_set', 'set_story_maker']));
     const all = MISC_TOOLS.map((t) => t.name);

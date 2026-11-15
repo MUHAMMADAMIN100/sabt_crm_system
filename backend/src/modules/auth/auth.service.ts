@@ -9,7 +9,8 @@ const { authenticator } = require('otplib');
 import * as QRCode from 'qrcode';
 import { User, UserRole } from '../users/user.entity';
 import { Employee, EmployeeStatus } from '../employees/employee.entity';
-import { vacationNow } from '../employees/vacation';
+import { dushanbeToday, vacationNow } from '../employees/vacation';
+import { effectiveRoleOf } from './roles.helper';
 import { WorkSession } from './work-session.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { SecurityEventType } from './security-event.entity';
@@ -201,9 +202,12 @@ export class AuthService implements OnModuleInit {
     const newRow = await this.refreshRepo.findOne({ where: { tokenHash: newHash } });
     await this.refreshRepo.update({ id: found.id }, { revokedAt: new Date(), replacedBy: newRow?.id || null });
 
-    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
+    // Роль — та же, что у входа и /auth/me: помощник админа = admin (15.11.2026).
+    const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
+    const role = effectiveRoleOf(user.role, employee?.isSubAdmin);
+    const accessToken = this.jwtService.sign({ sub: user.id, email: user.email, role });
     await this.audit.log({ type: SecurityEventType.TOKEN_REFRESH, userId: user.id, req });
-    return { accessToken, refreshToken: newRaw, user: this.sanitize(user) };
+    return { accessToken, refreshToken: newRaw, user: { ...this.sanitize(user), role } };
   }
 
   /** Отозвать все refresh'ы пользователя — на logout / при смене пароля. */
@@ -214,10 +218,11 @@ export class AuthService implements OnModuleInit {
     );
   }
 
+  /** IP клиента — req.ip: main.ts ставит `trust proxy 1`, и Express берёт
+   *  адрес, дописанный нашим прокси. Левый X-Forwarded-For подделывает сам
+   *  клиент — так обходили блокировку входа по IP (15.11.2026). */
   private extractIp(req: Request): string | null {
-    const xff = (req.headers['x-forwarded-for'] as string) || '';
-    if (xff) return xff.split(',')[0].trim();
-    return req.socket?.remoteAddress || null;
+    return req.ip || req.socket?.remoteAddress || null;
   }
 
   async getSecurityLog(opts: { type?: SecurityEventType; limit?: number } = {}) {
@@ -229,10 +234,13 @@ export class AuthService implements OnModuleInit {
     // Открытая регистрация ОТКЛЮЧЕНА. Новых сотрудников добавляет
     // администратор / основатель / сооснователь через раздел
     // «Сотрудники». Единственное исключение — bootstrap самого первого
-    // основателя: пока в системе нет ни одного founder, register
-    // доступен чтобы создать первого владельца.
-    const founderAlreadyExists = await this.founderExists();
-    if (founderAlreadyExists) {
+    // владельца: register открыт, только пока в базе нет НИ ОДНОГО
+    // пользователя (15.11.2026). Раньше условием было «нет основателя» —
+    // и стоило основателю сменить себе роль, регистрация открывалась всем.
+    const [{ count: usersCount }] = await this.userRepo.manager.query(
+      `SELECT COUNT(*)::int AS count FROM users`,
+    );
+    if (usersCount > 0) {
       throw new ForbiddenException(
         'Регистрация закрыта. Обратитесь к администратору для создания учётной записи.',
       );
@@ -345,16 +353,27 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(dto: LoginDto, req?: Request | null) {
+    // Распознавание логина: можно ввести полный email (любой домен, без учёта
+    // регистра) ИЛИ только логин (часть до @) — тогда находим пользователя по
+    // совпадению логина на любом домене (gmail/icloud/…). Так вход работает не
+    // только для gmail.
+    const user = await this.resolveLoginUser(dto.email);
+    // Ключ блокировки — один на аккаунт (15.11.2026): email найденного
+    // пользователя, иначе введённое без пробелов и в нижнем регистре.
+    // Раньше «Ivan@x.tj», «ivan@x.tj» и «ivan» считались разными, и каждый
+    // вариант давал свои 5 попыток.
+    const lockKey = (user?.email || dto.email || '').trim().toLowerCase() || null;
+
     // ─── Account lockout: проверяем ДО валидации пароля ────────────────
     // 5 неудач по email или 20 с одного IP за 15 минут → блок на 15 мин.
     // Это защищает и от bruteforce конкретного аккаунта, и от перебора
     // паролей по списку email с одного IP.
     const ip = req ? this.extractIp(req) : null;
-    const lock = await this.audit.checkLoginLockout(dto.email || null, ip);
+    const lock = await this.audit.checkLoginLockout(lockKey, ip);
     if (lock.locked) {
       await this.audit.log({
         type: SecurityEventType.LOGIN_BLOCKED,
-        email: dto.email,
+        email: lockKey,
         req,
         details: { reason: `lockout_by_${lock.by}`, count: lock.count },
       });
@@ -370,15 +389,10 @@ export class AuthService implements OnModuleInit {
       );
     }
 
-    // Распознавание логина: можно ввести полный email (любой домен, без учёта
-    // регистра) ИЛИ только логин (часть до @) — тогда находим пользователя по
-    // совпадению логина на любом домене (gmail/icloud/…). Так вход работает не
-    // только для gmail.
-    const user = await this.resolveLoginUser(dto.email);
     if (!user || !(await user.validatePassword(dto.password))) {
       await this.audit.log({
         type: SecurityEventType.LOGIN_FAIL,
-        email: dto.email,
+        email: lockKey,
         userId: user?.id ?? null,
         req,
         details: { reason: user ? 'bad_password' : 'unknown_email' },
@@ -403,15 +417,15 @@ export class AuthService implements OnModuleInit {
       if (!code) throw new UnauthorizedException('2FA_REQUIRED');
       const ok = authenticator.check(code, user.twoFactorSecret);
       if (!ok) {
-        await this.audit.log({ type: SecurityEventType.TWO_FACTOR_FAIL, userId: user.id, req });
+        // С email — чтобы неверный код считался в блокировку входа (15.11.2026).
+        await this.audit.log({ type: SecurityEventType.TWO_FACTOR_FAIL, userId: user.id, email: lockKey, req });
         throw new UnauthorizedException('Invalid 2FA code');
       }
     }
 
     // Check if employee is sub-admin — grant admin access (but don't downgrade founder/co_founder)
     const employee = await this.employeeRepo.findOne({ where: { userId: user.id } });
-    const topRoles = [UserRole.FOUNDER, UserRole.ADMIN];
-    const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
+    const effectiveRole = effectiveRoleOf(user.role, employee?.isSubAdmin);
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: effectiveRole });
     const sanitized = this.sanitize(user);
@@ -428,9 +442,10 @@ export class AuthService implements OnModuleInit {
     }
     if (open.length > 0) await this.sessionRepo.save(open);
 
-    // Start work session
+    // Start work session. Дата смены — по Душанбе (15.11.2026): сервер в UTC,
+    // и вход до 05:00 по Душанбе записывался во вчерашний день.
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = dushanbeToday();
     const session = this.sessionRepo.create({
       userId: user.id,
       loginAt: now,
@@ -473,6 +488,12 @@ export class AuthService implements OnModuleInit {
   async setup2FA(userId: string) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    // Включённую 2FA не перенастраиваем (15.11.2026): setup затирал секрет и
+    // выключал защиту без кода — украденной сессии хватало, чтобы снять 2FA.
+    // Сначала «Отключить» с кодом из приложения, потом настроить заново.
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('Двухфакторная защита уже включена. Чтобы настроить заново, сначала отключите её кодом из приложения.');
+    }
     const secret = authenticator.generateSecret();
     const otpauthUrl = authenticator.keyuri(user.email, 'sabt CRM', secret);
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
@@ -552,12 +573,6 @@ export class AuthService implements OnModuleInit {
     return { message: 'Logged out' };
   }
 
-  async validateUser(email: string, password: string): Promise<User | null> {
-    const user = await this.resolveLoginUser(email);
-    if (user && (await user.validatePassword(password))) return user;
-    return null;
-  }
-
   async founderExists(): Promise<boolean> {
     const [{ count }] = await this.userRepo.manager.query(
       `SELECT COUNT(*)::int AS count FROM users WHERE role::text = 'founder'`,
@@ -593,8 +608,7 @@ export class AuthService implements OnModuleInit {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     const employee = await this.employeeRepo.findOne({ where: { userId } });
-    const topRoles = [UserRole.FOUNDER, UserRole.ADMIN];
-    const effectiveRole = employee?.isSubAdmin && !topRoles.includes(user.role) ? UserRole.ADMIN : user.role;
+    const effectiveRole = effectiveRoleOf(user.role, employee?.isSubAdmin);
     const sanitized = this.sanitize(user);
     // Единая тема оформления на всю компанию — цвета основателя. Персональный
     // выбор темы отключён, поэтому всем отдаём themeColor основателя.
@@ -643,7 +657,9 @@ export class AuthService implements OnModuleInit {
     }
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user || !(await user.validatePassword(oldPassword))) {
-      throw new UnauthorizedException('Wrong current password');
+      // 400, а не 401 (15.11.2026): на 401 фронт считает сессию истёкшей и
+      // идёт продлевать вход, а человек просто ошибся в текущем пароле.
+      throw new BadRequestException('Неверный текущий пароль');
     }
     user.password = newPassword;
     user.passwordChangedAt = new Date();
@@ -672,20 +688,26 @@ export class AuthService implements OnModuleInit {
     if (!user) return { message: 'If email exists, reset link was sent' };
 
     const token = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = token;
+    // В базе — только sha256 токена (15.11.2026): утёкшая выгрузка таблицы
+    // не должна давать готовые ссылки сброса пароля. Сам токен уходит в письмо.
+    user.resetPasswordToken = this.hashToken(token);
     user.resetPasswordExpires = new Date(Date.now() + 3600000);
     await this.userRepo.save(user);
 
-    // Send token only via email — never return it in the response
-    await this.mailService.sendPasswordReset(user.email, user.name, token);
+    // Send token only via email — never return it in the response.
+    // Письмо — не дожидаясь (15.11.2026): отправка с повторами шла секунды,
+    // и по времени ответа было видно, есть ли такой аккаунт.
+    this.mailService.sendPasswordReset(user.email, user.name, token)
+      .catch((e: any) => this.logger.error(`password reset mail failed: ${e?.message || e}`));
 
     return { message: 'If email exists, reset link was sent' };
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const user = await this.userRepo.findOne({
-      where: { resetPasswordToken: token },
-    });
+    // Ищем по хешу: в базе лежит sha256, а не сам токен (15.11.2026).
+    const user = token
+      ? await this.userRepo.findOne({ where: { resetPasswordToken: this.hashToken(token) } })
+      : null;
     if (!user || user.resetPasswordExpires < new Date()) {
       throw new UnauthorizedException('Invalid or expired token');
     }
@@ -723,8 +745,17 @@ export class AuthService implements OnModuleInit {
     return sessions.filter(s => new Date(s.loginAt) >= from);
   }
 
+  /** Пользователь для ответа API. Ответ — простой объект, @Exclude на нём не
+   *  срабатывает, поэтому секреты и тяжёлые поля убираем здесь явно
+   *  (15.11.2026): секрет 2FA уходил в /login, /me, /refresh — с ним второй
+   *  фактор терял смысл. Картинки и FCM-токены обычно и так не выбраны
+   *  (select:false), но если их когда-то подгрузят — наружу не уйдут. */
   private sanitize(user: User) {
-    const { password, resetPasswordToken, resetPasswordExpires, ...rest } = user as User;
+    const {
+      password, resetPasswordToken, resetPasswordExpires,
+      twoFactorSecret, fcmTokens, avatarImage, backgroundImage,
+      ...rest
+    } = user as User;
     return rest;
   }
 

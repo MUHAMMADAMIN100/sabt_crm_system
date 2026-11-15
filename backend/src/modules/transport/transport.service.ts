@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { TransportRequest } from './transport-request.entity';
 import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
-import { FinanceService } from '../finance/finance.service';
+import { FinanceTransaction, FinanceTxStatus, FinanceTxType } from '../finance/finance-transaction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { TelegramService } from '../telegram/telegram.service';
@@ -19,6 +19,10 @@ const MAX_AMOUNT = 5000;
 /** Фото чека: фронт жмёт его в JPEG до ~400 КБ — в base64 это ~550 КБ. */
 export const RECEIPT_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
+/** «paying» осталось от старой неатомарной оплаты (15.11.2026): процесс упал
+ *  между сменой статуса и расходом. Через 10 минут такую заявку можно снова
+ *  оплатить — сначала ищем уже записанный расход, чтобы не заплатить дважды. */
+const STALE_PAYING_MS = 10 * 60 * 1000;
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null; name?: string };
 
@@ -43,7 +47,6 @@ export class TransportService {
     @InjectRepository(TransportRequest) private repo: Repository<TransportRequest>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
-    private finance: FinanceService,
     private notifications: NotificationsService,
     private telegram: TelegramService,
     private ds: DataSource,
@@ -144,12 +147,16 @@ export class TransportService {
     return { mime: RECEIPT_MIME.has(m[1]) ? m[1] : 'image/jpeg', data: Buffer.from(m[2], 'base64') };
   }
 
-  /** Своя заявка, пока не оплачена, — отозвать (ошибся суммой или проектом). */
+  /** Своя заявка, пока не оплачена, — отозвать (ошибся суммой или проектом).
+   *  Под блокировкой строки (15.11.2026): параллельная оплата не проскочит. */
   async cancel(actor: Actor, id: string) {
-    const r = await this.repo.findOne({ where: { id } });
-    if (!r || r.employeeId !== actor.id) throw new NotFoundException('Заявка не найдена');
-    if (r.status !== 'pending') throw new BadRequestException('Отозвать можно только заявку, которая ждёт оплаты');
-    await this.repo.delete(id);
+    await this.ds.transaction(async em => {
+      const repo = em.getRepository(TransportRequest);
+      const r = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!r || r.employeeId !== actor.id) throw new NotFoundException('Заявка не найдена');
+      if (!(await this.decidable(em, r))) throw new BadRequestException('Отозвать можно только заявку, которая ждёт оплаты');
+      await repo.delete(id);
+    });
     return { ok: true };
   }
 
@@ -189,74 +196,126 @@ export class TransportService {
     };
   }
 
-  /** Оплатить: расход «Транспорт» в Финансах + заявка «оплачено». Двойное
-   *  нажатие не создаёт второй расход: заявку сначала атомарно переводим в
-   *  «paying», и только у одного запроса это получается. */
+  /** Оплатить: расход «Транспорт» в Финансах + заявка «оплачено» — одной
+   *  транзакцией под блокировкой строки заявки (15.11.2026). Раньше заявку
+   *  сначала переводили в «paying», а расход писали отдельно: падение между
+   *  шагами оставляло заявку «застрявшей», а сбой после расхода возвращал её
+   *  в «ждёт» — и её оплачивали второй раз. Двойное нажатие ждёт блокировку
+   *  и получает «уже оплачена». */
   async pay(actor: Actor, id: string, dto: any) {
     const accountId = typeof dto?.accountId === 'string' ? dto.accountId : '';
     if (!accountId) throw new BadRequestException('Выберите счёт, с которого платите');
-    const locked: Array<{ id: string }> = await this.ds.query(
-      `UPDATE transport_requests SET status = 'paying', "updatedAt" = now()
-        WHERE id = $1 AND status = 'pending' RETURNING id`, [id]);
-    if (!locked.length) {
-      const r = await this.repo.findOne({ where: { id } });
+    // Не uuid — сразу 400, а не ошибка Postgres (500). Архивный счёт не
+    // годится, как и в обычной операции «Финансов» (15.11.2026).
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
+      throw new BadRequestException('Счёт не найден');
+    }
+    const account: Array<{ id: string }> = await this.ds.query(
+      `SELECT id FROM finance_accounts WHERE id = $1 AND COALESCE(archived, false) = false LIMIT 1`, [accountId]);
+    if (!account.length) throw new BadRequestException('Счёт не найден или в архиве');
+    // Категорию готовим до транзакции: при необходимости она создаётся.
+    const category = await this.transportCategory();
+    const { fresh, userName } = await this.ds.transaction(async em => {
+      const repo = em.getRepository(TransportRequest);
+      const r = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!r) throw new NotFoundException('Заявка не найдена');
-      throw new ConflictException('Эта заявка уже оплачена или отклонена');
-    }
-    const r = await this.repo.findOne({ where: { id } });
-    try {
-      const user = await this.userRepo.findOne({ where: { id: r!.employeeId } });
-      const categoryId = await this.transportCategoryId();
-      const finEmp: Array<{ id: string }> = await this.ds.query(
-        `SELECT id FROM finance_employees WHERE "userId" = $1 LIMIT 1`, [r!.employeeId]);
-      const finProjectId = await this.financeProjectIdByName(r!.projectName);
-      const tx: any = await this.finance.createOperation({
-        type: 'expense',
-        amount: Number(r!.amount),
-        date: todayDushanbe(),
-        accountId,
-        categoryId,
-        projectId: finProjectId,
-        recipientId: finEmp[0]?.id ?? null,
-        comment: `Транспорт: ${user?.name || 'сотрудник'} · ${r!.projectName || 'проект'}`
-          + `${r!.note ? ` · ${r!.note}` : ''} · поездка ${ruDate(r!.date)}`,
-      }, actor.id);
-      await this.repo.update(id, {
-        status: 'paid', decidedById: actor.id, decidedAt: new Date(), financeTxId: tx?.id ?? null, rejectReason: null,
+      if (!(await this.decidable(em, r, true))) throw new ConflictException('Эта заявка уже оплачена или отклонена');
+      const user = await em.getRepository(User).findOne({ where: { id: r.employeeId } });
+      const comment = this.expenseComment(r, user?.name);
+      // Заявка, застрявшая в «paying»: расход мог уже записаться — связываем его.
+      let txId = r.status === 'paying' ? await this.orphanExpense(em, r, comment) : null;
+      if (!txId) {
+        const finEmp: Array<{ id: string }> = await em.query(
+          `SELECT id FROM finance_employees WHERE "userId" = $1 LIMIT 1`, [r.employeeId]);
+        const finProjectId = await this.financeProjectIdByName(r.projectName);
+        const txRepo = em.getRepository(FinanceTransaction);
+        // Те же поля, что пишет FinanceService.createOperation для расхода.
+        const tx = await txRepo.save(txRepo.create({
+          type: FinanceTxType.EXPENSE,
+          amount: Number(r.amount),
+          date: todayDushanbe(),
+          accountId,
+          categoryId: category.id,
+          category: category.name,
+          projectId: finProjectId,
+          recipientId: finEmp[0]?.id ?? null,
+          comment,
+          createdById: actor.id,
+          status: FinanceTxStatus.COMPLETED,
+          source: null, externalId: null, affectsBalance: true,
+        }));
+        txId = tx.id;
+      }
+      await repo.update(id, {
+        status: 'paid', decidedById: actor.id, decidedAt: new Date(), financeTxId: txId, rejectReason: null,
       });
-      const fresh = await this.repo.findOne({ where: { id } });
-      this.notifyEmployee(fresh!, 'paid').catch(e => this.logger.warn(`Уведомление об оплате не ушло: ${e?.message || e}`));
-      return this.view(fresh!, new Map([[fresh!.employeeId, user?.name || '']]));
-    } catch (e) {
-      await this.repo.update(id, { status: 'pending' }).catch(() => undefined);
-      throw e;
-    }
+      return { fresh: await repo.findOne({ where: { id } }), userName: user?.name || '' };
+    });
+    this.notifyEmployee(fresh!, 'paid').catch(e => this.logger.warn(`Уведомление об оплате не ушло: ${e?.message || e}`));
+    return this.view(fresh!, new Map([[fresh!.employeeId, userName]]));
   }
 
   async reject(actor: Actor, id: string, dto: any) {
     const reason = typeof dto?.reason === 'string' ? dto.reason.trim().slice(0, 200) : '';
     if (!reason) throw new BadRequestException('Напишите причину — сотрудник её увидит');
-    const r = await this.repo.findOne({ where: { id } });
-    if (!r) throw new NotFoundException('Заявка не найдена');
-    if (r.status !== 'pending') throw new ConflictException('Эта заявка уже оплачена или отклонена');
-    await this.repo.update(id, { status: 'rejected', rejectReason: reason, decidedById: actor.id, decidedAt: new Date() });
-    const fresh = await this.repo.findOne({ where: { id } });
+    // Под блокировкой строки (15.11.2026): отказ не перетрёт параллельную оплату.
+    const fresh = await this.ds.transaction(async em => {
+      const repo = em.getRepository(TransportRequest);
+      const r = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!r) throw new NotFoundException('Заявка не найдена');
+      if (!(await this.decidable(em, r))) throw new ConflictException('Эта заявка уже оплачена или отклонена');
+      await repo.update(id, { status: 'rejected', rejectReason: reason, decidedById: actor.id, decidedAt: new Date() });
+      return repo.findOne({ where: { id } });
+    });
     this.notifyEmployee(fresh!, 'rejected').catch(e => this.logger.warn(`Уведомление об отказе не ушло: ${e?.message || e}`));
     return { ok: true };
   }
 
+  /** Можно ли решать заявку: «ждёт» — да; «paying» от старой неатомарной
+   *  оплаты — только спустя STALE_PAYING_MS и, для отказа/отзыва, если
+   *  расход по ней так и не записался (15.11.2026). */
+  private async decidable(em: EntityManager, r: TransportRequest, forPay = false): Promise<boolean> {
+    if (r.status === 'pending') return true;
+    if (r.status !== 'paying') return false;
+    if (Date.now() - new Date(r.updatedAt).getTime() < STALE_PAYING_MS) return false;
+    if (forPay) return true;
+    const user = await em.getRepository(User).findOne({ where: { id: r.employeeId } });
+    return !(await this.orphanExpense(em, r, this.expenseComment(r, user?.name)));
+  }
+
+  /** Комментарий расхода — по нему же находим расход застрявшей оплаты. */
+  private expenseComment(r: TransportRequest, userName?: string | null): string {
+    return `Транспорт: ${userName || 'сотрудник'} · ${r.projectName || 'проект'}`
+      + `${r.note ? ` · ${r.note}` : ''} · поездка ${ruDate(r.date)}`;
+  }
+
+  /** Расход, записанный старой оплатой заявки, которая упала до смены
+   *  статуса: та же сумма и комментарий, создан после перевода в «paying»
+   *  и ещё не привязан ни к одной заявке. */
+  private async orphanExpense(em: EntityManager, r: TransportRequest, comment: string): Promise<string | null> {
+    const rows: Array<{ id: string }> = await em.query(
+      `SELECT f.id FROM finance_transactions f
+        WHERE f.type = 'expense' AND COALESCE(f.status, 'completed') <> 'cancelled'
+          AND f.amount = $1 AND f.comment = $2
+          AND f."createdAt" >= $3::timestamptz - interval '5 minutes'
+          AND NOT EXISTS (SELECT 1 FROM transport_requests t WHERE t."financeTxId" = f.id)
+        ORDER BY f."createdAt" ASC LIMIT 1`,
+      [Number(r.amount), comment, new Date(r.updatedAt).toISOString()]);
+    return rows[0]?.id ?? null;
+  }
+
   /** Категория расходов «Транспорт» (есть среди стандартных); если её
    *  удалили — создаём такую же, чтобы расход не остался без категории. */
-  private async transportCategoryId(): Promise<string> {
-    const found: Array<{ id: string }> = await this.ds.query(
-      `SELECT id FROM finance_categories
+  private async transportCategory(): Promise<{ id: string; name: string }> {
+    const found: Array<{ id: string; name: string }> = await this.ds.query(
+      `SELECT id, name FROM finance_categories
         WHERE type = 'expense' AND (name = 'Транспорт' OR lower(name) = 'транспорт')
         ORDER BY position LIMIT 1`);
-    if (found[0]?.id) return found[0].id;
-    const made: Array<{ id: string }> = await this.ds.query(
+    if (found[0]?.id) return found[0];
+    const made: Array<{ id: string; name: string }> = await this.ds.query(
       `INSERT INTO finance_categories (name, type, key, builtin, icon, color, position)
-       VALUES ('Транспорт', 'expense', NULL, false, 'car', '#06b6d4', 11) RETURNING id`);
-    return made[0].id;
+       VALUES ('Транспорт', 'expense', NULL, false, 'car', '#06b6d4', 11) RETURNING id, name`);
+    return made[0];
   }
 
   /** Проект в Финансах с тем же названием — чтобы расход попал в траты проекта.

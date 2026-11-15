@@ -40,3 +40,13 @@ export class CreateWebhookDto {
   @IsBoolean()
   isActive?: boolean;
 }
+
+/** Body для PATCH /dev-tracker/webhooks/:id (15.11.2026, право manage):
+ *  включить/выключить подписку без пересоздания — раньше фронт делал
+ *  DELETE + POST и терял HMAC-секрет (GET его не отдаёт) и журнал доставок. */
+export class UpdateWebhookDto {
+  @ApiProperty()
+  @NoCoerce()
+  @IsBoolean()
+  isActive: boolean;
+}

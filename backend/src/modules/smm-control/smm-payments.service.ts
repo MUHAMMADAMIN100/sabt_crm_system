@@ -2,18 +2,28 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Project } from '../projects/project.entity';
+import { patchSmmData } from '../projects/project-access';
+import { hasGrant } from '../auth/permissions';
 import {
   CalPay, FinClient, FinPlan, FinTx, OwnerProject, PayItem, calendarPays, cardPays, isEarning, mayOwn,
   monthPayState, ownedPays, payScope, resolveFinanceLinks, toPayItem, withManagerChange,
 } from './smm-payments.logic';
 
-/** Кто видит оплаты всех проектов и связывает проект с клиентом «Финансов». */
-const MONEY_ROLES = ['admin', 'founder'];
+/** Кто видит сроки оплат всех проектов и связывает проект с клиентом
+ *  «Финансов». Суммы — отдельно, по праву finance.manage (15.11.2026):
+ *  «админ без финансов» — календарь у админа есть, денег в нём нет. */
+const TOP_ROLES = ['admin', 'founder'];
 /** Ответственные за SMM-проекты — менеджеры по продажам, оба вида
  *  (решение владельца 10.10.2026, подтверждено 15.10.2026). */
 const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'];
 
-type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
+type Actor = {
+  id: string; role?: string | null; secondaryRole?: string | null;
+  // Персональные доступы (req.user — сущность User): запрет сильнее роли.
+  extraPermissions?: string[] | null; deniedPermissions?: string[] | null;
+};
+/** Чьи суммы видит зритель календаря: все, только своих клиентов или ничьи. */
+export type MoneyView = 'all' | 'own' | 'none';
 /** Клиент «Финансов» с полями, нужными календарю менеджера. */
 type FinClientRow = FinClient & { retentionMonths: number | null; salesManagerId: string | null; salesManagerHistory: unknown };
 /** Менеджеры, чьи деньги нужны: id менеджера → подходит ли. */
@@ -23,6 +33,8 @@ const DIRECT_DIRECTIONS = ['development', 'design', 'maintenance'];
 
 /** Деньги дня в календаре на «Панели» менеджера: сумма, клиент и проект CRM. */
 export type CalendarPayItem = CalPay & { name: string; projectId: string | null; direction: string | null };
+/** Оплата с пометкой «клиент самого зрителя» — для решения, показать ли сумму. */
+type OwnedCalendarPayItem = CalendarPayItem & { own: boolean };
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -74,7 +86,19 @@ export class SmmPaymentsService {
   ) {}
 
   private rolesOf(a: Actor) { return [a.role, a.secondaryRole].filter(Boolean) as string[]; }
-  private isTop(a: Actor) { return this.rolesOf(a).some(r => MONEY_ROLES.includes(r)); }
+  private isTop(a: Actor) { return this.rolesOf(a).some(r => TOP_ROLES.includes(r)); }
+  /** Суммы (15.11.2026): все — у права finance.manage; менеджер по продажам —
+   *  только своих клиентов и при праве «Оплаты проекта — просмотр»; админ и
+   *  остальные — без сумм. Запреты (deniedPermissions) учитывает hasGrant. */
+  private moneyView(a: Actor): MoneyView {
+    const user = {
+      role: a.role ?? null, secondaryRole: a.secondaryRole ?? null,
+      extraPermissions: a.extraPermissions ?? null, deniedPermissions: a.deniedPermissions ?? null,
+    };
+    if (hasGrant(user, 'finance.manage')) return 'all';
+    const sales = this.rolesOf(a).some(r => SALES_ROLES.includes(r));
+    return sales && hasGrant(user, 'projects.payments.view') ? 'own' : 'none';
+  }
 
   private async smmProjects(): Promise<Project[]> {
     const rows = await this.projectRepo.find({ where: { projectType: 'SMM', isArchived: false } as any });
@@ -122,15 +146,25 @@ export class SmmPaymentsService {
    * только по клиентам менеджера — SMM-проекты, где он ответственный в CRM,
    * и клиенты разработки, дизайна и обслуживания, где он назначен в
    * «Доходе». Полученное — только за время, когда клиент был его (история
-   * назначений, 14.11.2026). Суммы видны. Владелец и админ видят всех
-   * клиентов, у которых есть менеджер.
+   * назначений, 14.11.2026). Владелец и админ видят всех клиентов, у
+   * которых есть менеджер. Суммы — по moneyView (15.11.2026): без права
+   * amount = null, money подсказывает фронту, что суммы скрыты.
    */
   async calendar(actor: Actor, fromRaw?: string, toRaw?: string) {
     const today = todayDushanbe();
     const from = ISO_DAY.test(String(fromRaw || '')) ? String(fromRaw) : `${today.slice(0, 7)}-01`;
     const to = ISO_DAY.test(String(toRaw || '')) && String(toRaw) >= from ? String(toRaw) : monthEnd(from);
     const top = this.isTop(actor);
-    return this.calendarOf(id => (top ? !!id : id === actor.id), from, to);
+    const money = this.moneyView(actor);
+    const res = await this.calendarOf(id => (top ? !!id : id === actor.id), from, to, id => id === actor.id);
+    return {
+      ...res,
+      money,
+      items: res.items.map(({ own, ...it }) => ({
+        ...it,
+        amount: money === 'all' || (money === 'own' && own) ? it.amount : null,
+      })),
+    };
   }
 
   /** Получено от клиентов менеджера за месяц — «сделано» в плане продаж
@@ -151,18 +185,21 @@ export class SmmPaymentsService {
    *  оплаты, и у архивных клиентов тоже; ожидаемая и прогноз — текущему
    *  ответственному. Так «получено за месяц» на «Панели» и факт плана
    *  продаж — одни и те же деньги, а смена менеджера не переносит прошлое. */
-  private async calendarOf(want: Want, from: string, to: string) {
+  private async calendarOf(want: Want, from: string, to: string, own: Want = want) {
     const today = todayDushanbe();
     const all = await this.clients();
     const projects = await this.allSmmProjects();
     const scope = [...payScope(projects.map(ownerProject), all).values()].filter(x => mayOwn(x.owner, want));
-    if (!scope.length) return { today, from, to, clients: 0, items: [] as CalendarPayItem[] };
+    if (!scope.length) return { today, from, to, clients: 0, items: [] as OwnedCalendarPayItem[] };
 
     const { plans, txs } = await this.moneyOf(scope.map(x => x.client.id), from, to, today);
-    const items: CalendarPayItem[] = [];
+    const items: OwnedCalendarPayItem[] = [];
     for (const { client, name, projectId, owner } of scope) {
-      for (const it of ownedPays(calendarPays(client, plans, txs, from, to, today), owner, want)) {
-        items.push({ ...it, name, projectId, direction: client.direction });
+      const pays = ownedPays(calendarPays(client, plans, txs, from, to, today), owner, want);
+      // Оплата «своего» клиента — по тому же правилу владения (15.11.2026).
+      const mine = new Set(ownedPays(pays, owner, own).map(it => it.key));
+      for (const it of pays) {
+        items.push({ ...it, name, projectId, direction: client.direction, own: mine.has(it.key) });
       }
     }
     items.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'ru') || a.partNo - b.partNo);
@@ -351,15 +388,14 @@ export class SmmPaymentsService {
     const projects = await this.smmProjects();
     const target = projectId ? projects.find(p => p.id === projectId) : null;
     if (projectId && !target) throw new NotFoundException('Проект не найден');
+    // Точечная правка smmData одним UPDATE (15.11.2026): раньше smmData
+    // перезаписывался целиком и затирал параллельные правки карточки проекта.
     for (const p of projects) {
       if (linkOf(p) !== financeProjectId || p.id === projectId) continue;
-      const sd: any = { ...(p.smmData || {}) };
-      delete sd.financeProjectId;
-      await this.projectRepo.update(p.id, { smmData: sd });
+      await patchSmmData(this.ds.manager, p.id, {}, ['financeProjectId']);
     }
     if (target) {
-      const sd: any = { ...(target.smmData || {}), financeProjectId };
-      await this.projectRepo.update(target.id, { smmData: sd });
+      await patchSmmData(this.ds.manager, target.id, { financeProjectId });
     }
     return this.financeManagers(actor);
   }
@@ -396,10 +432,9 @@ export class SmmPaymentsService {
       const found = (await this.clients()).some(c => c.id === financeProjectId);
       if (!found) throw new BadRequestException('Клиент в «Финансах» не найден');
     }
-    const sd: any = { ...(p.smmData || {}) };
-    if (financeProjectId) sd.financeProjectId = financeProjectId;
-    else delete sd.financeProjectId;
-    await this.projectRepo.update(projectId, { smmData: sd });
+    // Точечная правка smmData (15.11.2026) — без перезаписи всего объекта.
+    if (financeProjectId) await patchSmmData(this.ds.manager, projectId, { financeProjectId });
+    else await patchSmmData(this.ds.manager, projectId, {}, ['financeProjectId']);
     return this.project(projectId, actor);
   }
 }

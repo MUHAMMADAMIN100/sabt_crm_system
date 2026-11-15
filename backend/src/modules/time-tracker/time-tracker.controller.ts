@@ -6,7 +6,10 @@ import { TimeTrackerService } from './time-tracker.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 
-const PM_ROLES = new Set(['admin', 'founder', 'smm_director']);
+// Руководители: чужие тайм-логи и сводки. dev_director и pm_dev — тоже,
+// основной или второй ролью (15.11.2026).
+const PM_ROLES = new Set(['admin', 'founder', 'smm_director', 'dev_director', 'pm_dev']);
+const isPm = (u: any) => PM_ROLES.has(u?.role) || PM_ROLES.has(u?.secondaryRole);
 
 class StartTimerDto {
   @ApiProperty() @IsUUID()
@@ -52,20 +55,21 @@ export class TimeTrackerController {
     @Query('to') to?: string,
   ) {
     // IDOR-защита: чужие тайм-логи могут смотреть только PM-роли.
-    if (id !== req.user.id && !PM_ROLES.has(req.user.role)) {
+    if (id !== req.user.id && !isPm(req.user)) {
       throw new ForbiddenException('Нет доступа к тайм-логам другого сотрудника');
     }
     return this.service.findByEmployee(id, from, to);
   }
 
   @Get('task/:taskId')
-  getByTask(@Param('taskId') taskId: string) {
-    return this.service.findByTask(taskId);
+  getByTask(@Param('taskId') taskId: string, @Request() req) {
+    // Проверка доступа к задаче (15.11.2026).
+    return this.service.findByTask(taskId, req.user);
   }
 
   @Get('task/:taskId/total')
-  getTotal(@Param('taskId') taskId: string) {
-    return this.service.getTotalByTask(taskId);
+  getTotal(@Param('taskId') taskId: string, @Request() req) {
+    return this.service.getTotalByTask(taskId, req.user);
   }
 
   @Get('summary/:employeeId')
@@ -75,7 +79,7 @@ export class TimeTrackerController {
     @Query('from') from: string,
     @Query('to') to: string,
   ) {
-    if (employeeId !== req.user.id && !PM_ROLES.has(req.user.role)) {
+    if (employeeId !== req.user.id && !isPm(req.user)) {
       throw new ForbiddenException('Нет доступа к сводке другого сотрудника');
     }
     return this.service.getSummaryByEmployee(employeeId, from, to);
@@ -84,7 +88,7 @@ export class TimeTrackerController {
   @Post('start')
   @RequirePerm('time-tracker.use')
   start(@Body() body: StartTimerDto, @Request() req) {
-    return this.service.startTimer(body.taskId, req.user.id, req.user.role);
+    return this.service.startTimer(body.taskId, req.user.id, req.user.role, req.user.secondaryRole);
   }
 
   @Post('stop')
@@ -96,11 +100,13 @@ export class TimeTrackerController {
   @Post('log')
   @RequirePerm('time-tracker.use')
   log(@Body() body: LogTimeDto, @Request() req) {
-    return this.service.logTime(body.taskId, req.user.id, req.user.role, body.timeSpent, body.date, body.description);
+    return this.service.logTime(
+      body.taskId, req.user.id, req.user.role, body.timeSpent, body.date, body.description, req.user.secondaryRole,
+    );
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
-    return this.service.remove(id, req.user.id, req.user.role);
+    return this.service.remove(id, req.user.id, req.user.role, req.user.secondaryRole);
   }
 }

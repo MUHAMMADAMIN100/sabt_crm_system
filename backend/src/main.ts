@@ -12,6 +12,7 @@ import 'winston-daily-rotate-file';
 import * as compression from 'compression';
 import helmet from 'helmet';
 import * as cookieParser from 'cookie-parser';
+import { json } from 'express';
 import {
   buildTrustedOrigins,
   createStateChangingOriginGuard,
@@ -74,7 +75,8 @@ function assertSecurityCriticalEnv() {
     if (!process.env.FRONTEND_URL && !process.env.CORS_ORIGINS) {
       warnings.push('FRONTEND_URL and CORS_ORIGINS are not set — only the built-in production frontend is trusted');
     }
-    if (process.env.NODE_ENV !== 'production') warnings.push('NODE_ENV is not "production" — некоторые оптимизации Nest/winston отключены');
+    // Проверка «NODE_ENV не production» внутри isProduction была мёртвой —
+    // убрана (15.11.2026).
   }
 
   // ─── Advisory: всё остальное (placeholder'ы интеграций) ─────────────
@@ -232,6 +234,19 @@ async function bootstrap() {
     maxAge: 7200,
   });
 
+  // Импорт резервной копии финансов — один большой JSON (15.11.2026).
+  // Стандартный лимит тела 100 КБ, и настоящая выгрузка не проходила (413).
+  // Лимит поднимаем ТОЛЬКО для этого адреса; остальным — прежние 100 КБ.
+  // Порядок: app.use здесь срабатывает раньше парсеров Nest (их ставит
+  // init() внутри listen), а разобранное тело Nest-парсер не трогает.
+  // Обёртка с другим именем обязательна: Nest пропускает свой JSON-парсер,
+  // если в стеке уже есть функция с именем «jsonParser», — без обёртки JSON
+  // перестал бы разбираться на всех остальных адресах.
+  const financeImportJson = json({ limit: '25mb' });
+  app.use('/api/finance/backup/import', function financeImportBodyParser(req: any, res: any, next: (err?: any) => void) {
+    return financeImportJson(req, res, next);
+  });
+
   app.useGlobalFilters(new ThrottlerExceptionFilter(), new UploadExceptionFilter());
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalPipes(
@@ -298,7 +313,10 @@ async function bootstrap() {
   // даже в production-конфиге Winston (level=warn). Это не ошибки —
   // просто гарантированно видимые «бэкенд жив, такой-то порт».
   bootstrapLogger.warn(`✅ Backend running on http://localhost:${port}`, 'Bootstrap');
-  bootstrapLogger.warn(`📚 Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
+  // Адрес Swagger — только когда он действительно включён (15.11.2026).
+  if (enableSwagger) {
+    bootstrapLogger.warn(`📚 Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
+  }
 }
 
 bootstrap();

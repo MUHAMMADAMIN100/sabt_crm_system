@@ -89,7 +89,8 @@ export default function TaskDrawer({
   const isOwn = task?.assigneeId === user?.id
   const isCreator = task?.createdById === user?.id
   // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
-  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
+  // pm_dev — руководитель направления, как и dev_director (15.11.2026).
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director', 'pm_dev']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '')
     || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
   const canEdit = isManagerPlus || isOwn || isCreator

@@ -451,7 +451,7 @@ ${context}
     const [
       // Counts
       totalActiveProjects, totalArchivedProjects, totalTasks, totalEmployees, totalUsers,
-      doneTasks, overdueRow,
+      doneTasks, overdueRow, projectTaskCounts,
       // Full data
       employees, projects, archivedProjects, tasks, comments,
       timeLogs, reports, stories, files, recentActivity,
@@ -468,10 +468,19 @@ ${context}
         `SELECT COUNT(*)::int AS count FROM tasks WHERE deadline < NOW()
           AND status::text NOT IN ('done','cancelled','review','on_pm_review','on_client_approval','approved','published')`
       ),
+      // Задачи активных проектов — только числа (15.11.2026): раньше ради
+      // двух цифр в базу грузились ВСЕ задачи всех проектов (relations: tasks).
+      this.taskRepo.manager.query(
+        `SELECT t."projectId" AS "projectId", COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE t.status::text = 'done')::int AS done
+           FROM tasks t JOIN projects p ON p.id = t."projectId"
+          WHERE p."isArchived" = false
+          GROUP BY t."projectId"`,
+      ) as Promise<Array<{ projectId: string; total: number; done: number }>>,
       this.employeeRepo.find({ relations: ['user'], order: { fullName: 'ASC' } }),
       this.projectRepo.find({
         where: { isArchived: false },
-        relations: ['members', 'tasks', 'manager'],
+        relations: ['members', 'manager'],
         order: { createdAt: 'DESC' },
       }),
       this.projectRepo.find({
@@ -524,6 +533,7 @@ ${context}
     ]);
 
     const overdueCount = overdueRow?.[0]?.count || 0;
+    const taskCountByProject = new Map(projectTaskCounts.map((r) => [r.projectId, r]));
 
     // ── 1. SUMMARY ─────────────────────────────────────────
     parts.push(`## 📊 СВОДКА
@@ -550,8 +560,8 @@ ${context}
 
     // ── 4. PROJECTS (full details) ─────────────────────────
     const projList = projects.map((p, i) => {
-      const taskCount = p.tasks?.length || 0;
-      const doneCount = p.tasks?.filter(t => t.status === 'done').length || 0;
+      const taskCount = taskCountByProject.get(p.id)?.total || 0;
+      const doneCount = taskCountByProject.get(p.id)?.done || 0;
       const memberNames = (p.members || []).map(m => m.name).join(', ') || '—';
       const startDate = p.startDate ? new Date(p.startDate).toLocaleDateString('ru-RU') : '—';
       const endDate = p.endDate ? new Date(p.endDate).toLocaleDateString('ru-RU') : '—';

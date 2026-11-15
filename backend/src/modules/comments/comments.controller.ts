@@ -28,7 +28,7 @@ export class CommentsController {
     @Body() body: CommentBodyDto,
     @Request() req,
   ) {
-    return this.service.create(taskId, body.message, req.user.id, req.user.role);
+    return this.service.create(taskId, body.message, req.user.id, req.user.role, req.user.secondaryRole);
   }
 
   @Patch(':id')
@@ -38,6 +38,6 @@ export class CommentsController {
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
-    return this.service.remove(id, req.user.id, req.user.role);
+    return this.service.remove(id, req.user.id, req.user.role, req.user.secondaryRole);
   }
 }

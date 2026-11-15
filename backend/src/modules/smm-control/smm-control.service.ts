@@ -5,6 +5,7 @@ import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
 import { SmmPaymentsService } from './smm-payments.service';
 import { TIKTOK_FROM } from '../../common/tiktok';
+import { patchSmmData } from '../projects/project-access';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Кто видит и правит все проекты раздела. */
@@ -79,6 +80,8 @@ export class SmmControlService {
       .leftJoinAndSelect('p.members', 'members')
       .where('p.projectType = :type', { type: 'SMM' })
       .andWhere('p.isArchived = false')
+      // Служебный проект «Одноразовые съёмки» в «Контроле» не нужен (15.11.2026).
+      .andWhere('p."isOneOffSystem" = false')
       .getMany();
     const live = projects.filter(p => String(p.status) !== 'archived');
     const ids = live.map(p => p.id);
@@ -272,7 +275,13 @@ export class SmmControlService {
       if (!on) delete sd.adsSince;
       sd.adsRunning = on;
       sd.adsById = actor.id;
-      await this.projectRepo.update(projectId, { smmData: sd } as any);
+      // Только ключи рекламы — атомарно поверх текущего smmData (15.11.2026):
+      // раньше отметка рекламы затирала параллельную правку цикла/профиля.
+      await patchSmmData(
+        this.projectRepo.manager, projectId,
+        { adsRunning: on, adsById: actor.id, ...(sd.adsSince ? { adsSince: sd.adsSince } : {}) },
+        on ? [] : ['adsSince'],
+      );
       const monthly = ['mood', 'contact', 'report'].some(k => k in dto);
       if (!monthly) return { ads: { running: on, since: on ? sd.adsSince : null } };
     }

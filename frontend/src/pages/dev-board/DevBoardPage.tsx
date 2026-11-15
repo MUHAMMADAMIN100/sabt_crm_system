@@ -11,6 +11,9 @@ import {
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { devTrackerApi, usersApi, projectsApi } from '@/services/api.service'
+// Прямой axios — для PATCH /dev-tracker/webhooks/:id (15.11.2026): метода
+// в devTrackerApi пока нет, api.service.ts ведёт другой владелец.
+import api from '@/lib/api'
 import { Modal, FormField, Avatar, PageLoader, EmptyState } from '@/components/ui'
 // Локальные виджеты модуля: нативные select/date рисуются браузером
 // (без анимации, системный хайлайт). В dev-board — плавные поповеры.
@@ -2251,23 +2254,15 @@ function WebhooksModal({ open, onClose, projects, canManage }: {
     }
   }
 
-  // Toggle без PATCH: DELETE + POST с инвертированным флагом, молча.
-  // Secret бэк в GET может не отдавать — если вернулся, пробрасываем дальше,
-  // иначе переключатель молча сбросил бы подпись.
+  // Toggle через PATCH { isActive } (15.11.2026). Раньше DELETE + POST:
+  // GET не отдаёт secret, и пересоздание молча теряло HMAC-подпись и журнал.
   const toggleWebhook = async (w: DevWebhook) => {
     if (canManage === false) { toast.error('Недостаточно прав'); return }
     if (busyId) return
     setBusyId(w.id)
     const next = !webhookIsActive(w)
     try {
-      await devTrackerApi.deleteWebhook(w.id)
-      await devTrackerApi.createWebhook({
-        url: w.url,
-        projectId: (w.projectId || undefined) as string | undefined,
-        events: w.events ?? [],
-        secret: w.secret || undefined,
-        isActive: next,
-      })
+      await api.patch(`/dev-tracker/webhooks/${w.id}`, { isActive: next })
       refetch()
     } catch (e: any) {
       const s = e?.response?.status
@@ -2844,11 +2839,16 @@ export default function DevBoardPage() {
     updateMut.mutate({ id, data })
   }
 
+  // Без manage двигать можно только свои карточки (15.11.2026, как бэк /move:
+  // иначе 403) — тост сразу, без оптимистичного прыжка и отката.
+  const canMoveTask = (task: DevTask) => canManage || (!!myId && task.assigneeId === myId)
+
   // Смена статуса из таблицы/доски всегда идёт через /move — он доступен
-  // всем с правом просмотра, в отличие от обычного PATCH.
+  // всем с правом просмотра (чужие карточки — только с manage).
   const changeStatus = (id: string, status: DevTaskStatus) => {
     const task = (tasks || []).find(t => t.id === id)
     if (!task || task.status === status) return
+    if (!canMoveTask(task)) { toast.error('Перемещать можно только свои задачи'); return }
     const position = (tasks || []).filter(t => t.status === status).length
     moveMut.mutate({ id, status, position })
   }
@@ -3135,6 +3135,7 @@ export default function DevBoardPage() {
     if (!task) return
     if (col.status) {
       if (task.status === col.status) return
+      if (!canMoveTask(task)) { toast.error('Перемещать можно только свои задачи'); return }
       // Позиция — в конец колонки по ВСЕМ задачам статуса, а не по видимым
       // col.tasks (фильтры могут скрывать часть — иначе вставим в середину).
       const position = (tasks || []).filter(t => t.status === col.status).length

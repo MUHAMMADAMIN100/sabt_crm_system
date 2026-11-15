@@ -19,14 +19,18 @@ export default {
         // в тёмной — серый, чтобы text-primary-* без dark:-вариантов
         // оставался читаемым. Все классы primary-* по всему приложению
         // подхватывают значения автоматически — JSX менять не нужно.
+        // 200 и 800 добавлены 15.11.2026: классы primary-200/800 стояли в
+        // разметке (~40 мест), но шагов не было, и Tailwind их молча пропускал.
         primary: {
           50:  'rgb(var(--prim-50) / <alpha-value>)',
           100: 'rgb(var(--prim-100) / <alpha-value>)',
+          200: 'rgb(var(--prim-200) / <alpha-value>)',
           300: 'rgb(var(--prim-300) / <alpha-value>)',
           400: 'rgb(var(--prim-400) / <alpha-value>)',
           500: 'rgb(var(--prim-500) / <alpha-value>)',
           600: 'rgb(var(--prim-600) / <alpha-value>)',
           700: 'rgb(var(--prim-700) / <alpha-value>)',
+          800: 'rgb(var(--prim-800) / <alpha-value>)',
           900: 'rgb(var(--prim-900) / <alpha-value>)',
         },
         // surface — нейтральный масштаб через CSS-переменные (index.css

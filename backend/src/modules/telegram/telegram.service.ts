@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as https from 'https';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { Employee } from '../employees/employee.entity';
 import { vacationNow } from '../employees/vacation';
 
@@ -32,15 +32,35 @@ export function webhookSecretFor(token: string): string {
   return createHash('sha256').update(`sabt-telegram-webhook:${token}`).digest('hex');
 }
 
+/** Срок жизни одноразового кода привязки Telegram. */
+export const LINK_CODE_TTL_MS = 15 * 60_000;
+
+/** Код привязки в базе храним только хэшем: утечка таблицы не даёт привязать чужой чат. */
+export const linkCodeHash = (code: string): string => createHash('sha256').update(`tg-link:${code}`).digest('hex');
+
+/** Код из «/start <код>»: base64url, как его выдаёт createLinkCode. */
+export function startPayload(text: string): string | null {
+  const m = /^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]{16,64}))?\s*$/.exec(String(text || '').trim());
+  return m?.[1] || null;
+}
+
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
   private readonly token: string | null;
   readonly appUrl: string;
   private assistantImpl: TelegramAssistant | null = null;
-  /** Секрет включаем в проверку только после того, как Telegram его принял
-   *  (setWebhook ок). Иначе сбой установки оставил бы бот глухим. */
+  /** Telegram принял секрет (setWebhook ок). На проде заголовок обязателен
+   *  всегда (15.11.2026); флаг важен только вне прода — там без заголовка
+   *  пускаем, пока секрет не включён. */
   private secretActive = false;
+  /** Повтор установки секрета уже запланирован. */
+  private secretRetry: NodeJS.Timeout | null = null;
+  /** Когда последний раз чинили подпись из-за апдейта без верного заголовка. */
+  private healAt = 0;
+  /** Имя бота для ссылки t.me/<бот>?start=<код> (getMe, кэш). */
+  private botName: string | null = (process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim() || null;
+  private linkTable: Promise<void> | null = null;
 
   constructor(
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
@@ -56,7 +76,11 @@ export class TelegramService {
       // Подпись входящих апдейтов (09.11.2026): до этого любой, кто знал
       // адрес webhook, мог прислать «сообщение» от имени сотрудника. Только
       // на проде: локальный запуск не должен трогать webhook боевого бота.
-      if (process.env.NODE_ENV === 'production' && process.env.TELEGRAM_WEBHOOK_AUTOSET !== 'false') {
+      // С 15.11.2026 — и при TELEGRAM_WEBHOOK_AUTOSET=false: адрес webhook
+      // мы и так не меняем (берём у Telegram как есть), лишь добавляем к
+      // нему секрет, а без секрета прод теперь отклоняет все апдейты.
+      if (process.env.NODE_ENV === 'production') {
+        this.healAt = Date.now();
         void this.ensureWebhookSecret();
       }
     } else {
@@ -72,12 +96,34 @@ export class TelegramService {
     return this.assistantImpl;
   }
 
-  /** Проверка заголовка X-Telegram-Bot-Api-Secret-Token. */
+  /** Проверка заголовка X-Telegram-Bot-Api-Secret-Token.
+   *  Раньше без включённого секрета пускали всех (fail-open): сбой setWebhook
+   *  при запуске открывал webhook для подделки. Теперь (15.11.2026): на проде
+   *  при заданном токене заголовок обязателен всегда; вне прода без заголовка
+   *  пускаем, только пока секрет не включён. Без токена бота нет — апдейтов
+   *  тоже. Telegram повторяет не-2xx, поэтому короткий отказ при запуске
+   *  ничего не теряет. */
   verifyWebhook(header: string | undefined | null): boolean {
-    if (!this.secretActive || !this.token) return true;
-    const expected = Buffer.from(webhookSecretFor(this.token));
-    const got = Buffer.from(String(header || ''));
-    return got.length === expected.length && timingSafeEqual(got, expected);
+    if (!this.token) return false;
+    const got = String(header || '');
+    if (got) {
+      const expected = Buffer.from(webhookSecretFor(this.token));
+      const given = Buffer.from(got);
+      if (given.length === expected.length && timingSafeEqual(given, expected)) return true;
+    } else if (process.env.NODE_ENV !== 'production' && !this.secretActive) {
+      return true;
+    }
+    this.healWebhookSecret();
+    return false;
+  }
+
+  /** Апдейт на проде без верной подписи: возможно, webhook переставили без
+   *  секрета — переподписываем (не чаще раза в 5 минут). */
+  private healWebhookSecret(): void {
+    if (process.env.NODE_ENV !== 'production' || !this.token || this.secretRetry) return;
+    if (Date.now() - this.healAt < 5 * 60_000) return;
+    this.healAt = Date.now();
+    void this.ensureWebhookSecret();
   }
 
   /** Переустановить webhook с тем же адресом, но с секретом. Адрес берём у
@@ -100,9 +146,106 @@ export class TelegramService {
       this.secretActive = true;
       this.logger.log('webhook Telegram подписан секретом');
     } catch (e: any) {
-      this.logger.error(`подпись webhook не включена (попытка ${attempt}): ${e?.message || e}`);
-      if (attempt < 5) setTimeout(() => void this.ensureWebhookSecret(attempt + 1), 60_000 * attempt);
+      // Громко: пока секрета нет, прод отклоняет все апдейты бота.
+      this.logger.error(`ВНИМАНИЕ: подпись webhook Telegram не включена (попытка ${attempt}) — апдейты без подписи отклоняются: ${e?.message || e}`);
+      // Повторяем, пока не получится (раньше — 5 попыток, и бот оставался
+      // без подписи до перезапуска), с паузой до 10 минут.
+      if (!this.secretRetry) {
+        this.secretRetry = setTimeout(() => {
+          this.secretRetry = null;
+          void this.ensureWebhookSecret(attempt + 1);
+        }, Math.min(60_000 * attempt, 10 * 60_000));
+        this.secretRetry.unref?.();
+      }
     }
+  }
+
+  // ─── Привязка чата по одноразовому коду (15.11.2026) ───────────────────
+  // Раньше /start привязывал чат по совпадению username с полем «Telegram»
+  // в карточке и перезаписывал чужую привязку: кто занял этот username,
+  // получал уведомления и действия бота от имени сотрудника. Теперь
+  // перепривязка — только по коду из CRM (человек доказал вход в систему).
+
+  /** Таблица кодов — идемпотентно, при первом обращении (повтор при сбое). */
+  private ensureLinkTable(): Promise<void> {
+    if (!this.linkTable) {
+      this.linkTable = this.employeeRepo.manager.query(
+        `CREATE TABLE IF NOT EXISTS telegram_link_codes (
+           "codeHash" varchar(64) PRIMARY KEY,
+           "userId" uuid NOT NULL,
+           "expiresAt" timestamptz NOT NULL,
+           "createdAt" timestamptz NOT NULL DEFAULT now()
+         )`,
+      ).then(() => undefined).catch((e) => {
+        this.linkTable = null;
+        throw e;
+      });
+    }
+    return this.linkTable;
+  }
+
+  /** Имя бота: TELEGRAM_BOT_USERNAME или getMe (кэш на всё время работы). */
+  async botUsername(): Promise<string | null> {
+    if (this.botName || !this.token) return this.botName;
+    try {
+      const me: any = await this.callApiJson('getMe', {});
+      const name = me?.ok ? String(me.result?.username || '').trim() : '';
+      if (name) this.botName = name;
+    } catch (e: any) {
+      this.logger.warn(`getMe не ответил: ${e?.message || e}`);
+    }
+    return this.botName;
+  }
+
+  /** Одноразовая ссылка привязки: t.me/<бот>?start=<код>, 15 минут.
+   *  Новый код отменяет прежние коды этого сотрудника. */
+  async createLinkCode(userId: string): Promise<{ url: string; expiresAt: string }> {
+    if (!this.token) throw new ServiceUnavailableException('Telegram-бот не настроен');
+    const employee = await this.employeeRepo.findOne({ where: { userId } });
+    if (!employee) throw new BadRequestException('У вашего аккаунта нет карточки сотрудника — привязать Telegram нельзя. Обратитесь к администратору.');
+    const bot = await this.botUsername();
+    if (!bot) throw new ServiceUnavailableException('Не удалось узнать имя Telegram-бота — попробуйте ещё раз через минуту');
+    await this.ensureLinkTable();
+    const code = randomBytes(18).toString('base64url');
+    const expiresAt = new Date(Date.now() + LINK_CODE_TTL_MS);
+    const q = this.employeeRepo.manager;
+    await q.query(`DELETE FROM telegram_link_codes WHERE "userId" = $1 OR "expiresAt" < now()`, [userId]);
+    await q.query(
+      `INSERT INTO telegram_link_codes ("codeHash", "userId", "expiresAt") VALUES ($1, $2, $3)`,
+      [linkCodeHash(code), userId, expiresAt],
+    );
+    return { url: `https://t.me/${bot}?start=${code}`, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** Погасить код (одноразовый): userId владельца или null — неверный/просрочен. */
+  async consumeLinkCode(code: string): Promise<string | null> {
+    if (!code) return null;
+    try {
+      await this.ensureLinkTable();
+      const res: any = await this.employeeRepo.manager.query(
+        `DELETE FROM telegram_link_codes WHERE "codeHash" = $1 RETURNING "userId", "expiresAt"`,
+        [linkCodeHash(code)],
+      );
+      // У DELETE … RETURNING TypeORM (pg) отдаёт [строки, число].
+      const rows: any[] = Array.isArray(res?.[0]) ? res[0] : (res || []);
+      const row = rows[0];
+      if (!row || new Date(row.expiresAt).getTime() < Date.now()) return null;
+      return String(row.userId);
+    } catch (e: any) {
+      this.logger.error(`код привязки Telegram не проверен: ${e?.message || e}`);
+      return null;
+    }
+  }
+
+  /** Привязать чат к сотруднику. Чат — только у одного сотрудника: иначе
+   *  по нему нельзя однозначно понять, кто пишет боту. */
+  async linkChat(employeeId: string, chatId: string | number): Promise<void> {
+    const chat = String(chatId);
+    await this.employeeRepo.manager.query(
+      `UPDATE employees SET "telegramChatId" = NULL WHERE "telegramChatId" = $1 AND id <> $2`,
+      [chat, employeeId],
+    );
+    await this.employeeRepo.update(employeeId, { telegramChatId: chat });
   }
 
   /** «Печатает…» в чате — видно, что бот работает над сообщением. */

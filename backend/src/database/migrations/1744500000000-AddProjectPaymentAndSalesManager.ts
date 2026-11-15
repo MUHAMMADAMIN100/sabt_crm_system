@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 export class AddProjectPaymentAndSalesManager1744500000000 implements MigrationInterface {
   name = 'AddProjectPaymentAndSalesManager1744500000000';
@@ -16,20 +17,10 @@ export class AddProjectPaymentAndSalesManager1744500000000 implements MigrationI
       ADD COLUMN IF NOT EXISTS "salesManagerId" uuid NULL
     `);
 
-    // Add notification_type enum value if not exists
-    await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_enum
-          WHERE enumlabel = 'payment_reminder'
-          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'notifications_type_enum')
-        ) THEN
-          ALTER TYPE "notifications_type_enum" ADD VALUE 'payment_reminder';
-        END IF;
-      END
-      $$;
-    `);
+    // Add notification_type enum value if not exists.
+    // Имя типа — из каталога по колонке (15.11.2026): на чистой базе он
+    // называется notification_type_enum, и жёсткое имя роняло миграцию.
+    await addEnumValues(queryRunner, 'notifications', 'type', ['payment_reminder']);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

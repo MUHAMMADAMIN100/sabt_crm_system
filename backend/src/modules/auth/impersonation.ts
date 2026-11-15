@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SetMetadata } from '@nestjs/common';
+import { GRANTABLE, hasGrant } from './permissions';
 
 /**
  * «Войти как» (13.11.2026) — основатель или администратор открывает кабинет
@@ -30,10 +31,14 @@ const ACTOR_ROLES = ['founder', 'admin'];
 const ADMIN_PROTECTED_ROLES = ['founder', 'admin'];
 const ADMIN_PROTECTED_POSITIONS = ['основатель', 'сооснователь', 'администратор'];
 
-type ActorLike = { id: string; role: string; secondaryRole?: string | null };
+type ActorLike = {
+  id: string; role: string; secondaryRole?: string | null;
+  extraPermissions?: string[] | null; deniedPermissions?: string[] | null;
+};
 type TargetLike = {
   id: string; role: string; secondaryRole?: string | null;
   isActive?: boolean; isBlocked?: boolean;
+  extraPermissions?: string[] | null;
 };
 type TargetEmployeeLike = { position?: string | null; isSubAdmin?: boolean | null } | null | undefined;
 
@@ -64,6 +69,15 @@ export function impersonationDenial(
     || ADMIN_PROTECTED_POSITIONS.includes(position)
   ) {
     return 'Администратор не может входить в кабинет основателя, сооснователя или другого администратора';
+  }
+  // Личные доступы сотрудника, которых нет у самого админа (финансы, ФОТ,
+  // зарплаты…), через «Войти как» открылись бы админу — это обход запрета
+  // выдать то, чего у тебя нет (users.setAccess). Таких — только основателю
+  // (15.11.2026). Ключи вне каталога (устаревшие) не считаем.
+  const grants = Array.isArray(target.extraPermissions) ? target.extraPermissions : [];
+  const actorGrants = { ...actor, deniedPermissions: actor.deniedPermissions ?? null };
+  if (grants.some(key => !!GRANTABLE[key] && !hasGrant(actorGrants, key))) {
+    return 'У сотрудника есть личные доступы, которых нет у вас, — войти в его кабинет может только основатель';
   }
   return null;
 }

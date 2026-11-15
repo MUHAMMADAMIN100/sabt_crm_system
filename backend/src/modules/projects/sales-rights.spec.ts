@@ -96,3 +96,39 @@ describe('Логин и пароль клиента', () => {
     expect(row.clientAccess.password).toBe('');
   });
 });
+
+describe('Направление и деньги при правке проекта (15.11.2026)', () => {
+  it('руководитель SMM не правит проект разработки, хотя у роли есть projects.edit', async () => {
+    const { svc } = make({});
+    (svc as any).findOne = jest.fn(async () => ({ id: 'p', projectType: 'Лендинг', managerId: 'x' }));
+    await expect(svc.update('p', { name: 'X' } as any, { id: 'd', role: 'smm_director' }))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('МП разработки со второй ролью руководителя разработки не меняет оплату SMM-проекта', async () => {
+    const { svc } = make({});
+    (svc as any).findOne = jest.fn(async () => ({ id: 'p', projectType: 'SMM', managerId: 's', paidAmount: 0 }));
+    await expect(svc.update('p', { paidAmount: 500 } as any,
+      { id: 's', role: 'sales_manager_dev', secondaryRole: 'dev_director' } as any))
+      .rejects.toThrow('У вас нет прав изменять сумму оплаты');
+  });
+});
+
+describe('Бриф SMM-проекта — по направлению менеджера (15.11.2026)', () => {
+  it('МП разработки правит бриф только SMM-проекта, на который назначен', async () => {
+    const { svc } = make({});
+    let project: any = { id: 'p', projectType: 'SMM', managerId: 'x', smmData: {}, members: [] };
+    (svc as any).findOne = jest.fn(async () => project);
+    await expect(svc.saveBrief('p', { answers: {} }, { id: 'd1', role: 'sales_manager_dev' }))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    project = { ...project, smmData: { salesManagerId: 'd1' } };
+    await expect(svc.saveBrief('p', { answers: {} }, { id: 'd1', role: 'sales_manager_dev' })).resolves.toBeTruthy();
+  });
+
+  it('очистка брифа гасит и ссылку для клиента', async () => {
+    const { svc } = make({});
+    (svc as any).findOne = jest.fn(async () => ({ id: 'p', projectType: 'SMM', managerId: 'x' }));
+    await svc.clearBrief('p', { id: 'f', role: 'founder' });
+    expect((svc as any).repo.update).toHaveBeenCalledWith('p', { brief: null, briefShareToken: null });
+  });
+});

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { chatStep, ChatMessage, ToolSpec } from './ai/chat';
-import { ProviderId } from './ai/providers';
+import { AllChatFailed, chatStep, ChatMessage, ToolSpec } from './ai/chat';
+import { AiProviderError, ProviderId } from './ai/providers';
 import { ApiError } from './internal-api';
 import { Button, NeedChoice, ToolContext, ToolDef, ToolError, WriteOutcome } from './tools/types';
 
@@ -9,10 +9,21 @@ const logger = new Logger('VoiceAgent');
 export interface Executed { tool: string; args: any; outcome?: WriteOutcome; error?: string }
 export interface PendingCall { tool: string; args: any }
 
-/** ИИ написал, что действие сделано, но инструмент не вызывал — это неправда. */
-const CLAIMS_ACTION = /^\s*(сделано|готово|выполнено|записано|создан|перенес|отмечен|продолжил|начат|завершен|задача (создана|поставлена|закрыта))|[▶⏸⏹✅💬🗑💰🧾📸]/iu;
+/** ИИ написал, что действие сделано, но инструмент не вызывал — это неправда.
+ *  Значок сам по себе — не заявление (15.11.2026): «✅ У вас 3 задачи» или
+ *  «📸 Съёмки на завтра» — обычный ответ. Нужны слова о сделанном: в начале
+ *  (после значка или без него) либо «значок … создана/перенесена/…» в строке. */
+export const CLAIMS_ACTION = /^\s*(?:[▶⏸⏹✅💬🗑💰🧾📸]\uFE0F?\s*)?(сделано|готово|выполнено|записано|создан|перенес|отмечен|продолжил|начат|завершен|задача (создана|поставлена|закрыта))|[▶⏸⏹✅💬🗑💰🧾📸]\uFE0F?[^\n]{0,80}?(создан|перенес[её]н|отмечен|начат|заверш[её]н|закрыт|удал[её]н|отправлен|записан|пров[её]д[её]н|приложен|поставлен)[аоы]?(?![а-яё])/iu;
 /** После требования выполнить — если ИИ всё ещё пишет «сделано», не верим. */
-const STRONG_CLAIM = /^\s*(сделано|готово|выполнено|записано)|[▶⏸⏹✅]/iu;
+export const STRONG_CLAIM = /^\s*(?:[▶⏸⏹✅]\uFE0F?\s*)?(сделано|готово|выполнено|записано)|[▶⏸⏹✅]\uFE0F?[^\n]{0,80}?(создан|перенес[её]н|отмечен|начат|заверш[её]н|закрыт|удал[её]н|отправлен|записан|пров[её]д[её]н|приложен|поставлен)[аоы]?(?![а-яё])/iu;
+
+/** Все поставщики ИИ отказали, но в этой реплике уже что-то записано
+ *  (15.11.2026): сделанное и кнопки отмены не теряем — сервис их покажет. */
+export class AgentAiFailed extends AllChatFailed {
+  constructor(errors: AiProviderError[], readonly done: Executed[], readonly buttons: Button[][]) {
+    super(errors);
+  }
+}
 
 export type AgentResult =
   | { type: 'answer'; text: string; done: Executed[]; buttons: Button[][] }
@@ -45,6 +56,8 @@ export function toSpec(t: ToolDef): ToolSpec {
 
 const MAX_STEPS = 8;
 const MAX_RESULT_CHARS = 14_000;
+/** Лимит OpenAI: не больше 128 инструментов в одном запросе. */
+const MAX_SPECS = 128;
 
 /**
  * Разбор одной реплики: ИИ выбирает инструменты, мы их выполняем.
@@ -63,26 +76,33 @@ export async function runAgent(params: {
 }): Promise<AgentResult & { provider?: ProviderId; calls?: string[] }> {
   const { ctx, tools, system, history, userText, sections = {} } = params;
   const byName = new Map(tools.map((t) => [t.name, t]));
-  const specs = [...tools.map(toSpec), ASK_CHOICE];
+  const specs: ToolSpec[] = [];
   // У OpenAI не больше 128 инструментов за запрос, а у основателя их ~155:
   // часть разделов подключается по словам заранее, остальные ИИ открывает сам.
-  const closed = Object.entries(sections).filter(([, sec]) => sec.tools.some((t) => !byName.has(t.name)));
-  if (closed.length) {
-    specs.push({
-      type: 'function',
-      function: {
-        name: 'open_section',
-        description: 'Открыть раздел CRM, если нужного инструмента нет в списке. Разделы: '
-          + closed.map(([k, sec]) => `${k} — ${sec.title}`).join('; ') + '. После открытия инструменты раздела станут доступны.',
-        parameters: {
-          type: 'object',
-          properties: { section: { type: 'string', enum: closed.map(([k]) => k) } },
-          required: ['section'],
-          additionalProperties: false,
+  // Список собираем заново после каждого open_section: раздел, из которого
+  // убрали инструменты ради места, снова виден в open_section (15.11.2026).
+  const rebuildSpecs = () => {
+    const closed = Object.entries(sections).filter(([, sec]) => sec.tools.some((t) => !byName.has(t.name)));
+    specs.length = 0;
+    specs.push(...[...byName.values()].map(toSpec), ASK_CHOICE);
+    if (closed.length) {
+      specs.push({
+        type: 'function',
+        function: {
+          name: 'open_section',
+          description: 'Открыть раздел CRM, если нужного инструмента нет в списке. Разделы: '
+            + closed.map(([k, sec]) => `${k} — ${sec.title}`).join('; ') + '. После открытия инструменты раздела станут доступны.',
+          parameters: {
+            type: 'object',
+            properties: { section: { type: 'string', enum: closed.map(([k]) => k) } },
+            required: ['section'],
+            additionalProperties: false,
+          },
         },
-      },
-    });
-  }
+      });
+    }
+  };
+  rebuildSpecs();
   const messages: ChatMessage[] = [{ role: 'system', content: system }, ...history, { role: 'user', content: userText }];
   const done: Executed[] = [];
   const buttons: Button[][] = [];
@@ -91,7 +111,11 @@ export async function runAgent(params: {
   const calls: string[] = [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const reply = await chatStep(messages, specs, provider);
+    const reply = await chatStep(messages, specs, provider).catch((e) => {
+      // Записи этой реплики уже прошли — отдаём их вместе с ошибкой ИИ (15.11.2026).
+      if (e instanceof AllChatFailed && done.length) throw new AgentAiFailed(e.errors, done, buttons);
+      throw e;
+    });
     provider = reply.provider;
     if (!reply.toolCalls.length) {
       const text = (reply.content || '').trim();
@@ -126,12 +150,31 @@ export async function runAgent(params: {
       }
 
       if (name === 'open_section') {
-        const sec = sections[String(args.section)];
+        const key = String(args.section);
+        const sec = sections[key];
         const added = sec ? sec.tools.filter((t) => !byName.has(t.name)) : [];
-        for (const t of added) { byName.set(t.name, t); specs.splice(specs.length - 1, 0, toSpec(t)); }
-        messages.push(toolResult(call.id, sec
-          ? { opened: args.section, tools: added.map((t) => t.name) }
-          : { error: 'Нет такого раздела.' }));
+        // Не больше 128 инструментов (+ ask_choice и open_section) — иначе
+        // OpenAI отвергает весь запрос (15.11.2026). Место освобождаем,
+        // убирая ещё не вызванные инструменты других разделов.
+        const over = () => byName.size + added.length + 2 > MAX_SPECS;
+        if (sec && over()) {
+          const keep = new Set([...sec.tools.map((t) => t.name), ...calls]);
+          for (const [otherKey, other] of Object.entries(sections)) {
+            if (otherKey === key) continue;
+            for (const t of other.tools) {
+              if (!over()) break;
+              if (byName.has(t.name) && !keep.has(t.name)) byName.delete(t.name);
+            }
+          }
+        }
+        const fits = !over();
+        if (sec && fits) for (const t of added) byName.set(t.name, t);
+        rebuildSpecs();
+        messages.push(toolResult(call.id, !sec
+          ? { error: 'Нет такого раздела.' }
+          : !fits
+            ? { error: 'Слишком много инструментов сразу — раздел не открыт. Ответь тем, что уже доступно, или попроси человека сказать проще.' }
+            : { opened: key, tools: added.map((t) => t.name) }));
         readsOrErrors++;
         continue;
       }

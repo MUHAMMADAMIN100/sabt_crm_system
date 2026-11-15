@@ -8,7 +8,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UserRole, User } from '../users/user.entity';
 import { SmmTariff } from '../smm-tariffs/smm-tariff.entity';
-import { ContentPlanService } from '../content-plan/content-plan.service';
+import { ContentPlanService, isProductionOnly } from '../content-plan/content-plan.service';
 import { ContentItemType, ContentPlanItem } from '../content-plan/content-plan-item.entity';
 import { Task, TaskStatus, TaskPriority } from '../tasks/task.entity';
 import { Team } from '../teams/team.entity';
@@ -21,10 +21,27 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import { MailService } from '../mail/mail.service';
 import { encryptSecret, decryptSecret } from '../../common/secret-box';
-import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel } from '../../common/sales-segment';
+import { getSalesSegment, isSalesManager, DEV_PROJECT_TYPES, projectTypeLabel, getSalesSegmentOfUser, salesRoleOf } from '../../common/sales-segment';
 import { effectiveLimits, sanitizeCustomTariff, TariffLimits } from './tariff-limits';
 import { devClientFromSmm, CLIENT_MOVED_FLAG } from './dev-client.logic';
 import { withManagerChange } from '../smm-control/smm-payments.logic';
+import { escapeHtml } from '../../common/html-escape';
+import { dushanbeToday } from '../employees/vacation';
+import {
+  AccessUser, assertCanViewProject, canEditSmmProject, directionTypesOf, hasAnyRole, inDirection,
+  isAssignedSalesManager, isOwnProject, isSmmManagement, isTop, patchSmmData,
+} from './project-access';
+
+/** Ключи smmData, у которых есть свои ручки (цикл, профиль, менеджер,
+ *  TikTok, авторасстановка, реклама «Контроля», связь с «Финансами»).
+ *  PATCH /projects/:id их не трогает (15.11.2026): старая карточка проекта
+ *  присылала устаревший снимок smmData целиком и откатывала эти настройки. */
+const SMM_DATA_OWNED_KEYS = [
+  'cycleStartDay', 'cycleAnchor', 'normReels', 'normPosts', 'storiesPerMonth',
+  'smmSpecialistIds', 'salesManagerId', 'salesManagerHistory', 'tiktokOff', 'autoPlan',
+  'adsRunning', 'adsSince', 'adsById', 'financeProjectId',
+  'videographerIds', 'videoEditorIds', 'designerIds',
+];
 
 /** Кто видит и задаёт цену индивидуального тарифа. Один список и на чтение
  *  (stripFinance), и на запись (normalizeCustomTariff): иначе роль правила бы
@@ -41,10 +58,30 @@ import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
 
-/** Число дней в текущем месяце — для производной дневной нормы сторис (месяц / дни). */
+/** Число дней в текущем месяце — для производной дневной нормы сторис (месяц / дни).
+ *  Месяц — по Душанбе (15.11.2026): сервер в UTC, и в ночь на 1-е число
+ *  норма считалась по прошлому месяцу. */
 function daysInCurrentMonth(): number {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const [y, m] = dushanbeToday().split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+/** Правка верхних ключей smmData с учётом того, что поменялось (15.11.2026):
+ *  view — объект для ответа, set/unset — для атомарного patchSmmData. */
+function smmDataEditor(view: Record<string, any>) {
+  const set: Record<string, any> = {};
+  const unset: string[] = [];
+  return {
+    set, unset,
+    put(key: string, val: any) {
+      view[key] = val; set[key] = val;
+      const i = unset.indexOf(key); if (i >= 0) unset.splice(i, 1);
+    },
+    del(key: string) {
+      delete view[key]; delete set[key];
+      if (!unset.includes(key)) unset.push(key);
+    },
+  };
 }
 
 @Injectable()
@@ -96,6 +133,14 @@ export class ProjectsService implements OnModuleInit {
       await this.repo.manager.query(
         `CREATE INDEX IF NOT EXISTS idx_project_hidden_user ON project_hidden(user_id)`,
       );
+      // Отметки разовых уборок данных (15.11.2026): уборка, сделанная один
+      // раз, не должна повторяться на каждом перезапуске.
+      await this.repo.manager.query(
+        `CREATE TABLE IF NOT EXISTS projects_boot_jobs (
+           key varchar PRIMARY KEY,
+           done_at timestamptz NOT NULL DEFAULT now()
+         )`,
+      );
     } catch (e: any) {
       this.logger.warn(`ALTER TABLE projects brief/briefShareToken/devStage failed: ${e?.message || e}`);
     }
@@ -136,11 +181,22 @@ export class ProjectsService implements OnModuleInit {
     // (07.11.2026, решение владельца — удалить). Завелись, пока разработка
     // открывалась страницами СММ, и продолжали раздаваться видеографам.
     // Сначала связанные с ними задачи, потом сами карточки.
+    // Разовая уборка (15.11.2026): раньше шла на КАЖДОМ запуске и молча
+    // стирала контент проекта, которому только что сменили тип. Теперь —
+    // один раз (отметка в projects_boot_jobs) и только карточки, заведённые
+    // до уборки 07.11 (исходный объём).
+    const JOB = 'dev-content-cleanup-2026-11-07';
+    const done: any[] = await this.repo.manager.query(
+      `SELECT 1 FROM projects_boot_jobs WHERE key = $1`, [JOB],
+    ).catch(() => [{ skip: true }]);
+    if (done.length) return;
+    const CUTOFF = '2026-11-08';
     const tasks: Array<{ taskId: string }> = await this.repo.manager.query(
       `SELECT DISTINCT ci."taskId" FROM content_plan_items ci
          JOIN projects p ON p.id = ci."projectId"
-        WHERE p."projectType" = ANY($1::text[]) AND ci."taskId" IS NOT NULL`,
-      [DEV_PROJECT_TYPES],
+        WHERE p."projectType" = ANY($1::text[]) AND ci."taskId" IS NOT NULL
+          AND ci."createdAt" < $2::timestamp`,
+      [DEV_PROJECT_TYPES, CUTOFF],
     );
     if (tasks.length) {
       await this.repo.manager.query(`DELETE FROM tasks WHERE id = ANY($1::uuid[])`, [tasks.map(t => t.taskId)])
@@ -149,11 +205,15 @@ export class ProjectsService implements OnModuleInit {
     const removed: any[] = await this.repo.manager.query(
       `DELETE FROM content_plan_items ci USING projects p
         WHERE p.id = ci."projectId" AND p."projectType" = ANY($1::text[])
+          AND ci."createdAt" < $2::timestamp
         RETURNING ci.id`,
-      [DEV_PROJECT_TYPES],
+      [DEV_PROJECT_TYPES, CUTOFF],
     );
     const n = Array.isArray(removed?.[0]) ? removed[0].length : removed.length;
     if (n) this.logger.log(`Удалено ${n} карточек контент-плана у проектов разработки (задач: ${tasks.length})`);
+    await this.repo.manager.query(
+      `INSERT INTO projects_boot_jobs (key) VALUES ($1) ON CONFLICT (key) DO NOTHING`, [JOB],
+    ).catch(() => undefined);
   }
 
   constructor(
@@ -208,7 +268,13 @@ export class ProjectsService implements OnModuleInit {
   }
 
   // ─── Payments: список платежей проекта (для финансового таба и формы) ──
-  async listPayments(projectId: string) {
+  async listPayments(projectId: string, user?: AccessUser | null) {
+    // Оплаты — только своего направления (15.11.2026).
+    if (user) {
+      const p = await this.repo.findOne({ where: { id: projectId } });
+      if (!p) throw new NotFoundException('Project not found');
+      this.assertMoneyScope(user, p);
+    }
     const rows = await this.paymentRepo.find({
       where: { projectId },
       order: { paidAt: 'ASC' },
@@ -378,9 +444,9 @@ export class ProjectsService implements OnModuleInit {
     if (body?.pageUrl !== undefined) {
       let url = String(body.pageUrl ?? '').trim().slice(0, 500);
       if (url && !/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, '')}`;
-      const sd: any = { ...(project.smmData || {}) };
-      if (url) sd.pageUrl = url; else delete sd.pageUrl;
-      await this.repo.update(projectId, { smmData: sd } as any);
+      // Только этот ключ — атомарно поверх текущего smmData (15.11.2026).
+      if (url) await patchSmmData(this.repo.manager, projectId, { pageUrl: url });
+      else await patchSmmData(this.repo.manager, projectId, {}, ['pageUrl']);
     }
 
     const login = String(body?.login ?? '').trim().slice(0, 200);
@@ -407,18 +473,31 @@ export class ProjectsService implements OnModuleInit {
     return this.getClientAccess(projectId, user);
   }
 
-  /** Сохраняет/обновляет бриф проекта. Доступно admin/founder/co_founder,
-   *  PM-ролям и менеджеру проекта. SMM-специалист тоже может (часто бриф
-   *  заполняет он совместно с менеджером). */
-  async saveBrief(projectId: string, payload: any, user: { id: string; role: string; name?: string }) {
+  /** Кто ведёт бриф SMM-проекта (правка и ссылка для клиента), 15.11.2026:
+   *  руководство SMM — любой; менеджер проекта; SMM-специалист — только
+   *  своего проекта; менеджер по продажам — своего направления (по любой из
+   *  двух ролей) или назначенный на этот проект. Раньше роль МП разработки
+   *  давала правку брифа любого SMM-проекта. */
+  canManageBrief(
+    user: AccessUser | null | undefined,
+    p: { projectType?: string | null; managerId?: string | null; salesManagerId?: string | null; smmData?: any; members?: any[] } | null | undefined,
+  ): boolean {
+    if (!user?.id || !p || p.projectType !== 'SMM') return false;
+    if (isSmmManagement(user) || p.managerId === user.id) return true;
+    const memberIds = (Array.isArray(p.members) ? p.members : []).map((m: any) => m?.id).filter(Boolean);
+    if (hasAnyRole(user, ['smm_specialist']) && isOwnProject(user, p, memberIds)) return true;
+    const seg = getSalesSegmentOfUser(user);
+    if (seg && (seg.projectTypes.includes('SMM') || isAssignedSalesManager(user, p))) return true;
+    return false;
+  }
+
+  /** Сохраняет/обновляет бриф проекта. Право — canManageBrief. */
+  async saveBrief(projectId: string, payload: any, user: AccessUser & { id: string; role: string; name?: string }) {
     const project = await this.findOne(projectId);
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const PM_OR_ADMIN = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
-    const isAllowed = PM_OR_ADMIN.includes(user.role)
-      || project.managerId === user.id
-      || (project as any).salesManagerId === user.id;
+    const isAllowed = this.canManageBrief(user, project as any);
     if (!isAllowed) {
       throw new ForbiddenException('Нет прав на редактирование брифа этого проекта');
     }
@@ -446,16 +525,13 @@ export class ProjectsService implements OnModuleInit {
 
   /** Генерирует (или возвращает существующий) публичный токен для брифа.
    *  Клиент по URL `/public/brief/<token>` заполняет анкету без auth. */
-  async generateBriefShareToken(projectId: string, user: { id: string; role: string; name?: string }): Promise<{ token: string }> {
+  async generateBriefShareToken(projectId: string, user: AccessUser & { id: string; role: string; name?: string }): Promise<{ token: string }> {
     const project = await this.findOne(projectId);
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'smm_director', 'smm_specialist', 'sales_manager_smm', 'sales_manager_dev'];
-    const isAllowed = ADMIN_PM.includes(user.role)
-      || project.managerId === user.id
-      || (project as any).salesManagerId === user.id;
-    if (!isAllowed) throw new ForbiddenException('Нет прав на проект');
+    // То же правило, что у правки брифа (15.11.2026).
+    if (!this.canManageBrief(user, project as any)) throw new ForbiddenException('Нет прав на проект');
 
     let token = project.briefShareToken;
     if (!token) {
@@ -488,10 +564,24 @@ export class ProjectsService implements OnModuleInit {
       relations: ['manager'],
     });
     if (!p) throw new NotFoundException('Бриф не найден или ссылка отозвана');
-    const safe = payload && typeof payload === 'object' ? payload : {};
-    const clientName = String(safe.clientSignature || '').trim() || 'Клиент';
+    // Клиент правит только свои ответы (15.11.2026): раньше ссылка заменяла
+    // бриф целиком произвольным JSON — вместе с подписью менеджера, тарифом
+    // и служебными полями. Остальное берём из сохранённого брифа.
+    const safe: any = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const clip = (v: any, max: number) => String(v ?? '').trim().slice(0, max);
+    const answers: Record<string, string> = {};
+    const rawAnswers = safe.answers && typeof safe.answers === 'object' && !Array.isArray(safe.answers) ? safe.answers : {};
+    for (const [k, v] of Object.entries(rawAnswers).slice(0, 100)) {
+      if (!/^q\d{1,2}$/.test(k) || typeof v !== 'string') continue;
+      answers[k] = v.slice(0, 5000);
+    }
+    const stored: any = p.brief && typeof p.brief === 'object' ? p.brief : {};
+    const clientName = clip(safe.clientSignature, 200) || 'Клиент';
     const brief = {
-      ...safe,
+      ...stored,
+      answers,
+      clientSignature: clip(safe.clientSignature, 200),
+      clientPhone: clip(safe.clientPhone, 50),
       filledAt: new Date().toISOString(),
       filledByUserId: null,
       filledByName: clientName,
@@ -534,15 +624,16 @@ export class ProjectsService implements OnModuleInit {
           data: { projectId: p.id, briefPercent: percent, source: 'client' },
         }).catch(() => {});
 
-        // 2) Email — если у менеджера есть email.
+        // 2) Email — если у менеджера есть email. Имена клиента и проекта —
+        //    только через escapeHtml (15.11.2026): их вводят люди.
         if (manager.email) {
           await this.mailService.sendGenericNotification(
             manager.email,
             manager.name || 'Менеджер',
             title,
-            `Здравствуйте, <strong>${manager.name || 'коллега'}</strong>!<br><br>` +
-            `Клиент <strong>${clientName}</strong> только что заполнил бриф для проекта ` +
-            `<strong>«${p.name}»</strong>.<br><br>` +
+            `Здравствуйте, <strong>${escapeHtml(manager.name || 'коллега')}</strong>!<br><br>` +
+            `Клиент <strong>${escapeHtml(clientName)}</strong> только что заполнил бриф для проекта ` +
+            `<strong>«${escapeHtml(p.name)}»</strong>.<br><br>` +
             `📊 Заполнено: <strong>${percent}%</strong> (${filledQs} из ${totalQs} вопросов).<br>` +
             `📅 ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Dushanbe' })}<br><br>` +
             `<a href="${this.telegramService.appUrl}${projectLink}" ` +
@@ -556,8 +647,8 @@ export class ProjectsService implements OnModuleInit {
         await this.telegramService.sendToUser(
           manager.id,
           `📋 <b>Клиент заполнил бриф</b>\n\n` +
-          `👤 Клиент: <b>${clientName}</b>\n` +
-          `📁 Проект: <b>${p.name}</b>\n` +
+          `👤 Клиент: <b>${escapeHtml(clientName)}</b>\n` +
+          `📁 Проект: <b>${escapeHtml(p.name)}</b>\n` +
           `📊 Заполнено: <b>${percent}%</b> (${filledQs}/${totalQs})\n\n` +
           `👉 ${this.telegramService.appUrl}${projectLink}`,
         ).catch(() => {});
@@ -570,17 +661,18 @@ export class ProjectsService implements OnModuleInit {
   }
 
   /** Очистка брифа (полное удаление). Доступно только PM-ролям/админу. */
-  async clearBrief(projectId: string, user: { id: string; role: string; name?: string }) {
+  async clearBrief(projectId: string, user: AccessUser & { id: string; role: string; name?: string }) {
     const project = await this.findOne(projectId);
     if (project.projectType !== 'SMM') {
       throw new ForbiddenException('Бриф доступен только для SMM-проектов');
     }
-    const ADMIN_PM = ['admin', 'founder', 'smm_director'];
-    const isAllowed = ADMIN_PM.includes(user.role) || project.managerId === user.id;
+    const isAllowed = isSmmManagement(user) || project.managerId === user.id;
     if (!isAllowed) {
       throw new ForbiddenException('Нет прав на удаление брифа этого проекта');
     }
-    await this.repo.update(projectId, { brief: null } as any);
+    // Вместе с брифом гасим и ссылку клиента (15.11.2026): иначе по старой
+    // ссылке можно было снова заполнить уже удалённый бриф.
+    await this.repo.update(projectId, { brief: null, briefShareToken: null } as any);
     await this.activityLog.log({
       userId: user.id,
       userName: user.name,
@@ -608,6 +700,15 @@ export class ProjectsService implements OnModuleInit {
     'monthlyFee',
     // paidAmount гвардится отдельно ниже (исторически был раньше)
   ] as const;
+
+  /** Кто фиксирует «оплачено» (paidAmount): основатель и менеджер по
+   *  продажам — только в проектах своего сегмента (по любой из двух ролей).
+   *  Одно правило для create и update (15.11.2026). */
+  private mayEditPaid(user: AccessUser | null | undefined, projectType?: string | null): boolean {
+    if (hasAnyRole(user, ['founder'])) return true;
+    const seg = getSalesSegmentOfUser(user);
+    return !!seg && seg.projectTypes.includes(projectType || '');
+  }
 
   /** Пересчитывает производные финансовые поля:
    *  - outstandingAmount = totalContractValue − paidAmount
@@ -951,26 +1052,21 @@ export class ProjectsService implements OnModuleInit {
       // ниже имеют 'projects.view' нативно, и раньше грант срабатывал раньше
       // фильтра — менеджеру продаж по СММ показывались проекты разработки.
       // Грант снимает ограничение по членству, но не по направлению.
-      if (getSalesSegment(role)) {
-        // Менеджер продаж видит только проекты своего направления.
-        // У МП-dev несколько подтипов (Лендинг, Телеграм бот, CRM,
-        // Интернет магазин + legacy «Web сайт») → IN(...).
-        qb.andWhere('p.projectType IN (:...salesTypes)', {
-          salesTypes: getSalesSegment(role)!.projectTypes,
-        });
-      } else if (role === 'smm_director' || role === 'smm_specialist' || role === 'producer') {
-        // Продюсер (09.11.2026) ведёт производство всех СММ-проектов.
-        // smm_specialist видит ВСЕ SMM-проекты (решение владельца, сент. 2026); отмечать сторис
-        // может только по своим — это проверяет StoriesService.upsert.
-        // Руководитель SMM видит ВСЕ SMM-проекты компании. Проекты
-        // разработки им не показываем.
-        qb.andWhere('p.projectType = :smmType', { smmType: 'SMM' });
-      } else if (role === 'pm_dev' || role === 'developer' || role === 'dev_director') {
-        // Команда разработки видит ВСЕ dev-проекты компании без членства:
-        // проект-менеджер — для анализа и задач-замечаний, разработчик — чтобы
-        // на доске «Разработка» находились его карточки. Иначе карточку можно
-        // назначить разработчику вне состава проекта, а он её не увидит.
-        qb.andWhere('p.projectType IN (:...devTypes)', { devTypes: DEV_PROJECT_TYPES });
+      // Направление — по ОБЕИМ ролям (15.11.2026, project-access.directionTypesOf):
+      //  • менеджер продаж — только типы своего сегмента (у МП-dev несколько
+      //    подтипов: Лендинг, Телеграм бот, CRM, Интернет магазин + legacy
+      //    «Web сайт»). Раньше МП второй ролью попадал в ветку гранта ниже
+      //    (projects.view у МП нативный) и видел проекты обоих направлений;
+      //  • smm_director / smm_specialist / producer — ВСЕ SMM-проекты
+      //    (решение владельца, сент. 2026; продюсер — 09.11.2026); отмечать
+      //    сторис специалист может только по своим (StoriesService.upsert);
+      //  • pm_dev / developer / dev_director — ВСЕ dev-проекты без членства:
+      //    иначе карточку можно назначить разработчику вне состава проекта,
+      //    а он её не увидит.
+      // Две роли разных направлений — объединение.
+      const dirTypes = directionTypesOf(requestUser as any);
+      if (dirTypes) {
+        qb.andWhere('p.projectType IN (:...dirTypes)', { dirTypes });
       } else if (hasGrant(requestUser as any, 'projects.view')) {
         // Персональный грант «Проекты — просмотр», выданный роли без своего
         // направления — видит ВСЕ проекты компании.
@@ -1021,24 +1117,8 @@ export class ProjectsService implements OnModuleInit {
 
     const projects = await qb.orderBy('p.createdAt', 'DESC').getMany();
 
-    // Annotate SMM projects with active-ad status. Today must fall inside
-    // [startDate, endDate] of at least one ad for the project to be "live".
-    const smmIds = projects.filter(p => p.projectType === 'SMM').map(p => p.id);
-    let activeMap: Record<string, boolean> = {};
-    if (smmIds.length > 0) {
-      const rows = await this.repo.manager.query(
-        `SELECT DISTINCT "projectId" FROM project_ads
-         WHERE "projectId" = ANY($1::uuid[])
-           AND NOW() BETWEEN "startDate" AND "endDate"`,
-        [smmIds],
-      );
-      activeMap = Object.fromEntries((rows as Array<{ projectId: string }>).map(r => [r.projectId, true]));
-    }
-    for (const p of projects) {
-      if (p.projectType === 'SMM') {
-        (p as any).hasActiveAd = !!activeMap[p.id];
-      }
-    }
+    // hasActiveAd (идёт ли реклама) больше не считаем (15.11.2026): фронт
+    // поле не читал, а запрос к project_ads шёл на каждый список проектов.
 
     // Время последней активности проекта = максимум из updatedAt проекта
     // и updatedAt связанных задач. Показывается на карточке проекта.
@@ -1083,8 +1163,12 @@ export class ProjectsService implements OnModuleInit {
     // Пагинации/фильтров здесь нет — порядок/фильтры выше не трогаем.
     return (stripped as any[]).map((p: any) => {
       const all = Array.isArray(p.members) ? p.members : [];
+      // Бриф, контакты клиента и ссылка для клиента в список не уходят
+      // (15.11.2026): список видят все роли, а ни одному экрану списка они
+      // не нужны. Бриф и контакты — в карточке проекта (GET /projects/:id).
+      const { brief: _brief, clientInfo: _clientInfo, briefShareToken: _token, ...rest } = p;
       return {
-        ...p,
+        ...rest,
         manager: this.toManagerView(p.manager),
         members: all
           .slice(0, 5)
@@ -1159,6 +1243,36 @@ export class ProjectsService implements OnModuleInit {
         .map((m: any) => this.toMemberView(m))
         .filter((m: any) => !!m),
     };
+  }
+
+  /** Карточка проекта для GET /projects/:id (15.11.2026): сначала право
+   *  видеть проект (project-access.canViewProject — то же правило, что у
+   *  списка, плюс свой проект, команда производства и исполнители), потом
+   *  деньги по роли. Ссылку клиента на бриф получает только тот, кто ведёт
+   *  бриф. Внутренние вызовы findOne(id, role) не меняются. */
+  async findOneForUser(id: string, user: AccessUser & { role?: string }) {
+    this.assertUuidOr400(id, 'id');
+    await assertCanViewProject(this.repo.manager, user, id);
+    const project: any = this.stripFinance(await this.findOne(id) as any, user?.role);
+    if (!this.canManageBrief(user, project)) delete project.briefShareToken;
+    return project;
+  }
+
+  /** Проверка «видит ли проект» для соседних ручек (профиль, чеклист, объявления). */
+  async assertCanView(id: string, user: AccessUser | null | undefined) {
+    this.assertUuidOr400(id, 'id');
+    return assertCanViewProject(this.repo.manager, user, id);
+  }
+
+  /** Деньги проекта (оплаты, запрос оплаты клиенту) — только в своём
+   *  направлении (15.11.2026). Менеджер по продажам — по сегменту любой из
+   *  двух ролей или если назначен на этот проект; руководители направлений —
+   *  своё направление. Руководство компании — без ограничений. */
+  private assertMoneyScope(user: AccessUser | null | undefined, p: { projectType?: string | null; salesManagerId?: string | null; smmData?: any }) {
+    if (!user || isTop(user)) return;
+    if (inDirection(user, p.projectType)) return;
+    if (salesRoleOf(user) && isAssignedSalesManager(user, p)) return;
+    throw new ForbiddenException('Проект не относится к вашему направлению');
   }
 
   /** Guard: smm_director может быть менеджером только SMM-проектов.
@@ -1300,6 +1414,31 @@ export class ProjectsService implements OnModuleInit {
       );
     }
     await this.validateManagerAssignment(dto.managerId, dto.projectType);
+    // Деньги и служебные ключи при создании — по тем же правилам, что при
+    // правке (15.11.2026). Раньше `...dto` клал в проект любые финансовые
+    // поля от всякого, у кого есть projects.create.
+    const actor: AccessUser = { id: userId, role: userRole ?? null, secondaryRole: userSecondaryRole ?? null };
+    if (!hasAnyRole(actor, ['founder'])) {
+      for (const f of this.FINANCE_FIELDS) delete (dto as any)[f];
+    }
+    if (!this.mayEditPaid(actor, dto.projectType)) delete (dto as any).paidAmount;
+    // Технические снимки и флаги проекта сервер ставит сам.
+    for (const f of ['tariffNameSnapshot', 'tariffPriceSnapshot', 'isAutoGeneratedFromTariff', 'briefShareToken', 'brief', 'launchChecklist']) {
+      delete (dto as any)[f];
+    }
+    if ('smmData' in dto) {
+      const raw = (dto as any).smmData;
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const sd: Record<string, any> = { ...raw };
+        // Ответственного менеджера и его историю назначает только основатель
+        // (PATCH /projects/:id/smm-manager), TikTok выключает руководство.
+        if (!hasAnyRole(actor, ['founder'])) { delete sd.salesManagerId; delete sd.salesManagerHistory; }
+        if (!hasAnyRole(actor, ['admin', 'founder', 'smm_director'])) delete sd.tiktokOff;
+        (dto as any).smmData = sd;
+      } else {
+        delete (dto as any).smmData;
+      }
+    }
     // Менеджер проекта всегда должен быть в members — иначе он не пройдёт
     // member-проверки в задачах и не появится в дропдаунах assignee.
     const resolvedManagerId = dto.managerId || userId;
@@ -1431,8 +1570,8 @@ export class ProjectsService implements OnModuleInit {
           await this.telegramService.sendToUser(
             memberId,
             `📁 <b>Вас добавили в проект</b>\n\n` +
-            `📌 ${saved.name}` +
-            (manager?.name ? `\n👤 Менеджер: ${manager.name}` : '') +
+            `📌 ${escapeHtml(saved.name)}` +
+            (manager?.name ? `\n👤 Менеджер: ${escapeHtml(manager.name)}` : '') +
             (deadline ? `\n📅 Дедлайн: ${deadline}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}/projects/${saved.id}`,
           );
@@ -1454,10 +1593,8 @@ export class ProjectsService implements OnModuleInit {
     return saved;
   }
 
-  async update(id: string, dto: UpdateProjectDto, user: { id: string; role: string; name?: string }) {
+  async update(id: string, dto: UpdateProjectDto, user: AccessUser & { id: string; role: string; name?: string }) {
     const project = await this.findOne(id);
-    // smm_director может редактировать ЛЮБОЙ SMM-проект (его область целиком).
-    const isSmmDirectorOnSmm = user.role === 'smm_director' && project.projectType === 'SMM';
     // Менеджер по продажам проекты не правит (решение владельца 14.11.2026):
     // раньше «своё направление» давало ему полную правку, в т.ч. smmData.
     // Менеджер проекта — НАЗНАЧАЕМЫЙ: любой сотрудник, выбранный в поле
@@ -1465,12 +1602,22 @@ export class ProjectsService implements OnModuleInit {
     // может редактировать его данные независимо от своей роли. Отдельной
     // роли project_manager больше нет.
     const isAssignedManager = project.managerId === user.id;
-    const canEdit = ['admin', 'founder'].includes(user.role) ||
-      isSmmDirectorOnSmm ||
+    // Право projects.edit (роль или грант) действует только в своём
+    // направлении (15.11.2026): раньше грант пропускал руководителя SMM в
+    // проекты разработки и руководителя разработки — в SMM. Направление —
+    // по обеим ролям (directionTypesOf); у ролей без направления — все проекты.
+    const canEdit = isTop(user) ||
       isAssignedManager ||
-      hasGrant(user as any, 'projects.edit'); // персональный грант
+      (hasGrant(user as any, 'projects.edit') && inDirection(user, project.projectType));
     if (!canEdit) {
-      throw new ForbiddenException('Not allowed');
+      throw new ForbiddenException(
+        hasGrant(user as any, 'projects.edit') ? 'Проект не относится к вашему направлению' : 'Not allowed',
+      );
+    }
+    // Смена типа не выводит проект из направления редактора (15.11.2026).
+    if ('projectType' in dto && dto.projectType !== project.projectType && !isTop(user)
+        && directionTypesOf(user) && !inDirection(user, dto.projectType)) {
+      throw new ForbiddenException('Нельзя перевести проект в чужое направление');
     }
 
     // ─── Состав dev-проекта (additive, SMM не трогаем) ────────────────
@@ -1487,13 +1634,28 @@ export class ProjectsService implements OnModuleInit {
 
     // Wave 7: блок перевода проекта в IN_PROGRESS пока launch-чеклист не закрыт.
     // Не применяется если проект уже в IN_PROGRESS — мы блокируем только переход.
+    // Только пункты, которые имеют смысл для проекта (15.11.2026): раньше
+    // чеклист требовал тариф и SMM-специалиста у ЛЮБОГО проекта, и ни SMM-
+    // проект без тарифа (единственный, что создаёт интерфейс), ни проект
+    // разработки в работу через PATCH не переводились никогда.
+    //   • тариф — только если он у проекта есть (без тарифа пункт пропускаем);
+    //   • SMM-команда и контент-план — только у SMM-проектов.
     if (
       dto.status === ProjectStatus.IN_PROGRESS &&
       project.status !== ProjectStatus.IN_PROGRESS
     ) {
       const state = await this.getLaunchChecklist(id);
-      if (!state.isComplete) {
-        const missing = state.items.filter(i => !i.done).map(i => i.label).join(', ');
+      const skip = new Set<string>();
+      if (!project.tariffId) skip.add(LAUNCH_KEYS.TARIFF_SELECTED);
+      if (project.projectType !== 'SMM') {
+        skip.add(LAUNCH_KEYS.TARIFF_SELECTED);
+        skip.add(LAUNCH_KEYS.SMM_ASSIGNED);
+        skip.add(LAUNCH_KEYS.FIRST_WEEK_PLANNED);
+        skip.add(LAUNCH_KEYS.CONTENT_PLAN_READY);
+      }
+      const missingItems = state.items.filter(i => !i.done && !skip.has(i.key));
+      if (missingItems.length) {
+        const missing = missingItems.map(i => i.label).join(', ');
         throw new ForbiddenException(
           `Нельзя перевести проект в работу: не закрыты пункты launch-чеклиста — ${missing}`,
         );
@@ -1507,7 +1669,10 @@ export class ProjectsService implements OnModuleInit {
     // paidAmount раньше мог менять только founder/co_founder. Теперь оба МП
     // по продажам (СММ и разработка) могут фиксировать оплату по своим
     // проектам — это часть их работы, чтобы вести воронку до победного.
-    const canEditPaid = ['founder', 'sales_manager_smm', 'sales_manager_dev'].includes(user.role);
+    // 15.11.2026: МП — только в своём сегменте и по любой из двух ролей
+    // (раньше МП разработки со второй ролью руководителя разработки правил
+    // оплату SMM-проектов: проверялась только основная роль).
+    const canEditPaid = this.mayEditPaid(user, project.projectType);
     if ('paidAmount' in dto && !canEditPaid) {
       const sameValue = Number(dto.paidAmount ?? 0) === Number(project.paidAmount ?? 0);
       if (!sameValue) {
@@ -1607,6 +1772,26 @@ export class ProjectsService implements OnModuleInit {
       }
     }
 
+    // smmData — слиянием, а не заменой целиком (15.11.2026). Старая карточка
+    // проекта присылала устаревший снимок smmData и откатывала цикл, норму,
+    // специалистов, менеджера и TikTok. Ключи со своими ручками
+    // (SMM_DATA_OWNED_KEYS) здесь не меняются; остальное ложится поверх
+    // текущего значения в базе атомарно (patchSmmData) уже после save.
+    let smmPatch: Record<string, any> | null = null;
+    if ('smmData' in dto) {
+      const raw = (dto as any).smmData;
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        smmPatch = {};
+        for (const [k, v] of Object.entries(raw)) {
+          if (!SMM_DATA_OWNED_KEYS.includes(k)) smmPatch[k] = v;
+        }
+      }
+      delete (dto as any).smmData;
+    }
+    // Загруженный снимок smmData обратно не пишем — его могли изменить
+    // параллельно (undefined TypeORM при save пропускает).
+    delete (project as any).smmData;
+
     Object.assign(project, {
       ...dto,
       members: project.members,
@@ -1635,6 +1820,9 @@ export class ProjectsService implements OnModuleInit {
     }
 
     const saved = await this.repo.save(project);
+    if (smmPatch && Object.keys(smmPatch).length) {
+      await patchSmmData(this.repo.manager, id, smmPatch);
+    }
 
     // Если тариф только что привязан к SMM-проекту впервые (раньше его не было),
     // и контент-план ещё не сгенерирован — генерируем сейчас.
@@ -1731,8 +1919,8 @@ export class ProjectsService implements OnModuleInit {
             .sendToUser(
               newManager.id,
               `👑 <b>Вы — менеджер проекта</b>\n\n` +
-              `📌 ${saved.name}\n` +
-              (user.name ? `👤 Назначил: ${user.name}\n` : '') +
+              `📌 ${escapeHtml(saved.name)}\n` +
+              (user.name ? `👤 Назначил: ${escapeHtml(user.name)}\n` : '') +
               (deadlineStr ? `📅 Дедлайн: ${deadlineStr}\n` : '') +
               `\n👉 ${this.telegramService.appUrl}${projectLink}`,
             )
@@ -1762,8 +1950,8 @@ export class ProjectsService implements OnModuleInit {
             .sendToUser(
               oldManager.id,
               `📋 <b>Смена менеджера проекта</b>\n\n` +
-              `Вы больше не менеджер проекта <b>${saved.name}</b>` +
-              (user.name ? `\n\n👤 Изменение сделал: ${user.name}` : ''),
+              `Вы больше не менеджер проекта <b>${escapeHtml(saved.name)}</b>` +
+              (user.name ? `\n\n👤 Изменение сделал: ${escapeHtml(user.name)}` : ''),
             )
             .catch((e: any) => console.warn('manager-removed telegram failed:', e?.message));
         }
@@ -1821,8 +2009,8 @@ export class ProjectsService implements OnModuleInit {
           .sendToUser(
             memberId,
             `👥 <b>Вас добавили в проект</b>\n\n` +
-            `📌 ${saved.name}` +
-            (user.name ? `\n👤 Добавил: ${user.name}` : '') +
+            `📌 ${escapeHtml(saved.name)}` +
+            (user.name ? `\n👤 Добавил: ${escapeHtml(user.name)}` : '') +
             (deadlineStr ? `\n📅 Дедлайн: ${deadlineStr}` : '') +
             `\n\n👉 ${this.telegramService.appUrl}${projectLink}`,
           )
@@ -1873,8 +2061,8 @@ export class ProjectsService implements OnModuleInit {
           .sendToUser(
             memberId,
             `👥 <b>Вас убрали из проекта</b>\n\n` +
-            `📌 ${saved.name}` +
-            (user.name ? `\n👤 Изменение сделал: ${user.name}` : ''),
+            `📌 ${escapeHtml(saved.name)}` +
+            (user.name ? `\n👤 Изменение сделал: ${escapeHtml(user.name)}` : ''),
           )
           .catch((e: any) => console.warn('member-remove telegram failed:', e?.message));
       }
@@ -1882,7 +2070,9 @@ export class ProjectsService implements OnModuleInit {
 
     this.gateway.broadcast('projects:changed', {});
     // Return fresh project with relations loaded
-    return this.findOne(id, user.role);
+    const fresh: any = await this.findOne(id, user.role);
+    if (!this.canManageBrief(user, fresh)) delete fresh.briefShareToken;
+    return fresh;
   }
 
   /** Этап разработки на доске «Разработка»: только dev-проекты, 1..6.
@@ -1908,15 +2098,28 @@ export class ProjectsService implements OnModuleInit {
     return { id, devStage };
   }
 
+  /** SMM-специалист (и любая не руководящая роль) правит только свой
+   *  SMM-проект: менеджер, участник или назначенный специалист (15.11.2026).
+   *  Руководство SMM — любой. Без user — внутренний вызов, не ограничиваем.
+   *  project должен быть загружен с members. */
+  private assertSmmOwn(project: { managerId?: string; smmData?: any; members?: Array<{ id: string }> }, user?: AccessUser | null) {
+    if (!user) return;
+    const memberIds = (Array.isArray(project.members) ? project.members : []).map(m => m?.id).filter(Boolean);
+    if (!canEditSmmProject(user, project, memberIds)) {
+      throw new ForbiddenException('Это не ваш проект: править его может менеджер, участник или назначенный SMM-специалист');
+    }
+  }
+
   /** Архив историй: скрыть/вернуть SMM-проект в кабинете сторисмейкера.
    *  НЕ настоящее архивирование — проект остаётся активным везде, кроме
    *  списков историй и напоминаний «нет историй». */
-  async setStoriesArchived(id: string, archived: boolean, user?: { id: string; role: string; name?: string }) {
-    const project = await this.repo.findOne({ where: { id } });
+  async setStoriesArchived(id: string, archived: boolean, user?: AccessUser & { id: string; role: string; name?: string }) {
+    const project = await this.repo.findOne({ where: { id }, relations: ['members'] });
     if (!project) throw new NotFoundException('Project not found');
     if (project.projectType !== 'SMM') {
       throw new BadRequestException('Архив историй применим только к SMM-проектам');
     }
+    this.assertSmmOwn(project, user);
     if (project.storiesArchived === archived) return { id, storiesArchived: archived };
     await this.repo.update(id, { storiesArchived: archived });
     await this.activityLog.log({
@@ -1938,13 +2141,14 @@ export class ProjectsService implements OnModuleInit {
   async setSmmCycle(
     id: string,
     dto: { day?: number | null; normReels?: number | null; normPosts?: number | null; anchor?: string | null; storiesPerMonth?: number | null },
-    user?: { id: string; role: string; name?: string },
+    user?: AccessUser & { id: string; role: string; name?: string },
   ) {
-    const project = await this.repo.findOne({ where: { id } });
+    const project = await this.repo.findOne({ where: { id }, relations: ['members'] });
     if (!project) throw new NotFoundException('Project not found');
     if (project.projectType !== 'SMM') {
       throw new BadRequestException('Цикл применим только к SMM-проектам');
     }
+    this.assertSmmOwn(project, user);
     const dayInRange = (v: any, lo: number, hi: number): number | null => {
       if (v == null) return null;
       const n = Math.trunc(Number(v));
@@ -1953,32 +2157,35 @@ export class ProjectsService implements OnModuleInit {
       }
       return n;
     };
-    const smmData = { ...(project.smmData || {}) };
+    // Пишем только свои ключи — атомарно поверх текущего smmData (15.11.2026):
+    // раньше цикл и профиль, сохранённые одновременно, затирали друг друга.
+    const smmData: any = { ...(project.smmData || {}) };
+    const { put, del, set, unset } = smmDataEditor(smmData);
     if ('day' in dto) {
       const d = dayInRange(dto.day, 1, 31);
-      if (d == null) { delete smmData.cycleStartDay; delete smmData.cycleAnchor; } else smmData.cycleStartDay = d;
+      if (d == null) { del('cycleStartDay'); del('cycleAnchor'); } else put('cycleStartDay', d);
     }
     // Якорь активного цикла (дата старта, 'YYYY-MM-DD') — выбор пользователя
     // «этот месяц / прошлый месяц». null — авто (цикл, содержащий сегодня).
     if ('anchor' in dto) {
       const a = dto.anchor;
-      if (a && /^\d{4}-\d{2}-\d{2}$/.test(a)) smmData.cycleAnchor = a; else delete smmData.cycleAnchor;
+      if (a && /^\d{4}-\d{2}-\d{2}$/.test(a)) put('cycleAnchor', a); else del('cycleAnchor');
     }
     if ('normReels' in dto) {
       const n = dayInRange(dto.normReels, 0, 999);
-      if (n == null) delete smmData.normReels; else smmData.normReels = n;
+      if (n == null) del('normReels'); else put('normReels', n);
     }
     if ('normPosts' in dto) {
       const n = dayInRange(dto.normPosts, 0, 999);
-      if (n == null) delete smmData.normPosts; else smmData.normPosts = n;
+      if (n == null) del('normPosts'); else put('normPosts', n);
     }
     // Сторис в месяц (норма, 0–100). Дневную норму (для KPI и раскраски дней) выводим = месяц / дни текущего месяца.
     if ('storiesPerMonth' in dto) {
       const m = dayInRange(dto.storiesPerMonth, 0, 100);
-      if (m == null) { delete smmData.storiesPerMonth; delete smmData.storiesPerDay; }
-      else { smmData.storiesPerMonth = m; smmData.storiesPerDay = m > 0 ? Math.max(1, Math.round(m / daysInCurrentMonth())) : 0; }
+      if (m == null) { del('storiesPerMonth'); del('storiesPerDay'); }
+      else { put('storiesPerMonth', m); put('storiesPerDay', m > 0 ? Math.max(1, Math.round(m / daysInCurrentMonth())) : 0); }
     }
-    await this.repo.update(id, { smmData });
+    await patchSmmData(this.repo.manager, id, set, unset);
     await this.activityLog.log({
       userId: user?.id,
       userName: user?.name,
@@ -2136,21 +2343,29 @@ export class ProjectsService implements OnModuleInit {
     dto: { ownerName?: string | null; keyDate?: string | null; keyDateNote?: string | null; collabSince?: string | null; preferences?: string | null; metrics?: any[]; followers?: { ym: string; value: number }[]; smmSpecialistIds?: string[];
       videographerIds?: string[]; videoEditorIds?: string[]; designerIds?: string[];
       shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; tiktok?: boolean },
-    user?: { id: string; role: string; name?: string },
+    user?: AccessUser & { id: string; role: string; name?: string },
   ) {
-    const project = await this.repo.findOne({ where: { id } });
+    const project = await this.repo.findOne({ where: { id }, relations: ['members'] });
     if (!project) throw new NotFoundException('Project not found');
     if (project.projectType !== 'SMM') throw new BadRequestException('Профиль применим только к SMM-проектам');
     // Продюсер (09.11.2026) правит в профиле только производство: где снимать
     // и кто снимает, монтирует, рисует. Остальное — СММ-специалиста.
-    if (user?.role === UserRole.PRODUCER) {
+    // Роль — основная ИЛИ вторая (15.11.2026), как в умном календаре
+    // (isProductionOnly): раньше продюсер второй ролью правил весь профиль.
+    const productionOnly = !!user && isProductionOnly(user);
+    if (productionOnly) {
       const PRODUCTION_KEYS = ['shootAddress', 'shootMapUrl', 'shootContact', 'videographerIds', 'videoEditorIds', 'designerIds'];
       dto = Object.fromEntries(Object.entries(dto || {}).filter(([k]) => PRODUCTION_KEYS.includes(k))) as typeof dto;
+    } else {
+      // SMM-специалист правит профиль только своего проекта (15.11.2026).
+      this.assertSmmOwn(project, user);
     }
-    const smmData = { ...(project.smmData || {}) };
+    // Пишем только тронутые ключи — атомарно поверх текущего smmData.
+    const smmData: any = { ...(project.smmData || {}) };
+    const ed = smmDataEditor(smmData);
     const str = (v: any, max: number): string | null => { if (v == null) return null; const s = String(v).trim(); return s ? s.slice(0, max) : null; };
     const dateOr = (v: any): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null;
-    const setOrDel = (key: string, val: any) => { if (val == null) delete (smmData as any)[key]; else (smmData as any)[key] = val; };
+    const setOrDel = (key: string, val: any) => { if (val == null) ed.del(key); else ed.put(key, val); };
     if ('ownerName' in dto) setOrDel('ownerName', str(dto.ownerName, 200));
     if ('keyDate' in dto) setOrDel('keyDate', dateOr(dto.keyDate));
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
@@ -2159,7 +2374,7 @@ export class ProjectsService implements OnModuleInit {
     // TikTok: выключить у проекта может только руководство — иначе дубль в
     // TikTok выключали бы, чтобы не делать (14.11.2026).
     if ('tiktok' in dto) {
-      if (!['admin', 'founder', 'smm_director'].includes(String(user?.role))) {
+      if (!isSmmManagement(user)) {
         throw new ForbiddenException('Включать и выключать TikTok у проекта может руководство');
       }
       setOrDel('tiktokOff', dto.tiktok === false ? true : null);
@@ -2177,15 +2392,17 @@ export class ProjectsService implements OnModuleInit {
     // ролью smm_specialist (защита «в выборе только специалисты») и руководителя
     // SMM — он ведёт свои проекты как специалист (30.10.2026), дедуп, cap 10.
     // Сам СММ-специалист (и продюсер — у него те же права) переставлять
-    // проекты НЕ может — игнорируем это поле от них.
-    if ('smmSpecialistIds' in dto && user?.role !== UserRole.SMM_SPECIALIST && user?.role !== UserRole.PRODUCER) {
+    // проекты НЕ может — игнорируем это поле от них. Переставляет только
+    // руководство SMM — по основной или второй роли (15.11.2026).
+    if ('smmSpecialistIds' in dto && (!user || isSmmManagement(user))) {
       const raw = Array.isArray(dto.smmSpecialistIds) ? dto.smmSpecialistIds.filter(x => typeof x === 'string') : [];
       const uniq = [...new Set(raw)].slice(0, 10);
       let valid: string[] = [];
       if (uniq.length) {
         const users = await this.userRepo.find({ where: { id: In(uniq) } });
+        const SPEC_ROLES: string[] = [UserRole.SMM_SPECIALIST, UserRole.SMM_DIRECTOR];
         const allowed = new Set(users
-          .filter(u => u.role === UserRole.SMM_SPECIALIST || u.role === UserRole.SMM_DIRECTOR)
+          .filter(u => SPEC_ROLES.includes(u.role) || (!!u.secondaryRole && SPEC_ROLES.includes(u.secondaryRole)))
           .map(u => u.id));
         valid = uniq.filter(x => allowed.has(x));
       }
@@ -2225,8 +2442,8 @@ export class ProjectsService implements OnModuleInit {
         }
       }
       const metrics = [...byYm.values()].sort((a, b) => (a.ym < b.ym ? -1 : 1)).slice(-240);
-      if (metrics.length) smmData.metrics = metrics; else delete (smmData as any).metrics;
-      delete (smmData as any).followers; // мигрировали на metrics
+      if (metrics.length) ed.put('metrics', metrics); else ed.del('metrics');
+      ed.del('followers'); // мигрировали на metrics
     } else if ('followers' in dto) {
       // Легаси-совместимость (старый фронт в переходный период).
       const arr = Array.isArray(dto.followers) ? dto.followers : [];
@@ -2238,9 +2455,9 @@ export class ProjectsService implements OnModuleInit {
         }
       }
       const followers = [...byYm.entries()].map(([ym, value]) => ({ ym, value })).sort((a, b) => (a.ym < b.ym ? -1 : 1)).slice(-240);
-      if (followers.length) smmData.followers = followers; else delete (smmData as any).followers;
+      if (followers.length) ed.put('followers', followers); else ed.del('followers');
     }
-    await this.repo.update(id, { smmData });
+    await patchSmmData(this.repo.manager, id, ed.set, ed.unset);
     await this.activityLog.log({
       userId: user?.id, userName: user?.name, action: ActivityAction.PROJECT_UPDATE,
       entity: 'project', entityId: id, entityName: project.name, details: { smmProfile: true },
@@ -2255,10 +2472,18 @@ export class ProjectsService implements OnModuleInit {
    *  Руководитель SMM — своей колонкой: свои проекты он ведёт как
    *  специалист (30.10.2026). */
   async smmSpecialistLoad() {
-    const projects = await this.repo.find({ where: { projectType: 'SMM' } });
+    // Служебный проект «Одноразовые съёмки» на схеме не нужен (15.11.2026).
+    const projects = await this.repo.find({ where: { projectType: 'SMM', isOneOffSystem: false } });
     const active = projects.filter(p => String(p.status) !== 'archived');
+    // Только действующие и незаблокированные (15.11.2026): уволенный
+    // специалист висел на схеме колонкой, и на него можно было перетащить
+    // проект. Вторая роль специалиста тоже считается — как при назначении.
     const allSpecs = await this.userRepo.find({
-      where: [{ role: UserRole.SMM_SPECIALIST }, { role: UserRole.SMM_DIRECTOR, isActive: true }],
+      where: [
+        { role: UserRole.SMM_SPECIALIST, isActive: true, isBlocked: false },
+        { secondaryRole: UserRole.SMM_SPECIALIST, isActive: true, isBlocked: false },
+        { role: UserRole.SMM_DIRECTOR, isActive: true, isBlocked: false },
+      ],
     });
     const specMap = new Map<string, { id: string; name: string; avatar: string | null; role: string; projects: { id: string; name: string }[] }>();
     for (const u of allSpecs) specMap.set(u.id, { id: u.id, name: u.name, avatar: u.avatar || null, role: u.role, projects: [] });
@@ -2287,7 +2512,7 @@ export class ProjectsService implements OnModuleInit {
    *  проекты без менеджера. У проекта — имена его SMM-специалистов, чтобы
    *  на карточке было видно, кто ведёт контент. */
   async smmManagerLoad() {
-    const projects = await this.repo.find({ where: { projectType: 'SMM' } });
+    const projects = await this.repo.find({ where: { projectType: 'SMM', isOneOffSystem: false } });
     const active = projects.filter(p => String(p.status) !== 'archived');
     const roles = ProjectsService.SALES_ROLES;
     const users = await this.userRepo.find({
@@ -2340,8 +2565,12 @@ export class ProjectsService implements OnModuleInit {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date());
     const since = project.createdAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dushanbe' }).format(new Date(project.createdAt)) : null;
     const history = withManagerChange(sd.salesManagerHistory, prev, sd.salesManagerId, today, since);
-    if (history.length) sd.salesManagerHistory = history; else delete sd.salesManagerHistory;
-    await this.repo.update(id, { smmData: sd });
+    // Атомарно — только эти два ключа (15.11.2026).
+    if (history.length) {
+      await patchSmmData(this.repo.manager, id, { salesManagerId: sd.salesManagerId, salesManagerHistory: history });
+    } else {
+      await patchSmmData(this.repo.manager, id, { salesManagerId: sd.salesManagerId }, ['salesManagerHistory']);
+    }
     return { ok: true, salesManagerId: sd.salesManagerId };
   }
 
@@ -2351,8 +2580,9 @@ export class ProjectsService implements OnModuleInit {
     if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может архивировать только SMM-проекты');
     }
-    const archiveSegment = getSalesSegment(user?.role);
-    if (archiveSegment && !archiveSegment.projectTypes.includes(project.projectType as string)) {
+    // Направление — по обеим ролям (15.11.2026): МП второй ролью тоже
+    // ограничен своим сегментом.
+    if (user && !inDirection(user as AccessUser, project.projectType)) {
       throw new ForbiddenException('Вы можете архивировать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
@@ -2399,8 +2629,7 @@ export class ProjectsService implements OnModuleInit {
     if (user?.role === 'smm_director' && project.projectType !== 'SMM') {
       throw new ForbiddenException('Руководитель SMM может восстанавливать только SMM-проекты');
     }
-    const restoreSegment = getSalesSegment(user?.role);
-    if (restoreSegment && !restoreSegment.projectTypes.includes(project.projectType as string)) {
+    if (user && !inDirection(user as AccessUser, project.projectType)) {
       throw new ForbiddenException('Вы можете восстанавливать только проекты своего направления');
     }
     // ПМ по разработке (грант projects.archive) — только dev-проекты.
@@ -2546,11 +2775,13 @@ export class ProjectsService implements OnModuleInit {
    *  Available to founder, admin and sales_manager. */
   async sendPaymentRequest(
     id: string,
-    actor: { id: string; name?: string; role: string },
+    actor: { id: string; name?: string; role: string; secondaryRole?: string | null },
     customMessage?: string,
   ) {
     const project = await this.repo.findOne({ where: { id } });
     if (!project) throw new NotFoundException('Project not found');
+    // Запрос оплаты — только по проектам своего направления (15.11.2026).
+    this.assertMoneyScope(actor, project);
 
     const clientInfo = (project.clientInfo || {}) as any;
     const clientEmail: string | undefined = clientInfo.email;

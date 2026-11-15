@@ -111,6 +111,8 @@ function RequestModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const today = isoLocal(new Date())
   const yesterday = isoLocal(new Date(Date.now() - 864e5))
+  // Сервер принимает поездки не старше 60 дней и сумму от 1 с. (15.11.2026).
+  const oldest = isoLocal(new Date(Date.now() - 60 * 864e5))
   const { data: projects = [], isLoading } = useQuery<{ id: string; name: string; mine: boolean }[]>({
     queryKey: ['transport-projects'], queryFn: transportApi.projects,
   })
@@ -133,7 +135,7 @@ function RequestModal({ onClose }: { onClose: () => void }) {
   const chips = showAll || !mine.length ? projects : mine
   const sum = Number(String(amount).replace(',', '.'))
   const tooMuch = sum > MAX_AMOUNT
-  const ok = !!projectId && sum > 0 && !tooMuch && !busy && !preparing
+  const ok = !!projectId && sum >= 1 && !tooMuch && !busy && !preparing
 
   // На компьютере клик по невидимому полю даты календарь сам не открывает — открываем явно.
   function openPicker(e: { currentTarget: HTMLInputElement }) {
@@ -226,7 +228,7 @@ function RequestModal({ onClose }: { onClose: () => void }) {
               date !== today && date !== yesterday ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
                 : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-300')}>
               {date !== today && date !== yesterday ? dayText(date) : 'Другой день'}
-              <input type="date" max={today} value={date} onChange={e => e.target.value && setDate(e.target.value)}
+              <input type="date" min={oldest} max={today} value={date} onChange={e => e.target.value && setDate(e.target.value)}
                 onClick={openPicker}
                 aria-label="Дата поездки" className="absolute inset-0 opacity-0 cursor-pointer" />
             </label>

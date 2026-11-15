@@ -62,6 +62,10 @@ export class SecurityAuditService {
     return qb.getMany();
   }
 
+  /** Что считается неудачной попыткой входа. Неверный код 2FA — тоже
+   *  (15.11.2026): иначе, зная пароль, код перебирали без ограничений. */
+  private static readonly FAIL_TYPES = [SecurityEventType.LOGIN_FAIL, SecurityEventType.TWO_FACTOR_FAIL];
+
   /** Сколько неуспешных логинов с этого IP за последние N минут. */
   async failsFromIpRecent(ip: string | null, minutes = 15): Promise<number> {
     if (!ip) return 0;
@@ -69,19 +73,22 @@ export class SecurityAuditService {
     return this.repo
       .createQueryBuilder('e')
       .where('e.ip = :ip', { ip })
-      .andWhere('e.type = :t', { t: SecurityEventType.LOGIN_FAIL })
+      .andWhere('e.type IN (:...types)', { types: SecurityAuditService.FAIL_TYPES })
       .andWhere('e.createdAt > :since', { since })
       .getCount();
   }
 
-  /** Сколько неуспешных логинов на этот email за последние N минут. */
+  /** Сколько неуспешных логинов на этот email за последние N минут.
+   *  Без учёта регистра (15.11.2026): «Ivan@x.tj» и «ivan@x.tj» — один
+   *  аккаунт, а раньше каждый вариант написания давал свои 5 попыток. */
   async failsForEmailRecent(email: string | null, minutes = 15): Promise<number> {
-    if (!email) return 0;
+    const key = (email || '').trim().toLowerCase();
+    if (!key) return 0;
     const since = new Date(Date.now() - minutes * 60_000);
     return this.repo
       .createQueryBuilder('e')
-      .where('e.email = :em', { em: email })
-      .andWhere('e.type = :t', { t: SecurityEventType.LOGIN_FAIL })
+      .where('LOWER(e.email) = :em', { em: key })
+      .andWhere('e.type IN (:...types)', { types: SecurityAuditService.FAIL_TYPES })
       .andWhere('e.createdAt > :since', { since })
       .getCount();
   }
@@ -101,13 +108,11 @@ export class SecurityAuditService {
     return { locked: false as const };
   }
 
-  /** Берём IP из стандартных мест: X-Forwarded-For (Vercel/Railway), X-Real-IP,
-   *  socket.remoteAddress. */
+  /** IP клиента — req.ip (15.11.2026). main.ts ставит `trust proxy 1`, и
+   *  Express сам берёт адрес, который дописал наш прокси. Самый левый
+   *  X-Forwarded-For присылает сам клиент: подставляя туда случайный адрес,
+   *  он обходил блокировку по IP и писал в журнал чужие адреса. */
   private extractIp(req: Request): string | null {
-    const xff = (req.headers['x-forwarded-for'] as string) || '';
-    if (xff) return xff.split(',')[0].trim();
-    const xri = req.headers['x-real-ip'];
-    if (xri) return String(xri);
-    return req.socket?.remoteAddress || null;
+    return req.ip || req.socket?.remoteAddress || null;
   }
 }

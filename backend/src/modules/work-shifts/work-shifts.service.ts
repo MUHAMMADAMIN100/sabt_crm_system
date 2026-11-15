@@ -12,6 +12,7 @@ import { ShiftSettings } from './shift-settings.entity';
 import { User, UserRole } from '../users/user.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { clearResponseCache } from '../../common/response-cache';
+import { escapeHtml } from '../../common/html-escape';
 
 /** Рабочий день начинается в 09:00, опоздание — приход позже 09:30
  *  (решение владельца, 21.09.2026). Порог больше не круглый час, поэтому
@@ -53,6 +54,23 @@ const TZ = 'Asia/Dushanbe';
  *  вчерашний день. */
 const dushanbeDate = (d: Date = new Date()) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+
+/** Просьба «приду позже» снимает опоздание, только если подана заранее —
+ *  не позже чем за noticeDaysBefore дней до самого дня (15.11.2026). Так
+ *  написано в форме и в настройках: поданная в тот же день (при норме ≥ 1)
+ *  до руководителя доходит, но от опоздания не спасает. */
+export function isTimelyNotice(
+  n: { date: string; createdAt?: Date | string | null },
+  daysBefore: number,
+): boolean {
+  if (!n.createdAt) return true;
+  const created = new Date(n.createdAt);
+  if (isNaN(created.getTime())) return true;
+  const latest = new Date(`${String(n.date).slice(0, 10)}T00:00:00Z`);
+  if (isNaN(latest.getTime())) return true;
+  latest.setUTCDate(latest.getUTCDate() - Math.max(0, Number(daysBefore) || 0));
+  return dushanbeDate(created) <= latest.toISOString().slice(0, 10);
+}
 
 /** Время 'HH:MM' по Душанбе. */
 const dushanbeTime = (d: Date) =>
@@ -276,9 +294,13 @@ export class WorkShiftsService implements OnApplicationBootstrap {
     const absences = await this.absenceRepo.find({ where: { date: day } });
     const absenceByUser = new Map(absences.map(a => [a.employeeId, a]));
     const scheds = await this.schedRepo.find();
-    // Одобренная заранее просьба снимает опоздание за этот день.
+    // Одобренная заранее просьба снимает опоздание за этот день — если подана
+    // не позже срока из настроек (noticeDaysBefore, 15.11.2026).
+    const noticeDays = Number((await this.settings()).noticeDaysBefore ?? 1);
     const excused = new Set(
-      (await this.noticeRepo.find({ where: { date: day, status: 'approved' } })).map(n => n.userId),
+      (await this.noticeRepo.find({ where: { date: day, status: 'approved' } }))
+        .filter(n => isTimelyNotice(n, noticeDays))
+        .map(n => n.userId),
     );
 
     const byUser = new Map<string, WorkShift[]>();
@@ -392,7 +414,7 @@ export class WorkShiftsService implements OnApplicationBootstrap {
     if (onlyUserId) noticeQb.andWhere('n.userId = :uid', { uid: onlyUserId });
 
     // Чтения друг от друга не зависят — разом.
-    const [users, rows, monthAbsences, monthScheds, notices] = await Promise.all([
+    const [users, rows, monthAbsences, monthScheds, notices, shiftSettings] = await Promise.all([
       this.userRepo.find({
         where: onlyUserId ? { isActive: true, id: onlyUserId } : { isActive: true },
         select: ['id', 'name', 'role', 'avatar'],
@@ -401,9 +423,14 @@ export class WorkShiftsService implements OnApplicationBootstrap {
       absQb.getMany(),
       this.schedRepo.find(onlyUserId ? { where: [{ userId: onlyUserId }, { userId: IsNull() }] } : undefined),
       noticeQb.getMany(),
+      this.settings(),
     ]);
     const people = users.filter(u => u.role !== UserRole.FOUNDER);
-    const excusedDays = new Set(notices.map(n => `${n.userId}:${n.date}`));
+    // Опоздание снимает только просьба, поданная заранее (15.11.2026).
+    const noticeDays = Number(shiftSettings.noticeDaysBefore ?? 1);
+    const excusedDays = new Set(
+      notices.filter(n => isTimelyNotice(n, noticeDays)).map(n => `${n.userId}:${n.date}`),
+    );
     const absenceByUserDay = new Map<string, Record<number, string>>();
     for (const a of monthAbsences) {
       const dn = Number(String(a.date).slice(8, 10));
@@ -740,8 +767,12 @@ export class WorkShiftsService implements OnApplicationBootstrap {
     await this.telegram.sendToUser(
       row.userId,
       approve
-        ? `Ваша просьба на ${row.date} одобрена: приходите к ${row.plannedTime}, опоздание не начислится.`
-        : `Просьба прийти позже ${row.date} отклонена. Смена начинается как обычно.`,
+        ? `Ваша просьба на ${escapeHtml(row.date)} одобрена: приходите к ${escapeHtml(row.plannedTime)}` +
+          (isTimelyNotice(row, Number((await this.settings()).noticeDaysBefore ?? 1))
+            ? ', опоздание не начислится.'
+            // Поданная позже срока от опоздания не спасает (15.11.2026).
+            : '. Просьба подана позже срока — опоздание всё равно засчитается.')
+        : `Просьба прийти позже ${escapeHtml(row.date)} отклонена. Смена начинается как обычно.`,
     ).catch(() => undefined);
     return { ok: true, status: row.status };
   }
@@ -986,8 +1017,9 @@ export class WorkShiftsService implements OnApplicationBootstrap {
       `На работе: ${working.length} из ${data.items.length}`,
     ];
     // Порог у каждого свой, поэтому пишем факт прихода и его начало смены.
-    if (late.length) lines.push('Опоздали: ' + late.map(i => `${i.name} — ${i.startedLabel} (смена с ${i.startsAt})`).join(', '));
-    if (absent.length) lines.push('Не вышли: ' + absent.map(i => i.name).join(', '));
+    // Имена — пользовательский текст: в Telegram (HTML) только через escapeHtml.
+    if (late.length) lines.push('Опоздали: ' + late.map(i => `${escapeHtml(i.name)} — ${escapeHtml(i.startedLabel)} (смена с ${escapeHtml(i.startsAt)})`).join(', '));
+    if (absent.length) lines.push('Не вышли: ' + absent.map(i => escapeHtml(i.name)).join(', '));
     const chiefs = await this.userRepo.find({
       where: { isActive: true },
       select: ['id', 'role'],

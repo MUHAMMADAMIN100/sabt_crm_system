@@ -194,9 +194,6 @@ export class NotificationsService implements OnModuleInit {
       .where('link = :link', { link: linkPath })
       .execute();
   }
-
-  async notifyDeadlines() {
-    // Called by scheduler — notify tasks due in 24h
-    // This would be implemented with TasksService injection
-  }
+  // notifyDeadlines() — пустая заглушка, удалена (15.11.2026): дедлайны
+  // рассылает tasks/deadline.scheduler.
 }

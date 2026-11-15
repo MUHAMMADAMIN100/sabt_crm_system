@@ -49,10 +49,17 @@ function bumpKpiValue(kpi: any, key: string, delta: number) {
     const value = Math.max(0, (Number(it.value) || 0) + delta)
     const target = Number(it.target) || 0
     const percent = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0
-    return { ...it, value, percent, done: value >= target }
+    // Без нормы (выходной, target 0) пункт не «выполнен» — иначе ложный
+    // праздник «0 из 0» (15.11.2026, как на сервере).
+    return { ...it, value, percent, done: target > 0 && value >= target }
   })
   if (!touched) return kpi
-  const overall = Math.round(items.reduce((acc: number, i: any) => acc + (i.value / (i.target || 1)) * 100, 0) / items.length)
+  // Общий процент — как на сервере: только пункты с нормой, каждый не
+  // больше 100 % (перевыполнение одного не закрывает недобор другого).
+  const counted = items.filter((i: any) => Number(i.target) > 0)
+  if (counted.length === 0) return { ...kpi, items }
+  const overall = Math.round(counted.reduce((acc: number, i: any) =>
+    acc + Math.min(100, ((Number(i.value) || 0) / Number(i.target)) * 100), 0) / counted.length)
   return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
 }
 
@@ -93,7 +100,7 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
     onMutate: async ({ id, stage }) => {
       await qc.cancelQueries({ queryKey: ['clients'] })
       const prev = qc.getQueryData(['clients'])
-      // Считаем — forward (+1) / backward (-1) / нейтрально (0, cancelled).
+      // Считаем — forward (+1) / нейтрально (0: назад, cancelled).
       const lead = Array.isArray(prev)
         ? (prev as any[]).find((c: any) => c.id === id)
         : null
@@ -102,7 +109,6 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
       // Только реальные этапы (order > 0) участвуют в подсчёте. cancelled
       // имеет order=-1 и не двигает KPI ни в +, ни в −.
       const isForward  = toOrder > 0 && toOrder > fromOrder
-      const isBackward = toOrder > 0 && fromOrder > 0 && toOrder < fromOrder
       qc.setQueryData(['clients'], (old: any) =>
         Array.isArray(old)
           ? old.map((c: any) => (c.id === id ? { ...c, onboardingStage: stage } : c))
@@ -110,7 +116,9 @@ export default function OnboardingPage({ embedded = false }: { embedded?: boolea
       )
       // Оптимистично двигаем «funnel_progress» — мгновенный отклик в UI,
       // WebSocket потом перетрёт точной цифрой с сервера.
-      const delta = isForward ? +1 : isBackward ? -1 : 0
+      // Откат назад KPI не снимает (15.11.2026): засчитывается только первое
+      // достижение этапа, точную цифру пришлёт сервер.
+      const delta = isForward ? +1 : 0
       if (delta !== 0) {
         qc.setQueriesData({ queryKey: ['sales-kpi'] }, (old: any) => bumpKpiValue(old, 'funnel_progress', delta))
         qc.setQueriesData({ queryKey: ['kpi-user'] },  (old: any) => bumpKpiValue(old, 'funnel_progress', delta))

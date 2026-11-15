@@ -12,7 +12,8 @@ export interface KpiItem {
 
 /** «Соблюдено дедлайнов» менеджера продаж (14.11.2026). Нет в периоде задач
  *  со сроком — пункта нет, как у разработки: соблюдать нечего, и 0 % не тянет
- *  оценку вниз. Задачи без срока сами пункт не создают. Сроки были, а
+ *  оценку вниз. Задачи без срока сами пункт не создают и в долю не входят
+ *  (15.11.2026: раньше шли «в срок» и накручивали процент). Сроки были, а
  *  закрытых задач нет — честные 0 %.
  *  t — закрытые в периоде (всего / в срок / из них со сроком);
  *  dueInPeriod — задачи со сроком в периоде, срок которых наступил или сданные. */
@@ -22,14 +23,15 @@ export function salesDeadlineItem(
   target: number,
 ): KpiItem | null {
   if (dueInPeriod <= 0 && t.withDeadline <= 0) return null;
-  const rate = t.done > 0 ? Math.round((t.onTime / t.done) * 100) : 0;
+  const closed = Math.max(0, t.withDeadline);
+  const rate = closed > 0 ? Math.round((Math.min(t.onTime, closed) / closed) * 100) : 0;
   return {
     key: 'deadline_rate',
     label: 'Соблюдено дедлайнов',
     target,
     value: rate,
-    percent: t.done > 0 ? Math.min(100, Math.round((rate / target) * 100)) : 0,
-    done: t.done > 0 && rate >= target,
+    percent: closed > 0 ? Math.min(100, Math.round((rate / target) * 100)) : 0,
+    done: closed > 0 && rate >= target,
   };
 }
 

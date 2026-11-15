@@ -22,17 +22,52 @@ export function moneyBare(n: number): string {
   return Number.isInteger(v) ? nf.format(v) : nf2.format(v)
 }
 
+/** Сегодня по Душанбе (15.11.2026): раньше брали часовой пояс браузера —
+ *  у ноутбука в другом поясе «сегодня» и текущий месяц расходились с сервером
+ *  (а сервер теперь отклоняет оплаты будущей датой). */
+const dushanbeDate = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Dushanbe', year: 'numeric', month: '2-digit', day: '2-digit',
+})
 export function todayISO(): string {
-  const d = new Date()
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+  return dushanbeDate.format(new Date())
 }
 
 export const ymOf = (iso: string): string => (iso || '').slice(0, 7)
 
 /** Сумма из поля ввода: «3 500», «3 500,50», «3500.5» → число. Пробелы (и
  *  неразрывные — так CRM сама пишет суммы) убираем: раньше «3 500»
- *  сохранялось как 3 с. (14.11.2026). Пустое/не число → NaN. */
-export const parseAmount = (s: unknown): number => parseFloat(String(s ?? '').replace(/\s/g, '').replace(',', '.'))
+ *  сохранялось как 3 с. (14.11.2026). Пустое/не число → NaN.
+ *
+ *  Разделители (15.11.2026): «1,234.56» раньше превращалось в 1.234.
+ *  Правило: последний «,» или «.» с 1–2 цифрами после — десятичный, прочие
+ *  разделители — тысячи («1 234,56», «1.234,56», «1,234.56» → 1234.56).
+ *  Ровно 3 цифры после — это тысячи, но только при правильной разбивке
+ *  («1,234», «1.234.567»); иначе («1234,567», «0.125») — NaN: в сомони два
+ *  знака после запятой, и угадывать «×1000 или ÷1000» с деньгами нельзя.
+ *  Итог округляется до копеек (дирамов). */
+export function parseAmount(s: unknown): number {
+  const token = String(s ?? '').replace(/\s/g, '').match(/^[-+]?[\d.,]+/)
+  if (!token) return NaN
+  const sign = token[0].startsWith('-') ? -1 : 1
+  const t = token[0].replace(/^[-+]/, '').replace(/[.,]+$/, '')
+  if (!/\d/.test(t)) return NaN
+  const last = Math.max(t.lastIndexOf(','), t.lastIndexOf('.'))
+  let value: number
+  if (last < 0) {
+    value = Number(t)
+  } else {
+    const tail = t.slice(last + 1)
+    if (tail.length === 3) {
+      // Тысячи: «1,234», «12.345.678» — один вид разделителя, группы по 3.
+      if (!/^[1-9]\d{0,2}([.,])\d{3}(?:\1\d{3})*$/.test(t)) return NaN
+      value = Number(t.replace(/[.,]/g, ''))
+    } else {
+      value = Number(`${t.slice(0, last).replace(/[.,]/g, '') || '0'}.${tail}`)
+    }
+  }
+  if (!Number.isFinite(value)) return NaN
+  return sign * (Math.round((value + Number.EPSILON) * 100) / 100)
+}
 export const currentYm = (): string => ymOf(todayISO())
 
 /** Период зарплатной ведомости для даты — цикл «10-е → 10-е»: дата на/до
@@ -72,8 +107,8 @@ export function contractDay(contractDate?: string | null): number | null {
 export function daysUntil(iso?: string | null): number | null {
   if (!iso || iso.length < 10) return null
   const target = new Date(iso.slice(0, 10) + 'T00:00:00')
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // «Сегодня» — душанбинское, как у сервера и сроков оплат (15.11.2026).
+  const today = new Date(todayISO() + 'T00:00:00')
   if (isNaN(target.getTime())) return null
   return Math.round((target.getTime() - today.getTime()) / 86400_000)
 }

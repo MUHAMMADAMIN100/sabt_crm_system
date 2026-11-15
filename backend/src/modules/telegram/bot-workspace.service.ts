@@ -198,7 +198,7 @@ export class BotWorkspaceService {
     const user = await this.userOf(chatId);
     if (!user) return false;
     try {
-      await this.comments.create(wait.taskId, text, user.id, user.role);
+      await this.comments.create(wait.taskId, text, user.id, user.role, user.secondaryRole);
       await this.telegram.sendMessage(chatId, '💬 Комментарий добавлен в задачу.');
     } catch (e: any) {
       await this.telegram.sendMessage(chatId, `⚠️ ${esc(String(e?.message || 'Не удалось добавить'))}`);

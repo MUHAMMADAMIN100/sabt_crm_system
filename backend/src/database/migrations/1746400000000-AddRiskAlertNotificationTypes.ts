@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 /** Wave 6: новые типы уведомлений для риск-алертов и операционных алертов. */
 export class AddRiskAlertNotificationTypes1746400000000 implements MigrationInterface {
@@ -16,19 +17,10 @@ export class AddRiskAlertNotificationTypes1746400000000 implements MigrationInte
       'week_no_content',
       'too_many_pm_reviews',
     ];
-    // TypeORM в разных миграциях создавал enum под двумя именами — пробуем оба.
-    const enumNames = ['notification_type_enum', 'notifications_type_enum'];
-    for (const enumName of enumNames) {
-      for (const value of newTypes) {
-        try {
-          await queryRunner.query(
-            `ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS '${value}'`,
-          );
-        } catch {
-          // enum может не существовать под этим именем — пропускаем
-        }
-      }
-    }
+    // TypeORM в разных миграциях создавал enum под двумя именами — берём
+    // настоящее из каталога по колонке (15.11.2026): перебор через try/catch
+    // портил транзакцию миграции, и на чистой базе она падала.
+    await addEnumValues(queryRunner, 'notifications', 'type', newTypes);
   }
 
   async down(): Promise<void> {

@@ -4,10 +4,21 @@ import { celebrateTask } from '@/lib/taskCelebration'
 // ─── Auth ────────────────────────────────────────────────
 export const authApi = {
   me: () => api.get('/auth/me').then(r => r.data),
-  changePassword: (data: any) => api.patch('/auth/change-password', data).then(r => r.data),
+  /** Смена своего пароля: текущий + новый (на сервере — минимум 8 символов,
+   *  ChangePasswordDto). После смены сервер отзывает все сессии. */
+  changePassword: (data: { oldPassword: string; newPassword: string }) => api.patch('/auth/change-password', data).then(r => r.data),
   sessions: (days = 7) => api.get('/auth/sessions', { params: { days } }).then(r => r.data),
   heartbeat: () => api.post('/auth/heartbeat').then(r => r.data),
   setTheme: (themeColor: string | null) => api.patch('/auth/theme', { themeColor }).then(r => r.data),
+}
+
+// ─── Telegram ────────────────────────────────────────────
+/** Привязка Telegram к своему аккаунту (15.11.2026): сервер выдаёт
+ *  одноразовую ссылку на бота (t.me/…?start=…), открываем её в новой
+ *  вкладке — бот запоминает чат сотрудника для уведомлений. */
+export const telegramApi = {
+  linkCode: (): Promise<{ url: string; expiresAt: string }> =>
+    api.post('/telegram/link-code').then(r => r.data),
 }
 
 // helper для multipart/form-data загрузки аватара
@@ -540,7 +551,8 @@ export type SalesCalPay = {
   /** SMM-проект CRM клиента; у разработки — null. */
   projectId: string | null; direction: string | null
   /** ym — месяц, за который оплата. */
-  date: string; ym: string; amount: number; partNo: number
+  /** null — сумму не показываем (нет finance.manage и клиент не свой, 15.11.2026). */
+  date: string; ym: string; amount: number | null; partNo: number
   state: 'late' | 'today' | 'wait' | 'paid'
   source: 'plan' | 'tx' | 'forecast'
 }
@@ -549,7 +561,7 @@ export type SalesCalPay = {
  *  продажам получает только своих клиентов. */
 export const smmPaymentsApi = {
   /** Деньги в календаре «Панели» менеджера за [from, to]; просроченные — всегда. */
-  calendar: (from: string, to: string): Promise<{ today: string; from: string; to: string; clients: number; items: SalesCalPay[] }> =>
+  calendar: (from: string, to: string): Promise<{ today: string; from: string; to: string; clients: number; items: SalesCalPay[]; money?: 'all' | 'own' | 'none' }> =>
     api.get('/smm-payments/calendar', { params: { from, to } }).then(r => r.data),
   project: (projectId: string): Promise<ClientPayProject> =>
     api.get(`/smm-payments/project/${projectId}`).then(r => r.data),
@@ -686,7 +698,7 @@ export const financeApi = {
   updateTransaction: (id: string, data: any) => api.patch(`/finance/transactions/${id}`, data).then(r => r.data),
   removeTransaction: (id: string) => api.delete(`/finance/transactions/${id}`).then(r => r.data),
   // Снять расходы месяца по сотруднику/подписке одной транзакцией на бэке.
-  removeMonthExpenses: (data: { ym: string; employeeId?: string; subscriptionId?: string; kind?: 'advance' | 'bonus' }) =>
+  removeMonthExpenses: (data: { ym: string; employeeId?: string; subscriptionId?: string; kind?: 'advance' | 'bonus' | 'salary' }) =>
     api.post('/finance/operations/remove-month', data).then(r => r.data),
 
   // Счета

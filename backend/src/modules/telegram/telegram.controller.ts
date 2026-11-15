@@ -1,11 +1,15 @@
-import { Controller, Post, Body, Inject, forwardRef, Headers, Logger, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, Inject, forwardRef, Headers, HttpCode, Logger, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { IncomingFile, TelegramService } from './telegram.service';
+import { IncomingFile, TelegramService, startPayload } from './telegram.service';
 import { VoiceTaskService } from './voice-task.service';
 import { BotWorkspaceService } from './bot-workspace.service';
 import { Employee } from '../employees/employee.entity';
+import { User } from '../users/user.entity';
 import { TasksService } from '../tasks/tasks.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { NoImpersonation } from '../auth/impersonation';
+import { escapeHtml } from '../../common/html-escape';
 
 interface TgMessageRef {
   message_id?: number;
@@ -58,8 +62,6 @@ export function taskIdFromReply(ref?: TgMessageRef): string | null {
   return t ? t[1] : null;
 }
 
-const escHtml = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 @Controller('telegram')
 export class TelegramController {
   private readonly logger = new Logger(TelegramController.name);
@@ -70,7 +72,22 @@ export class TelegramController {
     private botWorkspace: BotWorkspaceService,
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @InjectRepository(Employee) private employeeRepo: Repository<Employee>,
+    @InjectRepository(User) private userRepo: Repository<User>,
   ) {}
+
+  /**
+   * Одноразовая ссылка привязки Telegram (15.11.2026): кнопка «Привязать
+   * Telegram» в профиле CRM открывает url, бот получает «/start <код>» и
+   * привязывает чат к владельцу кода. Код — 15 минут, один раз.
+   * Ответ: { url: 'https://t.me/<бот>?start=<код>', expiresAt: ISO-строка }.
+   */
+  @Post('link-code')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @NoImpersonation('Привязать Telegram может только сам сотрудник — вернитесь в свой аккаунт')
+  linkCode(@Request() req: any) {
+    return this.telegramService.createLinkCode(req.user.id);
+  }
 
   @Post('webhook')
   async handleWebhook(
@@ -95,7 +112,7 @@ export class TelegramController {
         });
         await this.telegramService.answerCallbackQuery(cq.id, res?.toast || '');
         if (res?.append && cq.message?.chat?.id && cq.message?.message_id) {
-          const base = cq.message.text ? `${escHtml(cq.message.text)}\n\n` : '';
+          const base = cq.message.text ? `${escapeHtml(cq.message.text)}\n\n` : '';
           await this.telegramService.editMessageText(cq.message.chat.id, cq.message.message_id, `${base}${res.append}`)
             .catch(() => {});
         }
@@ -109,7 +126,9 @@ export class TelegramController {
           await this.telegramService.answerCallbackQuery(cq.id, answer);
           if ((answer === 'Задача закрыта' || answer === 'Взято в работу')
               && cq.message?.chat?.id && cq.message?.message_id) {
-            const base = cq.message.text ? `${cq.message.text}\n\n` : '';
+            // Текст из Telegram — без разметки: «<» в названии задачи
+            // ломал правку сообщения (15.11.2026).
+            const base = cq.message.text ? `${escapeHtml(cq.message.text)}\n\n` : '';
             await this.telegramService.editMessageText(
               cq.message.chat.id, cq.message.message_id,
               `${base}${answer === 'Задача закрыта' ? '✅ Закрыто' : '▶️ В работе'}`,
@@ -125,9 +144,9 @@ export class TelegramController {
         if (text) {
           await this.telegramService.answerCallbackQuery(cq.id, text);
           if (cq.message?.chat?.id && cq.message?.message_id) {
-            const base = cq.message.text ? `${cq.message.text}\n\n` : '';
+            const base = cq.message.text ? `${escapeHtml(cq.message.text)}\n\n` : '';
             await this.telegramService.editMessageText(
-              cq.message.chat.id, cq.message.message_id, `${base}${text}`);
+              cq.message.chat.id, cq.message.message_id, `${base}${escapeHtml(text)}`);
           }
           return { ok: true };
         }
@@ -143,6 +162,13 @@ export class TelegramController {
         await this.telegramService.answerCallbackQuery(cq.id, 'Аккаунт не привязан. Нажмите /start в боте.');
         return { ok: true };
       }
+      // Как у кнопок w: (15.11.2026): уволенный или заблокированный
+      // сотрудник не меняет задачи из старых сообщений бота.
+      const actor = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
+      if (!actor || !actor.isActive || actor.isBlocked) {
+        await this.telegramService.answerCallbackQuery(cq.id, 'Аккаунт неактивен или заблокирован');
+        return { ok: true };
+      }
       let resultText = 'Готово';
       try {
         const res = await this.tasksService.handleBotAction(taskMatch[2], taskMatch[1] as 'done' | 'progress', userId);
@@ -153,8 +179,8 @@ export class TelegramController {
       await this.telegramService.answerCallbackQuery(cq.id, resultText);
       // Заменяем текст сообщения (с результатом) и убираем кнопки.
       if (cq.message?.chat?.id && cq.message?.message_id) {
-        const base = cq.message.text ? `${cq.message.text}\n\n` : '';
-        await this.telegramService.editMessageText(cq.message.chat.id, cq.message.message_id, `${base}${resultText}`);
+        const base = cq.message.text ? `${escapeHtml(cq.message.text)}\n\n` : '';
+        await this.telegramService.editMessageText(cq.message.chat.id, cq.message.message_id, `${base}${escapeHtml(resultText)}`);
       }
       return { ok: true };
     }
@@ -244,10 +270,29 @@ export class TelegramController {
 
     if (!chatId || !text.startsWith('/start')) return { ok: true };
 
+    // ── /start <код> — ссылка из CRM (кнопка «Привязать Telegram») ────────
+    // Владелец кода только что вошёл в CRM — ему можно и перепривязать чат.
+    const code = startPayload(text);
+    if (code) {
+      const ownerId = await this.telegramService.consumeLinkCode(code);
+      const owner = ownerId ? await this.employeeRepo.findOne({ where: { userId: ownerId } }) : null;
+      if (!owner) {
+        await this.telegramService.sendMessage(
+          chatId,
+          '⌛ Ссылка для привязки устарела или уже использована.\n\n'
+          + 'Откройте профиль в CRM и нажмите «Привязать Telegram» ещё раз — ссылка действует 15 минут.',
+        );
+        return { ok: true };
+      }
+      await this.telegramService.linkChat(owner.id, chatId);
+      await this.sendLinked(chatId, owner.fullName);
+      return { ok: true };
+    }
+
     if (!rawUsername) {
       await this.telegramService.sendMessage(
         chatId,
-        '❌ У вас не установлен username в Telegram.\n\nУстановите его в настройках Telegram (Настройки → Изменить профиль → Username) и попробуйте снова.',
+        '❌ У вас не установлен username в Telegram.\n\nУстановите его в настройках Telegram (Настройки → Изменить профиль → Username) и попробуйте снова — или нажмите «Привязать Telegram» в профиле CRM.',
       );
       return { ok: true };
     }
@@ -263,26 +308,39 @@ export class TelegramController {
     if (!employee) {
       await this.telegramService.sendMessage(
         chatId,
-        `👋 Привет, <b>${firstName}</b>!\n\n` +
-        `Аккаунт с Telegram @${username} не найден в системе <b>Sabt</b>.\n\n` +
-        `Попросите администратора указать ваш Telegram в профиле сотрудника.`,
+        `👋 Привет, <b>${escapeHtml(firstName)}</b>!\n\n` +
+        `Аккаунт с Telegram @${escapeHtml(username)} не найден в системе <b>Sabt</b>.\n\n` +
+        `Попросите администратора указать ваш Telegram в профиле сотрудника или нажмите «Привязать Telegram» в профиле CRM.`,
       );
       return { ok: true };
     }
 
-    // Сохраняем chatId сотрудника
-    employee.telegramChatId = String(chatId);
-    await this.employeeRepo.save(employee);
+    // По username привязываем только «свободную» карточку (15.11.2026):
+    // раньше чужую привязку перезаписывал любой, кто занял этот username.
+    // Перепривязка — только по одноразовой ссылке из CRM.
+    if (employee.telegramChatId && employee.telegramChatId !== String(chatId)) {
+      await this.telegramService.sendMessage(
+        chatId,
+        '🔒 Этот сотрудник уже привязан к другому чату Telegram.\n\n'
+        + 'Чтобы перепривязать бота к этому чату, откройте профиль в CRM и нажмите «Привязать Telegram».',
+      );
+      return { ok: true };
+    }
 
+    await this.telegramService.linkChat(employee.id, chatId);
+    await this.sendLinked(chatId, employee.fullName);
+    return { ok: true };
+  }
+
+  /** «Аккаунт привязан» + подсказка, что умеет бот. */
+  private async sendLinked(chatId: number, fullName: string): Promise<void> {
     await this.telegramService.sendMessage(
       chatId,
       `✅ <b>Аккаунт привязан!</b>\n\n` +
-      `Привет, <b>${employee.fullName}</b>!\n` +
+      `Привет, <b>${escapeHtml(fullName)}</b>!\n` +
       `Теперь вы будете получать уведомления Sabt System прямо здесь. 🎉`,
     );
     // Сразу показываем, что бот умеет: иначе о командах никто не узнает.
     await this.telegramService.sendMessage(chatId, this.botWorkspace.helpText()).catch(() => {});
-
-    return { ok: true };
   }
 }

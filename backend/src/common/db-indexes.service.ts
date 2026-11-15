@@ -62,7 +62,9 @@ export class DbIndexesService implements OnModuleInit {
 
       // ── work_sessions / time_logs ─────────────────────────────────────
       ['idx_work_sessions_user_date', `CREATE INDEX IF NOT EXISTS idx_work_sessions_user_date ON work_sessions ("userId", date)`],
-      ['idx_time_logs_user_date',     `CREATE INDEX IF NOT EXISTS idx_time_logs_user_date ON time_logs ("userId", date)`],
+      // Колонка сотрудника в time_logs — "employeeId" (см. TimeLog), "userId"
+      // там нет: индекс падал при каждом старте (15.11.2026).
+      ['idx_time_logs_user_date',     `CREATE INDEX IF NOT EXISTS idx_time_logs_user_date ON time_logs ("employeeId", date)`],
 
       // ── activity_logs / story_logs ────────────────────────────────────
       ['idx_activity_logs_user_created', `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_created ON activity_logs ("userId", "createdAt")`],

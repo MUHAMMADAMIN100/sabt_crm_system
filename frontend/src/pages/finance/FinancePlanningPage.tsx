@@ -29,9 +29,12 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
   // Дата оплаты (08.11.2026): у просроченного по умолчанию — сегодня. Раньше
   // бралась дата срока, и оплата, пришедшая сегодня, задним числом уходила в
   // прошлый месяц.
+  // Плановую оплату (pp-) будущей датой сервер не принимает (15.11.2026):
+  // деньги пришли сегодня или раньше — по умолчанию сегодня, а не срок.
   const [payDate, setPayDate] = useState(() => {
     const d = String(item.date || '').slice(0, 10);
     const today = todayISO();
+    if (String(item.id || '').startsWith('pp-')) return today;
     return d && d < today ? today : (d || today);
   });
   useEffect(() => { if (!accountId && activeAccounts.length) setAccountId(activeAccounts[0].id); }, [activeAccounts, accountId]);
@@ -103,12 +106,15 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
   }
   const rawId = isPlan ? id.slice(3) : id.slice(4);
   const itemDate = String(item.date || '').slice(0, 10) || todayISO();
+  const today = todayISO();
+  // Оплату плана будущей датой не отправляем — сервер её отклонит (15.11.2026).
+  const futurePay = isPlan && !!payDate && payDate > today;
 
   async function mark() {
-    if (busy || (isPlan && !accountId)) return;
+    if (busy || (isPlan && !accountId) || futurePay) return;
     setBusy(true);
     try {
-      if (isPlan) await financeApi.receivePlanned(rawId, { accountId, date: payDate || itemDate });
+      if (isPlan) await financeApi.receivePlanned(rawId, { accountId, date: payDate || (itemDate > today ? today : itemDate) });
       else await financeApi.markSubPaid(rawId, { ym, date: payDate || itemDate });
       invalidateFinanceAll(qc); onClose();
     } catch (e) { toast.error(apiErr(e)); setBusy(false); }
@@ -138,9 +144,10 @@ function PlanningStatusControl({ item, ym, onClose }: { item: any; ym: string; o
             </div>
           )}
           <div className="field"><label htmlFor={`${fieldId}-date`}>{income ? 'Когда пришли деньги' : 'Когда оплатили'}</label>
-            <input id={`${fieldId}-date`} type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+            <input id={`${fieldId}-date`} type="date" max={isPlan ? today : undefined} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
           </div>
-          <button className="btn primary" disabled={busy || (isPlan && !accountId)} onClick={mark}>
+          {futurePay && <p className="mini neg" style={{ margin: 0 }}>Дата оплаты не может быть позже сегодняшней.</p>}
+          <button className="btn primary" disabled={busy || (isPlan && !accountId) || futurePay} onClick={mark}>
             {income ? 'Отметить полученной' : 'Отметить оплаченной'}
           </button>
         </>

@@ -1,6 +1,6 @@
 import {
-  COLD_CALL_EVENTS_SINCE, SALES_DAILY_TARGETS, buildSalesKpi, emailBecameSent, expandRanges, isWorkday,
-  meetingSyncPlan, salesPeriod, workingDays,
+  COLD_CALL_EVENTS_SINCE, SALES_DAILY_TARGETS, buildSalesKpi, emailBecameSent, expandRanges, funnelStepIsForward,
+  isWorkday, meetingSyncPlan, salesPeriod, workingDays,
 } from './sales-kpi.logic';
 
 // Честный KPI менеджера продаж (решения владельца 14.11.2026): пн–сб,
@@ -158,6 +158,43 @@ describe('meetingSyncPlan — перенос встречи', () => {
   it('сменился владелец: будущая встреча переходит к новому', () => {
     expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: future, ownerId: 'u2' }, now))
       .toEqual({ dropPending: true, insert: { userId: 'u2', at: new Date(future) } });
+  });
+
+  // 15.11.2026: встреча задним числом в KPI не попадает.
+  it('дата встречи раньше сегодняшнего дня (Душанбе) — записи нет', () => {
+    expect(meetingSyncPlan(null, { at: past, ownerId: 'u1' }, now)).toBeNull();
+    expect(meetingSyncPlan({ at: null, ownerId: 'u1' }, { at: '2026-11-01T09:00:00Z', ownerId: 'u1' }, now)).toBeNull();
+    // Будущую перенесли на вчера: старая запись уходит, новой нет.
+    expect(meetingSyncPlan({ at: future, ownerId: 'u1' }, { at: past, ownerId: 'u1' }, now))
+      .toEqual({ dropPending: true, insert: null });
+  });
+
+  it('прошедшая встреча СЕГОДНЯ (по Душанбе) — засчитывается', () => {
+    // now = 15:00 по Душанбе; встреча в 09:00 по Душанбе того же дня.
+    const earlierToday = '2026-11-14T04:00:00Z';
+    expect(meetingSyncPlan(null, { at: earlierToday, ownerId: 'u1' }, now))
+      .toEqual({ dropPending: false, insert: { userId: 'u1', at: new Date(earlierToday) } });
+    // 00:30 по Душанбе — это ещё 13.11 по UTC, но уже сегодня по Душанбе.
+    const justAfterMidnight = '2026-11-13T19:30:00Z';
+    expect(meetingSyncPlan(null, { at: justAfterMidnight, ownerId: 'u1' }, now)?.insert).not.toBeNull();
+  });
+});
+
+describe('funnelStepIsForward — шаг воронки вперёд (15.11.2026)', () => {
+  it('вперёд к реальному статусу/этапу', () => {
+    expect(funnelStepIsForward(1, 0)).toBe(true);    // new → waiting
+    expect(funnelStepIsForward(4, 3)).toBe(true);    // proposal → won
+    expect(funnelStepIsForward(2, undefined)).toBe(true); // создание сразу с этапом
+  });
+  it('назад, на месте и в терминальные — нет', () => {
+    expect(funnelStepIsForward(0, 1)).toBe(false);   // waiting → new
+    expect(funnelStepIsForward(1, 3)).toBe(false);   // proposal → waiting
+    expect(funnelStepIsForward(2, 2)).toBe(false);
+    expect(funnelStepIsForward(-1, 4)).toBe(false);  // won → lost
+  });
+  it('из терминального — как из нулевого (повтор вершины отсекают вехи)', () => {
+    expect(funnelStepIsForward(1, -1)).toBe(true);   // lost → waiting
+    expect(funnelStepIsForward(0, -1)).toBe(false);  // lost → new
   });
 });
 

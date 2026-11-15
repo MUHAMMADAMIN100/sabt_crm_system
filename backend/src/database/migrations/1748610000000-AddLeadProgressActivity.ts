@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 /** Wave 11 — добавляем enum-значение LEAD_PROGRESS в activity_logs_action_enum.
  *  Используется для подсчёта KPI менеджеров продаж: каждое продвижение
@@ -17,9 +18,9 @@ export class AddLeadProgressActivity1748610000000 implements MigrationInterface 
   transaction = false;
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TYPE "activity_logs_action_enum" ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS'`,
-    );
+    // Имя enum-типа activity_logs.action — из каталога (15.11.2026): на
+    // чистой базе это activity_action_enum, и жёсткое имя роняло миграцию.
+    await addEnumValues(queryRunner, 'activity_logs', 'action', ['LEAD_PROGRESS']);
   }
 
   async down(_queryRunner: QueryRunner): Promise<void> {

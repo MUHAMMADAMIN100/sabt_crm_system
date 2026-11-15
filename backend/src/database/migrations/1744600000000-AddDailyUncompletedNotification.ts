@@ -1,22 +1,13 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 export class AddDailyUncompletedNotification1744600000000 implements MigrationInterface {
   name = 'AddDailyUncompletedNotification1744600000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_enum
-          WHERE enumlabel = 'daily_uncompleted'
-          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'notifications_type_enum')
-        ) THEN
-          ALTER TYPE "notifications_type_enum" ADD VALUE 'daily_uncompleted';
-        END IF;
-      END
-      $$;
-    `);
+    // Имя enum-типа notifications.type — из каталога (15.11.2026): на чистой
+    // базе это notification_type_enum, и жёсткое имя роняло миграцию.
+    await addEnumValues(queryRunner, 'notifications', 'type', ['daily_uncompleted']);
   }
 
   async down(): Promise<void> {

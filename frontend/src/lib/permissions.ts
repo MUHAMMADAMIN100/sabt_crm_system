@@ -292,12 +292,13 @@ export function hasPermissionAny(
 }
 
 // ─── Персональные доступы (гранты) поверх роли ────────────────────────
-/** implies — какие view-права открывает грант, чтобы ему было где
- *  примениться (раздел/страница). Каталог возможностей приходит с бэка. */
+/** implies — какие view-права открывает грант. Ровно то же, что
+ *  GRANT_IMPLICATIONS в backend/src/modules/auth/permissions.ts, и ничего
+ *  сверх: 15.11.2026 убраны clients.create ⇒ clients.view и
+ *  projects.create/edit ⇒ projects.view — сервер их не знает, и меню
+ *  показывало «Базу клиентов» и «Директ», где каждый запрос получал 403.
+ *  Каталог возможностей приходит с бэка. */
 export const GRANTABLE_FE: Record<string, { implies: string[] }> = {
-  'projects.create': { implies: ['projects.view'] },
-  'projects.edit':   { implies: ['projects.view'] },
-  'clients.create':  { implies: ['clients.view'] },
   // dev-tracker.manage ⇒ dev-tracker.view (зеркало бэкенда hasGrant):
   // у кого есть управление, тот видит доску. Нужно, чтобы гард
   // /dev-board через userCan пропускал по персональному гранту manage.
@@ -326,6 +327,18 @@ export function userCan(user: GrantUser, permission: string): boolean {
   return false
 }
 
+/** Есть ли у человека одна из ролей — основной ИЛИ второй (15.11.2026).
+ *  Разделы и подстраницы раньше смотрели только на основную роль, и,
+ *  например, «МП по разработке» со второй ролью «Руководитель разработки»
+ *  не видел раздела «Разработка». */
+export function hasAnyRole(
+  role: string | null | undefined,
+  secondaryRole: string | null | undefined,
+  roles: readonly string[],
+): boolean {
+  return [role, secondaryRole].some(r => !!r && roles.includes(r))
+}
+
 /** Управлять доступами сотрудников могут только основатель и админ. */
 export function canManageAccess(role?: string | null): boolean {
   return role === 'admin' || role === 'founder'
@@ -343,8 +356,9 @@ export function canCheckStories(role?: string | null, secondaryRole?: string | n
  *  (11.10.2026, подтверждено владельцем 15.10.2026: видят раздел целиком,
  *  но только смотрят — см. isSmmViewOnly). Команде разработки раздел закрыт.
  *  Роли совпадают с бэкендом (эндпоинт smm-calendar). */
-export function canSeeSmmSection(role?: string | null): boolean {
-  return ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'].includes(role || '')
+export function canSeeSmmSection(role?: string | null, secondaryRole?: string | null): boolean {
+  // Вторая роль тоже открывает раздел (15.11.2026).
+  return hasAnyRole(role, secondaryRole, ['founder', 'admin', 'smm_director', 'smm_specialist', 'producer', 'sales_manager_smm', 'sales_manager_dev'])
 }
 
 /** Продюсер без СММ-роли (09.11.2026): в разделе «СММ» правит только
@@ -372,8 +386,10 @@ export function isSmmViewOnly(role?: string | null): boolean {
  *  ни здесь, ни в PERMISSIONS (dev-tracker.view), ни в бэкенде (GRANTABLE).
  *  Доска открывается только грантом dev-tracker.view. Не добавлять его сюда
  *  без выдачи права — иначе меню покажется, а гард userCan не пустит. */
-export function canSeeDevSection(role?: string | null): boolean {
-  return ['founder', 'admin', 'dev_director', 'pm_dev', 'developer'].includes(role || '')
+export function canSeeDevSection(role?: string | null, secondaryRole?: string | null): boolean {
+  // Вторая роль тоже открывает раздел (15.11.2026): «МП по разработке» со
+  // второй ролью «Руководитель разработки» раньше раздела не видел.
+  return hasAnyRole(role, secondaryRole, ['founder', 'admin', 'dev_director', 'pm_dev', 'developer'])
 }
 
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
@@ -396,14 +412,14 @@ export function getAllPermissions(role: UserRole | undefined): Permission[] {
   return PERMISSIONS[role] || []
 }
 
-/** Maps a permission to the route it grants access to */
+/** Maps a permission to the route it grants access to.
+ *  /reports и /teams убраны 15.11.2026: таких страниц в приложении нет. */
 const PERMISSION_TO_ROUTE: Record<string, string> = {
   'dashboard': '/',
   'projects.view': '/projects',
   'tasks.view': '/tasks',
   'employees.view': '/employees',
   'calendar.view': '/calendar',
-  'reports.view': '/reports',
   'analytics.view': '/analytics',
   'notifications.view': '/notifications',
   'profile.view': '/profile',
@@ -414,7 +430,6 @@ const PERMISSION_TO_ROUTE: Record<string, string> = {
   'tariffs.manage': '/tariffs',
   'risks.view': '/risks',
   'finance.manage': '/finance',
-  'teams.manage': '/teams',
   'security-log.view': '/security-log',
   'team-activity.view': '/team-activity',
   'dev-tracker.view': '/dev-board',
@@ -461,8 +476,8 @@ export function canAccessRoute(
 
   // Always allowed routes
   if (['/profile', '/notifications', '/'].includes(route)) return true
-  // Онбординг — только менеджеры по продажам.
-  if (route === '/onboarding') return (role === 'sales_manager_smm' || role === 'sales_manager_dev') && userCan(u, 'clients.view')
+  // Онбординг — только менеджеры по продажам (основной или второй ролью).
+  if (route === '/onboarding') return hasAnyRole(role, secondaryRole, ['sales_manager_smm', 'sales_manager_dev']) && userCan(u, 'clients.view')
   // «Доска проектов» удалена из системы (сент. 2026) — вся работа в Умном
   // календаре. Старый адрес держим закрытым на случай сохранённых ссылок.
   if (route === '/workflow-board') return false
@@ -485,13 +500,13 @@ export function canAccessRoute(
   // персональным запретом (userCan), тогда страница закрывается.
   if (route === '/stories-check') return canCheckStories(role, secondaryRole) && userCan(u, 'stories.view')
   // «СММ» и все подстраницы (Умный календарь / Сторисы / Проекты) — СММ-команда + топ.
-  if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role)
+  if (route === '/smm' || route.startsWith('/smm/')) return canSeeSmmSection(role, secondaryRole)
   // «Разработка» и подстраницы (Умный календарь / Проекты) — dev-команда + топ.
   // Алиасы доски идут по тем же грантам, что каноника /dev-board* (иначе
   // два URL одной страницы имели бы разный гард): board/kpi — view, reports — manage.
   if (route === '/dev/board' || route === '/dev/kpi') return userCan(u, 'dev-tracker.view')
   if (route === '/dev/reports') return userCan(u, 'dev-tracker.manage')
-  if (route === '/dev' || route.startsWith('/dev/')) return canSeeDevSection(role)
+  if (route === '/dev' || route.startsWith('/dev/')) return canSeeDevSection(role, secondaryRole)
   // «Доска разработки» (канбан dev-трекера) и подстраницы — по гранту
   // dev-tracker.view через userCan (как /tasks/:id ниже), чтобы работали
   // extraPermissions/deniedPermissions/secondaryRole. Исключение — страница
@@ -499,9 +514,9 @@ export function canAccessRoute(
   if (route === '/dev-board/reports') return userCan(u, 'dev-tracker.manage')
   if (route === '/dev-board' || route.startsWith('/dev-board/')) return userCan(u, 'dev-tracker.view')
   // «Активность команды» — мониторинг для основателя/админа.
-  if (route === '/team-activity') return role === 'founder' || role === 'admin'
+  if (route === '/team-activity') return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
   // «Тест новый» — черновой раздел: основатель и админ.
-  if (route === '/test-new') return role === 'founder' || role === 'admin'
+  if (route === '/test-new') return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
   // «Директ» (переписка Instagram) — как База клиентов: по гранту clients.view.
   if (route === '/direct' || route.startsWith('/direct/')) return userCan(u, 'clients.view')
   // Финансы и все подстраницы — по гранту finance.manage.
@@ -516,12 +531,12 @@ export function canAccessRoute(
   if (route.startsWith('/tasks/')) return userCan(u, 'tasks.view')
   // Подстраницы «Сотрудников» (19.10.2026): кто видит — как раньше видел
   // соответствующий значок на странице.
-  if (route === '/employees/sales-plan') return role === 'founder'
-  if (['/employees/kpi', '/employees/week', '/employees/activity'].includes(route)) return role === 'founder' || role === 'admin'
+  if (route === '/employees/sales-plan') return hasAnyRole(role, secondaryRole, ['founder'])
+  if (['/employees/kpi', '/employees/week', '/employees/activity'].includes(route)) return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
   if (route.startsWith('/employees/')) return userCan(u, 'employees.view')
 
   const perm = Object.entries(PERMISSION_TO_ROUTE).find(([_, r]) => r === route)?.[0] as Permission | undefined
   if (!perm) return true
-  // Учитываем персональные гранты (например clients.view от clients.create).
+  // Учитываем персональные гранты и запреты (userCan).
   return userCan(u, perm)
 }

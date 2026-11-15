@@ -5,12 +5,16 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppGateway } from './app.gateway';
 import { Project } from '../projects/project.entity';
 import { Task } from '../tasks/task.entity';
+import { User } from '../users/user.entity';
+import { Employee } from '../employees/employee.entity';
 
 @Module({
   imports: [
     // Project/Task репозитории нужны gateway-у чтобы валидировать
     // право пользователя войти в WS-комнату project:X / task:X.
-    TypeOrmModule.forFeature([Project, Task]),
+    // User/Employee — сверка подключения с базой, как в jwt.strategy
+    // (блокировка, смена пароля, роль помощника админа; 15.11.2026).
+    TypeOrmModule.forFeature([Project, Task, User, Employee]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

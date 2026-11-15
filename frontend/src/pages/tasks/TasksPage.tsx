@@ -57,8 +57,14 @@ export default function TasksPage() {
   const user = useAuthStore(s => s.user)
   const isHeadSMM = user?.role === 'smm_director'
   // Вторая роль тоже даёт управленческий уровень — зеркально RolesGuard бэка.
-  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
+  // pm_dev — тоже руководитель (ставит задачи команде, 15.11.2026): без него
+  // форма считала его исполнителем и при правке чужой задачи переназначала
+  // её на него самого. Список задач ему сервер режет по направлению.
+  const MANAGER_PLUS_ROLES = ['admin', 'founder', 'smm_director', 'dev_director', 'pm_dev']
   const isManagerPlus = MANAGER_PLUS_ROLES.includes(user?.role || '') || MANAGER_PLUS_ROLES.includes(user?.secondaryRole || '')
+  // Массовые операции — по праву tasks.bulk на сервере (у pm_dev его нет).
+  const BULK_ROLES = ['admin', 'founder', 'smm_director', 'dev_director']
+  const canBulk = BULK_ROLES.includes(user?.role || '') || BULK_ROLES.includes(user?.secondaryRole || '')
   // МП по продажам: видят задачи своего направления и могут создавать
   // задачи в доступных им проектах (сервер фильтрует /tasks и /projects).
   const isSalesManager = user?.role === 'sales_manager_smm' || user?.role === 'sales_manager_dev'
@@ -446,7 +452,7 @@ export default function TasksPage() {
       )}
 
       {/* Bulk action bar */}
-      {isManagerPlus && selectedIds.size > 0 && (
+      {canBulk && selectedIds.size > 0 && (
         <div className="card bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 flex flex-wrap items-center gap-3">
           <span className="text-sm font-semibold text-primary-700 dark:text-primary-400">
             <CheckSquare size={15} className="inline mr-1" /> Выбрано: {selectedIds.size}
@@ -494,7 +500,7 @@ export default function TasksPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-surface-100 dark:border-surface-700">
-                {isManagerPlus && (
+                {canBulk && (
                   <th className="px-3 py-3 w-8">
                     <input
                       type="checkbox"
@@ -527,7 +533,7 @@ export default function TasksPage() {
                       isSelected && 'bg-primary-50/50 dark:bg-primary-900/10',
                     )}
                   >
-                    {isManagerPlus && (
+                    {canBulk && (
                       <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(task.id)} className="rounded" />
                       </td>

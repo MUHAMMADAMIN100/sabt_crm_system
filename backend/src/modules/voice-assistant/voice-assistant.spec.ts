@@ -7,14 +7,14 @@ import { setTaskStatus, createTask, findTasks, updateTask, deleteTask, VOICE_MAR
 import { shiftPause, shiftStart, pauseKindFromSpeech } from './tools/shifts.tools';
 import { NeedChoice } from './tools/types';
 import { taskIdFromReply } from '../telegram/telegram.controller';
-import { webhookSecretFor } from '../telegram/telegram.service';
+import { TelegramService, startPayload, webhookSecretFor } from '../telegram/telegram.service';
 
 jest.mock('./ai/chat', () => {
   const actual = jest.requireActual('./ai/chat');
   return { ...actual, chatStep: jest.fn() };
 });
-import { chatStep } from './ai/chat';
-import { runAgent, runPending } from './agent';
+import { AllChatFailed, chatStep } from './ai/chat';
+import { AgentAiFailed, CLAIMS_ACTION, STRONG_CLAIM, runAgent, runPending } from './agent';
 
 const ME = '11111111-1111-1111-1111-111111111111';
 const SABRINA = '22222222-2222-2222-2222-222222222222';
@@ -116,6 +116,34 @@ describe('подпись webhook', () => {
     expect(webhookSecretFor('a')).toBe(webhookSecretFor('a'));
     expect(webhookSecretFor('a')).not.toBe(webhookSecretFor('b'));
     expect(webhookSecretFor('a')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  // Без сети: сервис собираем вручную, поля — как после конструктора.
+  const service = (token: string | null, secretActive = false) => Object.assign(Object.create(TelegramService.prototype), {
+    token, secretActive, secretRetry: null, healAt: Date.now(), logger: { log() {}, warn() {}, error() {} },
+  }) as TelegramService;
+  const env = process.env.NODE_ENV;
+  afterEach(() => { process.env.NODE_ENV = env; });
+
+  it('на проде без верного заголовка не пускает, даже пока секрет не включён (15.11.2026)', () => {
+    process.env.NODE_ENV = 'production';
+    const s = service('tok');
+    expect(s.verifyWebhook(undefined)).toBe(false);
+    expect(s.verifyWebhook('wrong')).toBe(false);
+    expect(s.verifyWebhook(webhookSecretFor('tok'))).toBe(true);
+    expect(service(null).verifyWebhook(webhookSecretFor('tok'))).toBe(false);
+  });
+  it('вне прода без заголовка пускает, только пока секрет не включён', () => {
+    process.env.NODE_ENV = 'development';
+    expect(service('tok').verifyWebhook(undefined)).toBe(true);
+    expect(service('tok', true).verifyWebhook(undefined)).toBe(false);
+    expect(service('tok').verifyWebhook('wrong')).toBe(false);
+  });
+  it('/start <код> — код из ссылки привязки', () => {
+    expect(startPayload('/start AbCdEfGhIjKlMnOpQrStUvWx')).toBe('AbCdEfGhIjKlMnOpQrStUvWx');
+    expect(startPayload('/start@SabtBot AbCdEfGhIjKlMnOp-_12')).toBe('AbCdEfGhIjKlMnOp-_12');
+    expect(startPayload('/start')).toBeNull();
+    expect(startPayload('/start abc')).toBeNull();
   });
 });
 
@@ -328,6 +356,60 @@ describe('цикл разбора', () => {
     expect(r.done.filter((d) => d.outcome).length).toBe(1);
     expect(api.calls.some((c) => c.method === 'PATCH' && c.body.status === 'done')).toBe(true);
   });
+
+  it('ИИ отказал после записи — сделанное не теряется (15.11.2026)', async () => {
+    const api = fakeApi({
+      [`GET /tasks/${TASK}`]: () => ({ id: TASK, title: 'Макет', status: 'new', assignees: [] }),
+      [`PATCH /tasks/${TASK}`]: () => ({}),
+    });
+    const ctx = ctxWith(api);
+    ctx.refs.add('T', TASK, 'Макет');
+    step
+      .mockResolvedValueOnce({
+        content: null,
+        toolCalls: [call('set_task_status', { task: 'T1', status: 'in_progress' }, 'a'), call('set_task_status', { task: 'T9', status: 'done' }, 'b')],
+        provider: 'openai',
+      })
+      .mockRejectedValueOnce(new AllChatFailed([]));
+    const err = await runAgent({ ctx, tools: [setTaskStatus], system: 's', history: [], userText: 'макет в работу' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentAiFailed);
+    expect(err).toBeInstanceOf(AllChatFailed);
+    expect(err.done.filter((d: any) => d.outcome)).toHaveLength(1);
+    expect(err.done[0].outcome.undo).toBeTruthy();
+  });
+
+  it('open_section не превышает 128 инструментов: место освобождают другие разделы', async () => {
+    const fake = (name: string) => ({ name, kind: 'read' as const, description: name, parameters: { type: 'object' }, run: async () => ({}) });
+    const big = Array.from({ length: 120 }, (_, i) => fake(`a${i}`));
+    const extra = Array.from({ length: 10 }, (_, i) => fake(`b${i}`));
+    step
+      .mockResolvedValueOnce({ content: null, toolCalls: [call('open_section', { section: 'b' }, 'o')], provider: 'openai' })
+      .mockResolvedValueOnce({ content: 'Нашёл.', toolCalls: [], provider: 'openai' });
+    await runAgent({
+      ctx: ctxWith(fakeApi({})), tools: big, system: 's', history: [], userText: 'x',
+      sections: { a: { title: 'A', tools: big }, b: { title: 'B', tools: extra } },
+    });
+    const specs = step.mock.calls[1][1] as any[];
+    expect(specs.length).toBeLessThanOrEqual(128);
+    expect(specs.some((t) => t.function.name === 'b9')).toBe(true);
+    const opened = JSON.parse(step.mock.calls[1][0].find((m: any) => m.tool_call_id === 'o').content);
+    expect(opened.opened).toBe('b');
+  });
+});
+
+describe('ложное «сделано» — по словам, а не по значку (15.11.2026)', () => {
+  it('значок без слов о действии — обычный ответ', () => {
+    expect(CLAIMS_ACTION.test('✅ У вас 3 задачи на сегодня')).toBe(false);
+    expect(CLAIMS_ACTION.test('📸 Съёмки на завтра: две')).toBe(false);
+    expect(STRONG_CLAIM.test('⏸ Перерывов сегодня не было')).toBe(false);
+  });
+  it('слова о сделанном ловятся и со значком', () => {
+    expect(CLAIMS_ACTION.test('✅ Задача «Макет» создана')).toBe(true);
+    expect(CLAIMS_ACTION.test('Готово, перенёс на пятницу')).toBe(true);
+    expect(CLAIMS_ACTION.test('✅ Готово')).toBe(true);
+    expect(STRONG_CLAIM.test('Сделано!')).toBe(true);
+    expect(STRONG_CLAIM.test('▶️ Смена начата в 09:02')).toBe(true);
+  });
 });
 
 import { looksLikeHintEcho, speechPrompt } from './ai/speech';
@@ -408,7 +490,7 @@ describe('зарплата: штраф, премия, защита от подм
   });
 });
 
-import { checkReadOnlySql, scrubRows, dbQuery } from './tools/db.tools';
+import { analyzeSql, checkReadOnlySql, scrubRows, dbQuery, voiceRoDdl, mentionedTables } from './tools/db.tools';
 
 describe('чтение базы основателем — только чтение', () => {
   it('пропускает обычные SELECT/WITH', () => {
@@ -435,6 +517,74 @@ describe('чтение базы основателем — только чтен
   });
   it('вырезает пароли из результата «select *»', () => {
     expect(scrubRows([{ id: 1, name: 'A', password: 'x', twoFactorSecret: 'y', fcmTokens: ['z'] }])).toEqual([{ id: 1, name: 'A' }]);
+  });
+
+  // Обходы проверки из аудита 15.11.2026.
+  it('to_jsonb всей строки: секреты вырезаются и внутри JSON', () => {
+    // Сам запрос допустим: он читает voice_ro.users, где секретных колонок нет.
+    expect(checkReadOnlySql('SELECT to_jsonb(u) FROM users u')).toBe('SELECT to_jsonb(u) FROM users u');
+    expect(scrubRows([{ to_jsonb: { id: 1, name: 'A', password: '$2b$12$abc', twoFactorSecret: 'JBSW', nested: [{ resetPasswordToken: 't', ok: 1 }] } }]))
+      .toEqual([{ to_jsonb: { id: 1, name: 'A', nested: [{ ok: 1 }] } }]);
+    expect(scrubRows([{ j: '{"name":"A","password":"x"}' }])).toEqual([{ j: '{"name":"A"}' }]);
+    expect(scrubRows([{ h: '$2b$12$abcdefghijklmnopqrstuv' }])).toEqual([{ h: '[скрыто]' }]);
+  });
+  it('функции в кавычках, U&, $$ и E-строки не проходят', () => {
+    for (const bad of [
+      'select "pg_sleep"(10)',
+      'select "set_config"(\'search_path\', \'public\', true)',
+      'select "current_setting"(\'x\')',
+      'select U&"\\0070g_sleep"(1)',
+      "select U&'\\0070' as x",
+      'select $$x$$',
+      "select E'\\'' as a, 1",
+      "select query_to_xml('select * from public.users', true, false, '')",
+    ]) {
+      expect(() => checkReadOnlySql(bad)).toThrow();
+    }
+  });
+  it('«--» и «/*» внутри строки — данные, а не комментарий', () => {
+    expect(checkReadOnlySql("select '--' as a, id from tasks")).toBe("select '--' as a, id from tasks");
+    expect(() => checkReadOnlySql("select '/*' as a, pg_sleep(1), '*/' as b")).toThrow();
+    expect(() => checkReadOnlySql("select '--', password from users")).toThrow();
+  });
+  it('таблицы — только без схемы (voice_ro), public.users и системные схемы — нет', () => {
+    for (const bad of [
+      'select * from public.users',
+      'select * from "public"."users"',
+      'select * from railway.public.users',
+      'select * from information_schema.tables',
+      'select * from pg_catalog.pg_class',
+      'select usename from pg_user',
+      // Схемы Supabase запрещены сразу, до чтения pg_namespace (15.11.2026).
+      'select * from auth.users',
+      'select * from "auth"."users"',
+      'select * from storage.objects',
+    ]) {
+      expect(() => checkReadOnlySql(bad)).toThrow();
+    }
+    expect(checkReadOnlySql('select t."assigneeId" from voice_ro.tasks t')).toMatch(/^select/);
+  });
+  it('voice_ro: представления без секретных колонок и без закрытых таблиц', () => {
+    const ddl = voiceRoDdl([
+      { table_name: 'users', column_name: 'id' },
+      { table_name: 'users', column_name: 'name' },
+      { table_name: 'users', column_name: 'password' },
+      { table_name: 'users', column_name: 'twoFactorSecret' },
+      { table_name: 'projects', column_name: 'id' },
+      { table_name: 'projects', column_name: 'clientAccess' },
+      { table_name: 'refresh_tokens', column_name: 'id' },
+      { table_name: 'direct_settings', column_name: 'value' },
+    ]);
+    expect(ddl[0]).toBe('DROP SCHEMA IF EXISTS voice_ro CASCADE');
+    expect(ddl).toContain('CREATE VIEW voice_ro."users" AS SELECT "id", "name" FROM public."users"');
+    expect(ddl).toContain('CREATE VIEW voice_ro."projects" AS SELECT "id" FROM public."projects"');
+    expect(ddl.join('\n')).not.toMatch(/refresh_tokens|direct_settings|password|twoFactor|clientAccess/);
+    // Только таблицы, названные в запросе (строки и комментарии не в счёт).
+    const { code } = analyzeSql("select u.name from users u -- projects\n where u.name <> 'projects'");
+    const only = mentionedTables(code, ['users', 'projects']);
+    expect(only).toEqual(['users']);
+    expect(voiceRoDdl([{ table_name: 'users', column_name: 'id' }, { table_name: 'projects', column_name: 'id' }], only))
+      .toEqual(['DROP SCHEMA IF EXISTS voice_ro CASCADE', 'CREATE SCHEMA voice_ro', 'CREATE VIEW voice_ro."users" AS SELECT "id" FROM public."users"']);
   });
   it('доступно только основателю', () => {
     expect(dbQuery.available!({ role: 'founder' } as any)).toBe(true);

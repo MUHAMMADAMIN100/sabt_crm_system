@@ -128,9 +128,10 @@ export class PersonalReminderScheduler {
       const rows: Array<{ at: number; line: string }> = items.map(t => {
         const time = new Date(t.deadline).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: TZ })
         const icon = t.kind === TaskKind.MEETING ? '🤝' : '📌'
-        const place = t.kind === TaskKind.MEETING && t.location ? ` · 📍 ${t.location}` : ''
-        const proj = t.project?.name ? ` · ${t.project.name}` : ''
-        return { at: new Date(t.deadline).getTime(), line: `${icon} <b>${time}</b> — ${t.title}${place}${proj}` }
+        // Пользовательский текст — только через esc (15.11.2026).
+        const place = t.kind === TaskKind.MEETING && t.location ? ` · 📍 ${esc(t.location)}` : ''
+        const proj = t.project?.name ? ` · ${esc(t.project.name)}` : ''
+        return { at: new Date(t.deadline).getTime(), line: `${icon} <b>${time}</b> — ${esc(t.title)}${place}${proj}` }
       })
       for (const l of own) {
         rows.push({
@@ -243,7 +244,7 @@ export class PersonalReminderScheduler {
       } else {
         const lines = items.map(t => {
           const icon = t.kind === TaskKind.MEETING ? '🤝' : '📌'
-          return `${icon} ${t.title}`
+          return `${icon} ${esc(t.title)}`
         }).join('\n')
         await this.push(
           userId,

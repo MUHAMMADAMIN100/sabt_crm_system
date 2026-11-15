@@ -7,7 +7,7 @@ import './finance.css';
 import { money, currentYm, shiftYm, todayISO, formatDate, monthLabel, ymOf, daysLabel, daysUntil, pluralRu, INCOME_GROUPS, apiErr, downloadCsv, useYmParam, withYm, parseAmount } from './finlib';
 import FinIcon from './FinIcon';
 import MonthNav from './MonthNav';
-import { keepMonth, FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinanceAll } from './FinKit';
+import { keepMonth, FinLoading, FinLoadError, useModalKeys, finConfirm, invalidateFinance, invalidateFinanceAll } from './FinKit';
 import { ProjectFormModal } from './FinForms';
 import { financeApi } from '@/services/api.service';
 import useNarrow from '@/hooks/useNarrow';
@@ -20,9 +20,11 @@ function useAccounts(): any[] {
   return ((data as any[]) || []).filter((a: any) => !a.archived);
 }
 
+// Общий хелпер (15.11.2026): свой обновлял только ['finance'] — окна-разбивки
+// ('fin-breakdown') и выплаты ('fin-payouts') показывали старые суммы.
 function useInvalidate() {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: ['finance'] });
+  return () => invalidateFinance(qc);
 }
 
 export default function FinanceIncomeGroupPage() {
@@ -274,7 +276,11 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
   const planAmt = parseAmount(planAmount);
   const payAmt = parseAmount(payAmount);
   const planChanged = planAmt !== plan.amount || (planDue || null) !== (plan.dueDate ?? null);
-  const payValid = payAmt > 0 && planAmt > 0 && payAmt <= planAmt + 0.005 && !!accountId && !busy;
+  // Оплата будущей датой не попадает в доход и балансы до этой даты — сервер
+  // её отклоняет, здесь не даём отправить (15.11.2026).
+  const today = todayISO();
+  const futureDate = !!date && date > today;
+  const payValid = payAmt > 0 && planAmt > 0 && payAmt <= planAmt + 0.005 && !!accountId && !busy && !futureDate;
 
   async function persistPlan(): Promise<string> {
     if (!(planAmt > 0)) throw new Error('Укажите сумму плана');
@@ -339,11 +345,12 @@ function PlanManageModal({ title, plan, onClose, onDelete }: {
           <div className="section-title" style={{ margin: '4px 0 0' }}>Оплата</div>
           <div className="form-grid">
             <div className="field"><label>Получено, сомони</label><input inputMode="decimal" value={payAmount} onChange={(e) => { setPayTouched(true); setPayAmount(e.target.value); }} /></div>
-            <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата оплаты</label><input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="field"><label>На счёт</label>
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           </div>
+          {futureDate && <p className="mini neg" style={{ margin: 0 }}>Дата оплаты не может быть позже сегодняшней.</p>}
           {payAmt > 0 && planAmt > 0 && payAmt < planAmt - 0.005
             ? <p className="mini muted" style={{ margin: 0 }}>Частичная оплата: {money(payAmt)} будет получено, остаток {money(Math.max(0, planAmt - payAmt))} останется запланированным с тем же сроком.</p>
             : payAmt > planAmt + 0.005
@@ -769,9 +776,12 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
   const scheduledMonth = (row.part1?.amount ?? 0) + (row.part2?.amount ?? 0);
   const remaining = project.tariff - scheduledMonth;
   const overLimit = project.tariff > 0 && amt > remaining;
+  // Будущей датой оплату не записываем — сервер отклонит (15.11.2026).
+  const today = todayISO();
+  const futureDate = !!date && date > today;
 
   async function save() {
-    if (!(amt > 0) || !accountId || overLimit || busy) return;
+    if (!(amt > 0) || !accountId || overLimit || futureDate || busy) return;
     setBusy(true);
     try {
       await financeApi.payNow({ projectId: project.id, ym, partNo, amount: amt, accountId, date });
@@ -787,18 +797,19 @@ function PayPartModal({ row, partNo, ym, onClose }: { row: any; partNo: 1 | 2; y
         <div className="modal-body">
           <div className="form-grid">
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата оплаты</label><input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="field"><label>На счёт</label>
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           </div>
+          {futureDate && <p className="mini neg">Дата оплаты не может быть позже сегодняшней.</p>}
           {overLimit
             ? <p className="mini neg">Больше остатка за месяц. Доступно ещё {money(Math.max(0, remaining))} из тарифа {money(project.tariff)}.</p>
             : <p className="mini muted">Оплата этой части в указанную дату — создаётся доход. Остаток за месяц: {money(Math.max(0, remaining))}.</p>}
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
+          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit || futureDate} onClick={save}>Записать оплату</button>
         </div>
       </div>
     </div>
@@ -813,9 +824,12 @@ function ReceiveModal({ part, onClose }: { part: any; onClose: () => void }) {
   const [date, setDate] = useState(todayISO());
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
+  // Будущей датой оплату не записываем — сервер отклонит (15.11.2026).
+  const today = todayISO();
+  const futureDate = !!date && date > today;
 
   async function confirmPay() {
-    if (!accountId || busy) return;
+    if (!accountId || futureDate || busy) return;
     setBusy(true);
     try {
       await financeApi.receivePlanned(part.plannedId, { accountId, date });
@@ -832,11 +846,12 @@ function ReceiveModal({ part, onClose }: { part: any; onClose: () => void }) {
           <div className="field"><label>На счёт</label>
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           </div>
-          <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          <div className="field"><label>Дата</label><input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          {futureDate && <p className="mini neg" style={{ margin: 0 }}>Дата оплаты не может быть позже сегодняшней.</p>}
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={busy} onClick={confirmPay}>Подтвердить</button>
+          <button className="btn primary" disabled={busy || futureDate} onClick={confirmPay}>Подтвердить</button>
         </div>
       </div>
     </div>
@@ -1208,6 +1223,10 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
 
   const remaining = project.tariff - (row.scheduledLife ?? 0);
   const overLimit = project.tariff > 0 && amt > remaining;
+  // Деньги, полученные будущей датой, сервер не примет; срок плана — может
+  // быть любым (15.11.2026).
+  const today = todayISO();
+  const futureDate = !!date && date > today;
 
   // Ожидаемый план: сумма/срок правятся, оплатить можно частично.
   if (plan && plan.status !== 'received') {
@@ -1229,7 +1248,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
   }
 
   async function saveNew() {
-    if (!(amt > 0) || overLimit || busy || (paidNow && !accountId)) return;
+    if (!(amt > 0) || overLimit || busy || (paidNow && (!accountId || futureDate))) return;
     setBusy(true);
     try {
       const payYm = ymOf(date); // месяц части — по её дате
@@ -1243,7 +1262,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
     } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
   async function markReceived() {
-    if (!plan || !accountId || busy) return;
+    if (!plan || !accountId || futureDate || busy) return;
     setBusy(true);
     try { await financeApi.receivePlanned(plan.id, { accountId, date }); inv(); onClose(); } catch (e) { toast.error(apiErr(e)); setBusy(false); }
   }
@@ -1274,9 +1293,10 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
                 <>
                   <p>Запланировано <b>{money(plan.amount)}</b>. Отметить как полученное?</p>
                   <div className="form-grid">
-                    <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+                    <div className="field"><label>Дата оплаты</label><input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
                     <div className="field"><label>На счёт</label><select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
                   </div>
+                  {futureDate && <p className="mini neg" style={{ margin: 0 }}>Дата оплаты не может быть позже сегодняшней.</p>}
                 </>
               )}
             </div>
@@ -1285,7 +1305,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
                 ? <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={undo}>Отменить оплату</button>
                 : <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy} onClick={deletePlan}>Удалить план</button>}
               <button className="btn ghost" onClick={onClose}>Закрыть</button>
-              {plan.status === 'expected' && <button className="btn primary" disabled={busy} onClick={markReceived}>Отметить полученным</button>}
+              {plan.status === 'expected' && <button className="btn primary" disabled={busy || futureDate} onClick={markReceived}>Отметить полученным</button>}
             </div>
           </>
         ) : (
@@ -1293,7 +1313,7 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
             <div className="modal-body">
               <div className="form-grid">
                 <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-                <div className="field"><label>{paidNow ? 'Дата оплаты' : 'Срок оплаты'}</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+                <div className="field"><label>{paidNow ? 'Дата оплаты' : 'Срок оплаты'}</label><input type="date" max={paidNow ? today : undefined} value={date} onChange={(e) => setDate(e.target.value)} /></div>
               </div>
               <label className="flex" style={{ cursor: 'pointer' }}>
                 <input type="checkbox" checked={paidNow} onChange={(e) => setPaidNow(e.target.checked)} style={{ width: 'auto' }} />
@@ -1302,13 +1322,14 @@ function CellModal({ row, ym, plan, onClose }: { row: any; ym?: string; plan?: a
               {paidNow && (
                 <div className="field"><label>На счёт</label><select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
               )}
+              {paidNow && futureDate && <p className="mini neg">Дата оплаты не может быть позже сегодняшней.</p>}
               {overLimit
                 ? <p className="mini neg">Больше остатка по проекту. Доступно ещё {money(Math.max(0, remaining))} из {money(project.tariff)}.</p>
                 : <p className="mini muted">Без галочки — план на {monthName} со сроком {formatDate(date)}. С галочкой — деньги уже получены. Остаток: {money(Math.max(0, remaining))}.</p>}
             </div>
             <div className="modal-foot">
               <button className="btn ghost" onClick={onClose}>Отмена</button>
-              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit || !date || (paidNow && !accountId)} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
+              <button className="btn primary" disabled={busy || !(amt > 0) || overLimit || !date || (paidNow && (!accountId || futureDate))} onClick={saveNew}>{paidNow ? 'Записать оплату' : 'Добавить план'}</button>
             </div>
           </>
         )}
@@ -1494,9 +1515,12 @@ function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) 
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
   const amt = parseAmount(amount);
   const overLimit = project.tariff > 0 && amt > remaining;
+  // Будущей датой оплату не записываем — сервер отклонит (15.11.2026).
+  const today = todayISO();
+  const futureDate = !!date && date > today;
 
   async function save() {
-    if (!(amt > 0) || !accountId || overLimit || busy) return;
+    if (!(amt > 0) || !accountId || overLimit || futureDate || busy) return;
     setBusy(true);
     try {
       await financeApi.payNow({ projectId: project.id, ym: ymOf(date), amount: amt, accountId, date });
@@ -1512,16 +1536,17 @@ function RecordIncomeModal({ row, onClose }: { row: any; onClose: () => void }) 
         <div className="modal-body">
           <div className="form-grid">
             <div className="field"><label>Сумма, сомони</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-            <div className="field"><label>Дата оплаты</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+            <div className="field"><label>Дата оплаты</label><input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="field"><label>На счёт</label>
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           </div>
+          {futureDate && <p className="mini neg">Дата оплаты не может быть позже сегодняшней.</p>}
           {overLimit && <p className="mini neg">Больше остатка. Доступно ещё {money(remaining)} из {money(project.tariff)}.</p>}
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit} onClick={save}>Записать оплату</button>
+          <button className="btn primary" disabled={busy || !(amt > 0) || !accountId || overLimit || futureDate} onClick={save}>Записать оплату</button>
         </div>
       </div>
     </div>

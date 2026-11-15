@@ -13,7 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { contentPlanApi, projectsApi } from '@/services/api.service'
 import { useAuthStore } from '@/store/auth.store'
-import { isSmmViewOnly, isProductionOnly } from '@/lib/permissions'
+import { isProductionOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { tiktokPending } from './tiktok'
 import { useHistoryOverlay } from '@/lib/navMemory'
@@ -270,6 +270,10 @@ const parseUrlList = (v: string | null): string[] => (v ? v.split(',').filter(Bo
 // ═══════════════════════════════════════════════════════════════════════
 /** Наблюдателю авторасстановку не предлагаем — пустая карта «нечего расставлять». */
 const NO_AUTO = new Map<string, number>()
+/** Кто правит умный календарь (основной или второй ролью) — как на сервере. */
+const SMM_EDIT_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist', 'producer']
+/** Руководство СММ — правит любой проект. */
+const SMM_MGMT_ROLES = ['admin', 'founder', 'smm_director']
 
 export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: string } = {}) {
   const navigate = useNavigate()
@@ -278,12 +282,18 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const user = useAuthStore(s => s.user)
   // Менеджер по продажам календарь только смотрит (решение владельца
   // 11.10.2026): не перетаскивает, не отмечает, не правит карточки и цикл.
-  const readOnly = isSmmViewOnly(user?.role)
+  // 15.11.2026: «только смотрит» — каждый, у кого НИ основная, НИ вторая роль
+  // не правит СММ (дизайнер со второй ролью МП попадает в раздел, но сервер
+  // его правки отклонит). Правят: руководство, СММ-специалист, продюсер.
+  const myRoles = [user?.role, (user as any)?.secondaryRole].filter(Boolean) as string[]
+  const readOnly = !myRoles.some(r => SMM_EDIT_ROLES.includes(r))
+  // Руководство СММ правит любой проект; специалист — только свои (ниже).
+  const smmMgmt = myRoles.some(r => SMM_MGMT_ROLES.includes(r))
+  const isProducer = myRoles.includes('producer')
   // Продюсер (09.11.2026): производство — съёмки и дизайн — двигает и правит
   // как СММ-специалист, публикации (рилсы, посты) только смотрит. Сервер
   // держит то же правило.
   const prodOnly = isProductionOnly(user?.role, (user as any)?.secondaryRole)
-  const canEditEv = (e: Ev) => !readOnly && (!prodOnly || e.kind === 'shoot')
   // Съёмки видят видеографы и продюсер всегда (продюсер их организует,
   // 09.11.2026); остальные — только когда выбран проект (фильтр по плитке).
   const isVideographer = ['videographer', 'video_editor', 'producer'].includes(user?.role ?? '')
@@ -390,6 +400,17 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   }
   const rawProjects = data?.projects ?? []
   const mineIds = new Set(rawProjects.filter(p => p.mine).map(p => p.id))
+  // Право править карточку (15.11.2026, так же проверяет сервер): руководство —
+  // везде; продюсер — производство (съёмки, монтаж, дизайн) в любом проекте;
+  // СММ-специалист — только свои проекты (projects[].mine из smm-calendar).
+  const canEditProject = (pid: string) => !readOnly && !prodOnly && (smmMgmt || mineIds.has(pid))
+  const canEditEv = (e: Ev) => {
+    if (readOnly) return false
+    if (smmMgmt) return true
+    if (e.kind === 'shoot' && isProducer) return true
+    if (prodOnly) return false
+    return mineIds.has(e.projectId)
+  }
   // Только раздел СММ: тот же календарь в «Разработке» живёт по-старому.
   const showScope = !embeddedProjectId && mineIds.size > 0 && mineIds.size < rawProjects.length
   const mineOnly = showScope && scope === 'mine'
@@ -574,8 +595,9 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   // на плитке «Не запланировано», сохраняет в project.smmData.cycleStartDay.
   const [projSettings, setProjSettings] = useState<Proj | null>(null)
   const openProjSettings = (id: string) => {
-    // Наблюдателю и продюсеру настройки цикла не открываем — ведём на страницу проекта.
-    if (readOnly || prodOnly) { navigate(`/smm/projects/${id}`); return }
+    // Наблюдателю, продюсеру и специалисту чужого проекта настройки цикла не
+    // открываем — ведём на страницу проекта.
+    if (!canEditProject(id)) { navigate(`/smm/projects/${id}`); return }
     const p = projects.find(x => x.id === id)
     if (p) setProjSettings(p)
   }
@@ -674,7 +696,11 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
 
   // Съёмку ограничивает цикл проекта так же, как рилс/публикацию — только внутри активного цикла.
   const cycleFor = (e: Ev) => projCycle(e.projectId)
-  const onDragStartEv = (e: Ev) => { dragRef.current = e; setDragOverKey(null); setDragRange(cycleFor(e)); setDragDuration(e.durationMin || DEFAULT_DUR) }
+  // Чужую карточку (не свой проект) не переносим: сервер откажет (15.11.2026).
+  const onDragStartEv = (e: Ev) => {
+    if (!canEditEv(e)) { dragRef.current = null; return }
+    dragRef.current = e; setDragOverKey(null); setDragRange(cycleFor(e)); setDragDuration(e.durationMin || DEFAULT_DUR)
+  }
   // Перенос на день (всё-день) — снимаем время (публикация возвращается наверх).
   const onDropDate = (dateStr: string) => {
     const e = dragRef.current
@@ -802,6 +828,8 @@ export default function SmmPage({ embeddedProjectId }: { embeddedProjectId?: str
   const autoNeed = useMemo(() => {
     const m = new Map<string, number>()
     for (const p of projects) {
+      // Расставлять можно только свои проекты (руководство — любые).
+      if (!canEditProject(p.id)) { m.set(p.id, 0); continue }
       const bl = backlog.filter(b => b.projectId === p.id && b.kind === 'publication')
       const cyc = projCycle(p.id)
       let need = bl.length

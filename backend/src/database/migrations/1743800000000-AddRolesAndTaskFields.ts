@@ -1,22 +1,22 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 export class AddRolesAndTaskFields1743800000000 implements MigrationInterface {
   name = 'AddRolesAndTaskFields1743800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Update users role enum to include new roles
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'founder'`);
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'project_manager'`);
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'smm_specialist'`);
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'designer'`);
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'targetologist'`);
-    await queryRunner.query(`ALTER TYPE "public"."users_role_enum" ADD VALUE IF NOT EXISTS 'sales_manager'`);
+    // Update users role enum to include new roles.
+    // Имя enum-типа — из каталога по колонке (15.11.2026): на чистой базе
+    // тип называется user_role_enum, и жёсткое имя роняло миграцию.
+    await addEnumValues(queryRunner, 'users', 'role', [
+      'founder', 'project_manager', 'smm_specialist', 'designer', 'targetologist', 'sales_manager',
+    ]);
 
     // Add managerId to users
     await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "managerId" uuid`);
 
     // Update tasks status enum
-    await queryRunner.query(`ALTER TYPE "public"."tasks_status_enum" ADD VALUE IF NOT EXISTS 'returned'`);
+    await addEnumValues(queryRunner, 'tasks', 'status', ['returned']);
 
     // Add new task fields
     await queryRunner.query(`ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "targetCount" integer`);
@@ -28,9 +28,7 @@ export class AddRolesAndTaskFields1743800000000 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "reviewedAt" TIMESTAMP`);
 
     // Update notifications type enum
-    await queryRunner.query(`ALTER TYPE "public"."notifications_type_enum" ADD VALUE IF NOT EXISTS 'task_returned'`);
-    await queryRunner.query(`ALTER TYPE "public"."notifications_type_enum" ADD VALUE IF NOT EXISTS 'task_overdue'`);
-    await queryRunner.query(`ALTER TYPE "public"."notifications_type_enum" ADD VALUE IF NOT EXISTS 'review_needed'`);
+    await addEnumValues(queryRunner, 'notifications', 'type', ['task_returned', 'task_overdue', 'review_needed']);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

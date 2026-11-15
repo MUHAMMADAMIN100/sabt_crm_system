@@ -52,7 +52,10 @@ export default function EmployeesPage() {
   const [actionsFor, setActionsFor] = useState<string | null>(null)
   const [resetPwdEmp, setResetPwdEmp] = useState<any>(null)
   const [customPwd, setCustomPwd] = useState('')
-  const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
+  /** Пароль, который видно один раз: после сброса (reset) или временный
+   *  пароль нового сотрудника (created, 15.11.2026 — вместо общего пароля
+   *  по умолчанию сервер выдаёт каждому свой). */
+  const [resetResult, setResetResult] = useState<{ name: string; password: string; kind?: 'reset' | 'created' } | null>(null)
   const [pwdCopied, setPwdCopied] = useState(false)
   const user = useAuthStore(s => s.user)
   const canManage = user?.role === 'admin' || user?.role === 'founder'
@@ -165,7 +168,15 @@ export default function EmployeesPage() {
       qc.setQueryData(['employees'], context?.previous)
       setShowCreate(true)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success(t('employees.added')) },
+    onSuccess: (data: any, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['employees'] }); qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['analytics-dashboard'] }); toast.success(t('employees.added'))
+      // Сервер создал учётную запись — показываем её временный пароль один
+      // раз, с копированием (15.11.2026). Если аккаунт не создавался, поля нет.
+      if (typeof data?.tempPassword === 'string' && data.tempPassword) {
+        setPwdCopied(false)
+        setResetResult({ name: data?.fullName || vars?.fullName || 'Сотрудник', password: data.tempPassword, kind: 'created' })
+      }
+    },
   })
   const updateMut = useMutation({
     mutationFn: ({ id, data }: any) => employeesApi.update(id, data),
@@ -642,13 +653,15 @@ export default function EmployeesPage() {
       </Modal>
 
       {/* Reset result modal — shows the new password */}
-      <Modal open={!!resetResult} onClose={() => { setResetResult(null); setPwdCopied(false) }} title="Пароль изменён" size="sm">
+      <Modal open={!!resetResult} onClose={() => { setResetResult(null); setPwdCopied(false) }}
+        title={resetResult?.kind === 'created' ? 'Сотрудник добавлен' : 'Пароль изменён'} size="sm"
+        closeOnBackdropClick={false}>
         {resetResult && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl">
               <Check size={18} className="text-green-500 shrink-0" />
               <p className="text-sm text-green-800 dark:text-green-300">
-                Новый пароль для <strong>{resetResult.name}</strong>:
+                {resetResult.kind === 'created' ? 'Временный пароль для входа' : 'Новый пароль'} для <strong>{resetResult.name}</strong>:
               </p>
             </div>
             <div className="bg-surface-100 dark:bg-surface-800 rounded-xl p-4 border-2 border-dashed border-primary-300 dark:border-primary-700">
@@ -669,7 +682,10 @@ export default function EmployeesPage() {
             </div>
             <p className="text-xs text-surface-600 dark:text-surface-400 flex items-start gap-1">
               <span>⚠️</span>
-              <span>Запишите или скопируйте пароль и передайте сотруднику. После закрытия окна вы больше не сможете его увидеть.</span>
+              <span>
+                Запишите или скопируйте пароль и передайте сотруднику. После закрытия окна вы больше не сможете его увидеть.
+                {resetResult.kind === 'created' && ' Пусть сотрудник сменит его в профиле после первого входа.'}
+              </span>
             </p>
             <div className="flex justify-end">
               <button onClick={() => { setResetResult(null); setPwdCopied(false) }} className="btn-primary">Закрыть</button>

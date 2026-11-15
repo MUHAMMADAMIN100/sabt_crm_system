@@ -13,8 +13,9 @@ export class TaskResultsController {
   constructor(private service: TaskResultsService) {}
 
   @Get()
-  findAll(@Param('taskId') taskId: string) {
-    return this.service.findByTask(taskId);
+  findAll(@Param('taskId') taskId: string, @Request() req) {
+    // Проверка доступа к задаче (15.11.2026).
+    return this.service.findByTask(taskId, req.user);
   }
 
   @Post()
@@ -23,11 +24,11 @@ export class TaskResultsController {
     @Body() dto: CreateTaskResultDto,
     @Request() req,
   ) {
-    return this.service.create(taskId, req.user.id, req.user.role, dto);
+    return this.service.create(taskId, req.user.id, req.user.role, dto, req.user.secondaryRole);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req) {
-    return this.service.remove(id, req.user.id, req.user.role);
+    return this.service.remove(id, req.user.id, req.user.role, req.user.secondaryRole);
   }
 }

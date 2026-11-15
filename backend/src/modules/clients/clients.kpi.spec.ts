@@ -141,3 +141,66 @@ describe('kpi() — нормы по рабочим дням и события', 
     expect(k.workDays).toBe(0);
   });
 });
+
+// 15.11.2026: «Продвижения по воронке» — вехи. +1 только за первое
+// достижение статуса/этапа лидом; назад и в терминальные — 0, без штрафа.
+describe('воронка — вехи вместо дельт', () => {
+  const progressInserts = (calls: Array<{ sql: string; params: any[] }>) =>
+    calls.filter(c => c.sql.includes('INSERT INTO lead_progress'));
+  const respondReached = (reached: boolean): Responder => sql =>
+    (sql.includes('SELECT 1 FROM lead_progress') ? (reached ? [{ '?column?': 1 }] : []) : []);
+
+  it('new → waiting впервые: +1 владельцу', async () => {
+    const before = lead({ status: 'new' });
+    const after = lead({ status: 'waiting' });
+    const { svc, calls } = makeService({ respond: respondReached(false), leads: [before, before, after, after] });
+    await svc.updateWithAuth('L1', { status: 'waiting' } as any, { id: 'u1', role: 'sales_manager_smm' });
+    const ins = progressInserts(calls);
+    expect(ins).toHaveLength(1);
+    expect(ins[0].params[0]).toBe('u1');
+    expect(ins[0].params[7]).toBe(1);
+  });
+
+  it('waiting уже был у лида — повторный заход не засчитывается', async () => {
+    const before = lead({ status: 'new' });
+    const after = lead({ status: 'waiting' });
+    const { svc, calls } = makeService({ respond: respondReached(true), leads: [before, before, after, after] });
+    await svc.updateWithAuth('L1', { status: 'waiting' } as any, { id: 'u1', role: 'sales_manager_smm' });
+    expect(progressInserts(calls)).toHaveLength(0);
+  });
+
+  it('назад (waiting → new) и в терминальный (won → lost) — 0, без записи −1', async () => {
+    for (const [from, to] of [['waiting', 'new'], ['won', 'lost']]) {
+      const before = lead({ status: from });
+      const after = lead({ status: to });
+      const { svc, calls } = makeService({ respond: respondReached(false), leads: [before, before, after, after] });
+      await svc.updateWithAuth('L1', { status: to } as any, { id: 'u1', role: 'sales_manager_smm' });
+      expect(progressInserts(calls)).toHaveLength(0);
+      // Проверять вехи даже не нужно — шаг не вперёд.
+      expect(calls.some(c => c.sql.includes('SELECT 1 FROM lead_progress'))).toBe(false);
+    }
+  });
+
+  it('руководитель двигает лид менеджера — зачёт владельцу-МП', async () => {
+    const before = lead({ status: 'negotiating' });
+    const after = lead({ status: 'proposal' });
+    const { svc, calls } = makeService({ respond: respondReached(false), leads: [before, before, after, after] });
+    await svc.updateWithAuth('L1', { status: 'proposal' } as any, { id: 'boss', role: 'admin' });
+    const ins = progressInserts(calls);
+    expect(ins).toHaveLength(1);
+    expect(ins[0].params[0]).toBe('u1');
+  });
+});
+
+describe('холодные звонки — один на лид в день', () => {
+  it('отметка «Холодный» пишет событие только если сегодня его ещё не было', async () => {
+    const before = lead({ callType: 'neutral' });
+    const after = lead({ callType: 'cold' });
+    const { svc, calls } = makeService({ leads: [before, before, after, after] });
+    await svc.updateWithAuth('L1', { callType: 'cold' } as any, { id: 'u1', role: 'sales_manager_smm' });
+    const cold = calls.find(c => c.sql.includes("'cold_call'") && c.sql.includes('INSERT INTO lead_actions'));
+    expect(cold?.sql).toContain('WHERE NOT EXISTS');
+    expect(cold?.sql).toContain("AT TIME ZONE 'Asia/Dushanbe'");
+    expect(cold?.params).toEqual(['u1', 'L1']);
+  });
+});

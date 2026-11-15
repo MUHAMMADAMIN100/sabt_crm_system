@@ -196,7 +196,11 @@ const timeOf = (v: Date | string | null | undefined): number | null => {
 };
 
 /** Что сделать с журналом встреч, когда у лида поменялись дата встречи
- *  (nextContactAt) или владелец. null — ничего. before = null — лид новый. */
+ *  (nextContactAt) или владелец. null — ничего. before = null — лид новый.
+ *  Встреча задним числом (15.11.2026): день встречи раньше сегодняшнего (по
+ *  Душанбе) в журнал не идёт — иначе выставленная «на вчера» дата сразу
+ *  давала встречу в KPI, по одной на каждый день. Сегодняшняя прошедшая
+ *  засчитывается сразу, будущая — когда наступит её время. */
 export function meetingSyncPlan(before: MeetingState | null, after: MeetingState, now: Date): MeetingSyncPlan | null {
   const oldAt = before ? timeOf(before.at) : null;
   const newAt = timeOf(after.at);
@@ -204,9 +208,21 @@ export function meetingSyncPlan(before: MeetingState | null, after: MeetingState
   if (oldAt === newAt && (!ownerChanged || newAt === null)) return null;
   // Будущая встреча при смене владельца переходит к новому: проведёт её он.
   const dropPending = oldAt !== null && oldAt > now.getTime();
-  const insert = newAt !== null && after.ownerId ? { userId: after.ownerId, at: new Date(newAt) } : null;
+  const backdated = newAt !== null && dushanbeDay(new Date(newAt)) < dushanbeDay(now);
+  const insert = newAt !== null && after.ownerId && !backdated ? { userId: after.ownerId, at: new Date(newAt) } : null;
   if (!dropPending && !insert) return null;
   return { dropPending, insert };
+}
+
+/** Шаг воронки «вперёд» (15.11.2026): цель — реальный статус/этап (порядок
+ *  > 0) и выше исходного. Из терминального (lost / on_hold / unknown /
+ *  cancelled, порядок −1) или «нулевого» (new, пусто) — вперёд к любому
+ *  реальному. Назад и в терминальные — нет. Повторный заход на уже взятую
+ *  вершину отсекает проверка вех в lead_progress (ClientsService). */
+export function funnelStepIsForward(toOrder: number | undefined, fromOrder: number | undefined): boolean {
+  const t = toOrder ?? 0;
+  const f = Math.max(0, fromOrder ?? 0);
+  return t > 0 && t > f;
 }
 
 /** Письмо засчитывается, когда «Письмо» стало «Написал». */

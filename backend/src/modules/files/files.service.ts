@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FileAttachment } from './file.entity';
@@ -11,6 +11,13 @@ import { AppGateway } from '../gateway/app.gateway';
 
 const PM_ROLES = ['admin', 'founder', 'smm_director'];
 const PM_ROLES_SET = new Set(PM_ROLES);
+
+/** PM-доступ по основной ИЛИ второй роли (15.11.2026): руководитель SMM
+ *  второй ролью раньше не видел файлы чужих проектов. */
+const isPm = (viewer: { role?: string; secondaryRole?: string | null }) =>
+  PM_ROLES_SET.has(viewer.role || '') || PM_ROLES_SET.has(viewer.secondaryRole || '');
+
+type Viewer = { id: string; role?: string; secondaryRole?: string | null };
 
 @Injectable()
 export class FilesService {
@@ -29,8 +36,8 @@ export class FilesService {
     this.gateway.broadcast('files:changed', { projectId, taskId });
   }
 
-  async findByProject(projectId: string, viewer?: { id: string; role?: string } | null) {
-    if (viewer && !PM_ROLES_SET.has(viewer.role || '')) {
+  async findByProject(projectId: string, viewer?: Viewer | null) {
+    if (viewer && !isPm(viewer)) {
       const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
       if (!project) throw new NotFoundException('Project not found');
       const isMember = (project.members || []).some((m: any) => m.id === viewer.id);
@@ -41,8 +48,8 @@ export class FilesService {
     return this.repo.find({ where: { projectId }, relations: ['uploadedBy'], order: { createdAt: 'DESC' } });
   }
 
-  async findByTask(taskId: string, viewer?: { id: string; role?: string } | null) {
-    if (viewer && !PM_ROLES_SET.has(viewer.role || '')) {
+  async findByTask(taskId: string, viewer?: Viewer | null) {
+    if (viewer && !isPm(viewer)) {
       const task = await this.taskRepo.findOne({
         where: { id: taskId },
         relations: ['project', 'project.members'],
@@ -58,22 +65,44 @@ export class FilesService {
     return this.repo.find({ where: { taskId }, relations: ['uploadedBy'], order: { createdAt: 'DESC' } });
   }
 
-  async upload(file: Express.Multer.File, userId: string, role: string, projectId?: string, taskId?: string) {
-    if (!PM_ROLES.includes(role)) {
-      if (taskId) {
-        const task = await this.taskRepo.findOne({ where: { id: taskId } });
-        if (!task) throw new NotFoundException('Task not found');
-        if (task.assigneeId !== userId && task.createdById !== userId) {
-          throw new ForbiddenException('Нельзя прикреплять файлы к чужой задаче');
-        }
-      } else if (projectId) {
-        const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
-        if (!project) throw new NotFoundException('Project not found');
-        const isMember = project.members?.some(m => m.id === userId);
-        if (!isMember && project.managerId !== userId) {
-          throw new ForbiddenException('Нельзя прикреплять файлы к проекту, в котором вы не участвуете');
+  /** Убрать с диска файл, который multer уже сохранил, а загрузку отклонили:
+   *  иначе отказ в доступе оставлял на диске «ничейные» файлы (15.11.2026). */
+  private async discardUpload(file?: Express.Multer.File) {
+    if (!file?.filename) return;
+    const fsPath = file.path || `./uploads/files/${file.filename}`;
+    try {
+      await fs.unlink(fsPath);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') this.logger.warn(`Failed to discard rejected upload ${fsPath}: ${err?.message}`);
+    }
+  }
+
+  async upload(
+    file: Express.Multer.File, userId: string, role: string,
+    projectId?: string, taskId?: string, secondaryRole?: string | null,
+  ) {
+    if (!file) throw new BadRequestException('Файл не загружен');
+    // multer сохраняет файл на диск ДО проверки прав — при отказе удаляем.
+    try {
+      if (!isPm({ role, secondaryRole })) {
+        if (taskId) {
+          const task = await this.taskRepo.findOne({ where: { id: taskId } });
+          if (!task) throw new NotFoundException('Task not found');
+          if (task.assigneeId !== userId && task.createdById !== userId) {
+            throw new ForbiddenException('Нельзя прикреплять файлы к чужой задаче');
+          }
+        } else if (projectId) {
+          const project = await this.projectRepo.findOne({ where: { id: projectId }, relations: ['members'] });
+          if (!project) throw new NotFoundException('Project not found');
+          const isMember = project.members?.some(m => m.id === userId);
+          if (!isMember && project.managerId !== userId) {
+            throw new ForbiddenException('Нельзя прикреплять файлы к проекту, в котором вы не участвуете');
+          }
         }
       }
+    } catch (e) {
+      await this.discardUpload(file);
+      throw e;
     }
     // Multer (busboy) decodes the multipart filename as latin1 by default,
     // so UTF-8 names (Cyrillic, emoji, etc.) arrive mangled. Re-decode.
@@ -112,12 +141,14 @@ export class FilesService {
     }
 
     await this.activityLog.log({
-      userId: file.uploadedById,
+      // Кто удалил, а не кто загружал (15.11.2026): иначе в ленте выглядело,
+      // будто автор сам удалил свой файл. Загрузившего оставляем в деталях.
+      userId: userId || file.uploadedById,
       action: ActivityAction.FILE_DELETE,
       entity: file.projectId ? 'project' : 'task',
       entityId: file.projectId || file.taskId,
       entityName: file.originalName,
-      details: { filename: file.filename },
+      details: { filename: file.filename, uploadedById: file.uploadedById },
     });
 
     const fsPath = `./uploads/files/${file.filename}`;

@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { TransportService } from './transport.service';
@@ -14,7 +14,7 @@ export class TransportReceiptsController {
   constructor(private service: TransportService) {}
 
   @Get(':key')
-  async get(@Param('key') key: string, @Res() res: Response) {
+  async get(@Param('key', ParseUUIDPipe) key: string, @Res() res: Response) {
     const img = await this.service.getReceipt(key);
     if (!img) throw new NotFoundException('Фото чека не найдено');
     res.setHeader('Content-Type', img.mime);

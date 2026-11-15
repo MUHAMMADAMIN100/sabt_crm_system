@@ -12,6 +12,7 @@ import { Project } from '../projects/project.entity';
 import { User } from '../users/user.entity';
 import { AppGateway } from '../gateway/app.gateway';
 import { projectListFields } from '../../common/project-list-fields';
+import { escapeHtml } from '../../common/html-escape';
 
 /** Роли, которым разрешено ОТМЕЧАТЬ сторис (решение владельца, сент. 2026). Остальные — только чтение. */
 const STORY_WRITE_ROLES = ['admin', 'founder', 'smm_director', 'smm_specialist'];
@@ -138,6 +139,8 @@ export class StoriesService {
       .where('p.projectType = :type', { type: 'SMM' })
       .andWhere('p.isArchived = false')
       .andWhere('p."storiesArchived" = false')
+      // Служебный проект «Одноразовые съёмки» сторис не ведёт (15.11.2026).
+      .andWhere('p."isOneOffSystem" = false')
       .getMany();
 
     const known = new Map<string, any>();
@@ -402,6 +405,8 @@ export class StoriesService {
       .andWhere('p.isArchived = false')
       // Архив историй: проект больше не требует сторис — не напоминаем.
       .andWhere('p."storiesArchived" = false')
+      // Служебный проект «Одноразовые съёмки» — без сторис (15.11.2026).
+      .andWhere('p."isOneOffSystem" = false')
       .andWhere('p.managerId IS NOT NULL')
       .getMany();
 
@@ -478,7 +483,9 @@ export class StoriesService {
         .sort((a, b) => b.count - a.count);
       const visible = contributors.slice(0, 25);
       const overflow = contributors.length - visible.length;
-      const contributorLines = visible.map(s => `✅ <b>${s.name}</b> — ${s.count}`).join('\n');
+      // Имена и название проекта — через escapeHtml (15.11.2026): «<» в имени
+      // ломал разметку Telegram, и сводка молча терялась.
+      const contributorLines = visible.map(s => `✅ <b>${escapeHtml(s.name)}</b> — ${s.count}`).join('\n');
       const overflowLine = overflow > 0 ? `\n…и ещё ${overflow}` : '';
 
       const statusLine =
@@ -493,7 +500,7 @@ export class StoriesService {
           : `\n\nSMM-специалист на проект не назначен — сторис вести некому.`;
 
       const tgMsg =
-        `📊 <b>Сводка по сторис — ${project.name}</b>\n\n` +
+        `📊 <b>Сводка по сторис — ${escapeHtml(project.name)}</b>\n\n` +
         `📅 Дата: ${today}\n` +
         `🎯 План: <b>${target}</b> сторис/день на проект · SMM-специалистов: ${crew.length}\n` +
         `📈 Факт: <b>${totalActual}/${target}</b> (${pct}%)\n\n` +

@@ -114,10 +114,17 @@ function bumpKpiValue(kpi: any, key: string, delta: number) {
     const value = Math.max(0, (Number(it.value) || 0) + delta)
     const target = Number(it.target) || 0
     const percent = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0
-    return { ...it, value, percent, done: value >= target }
+    // Без нормы (выходной, target 0) пункт не «выполнен» — иначе ложный
+    // праздник «0 из 0» (15.11.2026, как на сервере).
+    return { ...it, value, percent, done: target > 0 && value >= target }
   })
   if (!touched) return kpi
-  const overall = Math.round(items.reduce((acc: number, i: any) => acc + (i.value / (i.target || 1)) * 100, 0) / items.length)
+  // Общий процент — как на сервере: только пункты с нормой, каждый не
+  // больше 100 % (перевыполнение одного не закрывает недобор другого).
+  const counted = items.filter((i: any) => Number(i.target) > 0)
+  if (counted.length === 0) return { ...kpi, items }
+  const overall = Math.round(counted.reduce((acc: number, i: any) =>
+    acc + Math.min(100, ((Number(i.value) || 0) / Number(i.target)) * 100), 0) / counted.length)
   return { ...kpi, items, overallPercent: Math.min(100, Math.max(0, overall)) }
 }
 

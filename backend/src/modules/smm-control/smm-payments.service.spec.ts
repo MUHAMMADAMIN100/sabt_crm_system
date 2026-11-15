@@ -99,6 +99,33 @@ describe('SmmPaymentsService — чьи деньги', () => {
     expect(states.has('crm-alif')).toBe(false);
   });
 
+  it('суммы в календаре — только у права finance.manage и у менеджера по своим клиентам (15.11.2026)', async () => {
+    const { svc } = make();
+    const amounts = (cal: any) => cal.items.map((i: any) => i.amount);
+    // Админ без «Финансов»: календарь всех клиентов, но без денег.
+    const admin: any = await svc.calendar({ id: 'adm', role: 'admin' }, '2026-11-01', '2026-11-30');
+    expect(admin.money).toBe('none');
+    expect(admin.items.length).toBeGreaterThan(0);
+    expect(amounts(admin).every((a: any) => a === null)).toBe(true);
+    // Админу выдали «Финансы — доступ» — суммы видны.
+    const granted: any = await svc.calendar({ id: 'adm', role: 'admin', extraPermissions: ['finance.manage'], deniedPermissions: [] }, '2026-11-01', '2026-11-30');
+    expect(granted.money).toBe('all');
+    expect(amounts(granted).every((a: any) => typeof a === 'number')).toBe(true);
+    // Основатель — суммы есть; запрет сильнее роли.
+    const founder: any = await svc.calendar({ id: 'f', role: 'founder' }, '2026-11-01', '2026-11-30');
+    expect(founder.money).toBe('all');
+    const denied: any = await svc.calendar({ id: 'f', role: 'founder', deniedPermissions: ['finance.manage'] }, '2026-11-01', '2026-11-30');
+    expect(denied.money).toBe('none');
+    expect(amounts(denied).every((a: any) => a === null)).toBe(true);
+    // Менеджер: свои суммы видны; отняли «Оплаты проекта — просмотр» — нет.
+    const b: any = await svc.calendar({ id: 'B', role: 'sales_manager_smm' }, '2026-11-01', '2026-11-30');
+    expect(b.money).toBe('own');
+    expect(amounts(b)).toEqual([1500, 500]);
+    const bDenied: any = await svc.calendar({ id: 'B', role: 'sales_manager_smm', deniedPermissions: ['projects.payments.view'] }, '2026-11-01', '2026-11-30');
+    expect(amounts(bDenied)).toEqual([null, null]);
+    expect(bDenied.items[0]).not.toHaveProperty('own');
+  });
+
   it('смена менеджера клиента разработки пишет историю', async () => {
     const { svc, updates } = make();
     await svc.setClientManager('f-dev', 'E', { id: 'f', role: 'founder' }).catch(() => null);

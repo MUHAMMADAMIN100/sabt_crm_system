@@ -13,7 +13,7 @@ import { BulkDevTaskDto } from './dto/bulk-dev-task.dto';
 import { TriageOverdueDto } from './dto/triage-overdue.dto';
 import { CreateBoardViewDto } from './dto/board-view.dto';
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from './dto/sprint.dto';
-import { CreateWebhookDto } from './dto/webhook.dto';
+import { CreateWebhookDto, UpdateWebhookDto } from './dto/webhook.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
@@ -181,6 +181,13 @@ export class DevTasksController {
     return this.service.createWebhook(dto, req.user.id);
   }
 
+  /** Вкл/выкл подписки без пересоздания (15.11.2026): secret и журнал сохраняются. */
+  @Patch('webhooks/:id')
+  @RequirePerm('dev-tracker.manage')
+  updateWebhook(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateWebhookDto) {
+    return this.service.updateWebhook(id, dto);
+  }
+
   @Delete('webhooks/:id')
   @RequirePerm('dev-tracker.manage')
   deleteWebhook(@Param('id', ParseUUIDPipe) id: string) {
@@ -232,9 +239,9 @@ export class DevTasksController {
     return this.service.update(id, dto, req.user.id);
   }
 
-  /** Перемещение карточки по доске. Намеренно доступно всем с правом
-   *  просмотра: исполнитель сам двигает свою карточку по колонкам,
-   *  не дожидаясь руководителя. */
+  /** Перемещение карточки по доске. Доступно всем с правом просмотра:
+   *  исполнитель сам двигает свою карточку по колонкам, не дожидаясь
+   *  руководителя. Чужие карточки (15.11.2026) — только с dev-tracker.manage. */
   @Patch(':id/move')
   @RequirePerm('dev-tracker.view')
   move(
@@ -242,7 +249,10 @@ export class DevTasksController {
     @Body() dto: MoveDevTaskDto,
     @Request() req,
   ) {
-    return this.service.move(id, dto.status, dto.position, req.user.id);
+    return this.service.move(
+      id, dto.status, dto.position, req.user.id,
+      hasGrant(req.user, 'dev-tracker.manage'),
+    );
   }
 
   @Post(':id/comments')

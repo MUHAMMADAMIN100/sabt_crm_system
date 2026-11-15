@@ -23,7 +23,8 @@ const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
 const asDate = (iso: string) => new Date(`${iso}T00:00:00`)
 /** Сумма в сомони без копеек: «21 000». */
-const money = (n: number) => Math.round(n).toLocaleString('ru-RU')
+// null — сумма скрыта сервером (нет доступа к деньгам этого клиента, 15.11.2026).
+const money = (n: number | null | undefined) => (n == null ? '—' : Math.round(n).toLocaleString('ru-RU'))
 const shortDay = (iso: string) => format(asDate(iso), 'd MMM', { locale: ru })
 
 /** Русское склонение по числу. */
@@ -110,8 +111,8 @@ export default function SalesManagerDashboard() {
   // Цифры месяца для сводки: получено из ожидаемого и сколько клиентов оплатили.
   const month = useMemo(() => {
     const list = Object.values(payByDay).flat()
-    const total = list.reduce((s, p) => s + p.amount, 0)
-    const received = list.filter(isPaid).reduce((s, p) => s + p.amount, 0)
+    const total = list.reduce((s, p) => s + (p.amount ?? 0), 0)
+    const received = list.filter(isPaid).reduce((s, p) => s + (p.amount ?? 0), 0)
     const clients = new Set(list.filter(isPaid).map(p => p.clientId)).size
     return { total, received, clients }
   }, [payByDay])
@@ -404,7 +405,7 @@ function PayRow({ p, late, detailed, onOpen }: { p: SalesCalPay; late?: number; 
             <span className="text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 hidden sm:inline-block text-amber-500 dark:text-amber-400 bg-amber-500/12">Оплата</span>
           )}
           <span className="text-[11px] text-surface-600 dark:text-surface-300 tabular-nums shrink-0">
-            {money(p.amount)} с.{detailed ? <span className="hidden sm:inline"> · {payWhat(p)}</span> : null}
+            {p.amount == null ? '—' : `${money(p.amount)} с.`}{detailed ? <span className="hidden sm:inline"> · {payWhat(p)}</span> : null}
           </span>
           {state}
         </div>

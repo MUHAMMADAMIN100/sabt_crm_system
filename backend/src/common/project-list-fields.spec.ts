@@ -10,6 +10,7 @@ describe('списки отдают проект без денег', () => {
     'marginEstimate', 'internalCostEstimate', 'tariffPriceSnapshot', 'brief', 'briefShareToken',
     'clientInfo', 'smmData', 'clientAccess']
   const original = (SelectQueryBuilder.prototype as any).getMany
+  const originalOne = (SelectQueryBuilder.prototype as any).getOne
   const captured: { name: string; sql: string }[] = []
   let current = ''
 
@@ -19,6 +20,12 @@ describe('списки отдают проект без денег', () => {
     ;(SelectQueryBuilder.prototype as any).getMany = async function () {
       captured.push({ name: current, sql: this.getQuery() })
       return []
+    }
+    // Карточка контент-плана (GET/PATCH /content-plan/:id, 15.11.2026) —
+    // тоже без денег проекта: раньше грузила связь project целиком.
+    ;(SelectQueryBuilder.prototype as any).getOne = async function () {
+      captured.push({ name: current, sql: this.getQuery() })
+      return null
     }
     const make = (svcPath: string, svc: string, entPath: string, ent: string) => {
       const s = Object.create(require(svcPath)[svc].prototype)
@@ -37,15 +44,20 @@ describe('списки отдают проект без денег', () => {
     await run('stories.all', () => stories.getAll('2026-11-01', '2026-11-30'))
     await run('stories.my', () => stories.getByEmployee('u', '2026-11-01', '2026-11-30'))
     await run('contentPlan.findAll', () => plan.findAll({ from: '2026-11-01' }))
+    // Карточки нет (getOne → null) — сервис отвечает 404, нам нужен только SQL.
+    await run('contentPlan.findOne', () => plan.findOne('00000000-0000-4000-8000-000000000001').catch(() => null))
     // Загрузка всех моделей через ts-jest в общем прогоне идёт дольше 5 с.
   }, 60_000)
 
-  afterAll(() => { (SelectQueryBuilder.prototype as any).getMany = original })
+  afterAll(() => {
+    (SelectQueryBuilder.prototype as any).getMany = original
+    ;(SelectQueryBuilder.prototype as any).getOne = originalOne
+  })
 
   it('каждый список построен', () => {
     expect(captured.map(c => c.name)).toEqual([
       'tasks.findAll', 'tasks.my', 'tasks.fromManagement', 'tasks.assignedByMe', 'tasks.overdue',
-      'stories.all', 'stories.my', 'contentPlan.findAll',
+      'stories.all', 'stories.my', 'contentPlan.findAll', 'contentPlan.findOne',
     ])
   })
 

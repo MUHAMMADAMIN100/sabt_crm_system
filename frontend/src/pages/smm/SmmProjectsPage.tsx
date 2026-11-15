@@ -32,7 +32,9 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 export default function SmmProjectsPage() {
   const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
-  const canCreate = CREATE_ROLES.includes((user as any)?.role ?? '')
+  // Роли — основная и вторая (15.11.2026), как проверяет сервер.
+  const myRoles = [(user as any)?.role, (user as any)?.secondaryRole].filter(Boolean) as string[]
+  const canCreate = myRoles.some(r => CREATE_ROLES.includes(r))
   // Открытие формы прямо по адресу: так на неё ведёт кнопка создания
   // из нижней панели на телефоне.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -43,7 +45,7 @@ export default function SmmProjectsPage() {
     next.delete('new')
     setSearchParams(next, { replace: true })
   }, [searchParams, canCreate])
-  const canSeeLoad = LOAD_ROLES.includes((user as any)?.role ?? '')
+  const canSeeLoad = myRoles.some(r => LOAD_ROLES.includes(r))
   const [showCreate, setShowCreate] = useState(false)
   // Вкладки: активные / архив завершённых. Архив по умолчанию скрыт.
   // Вкладка и вид — в адресе с заменой шага (08.11.2026): вернулись «Назад»

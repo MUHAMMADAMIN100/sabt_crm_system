@@ -3,23 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover (15.11.2026): без него на iPhone env(safe-area-inset-*)
+         всегда 0 и отступы под «чёлку» и полоску «Домой» не работали. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Sabt System</title>
     <!-- Соединение с сервером API открываем сразу (08.11.2026), а не когда
          загрузится приложение: первый запрос не ждёт DNS и TLS. Адрес Vite
-         подставляет при сборке. Ссылку ставим скриптом: без адреса (локально
-         через прокси) её просто не будет, а неподставленное имя переменной в
-         теге link роняло бы сборку. use-credentials — запросы к API идут с cookie. -->
-    <script>
-      (function (u) {
-        if (!/^https?:\/\//.test(u)) return
-        var l = document.createElement('link')
-        l.rel = 'preconnect'
-        l.href = u
-        l.crossOrigin = 'use-credentials'
-        document.head.appendChild(l)
-      })('%VITE_API_URL%')
-    </script>
+         подставляет при сборке в meta (в теге link неподставленное имя
+         переменной роняло бы сборку), ссылку ставит /preconnect.js. Скрипт
+         вынесен из страницы (15.11.2026): политика CSP больше не разрешает
+         встроенные скрипты ('unsafe-inline'). Без адреса (локально через
+         прокси) ссылки просто не будет. -->
+    <meta name="sabt-api-url" content="%VITE_API_URL%" />
+    <script src="/preconnect.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- IBM Plex Sans — шрифт, сделанный для корпоративного софта: полная

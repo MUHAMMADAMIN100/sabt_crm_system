@@ -46,9 +46,13 @@ jobs:
           echo "Backup configuration preflight passed; the secret value was not logged." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install PostgreSQL 16 client (matches Railway version)
+        # apt-key устарел (15.11.2026): ключ репозитория кладём отдельным
+        # файлом и привязываем только к pgdg через signed-by — как советует
+        # сам PostgreSQL. Ключ не становится доверенным для всех репозиториев.
         run: |
-          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-16
 
@@ -73,6 +77,31 @@ jobs:
             exit 1
           fi
           echo "BACKUP_FILE=${FILE}.gz" >> "$GITHUB_ENV"
+
+      # Полная копия базы (зарплаты, клиенты, пароли-хеши) не должна лежать
+      # артефактом в открытом виде (15.11.2026): её скачает любой с доступом к
+      # Actions. Есть секрет BACKUP_PASSPHRASE — шифруем AES-256 и выкладываем
+      # только .gpg. Нет — предупреждаем и ведём себя как раньше.
+      # Расшифровка: gpg --decrypt backup-….sql.gz.gpg | gunzip > backup.sql
+      - name: Encrypt backup (when BACKUP_PASSPHRASE is set)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::warning title=Backup is not encrypted::Actions secret BACKUP_PASSPHRASE is not set — the dump is uploaded as plain gzip. Add the secret to encrypt backups."
+            echo "⚠️ Backup uploaded WITHOUT encryption: secret \`BACKUP_PASSPHRASE\` is not set." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output "${BACKUP_FILE}.gpg" "${BACKUP_FILE}"
+          # Проверяем, что зашифрованный файл расшифровывается в целый gzip.
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 0 \
+            --decrypt "${BACKUP_FILE}.gpg" | gzip -t
+          rm -f "${BACKUP_FILE}"
+          ls -lh "${BACKUP_FILE}.gpg"
+          echo "BACKUP_FILE=${BACKUP_FILE}.gpg" >> "$GITHUB_ENV"
+          echo "🔒 Backup encrypted with AES-256 (gpg symmetric)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload backup as artifact (30-day retention)
         uses: actions/upload-artifact@v4

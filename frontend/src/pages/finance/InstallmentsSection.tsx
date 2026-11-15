@@ -12,7 +12,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, moneyBare, monthLabel, shiftYm, todayISO, currentYm, apiErr, pluralRu } from './finlib';
+import { money, moneyBare, monthLabel, shiftYm, todayISO, currentYm, apiErr, pluralRu, parseAmount } from './finlib';
 import { FinLoading, FinLoadError, FinModal, finConfirm, invalidateFinance } from './FinKit';
 import FinIcon from './FinIcon';
 import { AccountMark } from './AccountIdentity';
@@ -21,7 +21,8 @@ export const INSTALLMENT_COLOR = '#47aaa4';
 /** День выплаты зарплаты — в этот день удерживается рассрочка «из зарплаты». */
 const SALARY_PAY_DAY = 10;
 
-const num = (s: string) => parseFloat(String(s).replace(/\s/g, '').replace(',', '.')) || 0;
+// Общий разбор суммы (15.11.2026): «1,234.56» раньше читалось как 1.234.
+const num = (s: string) => parseAmount(s) || 0;
 
 type Entry = {
   ym: string; date: string; amount: number; paid: number; outstanding: number;
@@ -1046,6 +1047,8 @@ function InstallmentEntryModal({ row, entry, openYm, onPay, onClose }: {
   const a = num(amount);
   const g = num(got);
   const gotOver = g > (Number(row.remaining) || 0) + 0.005;
+  // Будущей датой платёж не записываем — сервер отклонит (15.11.2026).
+  const gotFuture = !!gotDate && gotDate > todayISO();
   const saveAmount = () => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: a }), 'Сумма месяца сохранена');
   const resetAmount = () => run(() => financeApi.setInstallmentMonth(inst.id, { ym: entry.ym, amount: null }), 'Вернули как было');
   const saveDate = () => run(() => financeApi.setInstallmentDue(inst.id, { ym: entry.ym, date }), 'Дата перенесена');
@@ -1113,7 +1116,7 @@ function InstallmentEntryModal({ row, entry, openYm, onPay, onClose }: {
           <b>Деньги уже внесли?</b>
           <div className="form-grid">
             <div className="field"><label>Сумма</label><input inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} /></div>
-            <div className="field"><label>Когда</label><input type="date" value={gotDate} onChange={(e) => setGotDate(e.target.value)} /></div>
+            <div className="field"><label>Когда</label><input type="date" value={gotDate} max={todayISO()} onChange={(e) => setGotDate(e.target.value)} /></div>
           </div>
           <div className="field">
             <label>Куда пришли деньги</label>
@@ -1122,11 +1125,12 @@ function InstallmentEntryModal({ row, entry, openYm, onPay, onClose }: {
               {accounts.map((acc: any) => <option key={acc.id} value={acc.id}>{acc.name} — доход «Возврат долга»</option>)}
             </select>
           </div>
-          <button type="button" className="btn fin-inst-ok solid" disabled={busy || !(g > 0) || gotOver || !accountId} onClick={receive}>
+          <button type="button" className="btn fin-inst-ok solid" disabled={busy || !(g > 0) || gotOver || gotFuture || !accountId} onClick={receive}>
             Получено{g > 0 ? ` ${money(g)}` : ''}
           </button>
-          <span className={`hint${gotOver ? ' neg' : ''}`}>
+          <span className={`hint${gotOver || gotFuture ? ' neg' : ''}`}>
             {gotOver ? `Больше остатка: осталось ${money(row.remaining)}`
+              : gotFuture ? 'Дата ещё не наступила — отметьте, когда деньги придут.'
               : !accountId ? 'Выберите счёт — деньги запишутся доходом «Возврат долга».'
                 : g > entry.outstanding + 0.005 ? 'Месяц станет зелёным, лишнее закроет следующие месяцы.'
                   : 'Месяц станет зелёным.'}
@@ -1234,6 +1238,8 @@ function InstallmentPaymentModal({ row, amount: suggestedRaw, ym, onClose }: {
   const [busy, setBusy] = useState(false);
   const a = num(amount);
   const over = a > (Number(row.remaining) || 0) + 0.005;
+  // Будущей датой платёж не записываем — сервер отклонит (15.11.2026).
+  const future = !!date && date > todayISO();
   const preview = useMemo(() => (a > 0 && !over ? allocPreview(row.schedule ?? [], a, ym) : []), [row.schedule, a, over, ym]);
 
   // «Из зарплаты за декабрь и январь ничего не удержится, за февраль — 630 с.»
@@ -1248,7 +1254,7 @@ function InstallmentPaymentModal({ row, amount: suggestedRaw, ym, onClose }: {
   }
 
   async function save() {
-    if (busy || !(a > 0) || over || !accountId) return;
+    if (busy || !(a > 0) || over || future || !accountId) return;
     setBusy(true);
     try {
       await financeApi.addInstallmentPayment(inst.id, { amount: a, date, note: note.trim() || undefined, accountId, ym });
@@ -1265,14 +1271,15 @@ function InstallmentPaymentModal({ row, amount: suggestedRaw, ym, onClose }: {
     <FinModal title={`Получено · ${shortName(row.employee?.name)}`} onClose={onClose} width={620}
       footer={<>
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" disabled={busy || !(a > 0) || over || !accountId} onClick={save}>{busy ? 'Записываю…' : 'Записать платёж'}</button>
+        <button className="btn primary" disabled={busy || !(a > 0) || over || future || !accountId} onClick={save}>{busy ? 'Записываю…' : 'Записать платёж'}</button>
       </>}>
       <p style={{ margin: 0 }}>{inst.name} · осталось <b>{money(row.remaining)}</b></p>
       <div className="form-grid">
         <div className="field"><label>Сумма</label><input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-        <div className="field"><label>Дата</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div className="field"><label>Дата</label><input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></div>
       </div>
       {over && <p className="mini neg" style={{ margin: 0 }}>Больше остатка: осталось {money(row.remaining)}</p>}
+      {future && <p className="mini neg" style={{ margin: 0 }}>Дата ещё не наступила — запишите платёж, когда деньги придут.</p>}
       {preview.length > 0 && (
         <div className="fin-inst-will">
           <span className="lb">{ym ? 'Закроет:' : 'Закроет ближайшие месяцы:'}</span>

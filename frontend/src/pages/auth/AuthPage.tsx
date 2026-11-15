@@ -149,6 +149,15 @@ export default function AuthPage() {
     setValue('telegram', val, { shouldValidate: true })
   }
 
+  // Поле логина: свой onBlur (подчистка пробелов) раньше ЗАМЕНЯЛ onBlur
+  // react-hook-form, и форма не знала, что поле покинули (15.11.2026).
+  // Теперь зовём оба.
+  const emailField = reg('email', {
+    required: 'Введите логин или email',
+    // Логин (без пробелов/@) ИЛИ полный email любого домена.
+    pattern: { value: /^([^\s@]+|\S+@\S+\.\S+)$/, message: 'Введите логин или email' },
+  })
+
   const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const allowed = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
     if (allowed.includes(e.key)) return
@@ -310,20 +319,21 @@ export default function AuthPage() {
               </>
             )}
 
-            {/* Email */}
+            {/* Email. Подпись связана с полем (htmlFor/id), autocomplete —
+                чтобы менеджер паролей подставлял логин (15.11.2026). */}
             <div className="auth-field" style={{ animationDelay: mode === 'register' ? '250ms' : '0ms' }}>
-              <label className="label">Логин или email *</label>
+              <label className="label" htmlFor="auth-email">Логин или email *</label>
               <div className="relative">
                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                 <input
-                  {...reg('email', {
-                    required: 'Введите логин или email',
-                    // Логин (без пробелов/@) ИЛИ полный email любого домена.
-                    pattern: { value: /^([^\s@]+|\S+@\S+\.\S+)$/, message: 'Введите логин или email' },
-                  })}
+                  {...emailField}
+                  id="auth-email"
                   type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   placeholder="логин или email"
-                  onBlur={handleEmailBlur}
+                  onBlur={e => { emailField.onBlur(e); handleEmailBlur(e) }}
                   className={`input pl-9 ${errors.email && String(errors.email.message ?? '').trim() ? 'border-red-400 focus:ring-red-400' : ''}`}
                 />
               </div>
@@ -334,10 +344,12 @@ export default function AuthPage() {
 
             {/* Пароль */}
             <div className="auth-field" style={{ animationDelay: mode === 'register' ? '300ms' : '60ms' }}>
-              <label className="label">{t('auth.password')} *</label>
+              <label className="label" htmlFor="auth-password">{t('auth.password')} *</label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                 <input
+                  id="auth-password"
+                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                   {...reg('password', {
                     required: 'Пароль обязателен',
                     ...(mode === 'register' && {
@@ -364,10 +376,11 @@ export default function AuthPage() {
             {/* 2FA код — показывается только когда бэк попросил */}
             {needs2FA && mode === 'login' && (
               <div className="auth-field" style={{ animationDelay: '0ms' }}>
-                <label className="label">Код 2FA *</label>
+                <label className="label" htmlFor="auth-2fa">Код 2FA *</label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
                   <input
+                    id="auth-2fa"
                     {...reg('twoFactorCode', {
                       required: 'Введите 6-значный код',
                       pattern: { value: /^\d{6,8}$/, message: 'Код состоит из цифр' },

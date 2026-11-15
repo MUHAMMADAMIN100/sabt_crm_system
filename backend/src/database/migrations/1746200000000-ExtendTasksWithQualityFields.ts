@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { addEnumValues } from '../migration-helpers';
 
 /** Wave 3: расширение задач — новые статусы пайплайна + поля контроля
  *  качества (reviewer, rework count, quality score, delivery type и т.д.). */
@@ -8,7 +9,9 @@ export class ExtendTasksWithQualityFields1746200000000 implements MigrationInter
   async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Расширяем enum статусов задач. Добавляем новые значения,
     //    старые остаются. Имя enum-а исторически встречается в двух
-    //    вариантах (task_status_enum / tasks_status_enum) — пробуем оба.
+    //    вариантах (task_status_enum / tasks_status_enum) — берём настоящее
+    //    из каталога по колонке (15.11.2026): перебор через try/catch портил
+    //    транзакцию миграции, и на чистой базе она падала.
     const newStatuses = [
       'accepted',
       'on_pm_review',
@@ -18,16 +21,7 @@ export class ExtendTasksWithQualityFields1746200000000 implements MigrationInter
       'published',
       'rescheduled',
     ];
-    const enumNames = ['task_status_enum', 'tasks_status_enum'];
-    for (const enumName of enumNames) {
-      for (const value of newStatuses) {
-        try {
-          await queryRunner.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS '${value}'`);
-        } catch (e) {
-          // enum may not exist under this name — skip silently
-        }
-      }
-    }
+    await addEnumValues(queryRunner, 'tasks', 'status', newStatuses);
 
     // 2. Новые колонки в tasks (все nullable / с дефолтами — старые задачи целы).
     await queryRunner.query(`ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "reviewerId" uuid NULL`);

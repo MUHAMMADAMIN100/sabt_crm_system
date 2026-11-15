@@ -191,7 +191,7 @@ export function DatePicker({
           <span
             style={{
               position: 'absolute', top: -4, right: -4, minWidth: 15, height: 15,
-              padding: '0 3px', borderRadius: 8, background: '#4f46e5', color: '#fff',
+              padding: '0 3px', borderRadius: 8, background: 'rgb(var(--prim-600))', color: '#fff', // цвет темы, не индиго (15.11.2026)
               fontSize: 9.5, fontWeight: 700, lineHeight: '15px', textAlign: 'center',
               pointerEvents: 'none', boxShadow: '0 0 0 1.5px #fff',
             }}

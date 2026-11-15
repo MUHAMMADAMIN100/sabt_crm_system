@@ -217,7 +217,9 @@ export class FinanceController {
    *  решение — владельца: молча списывать деньги за опоздание нельзя. */
   @Get('late-fines')
   lateFines(@Query('date') date?: string, @Query('amount') amount?: string) {
-    return this.service.lateOfDay(date, Number(amount) || 100);
+    // Без суммы — из настроек смен, не жёсткие 100 (15.11.2026).
+    const n = Number(amount);
+    return this.service.lateOfDay(date, amount && Number.isFinite(n) && n > 0 ? n : undefined);
   }
 
   @Post('late-fines')

@@ -11,8 +11,18 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { ActivityAction } from '../activity-log/activity-log.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { AppGateway } from '../gateway/app.gateway';
+import { escapeHtml, truncateTelegramHtml } from '../../common/html-escape';
 
 const PM_ROLES = new Set(['admin', 'founder', 'smm_director']);
+
+/** Кто смотрит/пишет комментарии. secondaryRole — вторая роль: руководитель
+ *  SMM второй ролью тоже видит все задачи (15.11.2026). */
+type Viewer = { id: string; role?: string; secondaryRole?: string | null };
+
+/** PM-доступ по основной ИЛИ второй роли. */
+const isPm = (viewer: { role?: string; secondaryRole?: string | null }) =>
+  (!!viewer.role && PM_ROLES.has(viewer.role))
+  || (!!viewer.secondaryRole && PM_ROLES.has(viewer.secondaryRole));
 
 @Injectable()
 export class CommentsService {
@@ -34,8 +44,8 @@ export class CommentsService {
 
   /** Доступ к комментариям задачи имеют только: PM-роли, исполнитель,
    *  создатель, участник проекта, менеджер проекта. */
-  private async assertCanAccessTask(taskId: string, viewer: { id: string; role?: string }): Promise<void> {
-    if (viewer.role && PM_ROLES.has(viewer.role)) return;
+  private async assertCanAccessTask(taskId: string, viewer: Viewer): Promise<void> {
+    if (isPm(viewer)) return;
     // На Task НЕТ relation 'assignees' — таблица task_assignees отдельная.
     // Если включить её в relations[], TypeORM сразу выкинет 500
     // (EntityMetadataNotFound), что и было причиной internal server error
@@ -57,7 +67,7 @@ export class CommentsService {
     throw new ForbiddenException('Нет доступа к этой задаче');
   }
 
-  async findByTask(taskId: string, viewer?: { id: string; role?: string }) {
+  async findByTask(taskId: string, viewer?: Viewer) {
     if (viewer) await this.assertCanAccessTask(taskId, viewer);
     return this.repo.find({
       where: { taskId },
@@ -66,8 +76,8 @@ export class CommentsService {
     });
   }
 
-  async create(taskId: string, message: string, userId: string, userRole?: string) {
-    await this.assertCanAccessTask(taskId, { id: userId, role: userRole });
+  async create(taskId: string, message: string, userId: string, userRole?: string, userSecondaryRole?: string | null) {
+    await this.assertCanAccessTask(taskId, { id: userId, role: userRole, secondaryRole: userSecondaryRole });
     // Валидация: пустые комментарии не сохраняем — иначе на UI
     // получаем пустую серую плашку без текста.
     const cleanMessage = (message || '').trim();
@@ -101,25 +111,33 @@ export class CommentsService {
         }).catch(() => {});
 
         if (task.assignee?.email) {
+          // Письмо экранирует значения само (MailService) — передаём как есть.
           await this.mailService.sendCommentNotification(
             task.assignee.email,
             task.assignee.name || 'Сотрудник',
-            message,
+            cleanMessage,
             task.title,
             task.project?.name || '',
             taskId,
             authorName,
           ).catch(() => {});
-          await this.telegramService.sendToUser(
-            task.assigneeId,
-            `💬 <b>Новый комментарий к задаче</b>\n\n` +
-            `📋 ${task.title}` +
-            (task.project?.name ? `\n📁 ${task.project.name}` : '') +
-            `\n👤 Автор: ${authorName}\n\n` +
-            `<i>${message}</i>\n\n` +
-            `👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
-          ).catch(() => {});
         }
+        // Telegram — не зависит от того, есть ли у исполнителя email
+        // (15.11.2026): раньше без почты не уходило и сообщение в Telegram.
+        // Текст от людей — через escapeHtml: «<» в комментарии или названии
+        // ломал разметку, и Telegram молча терял сообщение.
+        await this.telegramService.sendToUser(
+          task.assigneeId,
+          truncateTelegramHtml(
+            `💬 <b>Новый комментарий к задаче</b>\n\n` +
+            `📋 ${escapeHtml(task.title)}` +
+            (task.project?.name ? `\n📁 ${escapeHtml(task.project.name)}` : '') +
+            `\n👤 Автор: ${escapeHtml(authorName)}\n\n` +
+            // Длинный комментарий режем отдельно, чтобы ссылка ниже уцелела.
+            `<i>${truncateTelegramHtml(escapeHtml(cleanMessage), 3000)}</i>\n\n` +
+            `👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
+          ),
+        ).catch(() => {});
       }
 
       const author = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null);
@@ -165,10 +183,14 @@ export class CommentsService {
     return saved;
   }
 
-  async remove(id: string, userId: string, userRole: string) {
+  async remove(id: string, userId: string, userRole: string, userSecondaryRole?: string | null) {
     const comment = await this.repo.findOne({ where: { id }, relations: ['author'] });
     if (!comment) throw new NotFoundException('Comment not found');
-    if (comment.authorId !== userId && userRole !== 'admin') {
+    // Чужой комментарий удаляют админ и основатель (15.11.2026: основатель
+    // раньше не мог), по основной или второй роли.
+    const canModerate = ['admin', 'founder'].includes(userRole)
+      || ['admin', 'founder'].includes(userSecondaryRole || '');
+    if (comment.authorId !== userId && !canModerate) {
       throw new ForbiddenException('Not allowed');
     }
     await this.activityLog.log({

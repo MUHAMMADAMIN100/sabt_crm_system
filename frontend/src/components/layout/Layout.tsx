@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import ImpersonationBanner from './ImpersonationBanner'
+import PageErrorBoundary from './PageErrorBoundary'
 import { PageLoader } from '@/components/ui'
 import { useAuthStore } from '@/store/auth.store'
 import { useSocket } from '@/hooks/useSocket'
@@ -13,7 +14,7 @@ import clsx from 'clsx'
 import { useScrollMemory } from '@/lib/navMemory'
 
 /** Брендированный «пульсирующий S» лоадер при переходе между route'ами.
- *  Layout (Sidebar + Header) остаётся смонтированным — sidebar не «мигает»
+ *  Layout (Sidebar + BottomNav) остаётся смонтированным — sidebar не «мигает»
  *  и не теряет пункты при навигации, а пользователь видит знакомый
  *  логотип-плитку вместо пустоты. */
 function RouteLoader() {
@@ -66,11 +67,12 @@ function useSessionHeartbeat(authMarker: string | null) {
 export default function Layout() {
   // По умолчанию сайдбар свёрнут (разворачивается по наведению мышью). На мобильном false = скрыт.
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const fetchMe = useAuthStore(s => s.fetchMe)
-  // authenticated — флаг локального состояния. JWT теперь в httpOnly cookie,
-  // фронт его не видит. Socket / heartbeat пускаем когда юзер залогинен.
+  // authenticated — флаг локального состояния. Токен — в httpOnly cookie и
+  // в localStorage (tokenStore, lib/api.ts). Socket / heartbeat пускаем,
+  // когда юзер залогинен.
   const authenticated = useAuthStore(s => s.authenticated)
   const location = useLocation()
+  const navigate = useNavigate()
   const financeRoute = location.pathname === '/finance' || location.pathname.startsWith('/finance/')
   // «Директ» — рабочее окно чата на весь экран: без полей и ограничения ширины.
   // На телефоне открытый чат ещё и без нижней панели (как в Instagram).
@@ -79,13 +81,8 @@ export default function Layout() {
   const directTab = directParams.get('tab')
   const directChatOpen = directRoute && directParams.has('c') && directTab !== 'analytics' && directTab !== 'speed'
 
-  // fetchMe нужен только если пришли по F5 (user пуст). После свежего login()
-  // user уже загружен — повторный вызов плодит гонку с interceptor'ом
-  // (если он по таймингу вернёт 401, выкинет на /auth сразу после успешного
-  // входа). Поэтому вызываем строго при отсутствии user.
-  useEffect(() => {
-    if (!useAuthStore.getState().user) fetchMe()
-  }, [])
+  // Свой fetchMe здесь не нужен (15.11.2026): PrivateRoute не рендерит
+  // Layout, пока /auth/me не вернул user, — прежний эффект не срабатывал.
   useSocket(authenticated ? 'cookie' : null)
   useSessionHeartbeat(authenticated ? 'cookie' : null)
   // «Назад» на шаг (08.11.2026): прокрутка и «вы были здесь» для каждого шага.
@@ -155,9 +152,13 @@ export default function Layout() {
             {/* Внутренний Suspense ловит lazy-чанки страниц, не давая
                 верхнему Suspense вышибить весь Layout (sidebar+header) до
                 splash-логотипа. */}
-            <Suspense fallback={<RouteLoader />}>
-              <Outlet />
-            </Suspense>
+            {/* Граница ошибок страницы (15.11.2026): ошибка одной страницы
+                не роняет меню, переход на другой адрес её снимает. */}
+            <PageErrorBoundary resetKey={location.pathname} onHome={() => navigate('/')}>
+              <Suspense fallback={<RouteLoader />}>
+                <Outlet />
+              </Suspense>
+            </PageErrorBoundary>
           </div>
         </main>
       </div>

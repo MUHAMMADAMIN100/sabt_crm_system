@@ -284,13 +284,18 @@ function SalaryList({ ym, onYmChange }: { ym: string; onYmChange?: (ym: string) 
   };
 
   async function cancelSalaryMonth(e: any) {
-    if (!(await finConfirm('Отменить выплату? Зарплатные операции сотрудника за месяц будут удалены.', { danger: true, confirmLabel: 'Отменить выплату' }))) return;
+    // Только выплаты зарплаты (15.11.2026): без kind сервер отменял и авансы,
+    // и бонусы месяца. Их снимают отдельно — в своих колонках.
+    if (!(await finConfirm('Отменить выплату зарплаты? Выплаты зарплаты сотрудника за месяц будут отменены. Авансы и бонусы останутся — их отменяют отдельно.', { danger: true, confirmLabel: 'Отменить выплату' }))) return;
     try {
-      const res: any = await financeApi.removeMonthExpenses({ ym, employeeId: e.id });
+      // В типе api.service kind пока только 'advance' | 'bonus' — тело
+      // передаётся как есть, сервер принимает и 'salary'.
+      const body = { ym, employeeId: e.id, kind: 'salary' } as unknown as Parameters<typeof financeApi.removeMonthExpenses>[0];
+      const res: any = await financeApi.removeMonthExpenses(body);
       invalidateFinance(qc);
       // Молчать тут нельзя: если операций не было, на экране ничего не
       // изменится, и кнопка выглядит сломанной.
-      if (!res?.removed) toast('Зарплатных операций за этот месяц нет — отменять нечего');
+      if (!res?.removed) toast('Выплат зарплаты за этот месяц нет — отменять нечего');
       else toast.success(`Отменено операций: ${res.removed}`);
     } catch (err) { toast.error(apiErr(err)); }
   }
@@ -1097,9 +1102,16 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
   useEffect(() => { if (!accountId && accounts.length) setAccountId(accounts[0].id); }, [accounts, accountId]);
 
   const amt = parseAmount(amount);
+  // Больше «к выплате» за месяц таблицы (15.11.2026) — переплата молча уходила
+  // сотруднику сверх начисленного; теперь переспрашиваем.
+  const overpay = salaryYm === ym && amt > remaining + 0.005;
   async function save() {
     if (!(amt > 0) || !accountId || busy) return;
     if (date > todayISO()) { toast.error(FUTURE_PAY_MSG); return; }
+    if (overpay && !(await finConfirm(
+      `Сумма ${money(amt)} больше, чем «к выплате» (${money(remaining)}). Сверх начисленного уйдёт ${money(amt - remaining)}. Всё равно выплатить?`,
+      { title: 'Выплата больше начисленного', confirmLabel: 'Выплатить', danger: true },
+    ))) return;
     setBusy(true);
     const salaryCat = categories.find((c: any) => c.key === 'salary');
     try {
@@ -1140,6 +1152,7 @@ function SalaryPayModal({ row, ym, onClose }: { row: any; ym: string; onClose: (
             за какой месяц зарплата (в этот месяц она попадёт в таблицу). Остаток к выплате: {money(remaining)}
             {(Number(row.bonus) || 0) > 0 ? <> (оклад {money(row.salary)} + бонус {money(row.bonus)})</> : null}.
           </p>
+          {overpay && <p className="mini neg" style={{ margin: 0 }}>Сумма больше остатка к выплате на {money(amt - remaining)}.</p>}
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Отмена</button>

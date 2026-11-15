@@ -115,12 +115,18 @@ export class InstagramApi {
     const env = instagramEnv();
     if (!env.connected) return null;
     const row = await this.settings.findOne({ where: { key: PRIMARY_KEY } });
-    const stored = row?.value as InstagramState | undefined;
     const base: InstagramState = {
       token: env.accessToken, source: fingerprint(env.accessToken), expiresAt: null, refreshedAt: null,
       username: null, accountId: null, invalid: false,
     };
-    const state = stored?.source === base.source ? { ...base, ...stored } : base;
+    // Продлённый маркер в базе — зашифрован (tokenSealed, с 15.11.2026);
+    // старые записи хранили его открытым в token — читаем и такие.
+    const { token: legacyToken, tokenSealed, ...stored } = (row?.value ?? {}) as Partial<InstagramState> & { tokenSealed?: string };
+    let state: InstagramState = base;
+    if (stored.source === base.source) {
+      state = { ...base, ...stored };
+      state.token = openToken(tokenSealed) || legacyToken || base.token;
+    }
     if (env.accountId) state.accountId = env.accountId;
     return state;
   }
@@ -128,7 +134,20 @@ export class InstagramApi {
   async update(change: Partial<InstagramState>): Promise<void> {
     const current = await this.state();
     if (!current) return;
-    await this.settings.save({ key: PRIMARY_KEY, value: { ...current, ...change } });
+    // Открытым маркер в базу не пишем (15.11.2026): раньше после ночного
+    // продления основной маркер лежал в direct_settings как есть — утечка
+    // дампа давала доступ к переписке. Теперь как у дополнительных — шифр.
+    const { token, ...rest } = { ...current, ...change };
+    await this.settings.save({ key: PRIMARY_KEY, value: { ...rest, ...(token ? { tokenSealed: sealToken(token) } : {}) } });
+    this.cache = null;
+  }
+
+  /** Старую запись с открытым маркером — перешифровать (при запуске). */
+  async sealLegacyToken(): Promise<void> {
+    const row = await this.settings.findOne({ where: { key: PRIMARY_KEY } });
+    if (!row?.value || typeof row.value.token !== 'string' || !row.value.token) return;
+    const { token, ...rest } = row.value;
+    await this.settings.save({ key: PRIMARY_KEY, value: { ...rest, tokenSealed: sealToken(token) } });
     this.cache = null;
   }
 
@@ -209,9 +228,16 @@ export class InstagramApi {
     return { account, webhooks: !webhookError, webhookError, renewed: !!existing };
   }
 
-  /** Отключить дополнительный аккаунт: переписка остаётся, писать нельзя. */
+  /** Отключить дополнительный аккаунт: переписка остаётся, писать нельзя.
+   *  Сначала (по возможности) отписываем аккаунт от вебхуков (15.11.2026):
+   *  иначе Meta продолжала бы слать его события, которые CRM выбрасывает. */
   async disconnect(accountId: string): Promise<boolean> {
-    const res = await this.settings.delete({ key: `${EXTRA_PREFIX}${accountId}` });
+    const key = `${EXTRA_PREFIX}${accountId}`;
+    const account = (await this.accounts(true)).find(a => a.key === key);
+    if (account?.token) {
+      await this.request('me/subscribed_apps', { method: 'DELETE', token: account.token }).catch(() => undefined);
+    }
+    const res = await this.settings.delete({ key });
     this.cache = null;
     return !!res.affected;
   }
@@ -289,7 +315,7 @@ export class InstagramApi {
 
   private async request<T>(
     path: string,
-    { method = 'GET', body, query, token, root = false }: { method?: 'GET' | 'POST'; body?: unknown; query?: Record<string, string>; token?: string; root?: boolean } = {},
+    { method = 'GET', body, query, token, root = false }: { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; query?: Record<string, string>; token?: string; root?: boolean } = {},
   ): Promise<T> {
     const env = instagramEnv();
     if (!env.appSecret) throw new ConflictException('Instagram не подключён: в Railway нет INSTAGRAM_APP_SECRET');

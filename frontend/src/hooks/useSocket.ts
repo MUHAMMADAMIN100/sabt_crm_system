@@ -10,10 +10,11 @@ import { applyDirectConversation, upsertDirectMessage } from '@/pages/direct/dir
 import { getTaskChangeSync, setTaskChangeUserGetter } from '@/lib/taskChangeSync'
 
 /**
- * Подключение к WebSocket. JWT теперь живёт в httpOnly cookie — она
- * автоматически уйдёт в socket.io handshake при `withCredentials: true`.
- * Если есть legacy-токен (старая сессия в localStorage) — отдадим его
- * в auth для совместимости с пере-деплоем бэка.
+ * Подключение к WebSocket. Токен входа уходит двумя путями: httpOnly cookie
+ * (её socket.io отправит в handshake при `withCredentials: true`) и
+ * Bearer-токен из localStorage (tokenStore, lib/api.ts) в `auth.token` — для
+ * браузеров, где сторонние cookie заблокированы (фронт и бэк на разных
+ * доменах). Это основной рабочий токен, а не «legacy» (15.11.2026).
  */
 export function useSocket(authMarker: string | null) {
   const qc = useQueryClient()
@@ -23,14 +24,20 @@ export function useSocket(authMarker: string | null) {
     if (!authMarker) return
 
     const wsUrl = import.meta.env.VITE_API_URL || window.location.origin
-    const bearer = tokenStore.getAccess()
     const socket = io(`${wsUrl}/ws`, {
       // httpOnly cookie auth_token уйдёт в handshake благодаря
       // withCredentials. Gateway читает её из handshake.headers.cookie.
       // Параллельно отдаём токен через auth.token — это fallback для
       // браузеров, где cookies заблокированы (Chrome anti-tracking).
       withCredentials: true,
-      auth: bearer ? { token: bearer } : undefined,
+      // Функция, а не объект (15.11.2026): socket.io зовёт её при КАЖДОМ
+      // подключении, и переподключение после обновления токена идёт со
+      // свежим, а не с тем, что был при первом входе (сервер рвал такой
+      // сокет как протухший).
+      auth: (cb: (data: object) => void) => {
+        const bearer = tokenStore.getAccess()
+        cb(bearer ? { token: bearer } : {})
+      },
       // websocket — основной; polling — fallback, если WS режет прокси/сеть.
       // Без fallback сокет мог вообще не подняться → доска не обновлялась.
       transports: ['websocket', 'polling'],
@@ -135,6 +142,14 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['workload-pm'] })
       qc.invalidateQueries({ queryKey: ['workload-pm-all'] })
       qc.invalidateQueries({ queryKey: ['workload-team-all'] })
+      // Раздел «СММ» строится из проектов (15.11.2026): умный календарь,
+      // карточка СММ-проекта, нагрузка специалистов и менеджеров, «Контроль».
+      // Ключи — префиксы, как и выше: ['smm-calendar', …] и т. п.
+      qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['smm-profile'] })
+      qc.invalidateQueries({ queryKey: ['smm-specialist-load'] })
+      qc.invalidateQueries({ queryKey: ['smm-manager-load'] })
+      qc.invalidateQueries({ queryKey: ['smm-control'] })
     })
 
     socket.on('stories:changed', () => {
@@ -147,6 +162,7 @@ export function useSocket(authMarker: string | null) {
       qc.invalidateQueries({ queryKey: ['stories-global'] })    // Global calendar (Founder/HeadSMM)
       qc.invalidateQueries({ queryKey: ['stories-my-month'] })  // степпер в кабинете SMM-специалиста
       qc.invalidateQueries({ queryKey: ['stories-check'] })     // «Проверка сторис»
+      qc.invalidateQueries({ queryKey: ['stories-check-day'] }) // «Проверка сторис» — день (15.11.2026)
       // Умный календарь кормит страницу «Сторисы» и «Сторис за месяц» в
       // карточке проекта — без него отметка доезжала не на все экраны.
       qc.invalidateQueries({ queryKey: ['smm-calendar'] })

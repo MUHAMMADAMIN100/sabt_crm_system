@@ -78,7 +78,10 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @SkipThrottle()
+  // Лимит, как у входа, только мягче (15.11.2026): без него перебор токенов
+  // ничем не ограничивался, а каждый неизвестный токен пишет событие в журнал
+  // безопасности. Фронт зовёт refresh только на 401 — 30 в минуту с запасом.
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
   @ApiOperation({ summary: 'Rotate access token via refresh cookie or body' })
   async refresh(
     @Req() req: any,

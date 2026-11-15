@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { financeApi } from '@/services/api.service';
-import { money, moneyBare, monthLabel, apiErr, pluralRu } from './finlib';
+import { money, moneyBare, monthLabel, apiErr, pluralRu, parseAmount as parseMoney } from './finlib';
 import { invalidateFinance } from './FinKit';
 
 export type OtherPlanData = {
@@ -29,10 +29,10 @@ export function avgBasis(d?: OtherPlanData | null): string {
 
 /** Сумма из поля: пусто — null (вернуть среднее), не число — NaN. */
 function parseAmount(s: string): number | null {
-  const t = s.replace(/\s/g, '').replace(',', '.');
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : NaN;
+  if (!s.replace(/\s/g, '')) return null;
+  // Общий разбор суммы (15.11.2026): «1 234,56» и «1,234.56».
+  const n = parseMoney(s);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
 }
 
 function PlanCell({ ym, label, amount, avg }: { ym: string; label: string; amount: number | null; avg: number }) {

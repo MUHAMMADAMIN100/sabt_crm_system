@@ -1,5 +1,6 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Request, UploadedFile, UseGuards, UseInterceptors,
+  BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Request, UploadedFile, UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -8,6 +9,7 @@ import { extname } from 'path';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { RECEIPT_MIME, TransportService } from './transport.service';
+import { CreateTransportRequestDto, PayTransportRequestDto, RejectTransportRequestDto } from './transport.dto';
 
 const RECEIPT_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
@@ -47,16 +49,17 @@ export class TransportController {
   @Get('projects')
   projects(@Request() req) { return this.service.projectsFor(req.user); }
 
-  /** Подать заявку: multipart { projectId, amount, date, note?, receipt? (фото) }. */
+  /** Подать заявку: multipart { projectId, amount, date, note?, receipt? (фото) }.
+   *  Поля проверяет DTO (15.11.2026), окно дат — сервис. */
   @Post()
   @UseInterceptors(FileInterceptor('receipt', RECEIPT_MULTER_CONFIG))
-  create(@Request() req, @Body() body: any, @UploadedFile() file?: Express.Multer.File) {
+  create(@Request() req, @Body() body: CreateTransportRequestDto, @UploadedFile() file?: Express.Multer.File) {
     return this.service.create(req.user, body || {}, file);
   }
 
   /** Отозвать свою неоплаченную заявку. */
   @Delete(':id')
-  cancel(@Request() req, @Param('id') id: string) { return this.service.cancel(req.user, id); }
+  cancel(@Request() req, @Param('id', ParseUUIDPipe) id: string) { return this.service.cancel(req.user, id); }
 
   /** Владелец: ждут оплаты + решённые за месяц. */
   @Get()
@@ -66,10 +69,14 @@ export class TransportController {
   /** Владелец: оплатить — расход «Транспорт» с выбранного счёта. */
   @Post(':id/pay')
   @RequirePerm('finance.manage')
-  pay(@Request() req, @Param('id') id: string, @Body() body: any) { return this.service.pay(req.user, id, body || {}); }
+  pay(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() body: PayTransportRequestDto) {
+    return this.service.pay(req.user, id, body || {});
+  }
 
   /** Владелец: отклонить с причиной — сотрудник её увидит. */
   @Post(':id/reject')
   @RequirePerm('finance.manage')
-  reject(@Request() req, @Param('id') id: string, @Body() body: any) { return this.service.reject(req.user, id, body || {}); }
+  reject(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() body: RejectTransportRequestDto) {
+    return this.service.reject(req.user, id, body || {});
+  }
 }

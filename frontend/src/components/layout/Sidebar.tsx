@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth.store'
 import { useTranslation } from '@/i18n'
-import { hasPermissionAny, getUserPositionLabel, canSeeProjectStories, canManageAccess, canSeeSmmSection, userCan, isDevDirector, type Permission } from '@/lib/permissions'
+import { hasPermissionAny, getUserPositionLabel, canSeeProjectStories, canManageAccess, canSeeSmmSection, userCan, isDevDirector, hasAnyRole, type Permission } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, Users, Calendar,
@@ -38,7 +38,7 @@ interface SubNavItem {
   icon: any
   exact?: boolean
   perm?: 'dev-tracker.view' | 'dev-tracker.manage'
-  /** Только для этих ролей (основная роль). */
+  /** Только для этих ролей (основная или вторая роль, 15.11.2026). */
   roles?: string[]
 }
 
@@ -84,9 +84,10 @@ const SECTION_SUBNAV: Record<string, SubNavItem[]> = {
 
 interface SidebarProps { open: boolean; onClose: () => void; onToggle: () => void }
 
-/** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA, но с
- *  нашим indigo акцентом вместо красного). Фон #0f0f12, белый текст,
- *  активный пункт — сплошная заливка primary, без декоративных точек.
+/** Тёмный сайдбар в корпоративном стиле (по референсу GRANT CHINA). Фон —
+ *  из темы, белый текст, активный пункт и раскрытый раздел — сплошная
+ *  заливка primary из темы (15.11.2026: раньше у разделов был зашитый
+ *  индиго #696bdc, не менявшийся с темой), без декоративных точек.
  *  Пользовательский блок внизу — компактный, с быстрыми действиями. */
 export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: SidebarProps) {
   const user = useAuthStore(s => s.user)
@@ -229,7 +230,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     className={clsx(
                       'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       financeActive
-                        ? 'bg-[#696bdc] text-white shadow-sm'
+                        ? 'bg-primary-600 text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                       !open && 'lg:justify-center lg:px-2 lg:gap-0',
                     )}
@@ -258,7 +259,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                               clsx(
                                 'group/finance flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
                                 isActive
-                                  ? 'bg-[#8385ff]/90 text-white'
+                                  ? 'bg-primary-500/90 text-white'
                                   : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                               )
                             }
@@ -295,7 +296,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                     className={clsx(
                       'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       isSecActive
-                        ? 'bg-[#696bdc] text-white shadow-sm'
+                        ? 'bg-primary-600 text-white shadow-sm'
                         : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                       !open && 'lg:justify-center lg:px-2 lg:gap-0',
                     )}
@@ -314,7 +315,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                   </button>
                   {open && isSecOpen && (
                     <ul className="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                      {SECTION_SUBNAV[item.to].filter(sub => (!sub.perm || userCan(user, sub.perm)) && (!sub.roles || sub.roles.includes(role || ''))).map(sub => (
+                      {SECTION_SUBNAV[item.to].filter(sub => (!sub.perm || userCan(user, sub.perm)) && (!sub.roles || hasAnyRole(role, secondaryRole, sub.roles))).map(sub => (
                         <li key={sub.to}>
                           <NavLink
                             to={sub.to}
@@ -324,7 +325,7 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
                               clsx(
                                 'group/smm flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
                                 isActive
-                                  ? 'bg-[#8385ff]/90 text-white'
+                                  ? 'bg-primary-500/90 text-white'
                                   : 'text-[rgb(var(--sidebar-fg-dim))] hover:bg-surface-50/5 hover:text-[rgb(var(--sidebar-fg))]',
                               )
                             }

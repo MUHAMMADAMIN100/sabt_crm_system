@@ -66,6 +66,19 @@ const ROUTE_LABEL: Record<string, string> = {
  *  заменит адрес). */
 let restoring: { until: number; target: number; mark?: Mark } | null = null
 
+/** Забыть всё: шаги, адреса, заголовки страниц и прокрутку. Зовём при
+ *  выходе (15.11.2026) — следующий вошедший на этом устройстве не увидит у
+ *  стрелки «‹» названий чужих страниц. */
+export function clearNavMemory() {
+  window.clearTimeout(saveTimer)
+  mem.stack = []
+  mem.pages = {}
+  mem.scroll = {}
+  mem.mark = {}
+  restoring = null
+  try { sessionStorage.removeItem(STORE) } catch { /* нет доступа — память уже пуста */ }
+}
+
 const ROW_SELECTOR = 'a, button, tr, li, [role="button"], [role="row"], [data-row]'
 const markOf = (el: Element): Mark | null => {
   const row = el.closest(ROW_SELECTOR) as HTMLElement | null

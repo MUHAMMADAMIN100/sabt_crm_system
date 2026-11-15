@@ -39,7 +39,14 @@ export class EmployeesController {
 
   @Post()
   @RequirePerm('employees.create')
-  create(@Body() dto: CreateEmployeeDto, @Request() req) { return this.service.create(dto, req.user); }
+  create(@Body() dto: CreateEmployeeDto, @Request() req) {
+    // Оклад при создании задаёт тот же круг, что и при правке (15.11.2026):
+    // раньше через создание зарплату мог вписать любой с грантом «добавление».
+    if ('salary' in dto && !hasGrant(req.user, 'employees.salary.view')) {
+      throw new ForbiddenException('Только основатель или сооснователь может изменять зарплату сотрудника');
+    }
+    return this.service.create(dto, req.user);
+  }
 
   @Patch(':id')
   @RequirePerm('employees.edit')
@@ -47,13 +54,16 @@ export class EmployeesController {
     if ('salary' in dto && !hasGrant(req.user, 'employees.salary.view')) {
       throw new ForbiddenException('Только основатель или сооснователь может изменять зарплату сотрудника');
     }
-    return this.service.update(id, dto, { id: req.user.id, name: req.user.name, role: req.user.role });
+    return this.service.update(id, dto, {
+      id: req.user.id, name: req.user.name, role: req.user.role, secondaryRole: req.user.secondaryRole,
+    });
   }
 
   @Patch(':id/toggle-sub-admin')
   @Roles(UserRole.ADMIN, UserRole.FOUNDER)
-  toggleSubAdmin(@Param('id') id: string) {
-    return this.service.toggleSubAdmin(id);
+  toggleSubAdmin(@Param('id') id: string, @Request() req) {
+    // Внутри — только основатель (помощник админа = права admin).
+    return this.service.toggleSubAdmin(id, req.user);
   }
 
   @Patch(':id/toggle-story-maker')

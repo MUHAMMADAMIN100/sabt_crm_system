@@ -22,6 +22,7 @@ import {
   workedInFinanceMonth,
 } from './finance-calculations';
 import { payScope } from '../smm-control/smm-payments.logic';
+import { escapeHtml } from '../../common/html-escape';
 
 const SMM_LINK = '/finance/income/smm';
 const SUBS_LINK = '/finance/expense/rent_subs';
@@ -108,7 +109,10 @@ export class FinanceScheduler {
         data: { alertKey: opts.alertKey },
       }, opts.dedupHours ?? 20);
       if (!created) return 0;
-      this.telegram.sendToUser(userId, `💰 <b>${opts.title}</b>\n${opts.message}`).catch(() => {});
+      // Имена проектов, клиентов и сотрудников — пользовательский текст:
+      // в HTML для Telegram только экранированными (15.11.2026), иначе «<» в
+      // названии — ошибка 400 и сообщение молча теряется.
+      this.telegram.sendToUser(userId, `💰 <b>${escapeHtml(opts.title)}</b>\n${escapeHtml(opts.message)}`).catch(() => {});
       return 1;
     } catch (e: any) {
       this.logger.warn(`finance notify failed for ${userId}: ${String(e?.message || e).slice(0, 120)}`);
@@ -320,10 +324,12 @@ export class FinanceScheduler {
     const emps = (await this.empRepo.find()).filter(e => workedInFinanceMonth(e, ym));
     if (!emps.length) return { due: 0, notified: 0 };
 
-    // Операция без месяца начисления относится к нему по дате, правилом
-    // «10-е → 10-е» (как на сервере, salaryPeriodForDate): с 11-го числа M
-    // по 10-е число M+1.
-    const from = `${ym}-11`, to = `${today.slice(0, 7)}-10`;
+    // Операция без месяца начисления относится к нему по календарному месяцу
+    // даты — так её считает ведомость (salaryTxForMonth) и история выплат
+    // (15.11.2026; раньше здесь было окно «11-е M — 10-е M+1», и напоминание
+    // расходилось с ведомостью). Новые выплаты всегда несут salaryYm.
+    const from = `${ym}-01`;
+    const to = `${ym}-${String(new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
     // Выплаты месяца НАЧИСЛЕНИЯ (salaryYm, с fallback на дату), без отменённых.
     const monthTx = (await this.txRepo.createQueryBuilder('t')
       .where('t.type = :type', { type: FinanceTxType.EXPENSE })

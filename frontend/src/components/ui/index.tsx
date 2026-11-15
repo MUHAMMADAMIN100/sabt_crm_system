@@ -90,9 +90,24 @@ interface ModalProps {
   closeOnEscape?: boolean
 }
 
+/** Что можно сфокусировать внутри окна (для ловушки Tab). */
+const FOCUSABLE = [
+  'a[href]', 'area[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])', 'textarea:not([disabled])', 'iframe', '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+function focusableIn(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter(el => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true')
+}
+/** Открытые окна по порядку: Tab ловит только верхнее (вложенные окна). */
+const modalStack: symbol[] = []
+
 export function Modal({ open, onClose, title, children, size = 'md', titleAction, closeOnBackdropClick = true, closeOnEscape = true }: ModalProps) {
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -128,6 +143,58 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose, closeOnEscape])
 
+  // Фокус (15.11.2026): запоминаем, откуда окно открыли, и после закрытия
+  // возвращаем фокус туда — с клавиатуры и экранным диктором человек не
+  // теряет место. Не перехватываем, если фокус уже увели за пределы окна.
+  useEffect(() => {
+    if (!open) return
+    openerRef.current = document.activeElement as HTMLElement | null
+    return () => {
+      const opener = openerRef.current
+      openerRef.current = null
+      const active = document.activeElement
+      const fromDialog = !active || active === document.body || !!panelRef.current?.contains(active)
+      if (opener && opener !== document.body && opener.isConnected && fromDialog) {
+        try { opener.focus({ preventScroll: true }) } catch { /* ignore */ }
+      }
+    }
+  }, [open])
+
+  // Фокус в окно при открытии (если поле с autoFocus не забрало его само) и
+  // ловушка Tab: Tab/Shift+Tab ходят по кругу внутри окна, а не уходят на
+  // страницу под ним. Работает только у верхнего из открытых окон.
+  useEffect(() => {
+    if (!open || !mounted) return
+    const panel = panelRef.current
+    if (panel && !panel.contains(document.activeElement)) {
+      try { panel.focus({ preventScroll: true }) } catch { /* ignore */ }
+    }
+    const token = Symbol('modal')
+    modalStack.push(token)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || modalStack[modalStack.length - 1] !== token) return
+      const root = panelRef.current
+      if (!root) return
+      const items = focusableIn(root)
+      if (!items.length) { e.preventDefault(); root.focus(); return }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      const lost = !active || active === document.body
+      if (e.shiftKey && (active === first || active === root || lost)) {
+        e.preventDefault(); last.focus()
+      } else if (!e.shiftKey && (active === last || lost)) {
+        e.preventDefault(); first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      const i = modalStack.lastIndexOf(token)
+      if (i >= 0) modalStack.splice(i, 1)
+    }
+  }, [open, mounted])
+
   if (!mounted) return null
 
   const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }
@@ -144,11 +211,13 @@ export function Modal({ open, onClose, title, children, size = 'md', titleAction
       />
       {/* Panel — спокойный fade + лёгкий slide-up без overshoot. */}
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={title || undefined}
+        tabIndex={-1}
         className={clsx(
-          'relative bg-surface-50 dark:bg-surface-800 w-full',
+          'relative bg-surface-50 dark:bg-surface-800 w-full outline-none',
           'rounded-t-xl sm:rounded-xl border border-surface-200 dark:border-surface-700',
           'shadow-[0_12px_32px_-8px_rgba(15,15,18,0.18)]',
           'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
@@ -233,8 +302,12 @@ export function PriorityBadge({ priority }: { priority: string }) {
 export function Spinner({ size = 20, className }: { size?: number; className?: string }) {
   const r = (size / 2) - 3
   const circ = 2 * Math.PI * r
+  // role="status" и скрытая подпись (15.11.2026): экранный диктор говорит
+  // «Загрузка…», а не молчит. Обёртка inline-flex не меняет раскладку.
   return (
+    <span role="status" className="inline-flex shrink-0">
     <svg
+      aria-hidden="true"
       className={clsx('text-primary-600', className)}
       style={{ width: size, height: size }}
       viewBox={`0 0 ${size} ${size}`}
@@ -257,6 +330,8 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
         style={{ transformOrigin: `${size / 2}px ${size / 2}px` }}
       />
     </svg>
+    <span className="sr-only">Загрузка…</span>
+    </span>
   )
 }
 
@@ -267,8 +342,10 @@ export function Spinner({ size = 20, className }: { size?: number; className?: s
  *  маркер. */
 export function PageLoader() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <div className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
+    // role="status" + скрытая подпись (15.11.2026) — для экранного диктора.
+    <div role="status" className="flex flex-col items-center justify-center h-64 gap-4">
+      <span className="sr-only">Загрузка…</span>
+      <div aria-hidden="true" className="w-20 h-20 rounded-2xl animate-pulse flex items-center justify-center relative shadow-lg
                       bg-surface-50 dark:bg-primary-600">
         <span
           className="text-[52px] font-black leading-none select-none text-primary-600 dark:text-white"

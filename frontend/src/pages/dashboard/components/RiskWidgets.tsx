@@ -18,53 +18,8 @@ const LEVEL_CHIP: Record<Level, string> = {
 
 const fmtMoney = (v: any) => v == null ? '—' : new Intl.NumberFormat('ru-RU').format(Number(v)) + ' сомони'
 
-// ═══════════════════════════════════════════════════════════════════
-// FounderWidgets — TZ п.11: проекты в риске, просрочки оплат, перегруженные
-// PM, слабая активность команды, перерасход тарифов, выручка, маржа.
-// ═══════════════════════════════════════════════════════════════════
-export function FounderWidgets() {
-  const { data: projectRisks } = useQuery({ queryKey: ['risks-projects'], queryFn: riskApi.projectRisks })
-  const { data: employeeRisks } = useQuery({ queryKey: ['risks-employees'], queryFn: riskApi.employeeRisks })
-  const { data: workloads } = useQuery({ queryKey: ['workload-employees-all'], queryFn: () => riskApi.workloadEmployees() })
-  const { data: pmWorkloads } = useQuery({ queryKey: ['workload-pm-all'], queryFn: () => riskApi.workloadPm() })
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() })
-
-  const list = (projects ?? []).filter((p: any) => !p.isArchived)
-  const overdueProjects = list.filter((p: any) =>
-    p.paymentStatus === 'overdue' ||
-    (p.nextPaymentDate && new Date(p.nextPaymentDate) < new Date() && p.paymentStatus !== 'paid'),
-  )
-  const overusedProjects = list.filter((p: any) => Number(p.tariffLimitOveruseCost ?? 0) > 0)
-  const totalRevenue = list.reduce((s: number, p: any) => s + Number(p.paidAmount ?? 0), 0)
-  const totalMargin = list.reduce((s: number, p: any) => s + Number(p.marginEstimate ?? 0), 0)
-  const overloadedPmIds = new Set(
-    (workloads ?? []).filter((w: any) => w.overload === 'red').map((w: any) => w.userId),
-  )
-  const overloadedPmCount = (pmWorkloads ?? []).filter((p: any) => overloadedPmIds.has(p.pmId)).length
-  const lowActivityEmployees = (employeeRisks ?? []).filter((e: any) =>
-    e.factors?.some((f: any) => f.key === 'low_activity' && f.triggered),
-  )
-  const projectsAtRiskRed = (projectRisks ?? []).filter((r: any) => r.level === 'red')
-  const projectsAtRiskYellow = (projectRisks ?? []).filter((r: any) => r.level === 'yellow')
-
-  return (
-    <section className="space-y-3">
-      <h2 className="font-semibold text-base flex items-center gap-2"><Zap size={16} className="text-surface-500" /> Сводка для основателя</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Ссылки на /risks убраны: страница закрыта 19.09.2026, переход вёл бы
-            на редирект. Сами цифры остаются — они считаются здесь же. */}
-        <Tile label="Проекты RED" value={projectsAtRiskRed.length} accent="text-red-600" icon={AlertTriangle} />
-        <Tile label="Проекты YELLOW" value={projectsAtRiskYellow.length} accent="text-surface-600" icon={AlertCircle} />
-        <Tile label="Просрочки оплат" value={overdueProjects.length} accent={overdueProjects.length > 0 ? 'text-red-600' : 'text-gray-500'} icon={DollarSign} />
-        <Tile label="Перерасход тарифа" value={overusedProjects.length} accent={overusedProjects.length > 0 ? 'text-surface-600' : 'text-gray-500'} icon={TrendingUp} />
-        <Tile label="Перегруженные PM" value={overloadedPmCount} accent={overloadedPmCount > 0 ? 'text-surface-600' : 'text-gray-500'} icon={Users} />
-        <Tile label="Слабая активность" value={lowActivityEmployees.length} accent={lowActivityEmployees.length > 0 ? 'text-surface-600' : 'text-gray-500'} icon={Hourglass} />
-        <Tile label="Выручка (получено)" value={fmtMoney(totalRevenue)} accent="text-green-600" />
-        <Tile label="Маржа (план)" value={fmtMoney(totalMargin)} accent="text-green-600" />
-      </div>
-    </section>
-  )
-}
+// FounderWidgets удалён 15.11.2026: его нигде не показывали (сводку
+// основателя рисует FounderDashboard).
 
 // ═══════════════════════════════════════════════════════════════════
 // HeadSmmWidgets — TZ п.11: рейтинг PM, рейтинг SMM, возвраты,

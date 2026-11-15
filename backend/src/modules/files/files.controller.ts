@@ -33,7 +33,7 @@ export class FilesController {
     @Query('projectId') projectId?: string,
     @Query('taskId') taskId?: string,
   ) {
-    return this.service.upload(file, req.user.id, req.user.role, projectId, taskId);
+    return this.service.upload(file, req.user.id, req.user.role, projectId, taskId, req.user.secondaryRole);
   }
 
   @Delete(':id')

@@ -21,8 +21,9 @@ JWT. Веб использует httpOnly-cookie, но **все endpoint'ы од
 POST /auth/login
 { "email": "...", "password": "..." }
 
-200 → { "token": "<JWT, живёт 15 минут>",
-        "refreshToken": "<живёт 30 дней>",
+200 → { "token": "<JWT без срока жизни — отзывается сервером: блокировка,
+                  смена пароля, деактивация>",
+        "refreshToken": "<до 10 лет, ротируется при каждом обновлении>",
         "user": { id, name, email, role, secondaryRole, avatar, ... } }
 ```
 - Если у пользователя включена 2FA — добавить поле `"twoFactorCode": "123456"`
@@ -38,6 +39,7 @@ POST /auth/refresh
 ```
 Рекомендуемая схема во Flutter: interceptor (dio) — при 401 дёрнуть refresh,
 повторить запрос; refreshToken хранить в `flutter_secure_storage`.
+Лимит: 30 обновлений/мин. Неверный текущий пароль при смене пароля — 400 (не 401).
 
 ### Прочее
 - `GET /auth/me` — профиль текущего пользователя (проверка живости токена).
@@ -92,18 +94,15 @@ POST /auth/refresh
   project_end | client_meeting` (у task-событий есть `taskId`, `status`, `progress`)
 - **Дедлайн обязателен** при создании задачи (`POST /tasks` без `deadline` → 400).
 
-### Доска проектов (SMM-производство)
-- `GET /workflow/all` — карточки в зоне видимости роли; `GET /workflow/my` — мои
-- Этапы: `content_plan → organization → shooting → editing/design →
-  internal_review → client_approval → ready_to_publish → published → ads`
-- `POST /workflow/:id/transition { "action": "...", "payload": {} }` — движение вперёд.
-  Действия: `confirm_plan, org_confirm, confirm_shoot, shoot_done, editing_done,
-  cover_done, layout_done, qa_accept, qa_rework(payload.comment!), mark_sent_to_client,
-  client_approve, client_revisions(payload.comment!), publish`
-  Исполнитель карточки может сдавать свои производственные этапы независимо от роли.
-- `POST /workflow/:id/item/:itemId/advance` — вынести свой элемент из групповой карточки
-- `GET /workflow/upcoming-publications?days=2` — ролики к публикации (виджет публикатора)
-- `GET /workflow/:id/events` — история карточки
+### СММ-производство («Умный календарь»)
+Доска проектов (`/workflow/*`) удалена в сентябре 2026. Производство контента —
+в «Умном календаре»:
+- `GET /content-plan/smm-calendar?from&to` — публикации и задачи подготовки
+  (у каждого проекта флаг `mine` — свой ли он пользователю)
+- `PATCH /content-plan/smart-item/:id` — перенос даты / статус / отметка TikTok
+  (SMM-специалист — только по своим проектам)
+- `GET /content-plan/my-work`, `PATCH /content-plan/my-work/:id` — карточки
+  подготовки (съёмка/монтаж/дизайн) исполнителя
 
 ### Истории (сторисмейкер)
 - `GET /stories?from&to` (+`GET /stories/my`) — отметки
@@ -114,32 +113,35 @@ POST /auth/refresh
   `lastPaymentAt`, `nextPaymentDate`; дедлайн проекта ему не показывать)
 - `GET /projects/:id` — деталка
 
-### Отчёты СММ (только основатель)
-- `GET /kpi/smm-daily?date=YYYY-MM-DD` — ежедневный автоотчёт команды
-  (роль founder; остальным 403)
-
 ### Файлы и аватары
 - `POST /files/upload?taskId=...|projectId=...` — multipart, поле `file`
   (jpg/png/gif/webp/pdf/docx/xlsx/…, до 25 МБ)
-- `PATCH /users/me/avatar` — multipart, поле `avatar` (jpg/png/webp, до 2 МБ)
-- Раздача: `https://<API-домен>/uploads/<path>` — аватары `/uploads/avatars/<filename>`,
-  файлы задач — готовый `path` приходит в объекте файла.
+- `PATCH /users/me/avatar` — multipart, поле `avatar` (jpg/png/webp, до 8 МБ)
+- Раздача: аватары — `https://<API-домен>/api/avatars/<key>` (ссылка приходит в
+  `user.avatar`); файлы задач — `https://<API-домен>/uploads/<path>`, готовый `path`
+  приходит в объекте файла.
 
 ## 5. Realtime (Socket.IO)
 
-- URL: тот же домен, что API (без `/api`), стандартный path Socket.IO.
+- URL: тот же домен, что API (без `/api`), namespace `/ws` (`https://<API-домен>/ws`),
+  стандартный path Socket.IO.
 - Авторизация: `IO(url, auth: {'token': '<JWT>'})` — или заголовок `Authorization`.
-  Невалидный токен → сервер рвёт соединение.
+  Невалидный токен, заблокированный/деактивированный пользователь или токен,
+  выданный до смены пароля → сервер рвёт соединение. Заголовок `Origin`, если
+  есть, должен быть доверенным (браузеры); без `Origin` (мобильные) — можно.
 - События для инвалидации данных: `notification` (новое уведомление — сразу пуш-баннер
-  в приложении), `tasks:changed`, `projects:changed`, `workflow:changed`.
+  в приложении), `tasks:changed`, `projects:changed`, `stories:changed`,
+  `employees:changed`, `leads:changed`, `me:changed`, `access:changed`,
+  `auth:blocked` (разлогинить).
 - Flutter-пакет: `socket_io_client` (совместим с Socket.IO v4).
 
 ## 6. Push-уведомления (важно обсудить)
 
-FCM на бэкенде пока НЕТ. Сейчас realtime — Socket.IO (только в открытом приложении)
-и Telegram-бот. Для полноценных пушей: разработчик делает клиентскую часть FCM,
-на бэкенде добавим endpoint регистрации FCM-токена и отправку — по запросу,
-это небольшая доработка с нашей стороны.
+FCM на бэкенде есть (firebase-admin): каждое in-app уведомление дублируется пушем.
+- `POST /users/register-fcm { "token": "<FCM token>" }` — зарегистрировать
+  устройство (до 5 токенов на пользователя; мёртвые токены сервер удаляет сам)
+- `POST /users/unregister-fcm { "token": "..." }` — при выходе из аккаунта
+Во время отпуска сотрудника пуши не отправляются.
 
 ## 7. Что нужно от заказчика разработчику
 
@@ -154,7 +156,8 @@ FCM на бэкенде пока НЕТ. Сейчас realtime — Socket.IO (т
 
 - Rate limits: логин 10/мин, регистрация 5/мин, общий троттлинг на API — при 429
   повторить с задержкой.
-- Access-токен 15 минут — без refresh-логики приложение будет «разлогиниваться».
+- Access-токен бессрочный, но сервер отзывает его (блокировка, смена пароля):
+  на 401 — один раз refresh, при неудаче — на экран входа.
 - `GET /auth/sessions?days=7` — история сессий пользователя (для профиля).
 - Пагинации в большинстве списков нет (объёмы небольшие) — но `tasks`/`notifications`
   ограничивать на клиенте.

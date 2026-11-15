@@ -17,8 +17,10 @@ import { ApiTags } from '@nestjs/swagger';
  * окружения верификация просто не проходит — это безопасное состояние.
  *
  * ВНИМАНИЕ на будущее: подпись запроса (X-Hub-Signature-256 по app secret)
- * НЕ проверяется. Пока POST только логирует — это безвредно, но перед тем как
+ * НЕ проверяется. Пока POST ничего не делает — это безвредно, но перед тем как
  * создавать по вебхуку лиды/уведомления, проверку подписи нужно добавить.
+ * Тело не пишем в журнал (15.11.2026): запрос не подписан — кто угодно мог
+ * засорять журнал, а настоящие события несут переписку клиентов.
  */
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || '';
 
@@ -51,10 +53,9 @@ export class MetaWebhookController {
     // Пока только фиксируем событие в логах — обработка сообщений (создание
     // лида/уведомления в CRM) будет следующим шагом интеграции.
     try {
-      const object = body?.object;
+      const object = String(body?.object ?? '').replace(/[^\w-]/g, '').slice(0, 40);
       const entries = Array.isArray(body?.entry) ? body.entry.length : 0;
       this.logger.log(`Meta event: object=${object}, entries=${entries}`);
-      this.logger.debug(JSON.stringify(body).slice(0, 2000));
     } catch { /* не мешаем ответу 200 */ }
     return 'EVENT_RECEIVED';
   }

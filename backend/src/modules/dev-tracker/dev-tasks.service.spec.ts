@@ -14,26 +14,41 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AppGateway } from '../gateway/app.gateway';
 import { Project } from '../projects/project.entity';
 
-const mockTaskRepo = () => ({
-  createQueryBuilder: jest.fn().mockReturnValue({
-    andWhere: jest.fn().mockReturnThis(),
-    leftJoin: jest.fn().mockReturnThis(),
-    addSelect: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    getMany: jest.fn().mockResolvedValue([]),
-  }),
-  findOne: jest.fn(),
-  // findOne()/findAll() сервиса зовут find() для загрузки подзадач,
-  // поэтому по умолчанию отдаём пустой массив, а не undefined.
-  find: jest.fn().mockResolvedValue([]),
-  create: jest.fn(),
-  save: jest.fn(),
-  update: jest.fn(),
-  remove: jest.fn(),
-  delete: jest.fn(),
-  // getPreview считает подзадачи через count — по умолчанию нули.
-  count: jest.fn().mockResolvedValue(0),
-});
+const mockTaskRepo = () => {
+  const repo = {
+    createQueryBuilder: jest.fn().mockReturnValue({
+      andWhere: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    }),
+    findOne: jest.fn(),
+    // findOne()/findAll() сервиса зовут find() для загрузки подзадач,
+    // поэтому по умолчанию отдаём пустой массив, а не undefined.
+    find: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
+    remove: jest.fn(),
+    delete: jest.fn(),
+    // getPreview считает подзадачи через count — по умолчанию нули.
+    count: jest.fn().mockResolvedValue(0),
+    // clone пишет копию и детей в транзакции (15.11.2026): em.getRepository
+    // отдаёт этот же мок, чтобы старые проверки create/save работали как раньше.
+    manager: { transaction: jest.fn() },
+  };
+  repo.manager.transaction.mockImplementation(
+    async (cb: (em: any) => unknown) => cb({ getRepository: () => repo }),
+  );
+  return repo;
+};
+
+/** Фоновый outbox (15.11.2026): доставка вебхуков больше не await'ится
+ *  в мутации — даём микрозадачам доехать до postWebhook/журнала. */
+const flushOutbox = async () => {
+  for (let i = 0; i < 3; i++) await new Promise<void>(r => setImmediate(() => r()));
+};
 
 const mockProjectRepo = () => ({
   findOne: jest.fn(),
@@ -80,6 +95,8 @@ const mockWebhookRepo = () => ({
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
+  // PATCH вкл/выкл подписки (15.11.2026).
+  update: jest.fn(),
   remove: jest.fn(),
 });
 
@@ -402,6 +419,20 @@ describe('DevTasksService', () => {
       );
     });
 
+    it('отклоняет родителя для задачи со своими подзадачами — третий уровень (15.11.2026)', async () => {
+      const PARENT = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const task = makeTask({ id: 'dev-task-1' });
+      const parent = makeTask({ id: PARENT, parentTaskId: null });
+      taskRepo.findOne.mockResolvedValueOnce(task).mockResolvedValueOnce(parent);
+      taskRepo.count.mockResolvedValueOnce(2);
+
+      await expect(
+        service.update('dev-task-1', { parentTaskId: PARENT }),
+      ).rejects.toThrow('Подзадачи третьего уровня не поддерживаются');
+      expect(taskRepo.count).toHaveBeenCalledWith({ where: { parentTaskId: 'dev-task-1' } });
+      expect(taskRepo.update).not.toHaveBeenCalled();
+    });
+
     it('ставит completedAt при смене статуса на done через PATCH', async () => {
       const task = makeTask({ status: DevTaskStatus.IN_PROGRESS });
       taskRepo.findOne.mockResolvedValue(task);
@@ -452,6 +483,32 @@ describe('DevTasksService', () => {
 
       const patch = taskRepo.update.mock.calls[0][1];
       expect(patch).not.toHaveProperty('completedAt');
+    });
+
+    it('без manage чужую карточку двигать нельзя — 403 без записи (15.11.2026)', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ status: DevTaskStatus.TODO, assigneeId: 'user-1' }));
+
+      await expect(
+        service.move('dev-task-1', DevTaskStatus.DONE, 0, 'user-2'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.move('dev-task-1', DevTaskStatus.DONE, 0, 'user-2', false),
+      ).rejects.toThrow('Перемещать можно только свои задачи');
+      // Карточка без исполнителя — тоже не «своя».
+      taskRepo.findOne.mockResolvedValue(makeTask({ assigneeId: null, assignee: null }));
+      await expect(
+        service.move('dev-task-1', DevTaskStatus.DONE, 0, 'user-2'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(taskRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('исполнитель двигает свою карточку, manage — любую (15.11.2026)', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ status: DevTaskStatus.TODO, assigneeId: 'user-1' }));
+      taskRepo.update.mockResolvedValue(undefined);
+
+      await expect(service.move('dev-task-1', DevTaskStatus.IN_PROGRESS, 0, 'user-1')).resolves.toBeDefined();
+      await expect(service.move('dev-task-1', DevTaskStatus.TESTING, 0, 'pm-1', true)).resolves.toBeDefined();
+      expect(taskRepo.update).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -581,7 +638,8 @@ describe('DevTasksService', () => {
       taskRepo.update.mockResolvedValue({});
       taskRepo.find.mockResolvedValue([]);
 
-      await service.move('dev-task-1', DevTaskStatus.IN_PROGRESS, 0, 'admin-1');
+      // admin-1 — не исполнитель: чужую карточку двигает только manage (15.11.2026).
+      await service.move('dev-task-1', DevTaskStatus.IN_PROGRESS, 0, 'admin-1', true);
 
       // Drag туда-сюда дедуплицируется: STATUS_CHANGE идёт через
       // createIfNotRecent с часовым окном, а не через прямой create.
@@ -781,7 +839,7 @@ describe('DevTasksService', () => {
       historyRepo.create.mockImplementation((dto: any) => dto);
       historyRepo.save.mockImplementation(async (e: any) => ({ id: 'hist-1', ...e }));
 
-      await service.move('h1', DevTaskStatus.IN_PROGRESS, 0, 'actor-1');
+      await service.move('h1', DevTaskStatus.IN_PROGRESS, 0, 'actor-1', true);
 
       expect(historyRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ taskId: 'h1', field: 'status', from: DevTaskStatus.TODO, to: DevTaskStatus.IN_PROGRESS }),
@@ -907,6 +965,39 @@ describe('DevTasksService', () => {
       await service.clone('orig-2', 'admin-1', false);
       // только 1 create (сама копия), без детских
       expect(taskRepo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('>100 детей → 400 ДО записи копии: сироты не остаётся (15.11.2026)', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ id: 'orig-1' }));
+      taskRepo.find.mockResolvedValue(
+        Array(101).fill(null).map((_, i) => makeTask({ id: `c${i}`, parentTaskId: 'orig-1' })),
+      );
+
+      await expect(service.clone('orig-1', 'a', true)).rejects.toThrow('Слишком много подзадач');
+      expect(taskRepo.save).not.toHaveBeenCalled();
+      expect(taskRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('копия и дети пишутся одной транзакцией; сбой ребёнка пробрасывается (15.11.2026)', async () => {
+      const orig = makeTask({ id: 'orig-3', title: 'Родитель' });
+      const child = makeTask({ id: 'child-3', parentTaskId: 'orig-3', title: 'Подзадача' });
+      taskRepo.findOne.mockResolvedValue(orig);
+      taskRepo.find.mockImplementation(async (opts: any) =>
+        (opts?.where?.parentTaskId === 'orig-3' ? [child] : []));
+      taskRepo.create.mockImplementation((dto: any) => ({ ...dto, id: dto.parentTaskId ? 'new-child' : 'new-parent' }));
+      const trxSave = jest.fn()
+        .mockImplementationOnce(async (e: any) => e)
+        .mockRejectedValueOnce(new Error('insert failed'));
+      taskRepo.manager.transaction.mockImplementationOnce(
+        async (cb: (em: any) => unknown) => cb({ getRepository: () => ({ save: trxSave }) }),
+      );
+
+      await expect(service.clone('orig-3', 'admin-1', true)).rejects.toThrow('insert failed');
+      // Обе записи — через транзакционный репозиторий: откат БД снимет и копию.
+      expect(trxSave).toHaveBeenCalledTimes(2);
+      expect(trxSave.mock.calls[1][0]).toMatchObject({ parentTaskId: 'new-parent' });
+      expect(taskRepo.save).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
     });
   });
 
@@ -1477,7 +1568,9 @@ describe('DevTasksService', () => {
       const post = jest.fn().mockRejectedValue(new Error('net down'));
       (service as any).postWebhook = post;
 
-      const res = await service.move('w1', DevTaskStatus.DONE, 0, 'actor-1');
+      const res = await service.move('w1', DevTaskStatus.DONE, 0, 'actor-1', true);
+      // Доставка — в фоне (15.11.2026): ответ move её не ждёт.
+      await flushOutbox();
 
       expect(res).toBeDefined();
       expect(post).toHaveBeenCalledTimes(1);
@@ -1509,9 +1602,48 @@ describe('DevTasksService', () => {
       const post = jest.fn().mockResolvedValue({ status: 200 });
       (service as any).postWebhook = post;
 
-      await service.move('w2', DevTaskStatus.IN_PROGRESS, 0, 'actor-1');
+      await service.move('w2', DevTaskStatus.IN_PROGRESS, 0, 'actor-1', true);
+      await flushOutbox();
 
       expect(post).not.toHaveBeenCalled();
+    });
+
+    it('мутация не ждёт доставку вебхука — fire-and-forget (15.11.2026)', async () => {
+      const task = makeTask({ id: 'w3', status: DevTaskStatus.TESTING });
+      taskRepo.findOne.mockResolvedValue(task);
+      taskRepo.update.mockResolvedValue(undefined);
+      webhookRepo.find.mockResolvedValue([SUB]);
+      let release: (v: { status: number }) => void = () => undefined;
+      const post = jest.fn(() => new Promise<{ status: number }>(r => { release = r; }));
+      (service as any).postWebhook = post;
+
+      // Исполнитель (user-1) закрывает свою задачу; приёмник «висит».
+      const res = await service.move('w3', DevTaskStatus.DONE, 0, 'user-1');
+      expect(res).toBeDefined();
+      await flushOutbox();
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(deliveryRepo.update).not.toHaveBeenCalled();
+
+      release({ status: 200 });
+      await flushOutbox();
+      expect(deliveryRepo.update).toHaveBeenCalledWith('del-1', expect.objectContaining({ status: 200 }));
+    });
+
+    it('PATCH isActive: меняет только флаг, secret не теряется и наружу не уходит (15.11.2026)', async () => {
+      webhookRepo.findOne.mockResolvedValue(SUB);
+      webhookRepo.update.mockResolvedValue(undefined);
+
+      const res = await service.updateWebhook('sub-1', { isActive: false });
+
+      expect(webhookRepo.update).toHaveBeenCalledWith('sub-1', { isActive: false });
+      expect(webhookRepo.remove).not.toHaveBeenCalled();
+      expect(webhookRepo.save).not.toHaveBeenCalled();
+      expect(res).toMatchObject({ id: 'sub-1', isActive: false, url: SUB.url });
+      expect((res as any).secret).toBeUndefined();
+
+      await expect(service.updateWebhook('sub-1', { isActive: 'no' as any })).rejects.toThrow('isActive');
+      webhookRepo.findOne.mockResolvedValue(null);
+      await expect(service.updateWebhook('missing', { isActive: true })).rejects.toThrow(NotFoundException);
     });
 
     it('test шлёт тестовый task.done и возвращает {ok, status}', async () => {
@@ -1724,6 +1856,20 @@ describe('DevTasksService', () => {
       expect(msg.text).toContain('Починить баг');
       expect(Array.isArray(msg.blocks)).toBe(true);
       expect(JSON.stringify(msg.blocks)).toContain('Иван');
+    });
+
+    it('экранирует &, <, > в пользовательских значениях (15.11.2026)', async () => {
+      const { formatDevSlackMessage } = await import('./dev-slack-format');
+      const msg = formatDevSlackMessage(
+        { id: 't2', title: 'A <b> & <!channel>', assignee: 'Ив<ан>', url: 'http://x/dev-board/task/t2' },
+        'task.created',
+      );
+
+      expect(msg.text).toContain('A &lt;b&gt; &amp; &lt;!channel&gt;');
+      expect(msg.text).not.toContain('<!channel>');
+      const json = JSON.stringify(msg.blocks);
+      expect(json).toContain('<http://x/dev-board/task/t2|A &lt;b&gt; &amp; &lt;!channel&gt;>');
+      expect(json).toContain('Ив&lt;ан&gt;');
     });
   });
 
@@ -2580,6 +2726,27 @@ describe('DevTasksService', () => {
         service.createWebhook({ url: 'http://user:pass@example.com/hook', events: ['task.done'] }, 'a'),
       ).rejects.toThrow('credentials');
       expect(webhookRepo.save).not.toHaveBeenCalled();
+    });
+    it('createWebhook: однословные и внутренние хосты → 400 (15.11.2026)', async () => {
+      webhookRepo.save.mockClear();
+      for (const url of [
+        'http://postgres:5432/x',
+        'http://redis/x',
+        'http://postgres./x',
+        'http://backend.railway.internal/hook',
+        'http://printer.local/x',
+        'http://[fd00::1]/x',
+        'http://[fe80::1]/x',
+      ]) {
+        await expect(
+          service.createWebhook({ url, events: ['task.done'] }, 'a'),
+        ).rejects.toThrow('внутренний адрес');
+      }
+      expect(webhookRepo.save).not.toHaveBeenCalled();
+      // Публичный хост по-прежнему проходит.
+      await expect(
+        service.createWebhook({ url: 'https://hooks.example.com/x', events: ['task.done'] }, 'a'),
+      ).resolves.toMatchObject({ url: 'https://hooks.example.com/x' });
     });
     it('createWebhook: secret числом и isActive строкой → 400', async () => {
       webhookRepo.save.mockClear();

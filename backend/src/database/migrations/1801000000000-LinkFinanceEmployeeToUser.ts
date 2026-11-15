@@ -15,6 +15,11 @@ export class LinkFinanceEmployeeToUser1801000000000 implements MigrationInterfac
   name = 'LinkFinanceEmployeeToUser1801000000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
+    // На чистой базе таблиц финансов ещё нет — их создаёт
+    // FinanceService.onModuleInit уже после миграций (вместе с колонкой
+    // "userId" и индексом). Без этой проверки цепочка миграций падала
+    // (15.11.2026). Сопоставлять на пустой базе всё равно нечего.
+    if (!(await queryRunner.hasTable('finance_employees'))) return;
     await queryRunner.query(`
       ALTER TABLE "finance_employees" ADD COLUMN IF NOT EXISTS "userId" uuid NULL
     `);
@@ -50,6 +55,7 @@ export class LinkFinanceEmployeeToUser1801000000000 implements MigrationInterfac
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
+    if (!(await queryRunner.hasTable('finance_employees'))) return;
     await queryRunner.query(`DROP INDEX IF EXISTS "ux_finance_employees_user"`);
     await queryRunner.query(`ALTER TABLE "finance_employees" DROP COLUMN IF EXISTS "userId"`);
   }

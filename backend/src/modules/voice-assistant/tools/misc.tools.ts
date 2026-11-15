@@ -1094,6 +1094,7 @@ type FlagKey = 'isStoryMaker' | 'isSubAdmin';
 function flagTool(
   name: string, flag: FlagKey, path: string, title: string, description: string,
   textOn: string, textOff: string,
+  available: (u: any) => boolean = isTop,
 ): ToolDef<{ employee: string; enabled: boolean }> {
   return {
     name,
@@ -1105,7 +1106,7 @@ function flagTool(
       required: ['employee', 'enabled'],
       additionalProperties: false,
     },
-    available: isTop,
+    available,
     confirm: () => true,
     async preview(args, ctx) {
       const emp = await pickEmployee(ctx, args.employee);
@@ -1132,8 +1133,11 @@ export const setStoryMaker = flagTool(
 
 export const setSubAdmin = flagTool(
   'set_sub_admin', 'isSubAdmin', 'toggle-sub-admin', 'СУБ-АДМИН',
-  'Дать или забрать у сотрудника отметку «суб-админ». «Сделай Али суб-админом». Не блокировка и не доступы к разделам (set_employee_access). Только основатель и админ.',
+  'Дать или забрать у сотрудника отметку «суб-админ». «Сделай Али суб-админом». Не блокировка и не доступы к разделам (set_employee_access). Только основатель.',
   'суб-админ включён', 'суб-админ выключен',
+  // Суб-админ = полные права админа на сервере, поэтому с 15.11.2026
+  // toggle-sub-admin — только основателю (админ получит 403).
+  (u: any) => hasRole(u, 'founder'),
 );
 
 export const setStoriesArchive: ToolDef<{ project: string; archived: boolean }> = {

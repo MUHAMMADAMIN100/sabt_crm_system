@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { canAccessRoute, hasPermission, userCan, canSeeSmmSection, isSmmViewOnly, isProductionOnly } from './permissions'
+import {
+  canAccessRoute, hasPermission, userCan, canSeeSmmSection, canSeeDevSection, isSmmViewOnly, isProductionOnly, hasAnyRole,
+} from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
 // «Задачи от руководителя»: /tasks и /tasks/:id — раньше маршрутов не было
@@ -62,9 +64,11 @@ describe('userCan — персональные запреты', () => {
     expect(userCan(u, 'analytics.view')).toBe(false)
   })
 
+  // Раньше здесь был /reports — такой страницы в приложении нет, и
+  // 15.11.2026 её убрали из PERMISSION_TO_ROUTE. Проверяем на «Файлах».
   it('запрет закрывает и маршрут, а не только пункт меню', () => {
-    expect(canAccessRoute('designer', '/reports', null, [], [])).toBe(true)
-    expect(canAccessRoute('designer', '/reports', null, [], ['reports.view'])).toBe(false)
+    expect(canAccessRoute('designer', '/files', null, [], [])).toBe(true)
+    expect(canAccessRoute('designer', '/files', null, [], ['files.view'])).toBe(false)
   })
 
   it('запрет закрывает страницу, открытую персональным грантом', () => {
@@ -142,5 +146,76 @@ describe('продюсер — производство как у СММ-спе�
     }
     expect(hasPermission('producer', 'projects.create')).toBe(false)
     expect(hasPermission('producer', 'stories.manage')).toBe(false)
+  })
+})
+
+// Импликации грантов — ровно как на сервере (15.11.2026): только
+// dev-tracker.manage ⇒ dev-tracker.view. clients.create и projects.create/edit
+// раньше открывали view-права, которых сервер не давал, — меню показывало
+// «Базу клиентов» и «Директ», а все их запросы получали 403.
+describe('GRANTABLE_FE — импликации как у бэкенда', () => {
+  it('грант clients.create не открывает «Базу клиентов» и «Директ»', () => {
+    const u = { role: 'designer' as UserRole, secondaryRole: null, extraPermissions: ['clients.create'] }
+    expect(userCan(u, 'clients.view')).toBe(false)
+    expect(canAccessRoute('designer', '/clients', null, ['clients.create'], [])).toBe(false)
+    expect(canAccessRoute('designer', '/direct', null, ['clients.create'], [])).toBe(false)
+  })
+
+  it('гранты projects.create/edit не дают projects.view', () => {
+    const u = { role: 'stories_checker' as UserRole, secondaryRole: null, extraPermissions: ['projects.create', 'projects.edit'] }
+    expect(userCan(u, 'projects.view')).toBe(false)
+  })
+
+  it('dev-tracker.manage по-прежнему открывает доску (view)', () => {
+    const u = { role: 'designer' as UserRole, secondaryRole: null, extraPermissions: ['dev-tracker.manage'] }
+    expect(userCan(u, 'dev-tracker.view')).toBe(true)
+    expect(canAccessRoute('designer', '/dev-board', null, ['dev-tracker.manage'], [])).toBe(true)
+    // Запрет view сильнее импликации.
+    expect(userCan({ ...u, deniedPermissions: ['dev-tracker.view'] }, 'dev-tracker.view')).toBe(false)
+  })
+})
+
+// Вторая роль открывает разделы и подстраницы так же, как основная
+// (15.11.2026). Выбор кабинета на главной — по-прежнему по основной роли.
+describe('разделы и подстраницы — основная ИЛИ вторая роль', () => {
+  it('hasAnyRole смотрит на обе роли', () => {
+    expect(hasAnyRole('designer', 'admin', ['admin'])).toBe(true)
+    expect(hasAnyRole('admin', null, ['admin'])).toBe(true)
+    expect(hasAnyRole('designer', null, ['admin'])).toBe(false)
+    expect(hasAnyRole(undefined, undefined, ['admin'])).toBe(false)
+  })
+
+  it('«Разработка»: МП по разработке со второй ролью «Руководитель разработки»', () => {
+    expect(canSeeDevSection('sales_manager_dev')).toBe(false)
+    expect(canSeeDevSection('sales_manager_dev', 'dev_director')).toBe(true)
+    expect(canAccessRoute('sales_manager_dev', '/dev/projects', 'dev_director')).toBe(true)
+    expect(canAccessRoute('sales_manager_dev', '/dev/projects', null)).toBe(false)
+  })
+
+  it('«СММ»: дизайнер со второй ролью СММ-специалиста', () => {
+    expect(canSeeSmmSection('designer', 'smm_specialist')).toBe(true)
+    expect(canAccessRoute('designer', '/smm', 'smm_specialist')).toBe(true)
+    expect(canAccessRoute('designer', '/smm', null)).toBe(false)
+  })
+
+  it('подстраницы «Сотрудников», «Тест новый» и «Онбординг»', () => {
+    expect(canAccessRoute('designer', '/employees/kpi', 'admin')).toBe(true)
+    expect(canAccessRoute('designer', '/employees/kpi', null)).toBe(false)
+    expect(canAccessRoute('designer', '/employees/sales-plan', 'founder')).toBe(true)
+    expect(canAccessRoute('designer', '/test-new', 'admin')).toBe(true)
+    expect(canAccessRoute('designer', '/test-new', null)).toBe(false)
+    expect(canAccessRoute('designer', '/onboarding', 'sales_manager_smm')).toBe(true)
+    expect(canAccessRoute('designer', '/onboarding', null)).toBe(false)
+  })
+})
+
+// «Проверяющий сторис» с запретом stories.view (15.11.2026): страница
+// закрыта, а главная (её всегда можно открыть) не должна вести на неё —
+// иначе «/» ↔ «/stories-check» по кругу (см. HomeRoute в App.tsx).
+describe('проверяющий сторис с запретом', () => {
+  it('без запрета страница открыта, с запретом — закрыта, главная — всегда', () => {
+    expect(canAccessRoute('stories_checker', '/stories-check', null, [], [])).toBe(true)
+    expect(canAccessRoute('stories_checker', '/stories-check', null, [], ['stories.view'])).toBe(false)
+    expect(canAccessRoute('stories_checker', '/', null, [], ['stories.view'])).toBe(true)
   })
 })

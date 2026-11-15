@@ -29,6 +29,7 @@ import { FinanceBackup } from './entities/finance-backup.entity';
 import { FinanceForecastAdjustment } from './entities/finance-forecast-adjustment.entity';
 import { FinanceActivity } from './entities/finance-activity.entity';
 import { FinancePayrollPeriod } from './entities/finance-payroll-period.entity';
+import { FinanceInstallment } from './entities/finance-installment.entity';
 
 // Как maps() в сервисе: долги без банковских — realDebts, подписки — sub.
 const emptyMaps = {
@@ -99,6 +100,7 @@ describe('FinanceService correctness', () => {
   let forecastAdjustmentRepo: ReturnType<typeof repository>;
   let activityRepo: ReturnType<typeof repository>;
   let payrollPeriodRepo: ReturnType<typeof repository>;
+  let installmentRepo: ReturnType<typeof repository>;
   let dataSource: { transaction: jest.Mock };
   let managerQuery: jest.Mock;
 
@@ -116,6 +118,7 @@ describe('FinanceService correctness', () => {
     forecastAdjustmentRepo = repository();
     activityRepo = repository();
     payrollPeriodRepo = repository();
+    installmentRepo = repository();
     payrollPeriodRepo.findOne.mockImplementation(async (options: any) => {
       const ym = options?.where?.ym;
       const status = options?.where?.status;
@@ -146,6 +149,7 @@ describe('FinanceService correctness', () => {
               [FinanceForecastAdjustment, forecastAdjustmentRepo],
               [FinanceActivity, activityRepo],
               [FinancePayrollPeriod, payrollPeriodRepo],
+              [FinanceInstallment, installmentRepo],
             ]);
             return repos.get(entity);
           },
@@ -1605,6 +1609,270 @@ describe('FinanceService correctness', () => {
       expect(manual.amount).toBe(3000);
       expect(plannedPaymentRepo.create).not.toHaveBeenCalled();
       expect(follow).toHaveBeenCalledWith('p1');
+    });
+  });
+
+  describe('проверка 15.11.2026', () => {
+    // Сервис с рассрочками: в общем beforeEach их нет (старые тесты
+    // собирают сервис без последнего аргумента).
+    const withInstallments = () => new FinanceService(
+      txRepo as any, accountRepo as any, categoryRepo as any, projectRepo as any, employeeRepo as any,
+      subscriptionRepo as any, debtRepo as any, plannedPaymentRepo as any, assetRepo as any, backupRepo as any,
+      forecastAdjustmentRepo as any, payrollPeriodRepo as any,
+      { find: jest.fn().mockResolvedValue([]), findOne: jest.fn().mockResolvedValue(null), save: jest.fn(async (v: any) => v) } as any,
+      dataSource as any,
+      {} as any,
+      { sendToUser: jest.fn().mockResolvedValue(undefined), appUrl: 'https://crm.test' } as any,
+      installmentRepo as any,
+    );
+    const smmProject = (over: any = {}) => ({
+      id: 'p1', name: 'Chrono', direction: 'smm', tariff: 3500, status: 'active', archived: false,
+      contractDate: '2026-06-05', cycleAnchor: '2026-11-05', ...over,
+    });
+
+    it('F1: возврат SMM с паузы — срок сдвинут, месяц цикла прежний, пауза запомнена', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-12-20T07:00:00Z'));
+      try {
+        const plan: any = { id: 'dec', projectId: 'p1', ym: '2026-12', partNo: 1, status: 'expected', amount: 3500, dueDate: '2026-12-05', auto: true };
+        const proj: any = smmProject({ status: 'paused', pausedAt: '2026-11-20' });
+        projectRepo.findOne.mockResolvedValue(proj);
+        projectRepo.save.mockImplementation(async (v: any) => v);
+        plannedPaymentRepo.find.mockResolvedValue([plan]);
+        plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+        const query = jest.fn().mockResolvedValue([]);
+        (dataSource as any).query = query;
+        await service.updateProject('p1', { status: 'active' });
+        expect(plan).toMatchObject({ ym: '2026-12', dueDate: '2027-01-04' });
+        expect(query).toHaveBeenCalledWith(expect.stringContaining('"smmCycle"'), ['p1', JSON.stringify([{ from: '2026-11-20', days: 30 }])]);
+        expect(proj).toMatchObject({ status: 'active', pausedAt: null, cycleAnchor: '2026-11-05' });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('F1: сверка после паузы не откатывает срок и не создаёт второй план цикла', async () => {
+      const plans: any[] = [
+        { id: 'nov', projectId: 'p1', ym: '2026-11', partNo: 1, status: 'received', amount: 3500, receivedTxId: 't-nov', auto: false },
+        { id: 'dec', projectId: 'p1', ym: '2026-12', partNo: 1, status: 'expected', amount: 3500, dueDate: '2027-01-04', auto: true },
+      ];
+      projectRepo.findOne.mockResolvedValue(smmProject());
+      plannedPaymentRepo.find.mockResolvedValue(plans);
+      plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+      txRepo.findOne.mockResolvedValue({ id: 't-nov', date: '2026-11-05' });
+      (dataSource as any).query = jest.fn().mockResolvedValue([{ s: { pauses: [{ from: '2026-11-20', days: 30 }] } }]);
+      await (service as any).ensureSmmFollowUps('p1');
+      expect(plans[1].dueDate).toBe('2027-01-04');
+      expect(plannedPaymentRepo.create).not.toHaveBeenCalled();
+      expect(managerQuery).toHaveBeenCalledWith(expect.stringContaining('pg_advisory_xact_lock'), ['fin-smm:p1']);
+    });
+
+    it('F13: удалённый вручную план следующего цикла сверка не создаёт снова', async () => {
+      projectRepo.findOne.mockResolvedValue(smmProject());
+      plannedPaymentRepo.find.mockResolvedValue([
+        { id: 'nov', projectId: 'p1', ym: '2026-11', partNo: 1, status: 'received', amount: 3500, receivedTxId: 't-nov', auto: false },
+      ]);
+      txRepo.findOne.mockResolvedValue({ id: 't-nov', date: '2026-11-05' });
+      (dataSource as any).query = jest.fn().mockResolvedValue([{ s: { dismissed: [{ ym: '2026-12', kind: 'next' }] } }]);
+      await (service as any).ensureSmmFollowUps('p1');
+      expect(plannedPaymentRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('F13: удаление ожидаемого плана SMM запоминается', async () => {
+      const dec = { id: 'dec', projectId: 'p1', ym: '2026-12', partNo: 1, status: 'expected', amount: 3500, auto: true, receivedTxId: null };
+      plannedPaymentRepo.findOne.mockResolvedValue(dec);
+      plannedPaymentRepo.find.mockResolvedValue([dec]);
+      projectRepo.findOne.mockResolvedValue(smmProject({ cycleAnchor: null }));
+      const query = jest.fn().mockResolvedValue([]);
+      (dataSource as any).query = query;
+      await service.removePlannedPayment('dec');
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('{dismissed}'), ['p1', JSON.stringify([{ ym: '2026-12', kind: 'next' }])]);
+    });
+
+    it('F14: оплата до правки договора оставляет месяц цикла, день — из договора', async () => {
+      const p: any = { id: 'p1', tariff: 3500, contractDate: '2026-06-25', cycleAnchor: null };
+      txRepo.findOne.mockResolvedValue({ id: 't', date: '2026-11-05' });
+      const cover = await (service as any).recomputeSmmAnchor(p, [
+        { ym: '2026-10', status: 'received', amount: 3500, receivedTxId: 't' },
+      ], { contractFrom: '2026-11-15' });
+      expect(cover).toBe('2026-11-05');
+      expect(p.cycleAnchor).toBe('2026-11-25');
+      expect(projectRepo.update).toHaveBeenCalledWith('p1', { cycleAnchor: '2026-11-25' });
+    });
+
+    it('F2: полная оплата SMM из журнала закрывает ожидаемый план своего месяца', async () => {
+      txRepo.findOne.mockResolvedValue(transaction({
+        id: 't1', type: FinanceTxType.INCOME, amount: 3500, projectId: 'p1', date: '2026-12-05', categoryId: 'c-smm1',
+      }));
+      plannedPaymentRepo.findOne.mockResolvedValue(null);
+      categoryRepo.findOne.mockResolvedValue({ id: 'c-smm1', key: 'smm1' });
+      projectRepo.findOne.mockResolvedValue(smmProject());
+      plannedPaymentRepo.find.mockResolvedValue([
+        { id: 'dec', projectId: 'p1', ym: '2026-12', partNo: 1, status: 'expected', amount: 3500, dueDate: '2026-12-05' },
+      ]);
+      jest.spyOn(service as any, 'ensureSmmFollowUps').mockResolvedValue(undefined);
+      await (service as any).syncSmmPartLink('t1');
+      expect(plannedPaymentRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        ym: '2026-12', partNo: 1, amount: 3500, status: 'received', receivedTxId: 't1', auto: true,
+      }));
+      expect(plannedPaymentRepo.delete).toHaveBeenCalledWith('dec');
+    });
+
+    it('F3: отмена операции платежа по рассрочке убирает платёж из рассрочки', async () => {
+      const svc = withInstallments();
+      txRepo.findOne.mockResolvedValue(transaction({ id: 'tx-inst', type: FinanceTxType.INCOME, amount: 500 }));
+      plannedPaymentRepo.find.mockResolvedValue([]);
+      managerQuery.mockResolvedValueOnce([{ id: 'inst-1' }]);
+      installmentRepo.findOne.mockResolvedValue({
+        id: 'inst-1', purchaseTxId: null,
+        payments: [
+          { id: 'pay-1', date: '2026-11-10', amount: 500, txId: 'tx-inst' },
+          { id: 'pay-2', date: '2026-10-10', amount: 300, txId: 'tx-other' },
+        ],
+      });
+      installmentRepo.save.mockImplementation(async (v: any) => v);
+      await svc.removeTransaction('tx-inst');
+      expect(managerQuery).toHaveBeenCalledWith(expect.stringContaining('finance_installments'), ['tx-inst', JSON.stringify([{ txId: 'tx-inst' }])]);
+      expect(installmentRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'inst-1', payments: [expect.objectContaining({ id: 'pay-2' })],
+      }));
+    });
+
+    it('F4: «Отменить выплату» (kind=salary) не трогает аванс и бонус', async () => {
+      const qb: any = {
+        where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([
+          transaction({ id: 'adv', employeeId: 'e1', amount: 1000, comment: 'Аванс' }),
+          transaction({ id: 'bon', employeeId: 'e1', amount: 300, comment: 'Бонус — съёмка' }),
+          transaction({ id: 'sal', employeeId: 'e1', amount: 4000, comment: 'Зарплата' }),
+        ]),
+        update: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(),
+        whereInIds: jest.fn().mockReturnThis(), execute: jest.fn().mockResolvedValue({}),
+      };
+      txRepo.createQueryBuilder.mockReturnValue(qb);
+      jest.spyOn(service as any, 'refreshSalarySnapshot').mockResolvedValue(undefined);
+      const res = await service.removeMonthExpenses({ ym: '2026-10', employeeId: 'e1', kind: 'salary' });
+      expect(res.removed).toBe(1);
+      expect(qb.whereInIds).toHaveBeenCalledWith(['sal']);
+    });
+
+    it('F5: настроенный штраф 0 — автоштраф не выставляется', async () => {
+      const hour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dushanbe', hour: '2-digit', hour12: false }));
+      (dataSource as any).query = jest.fn().mockResolvedValue([{ autoFine: true, fineAmount: '0', runHour: hour, noticeDaysBefore: 0 }]);
+      const view = jest.spyOn(service, 'lateOfDay');
+      await service.autoFineLate();
+      expect(view).not.toHaveBeenCalled();
+    });
+
+    it('F5: человек, уже разобранный параллельно, второй штраф не получает', async () => {
+      jest.spyOn(service, 'lateOfDay').mockResolvedValue({
+        date: '2026-11-14', amountPerLate: 50, fined: [], forgiven: [],
+        pending: [{ userId: 'u1', name: 'А', role: 'smm', arrivedAt: '09:50', startsAt: '09:00', lateMinutes: 50, employeeId: 'e1', linked: true, decision: null, amount: 50 }],
+      } as any);
+      const lateRepo = (service as any).lateRepo;
+      lateRepo.create = jest.fn((v: any) => v);
+      lateRepo.save = jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }));
+      const add = jest.spyOn(service, 'addEmployeeDeduction');
+      const res = await service.applyLateFines({ date: '2026-11-14', amount: 50 });
+      expect(res).toMatchObject({ created: 0, finedUserIds: [] });
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('F7: при переплате в снимок идёт фактически удержанная рассрочка', async () => {
+      const svc = withInstallments();
+      const emp: any = {
+        id: 'e1', name: 'Бехруз', salary: 5000, salaryHistory: { '2026-01': 5000 }, hireDate: '2026-01-10',
+        terminationDate: null, status: 'active', employmentHistory: null, salarySnapshots: null,
+        bonuses: null, fines: null, vacations: null,
+      };
+      employeeRepo.findOne.mockResolvedValue(emp);
+      employeeRepo.save.mockImplementation(async (v: any) => v);
+      installmentRepo.find.mockResolvedValue([{
+        id: 'i1', name: 'Телефон', employeeId: 'e1', totalAmount: 6000, monthlyAmount: 1000, startYm: '2026-10',
+        paidBefore: 0, method: 'salary', overrides: null, payments: null, marks: null, dueDates: null,
+      }]);
+      jest.spyOn(svc as any, 'salaryTxForMonth').mockResolvedValue([
+        transaction({ employeeId: 'e1', amount: 4500, salaryYm: '2026-10', comment: 'Зарплата', date: '2026-11-10' }),
+      ]);
+      await (svc as any).refreshSalarySnapshot('e1', '2026-10');
+      expect(emp.salarySnapshots['2026-10']).toMatchObject({ paid: 4500, installment: 500, installments: { i1: 500 } });
+    });
+
+    it('F9: к концу срока остаток ровно 0, неполный месяц не считается', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-15T07:00:00Z'));
+      try {
+        expect((service as any).decorateAsset({ id: 'a', price: 1000, serviceMonths: 3, purchaseDate: '2026-08-01', status: 'in_use' }))
+          .toMatchObject({ depreciated: 1000, residual: 0, wornOut: true });
+        expect((service as any).decorateAsset({ id: 'b', price: 1000, serviceMonths: 3, purchaseDate: '2026-10-20', status: 'in_use' }))
+          .toMatchObject({ monthsElapsed: 0, depreciated: 0, residual: 1000 });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('F11: план разработки в доходе по направлениям — платежи месяца, а не сумма договора', async () => {
+      const dev: any = { id: 'd1', name: 'Сайт', direction: 'development', tariff: 370050, status: 'active', archived: false };
+      jest.spyOn(service as any, 'maps').mockResolvedValue({ ...emptyMaps, projects: [dev], proj: new Map([['d1', dev]]) });
+      plannedPaymentRepo.find.mockResolvedValue([
+        { id: 'a', projectId: 'd1', ym: '2026-11', status: 'expected', amount: 20000 },
+        { id: 'b', projectId: 'd1', ym: '2026-11', status: 'received', amount: 10000, receivedTxId: 't' },
+        { id: 'c', projectId: 'd1', ym: '2026-12', status: 'expected', amount: 50000 },
+      ]);
+      txRepo.find.mockResolvedValue([]);
+      const rows = await service.incomeDirections('2026-11');
+      expect(rows.find(r => r.direction === 'development')).toMatchObject({ plan: 30000, expected: 20000 });
+    });
+
+    it('F15: перестройка графика банка начинается с самого раннего неоплаченного месяца', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-14T07:00:00Z'));
+      try {
+        debtRepo.findOne.mockResolvedValue({ id: 'b1', name: 'Кредит', kind: 'bank', totalAmount: 3000, paidBefore: 0, monthlyPayment: 1000, dueDay: 10 });
+        plannedPaymentRepo.find.mockResolvedValue([{ id: 'oct', debtId: 'b1', ym: '2026-10', status: 'expected', amount: 1000 }]);
+        plannedPaymentRepo.save.mockImplementation(async (v: any) => v);
+        await (service as any).regenerateDebtSchedule('b1');
+        const plans = plannedPaymentRepo.save.mock.calls.at(-1)![0];
+        expect(plans.map((x: any) => x.dueDate)).toEqual(['2026-10-10', '2026-11-10', '2026-12-10']);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('F16: «Получено» и «Оплатить сразу» будущей датой не принимаются', async () => {
+      await expect(service.receivePlannedPayment('pp', { accountId: 'acc', date: '2999-01-01' }))
+        .rejects.toThrow('не может быть в будущем');
+      await expect(service.payNow({ projectId: 'p1', accountId: 'acc', ym: '2999-01', amount: 100, date: '2999-01-01' }))
+        .rejects.toThrow('не может быть в будущем');
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('S5: правка корректировки прогноза — только свои поля и с проверкой', async () => {
+      const created = new Date('2026-11-01T00:00:00Z');
+      forecastAdjustmentRepo.findOne.mockResolvedValue({
+        id: 'a1', name: 'Аренда', type: 'expense', amount: 100, startYm: '2026-11', endYm: null,
+        recurrence: 'once', scenario: 'all', note: null, createdAt: created,
+      });
+      forecastAdjustmentRepo.save.mockImplementation(async (v: any) => v);
+      const saved = await service.updateForecastAdjustment('a1', { amount: '250', id: 'hacked', createdAt: 'x' });
+      expect(saved).toMatchObject({ id: 'a1', amount: 250, createdAt: created });
+      await expect(service.updateForecastAdjustment('a1', { type: 'loan' })).rejects.toThrow('Неверный тип');
+      await expect(service.updateForecastAdjustment('a1', { endYm: '2026-01' })).rejects.toThrow('раньше месяца начала');
+    });
+
+    it('F6: «Моя зарплата» — история закрытых месяцев как в ведомости', async () => {
+      const emp: any = {
+        id: 'e1', userId: 'u1', name: 'Бехруз', role: null, category: null, salary: 5000,
+        salaryHistory: { '2026-01': 5000 }, hireDate: '2026-01-10', terminationDate: null, status: 'active',
+        employmentHistory: null, bonuses: null, fines: null, vacations: null, advances: null,
+        // Старый снимок: в «окладе» лежит аванс, paid — без аванса.
+        salarySnapshots: { '2026-09': { salary: 1000, advance: 1000, paid: 4000, bonus: 0, fine: 0, paidAt: '2026-10-10' } },
+      };
+      employeeRepo.findOne.mockResolvedValue(emp);
+      jest.spyOn(service as any, 'salaryTxForMonth').mockResolvedValue([]);
+      txRepo.find.mockResolvedValue([
+        transaction({ employeeId: 'e1', amount: 1000, comment: 'Аванс', date: '2026-09-25', salaryYm: '2026-09' }),
+        transaction({ employeeId: 'e1', amount: 4000, comment: 'Зарплата', date: '2026-10-10', salaryYm: '2026-09' }),
+      ]);
+      const res: any = await service.mySalary('u1', '2026-11');
+      expect(res.history[0]).toMatchObject({ ym: '2026-09', salary: 5000, paid: 5000 });
     });
   });
 });

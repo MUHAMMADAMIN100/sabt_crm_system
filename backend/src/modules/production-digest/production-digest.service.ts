@@ -6,6 +6,7 @@ import { ContentPlanItem } from '../content-plan/content-plan-item.entity';
 import { TelegramService } from '../telegram/telegram.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
+import { escapeHtml } from '../../common/html-escape';
 
 /** Утренняя сводка производству. Живёт ОТДЕЛЬНЫМ модулем намеренно: если
  *  повесить её на ContentPlanService, получается кольцо модулей
@@ -61,7 +62,8 @@ export class ProductionDigestService {
       const lines = list.slice(0, 15).map(r => {
         const stage = LABEL[r.stage] || (r.parentType === 'post' ? 'Дизайн' : 'Задача');
         const time = r.time ? ` · ${r.time}` : '';
-        return `• <b>${stage}</b>: ${r.title || 'без названия'} — ${r.projectName}${time}`;
+        // Тема и проект — от людей: только через escapeHtml (15.11.2026).
+        return `• <b>${stage}</b>: ${escapeHtml(r.title || 'без названия')} — ${escapeHtml(r.projectName)}${escapeHtml(time)}`;
       });
       const more = list.length - lines.length;
       const text =
@@ -80,7 +82,9 @@ export class ProductionDigestService {
           userId,
           type: NotificationType.NEW_TASK,
           title: `Задачи на сегодня — ${list.length}`,
-          message: lines.slice(0, 3).map(l => l.replace(/<\/?b>/g, '')).join('; '),
+          // В колокольчик — обычный текст: без тегов и HTML-сущностей.
+          message: lines.slice(0, 3).map(l => l.replace(/<\/?b>/g, '')
+            .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')).join('; '),
           link: '/',
         });
       } catch (e) {

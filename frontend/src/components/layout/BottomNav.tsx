@@ -7,12 +7,13 @@ import { MoreHorizontal, Plus, X, ClipboardCheck, FolderKanban, Image as ImageIc
   Building2, Package, Activity, Settings, Car, Network, Target, Megaphone, Code2, ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth.store'
-import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead, getRoleLabel } from '@/lib/permissions'
+import { canSeeSmmSection, canSeeDevSection, userCan, isDevLead, getRoleLabel, hasAnyRole } from '@/lib/permissions'
 import { Avatar } from '@/components/ui'
 import { tasksApi } from '@/services/api.service'
 import { useNavItems } from './navItems'
 import ShiftButton from './ShiftButton'
 import { useHistoryOverlay } from '@/lib/navMemory'
+import useNarrow from '@/hooks/useNarrow'
 
 /** Сколько разделов стоит прямо на панели. Остальные уходят под «Ещё». */
 const PINNED = 3
@@ -75,12 +76,16 @@ export default function BottomNav() {
     return () => main.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Панель видна только на узком экране (lg:hidden — до 992px). На
+  // компьютере она смонтирована, но скрыта — запрос задач ей там не нужен
+  // (15.11.2026).
+  const narrow = useNarrow(992)
   // Красный кружок на «Задачах»: сколько поручений просрочено. Берём тот же
   // запрос, что и главная, поэтому лишнего обращения к серверу нет.
   const { data: myTasks } = useQuery({
     queryKey: ['my-tasks'],
     queryFn: tasksApi.my,
-    enabled: !!user,
+    enabled: !!user && narrow,
     staleTime: 60_000,
   })
   const overdue = useMemo(() => {
@@ -107,7 +112,7 @@ export default function BottomNav() {
         : (user?.role === 'founder' || user?.role === 'admin') ? '/employees/week?issue=1' : null
       if (taskHref) list.push({ key: 'task', label: 'Новая задача', icon: ClipboardCheck, run: () => runAction(taskHref) })
     }
-    if (canSeeSmmSection(user?.role) && userCan(user, 'projects.create')) {
+    if (canSeeSmmSection(user?.role, user?.secondaryRole) && userCan(user, 'projects.create')) {
       list.push({ key: 'project', label: 'Добавить проект', icon: FolderKanban, run: () => runAction('/smm/projects?new=1') })
     }
     return list
@@ -120,23 +125,26 @@ export default function BottomNav() {
   // больше нет (один раздел в сайдбаре), а субменю панель не умеет —
   // иначе с телефона до доски/KPI/отчётов не добраться.
   const devLinks = useMemo(() => {
-    if (!canSeeDevSection(user?.role)) return []
+    if (!canSeeDevSection(user?.role, user?.secondaryRole)) return []
     // «Умного календаря» у разработки нет (14.10.2026): календарь — вид на доске.
+    // «Проекты» — всем, кому открыт раздел, без права на доску: так же, как в
+    // боковом меню и в гарде /dev/projects (15.11.2026; раньше здесь просили
+    // dev-tracker.view, и на телефоне пункт пропадал).
     const list = [
       { to: '/dev-board', label: 'Доска', icon: KanbanSquare, perm: 'dev-tracker.view' as const },
-      { to: '/dev/projects', label: 'Проекты', icon: FolderKanban, perm: 'dev-tracker.view' as const },
+      { to: '/dev/projects', label: 'Проекты', icon: FolderKanban, perm: null },
       { to: '/dev-board/kpi', label: 'KPI', icon: BarChart3, perm: 'dev-tracker.view' as const },
-    ] as { to: string; label: string; icon: any; perm: 'dev-tracker.view' | 'dev-tracker.manage' }[]
+    ] as { to: string; label: string; icon: any; perm: 'dev-tracker.view' | 'dev-tracker.manage' | null }[]
     if (userCan(user, 'dev-tracker.manage')) {
       list.push({ to: '/dev-board/reports', label: 'Отчёты', icon: FileText, perm: 'dev-tracker.manage' })
     }
-    return list.filter(l => userCan(user, l.perm))
+    return list.filter(l => !l.perm || userCan(user, l.perm))
   }, [user])
 
   // Подразделы «СММ» для шторки «Ещё»: на телефоне субменю нет, и до
   // «Сторисов», «Проектов» и «Контроля» иначе не добраться.
   const smmLinks = useMemo(() => {
-    if (!canSeeSmmSection(user?.role)) return []
+    if (!canSeeSmmSection(user?.role, user?.secondaryRole)) return []
     return [
       { to: '/smm', label: 'Умный календарь', icon: CalendarRange },
       { to: '/smm/stories', label: 'Сторисы', icon: ImageIcon },
@@ -170,13 +178,14 @@ export default function BottomNav() {
   // Кому какой — как в боковом меню.
   const employeeLinks = useMemo(() => {
     if (!userCan(user, 'employees.view')) return []
-    const top = user?.role === 'founder' || user?.role === 'admin'
+    // Основная или вторая роль — как в гарде маршрутов (15.11.2026).
+    const top = hasAnyRole(user?.role, user?.secondaryRole, ['founder', 'admin'])
     return [
       { to: '/employees', label: 'Все сотрудники', icon: Users, show: true },
       { to: '/employees/org', label: 'Оргструктура', icon: Network, show: true },
       { to: '/employees/week', label: 'Задачи недели', icon: CalendarRange, show: top },
       { to: '/employees/activity', label: 'Активность и смены', icon: Activity, show: top },
-      { to: '/employees/sales-plan', label: 'План продаж', icon: Target, show: user?.role === 'founder' },
+      { to: '/employees/sales-plan', label: 'План продаж', icon: Target, show: hasAnyRole(user?.role, user?.secondaryRole, ['founder']) },
       { to: '/employees/kpi', label: 'KPI', icon: BarChart3, show: top },
     ].filter(l => l.show)
   }, [user])
@@ -233,8 +242,10 @@ export default function BottomNav() {
   }, [location.pathname])
   const openDevTab = () => {
     if (isDevRoute) { setFan(false); setMore(true); return }
-    let last = '/dev-board'
-    try { last = localStorage.getItem('last-dev-route') || '/dev-board' } catch {}
+    // Без запомненного подраздела — на /dev: DevIndex сам выберет доску или,
+    // без права на неё, проекты (15.11.2026; раньше вело прямо на доску).
+    let last = '/dev'
+    try { last = localStorage.getItem('last-dev-route') || '/dev' } catch {}
     navigate(last)
   }
 

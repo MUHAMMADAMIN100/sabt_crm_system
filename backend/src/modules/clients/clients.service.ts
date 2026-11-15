@@ -11,8 +11,10 @@ import { AppGateway } from '../gateway/app.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notification.entity';
 import {
-  COLD_CALL_EVENTS_SINCE, buildSalesKpi, emailBecameSent, expandRanges, meetingSyncPlan, salesPeriod, workingDays,
+  COLD_CALL_EVENTS_SINCE, buildSalesKpi, dushanbeDay, emailBecameSent, expandRanges, funnelStepIsForward,
+  meetingSyncPlan, salesPeriod, workingDays,
 } from './sales-kpi.logic';
+import { salesRoleOf } from '../../common/sales-segment';
 
 /** Роли менеджеров продаж — для bulk-KPI и фильтров. */
 const SALES_MANAGER_ROLES = [UserRole.SALES_MANAGER_SMM, UserRole.SALES_MANAGER_DEV];
@@ -80,19 +82,27 @@ export class ClientsService implements OnModuleInit {
    *      БЕЗ enum-зависимостей. KPI читает в первую очередь отсюда.
    *      Идемпотентно, не требует миграции, гарантированно работает. */
   async onModuleInit() {
+    // Имя enum-типа берём из каталога (15.11.2026): захардкоженное
+    // «activity_logs_action_enum» на базе, созданной иначе, тихо не находилось.
     try {
-      await this.activityRepo.manager.query(
-        `ALTER TYPE "activity_logs_action_enum" ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS'`,
-      );
+      const actionEnum = await this.enumTypeOf('activity_logs', 'action');
+      if (actionEnum) {
+        await this.activityRepo.manager.query(
+          `ALTER TYPE "${actionEnum}" ADD VALUE IF NOT EXISTS 'LEAD_PROGRESS'`,
+        );
+      }
     } catch (e: any) {
       this.logger.warn(`ALTER TYPE for LEAD_PROGRESS failed: ${e?.message || e}`);
     }
     // Статус «Неизвестно» (направление разработки): на проде synchronize
     // выключен — значение в pg-enum добавляем идемпотентно сами.
     try {
-      await this.activityRepo.manager.query(
-        `ALTER TYPE "client_leads_status_enum" ADD VALUE IF NOT EXISTS 'unknown'`,
-      );
+      const statusEnum = await this.enumTypeOf('client_leads', 'status');
+      if (statusEnum) {
+        await this.activityRepo.manager.query(
+          `ALTER TYPE "${statusEnum}" ADD VALUE IF NOT EXISTS 'unknown'`,
+        );
+      }
     } catch (e: any) {
       this.logger.warn(`ALTER TYPE for client_leads_status 'unknown' failed: ${e?.message || e}`);
     }
@@ -205,6 +215,20 @@ export class ClientsService implements OnModuleInit {
     await this.backfillLeadEvents();
   }
 
+  /** Имя pg-enum колонки (как в миграции 1826000000000); null — не enum. */
+  private async enumTypeOf(table: string, column: string): Promise<string | null> {
+    const rows: Array<{ typname: string }> = await this.activityRepo.manager.query(
+      `SELECT t.typname
+         FROM pg_attribute a
+         JOIN pg_class c ON c.oid = a.attrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+         JOIN pg_type t ON t.oid = a.atttypid AND t.typtype = 'e'
+        WHERE c.relname = $1 AND a.attname = $2 AND NOT a.attisdropped`,
+      [table, column],
+    );
+    return rows?.[0]?.typname ?? null;
+  }
+
   /** Идемпотентная дозапись событий (14.11.2026): встречи и письма раньше
    *  считались по состоянию лида, теперь — по журналу lead_actions. Уже
    *  назначенные встречи (nextContactAt) и отмеченные «Написал» письма
@@ -217,6 +241,11 @@ export class ClientsService implements OnModuleInit {
         SELECT c."ownerId"::uuid, c.id, 'meeting', c."nextContactAt", c."updatedAt"
         FROM client_leads c
         WHERE c."nextContactAt" IS NOT NULL AND c."ownerId" IS NOT NULL
+          -- Без встреч «задним числом» (15.11.2026): лид последний раз правили
+          -- не позже конца дня встречи — значит, её назначили заранее, а не
+          -- выставили прошедшую дату потом.
+          AND (c."updatedAt" AT TIME ZONE 'UTC')
+              < ((date_trunc('day', c."nextContactAt" AT TIME ZONE 'Asia/Dushanbe') + interval '1 day') AT TIME ZONE 'Asia/Dushanbe')
           AND NOT EXISTS (
             SELECT 1 FROM lead_actions la
             WHERE la.lead_id = c.id AND la.kind = 'meeting'
@@ -240,10 +269,10 @@ export class ClientsService implements OnModuleInit {
 
   /** Лёгкий lookup юзера по id — для controller'а чтобы определить
    *  направление КПИ. Возвращаем только нужные поля. */
-  async findOwnerInfo(userId: string): Promise<{ id: string; name: string; role: string } | null> {
+  async findOwnerInfo(userId: string): Promise<{ id: string; name: string; role: string; secondaryRole: string | null } | null> {
     const u = await this.userRepo.findOne({ where: { id: userId } });
     if (!u) return null;
-    return { id: u.id, name: u.name, role: u.role };
+    return { id: u.id, name: u.name, role: u.role, secondaryRole: (u as any).secondaryRole ?? null };
   }
 
   /** Bulk-KPI всех МП за период. Для дашборда основателя.
@@ -282,95 +311,107 @@ export class ClientsService implements OnModuleInit {
     }));
   }
 
-  /** Если статус ИЛИ этап онбординга у лида сдвинулись — пишем событие
-   *  LEAD_PROGRESS с дельтой +1 (вперёд) или -1 (назад). KPI «Продвижения
-   *  по воронке» считает SUM(delta), а не COUNT — иначе можно «накручивать»
-   *  KPI, гоняя один лид взад-вперёд. cancelled — не считается ни тем, ни
-   *  тем (STAGE_ORDER=-1 → ни forward, ни backward). */
+  /** Продвижение по воронке (15.11.2026) — «вехи»: +1 только когда лид
+   *  ВПЕРВЫЕ доходит до статуса или этапа (в lead_progress ещё нет записи +1
+   *  этого лида с таким status_to / stage_to — от любого пользователя). Откат
+   *  назад и уход в терминальные (lost / on_hold / unknown / cancelled) — 0,
+   *  без штрафа. Раньше дельта считалась по каждому переходу: new→waiting
+   *  давал +1, обратный ход — 0 (из «нулевого» статуса), и круг повторялся
+   *  бесконечно; won→lost→new→won тоже «качал» KPI.
+   *  Зачёт — владельцу лида, если он менеджер продаж (его воронка, даже когда
+   *  карточку подвинул руководитель); иначе — тому, кто подвинул. */
   private async maybeLogProgress(
     before: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     after: { status?: string | null; onboardingStage?: string | null; name?: string; ownerId?: string | null },
     actor: { id: string; name?: string },
     leadId?: string,
   ): Promise<void> {
-    // Хелпер: считаем дельту по двум значениям order'а. Только если ОБА
-    // валидные (>0) — иначе игнорируем (cancelled / lost / on_hold).
-    const deltaOf = (toOrder: number | undefined, fromOrder: number | undefined): 0 | 1 | -1 => {
-      const t = toOrder ?? 0;
-      const f = fromOrder ?? 0;
-      // cancelled/lost/on_hold/unknown == -1 → не учитываем переходы ни В них,
-      // ни ИЗ них: иначе цикл «активный → unknown → активный» давал бы чистый
-      // +1 KPI за круг (вход = 0, выход = +1). f < 0 (не <= 0): f = 0 — это
-      // легитимное «лид создан сразу с продвинутым статусом», ему +1 положен.
-      if (t <= 0 || f < 0) return 0;
-      // Из «нулевого» состояния (создание лида с уже выставленным этапом)
-      // в реальный этап = +1.
-      if (t > f) return 1;
-      if (t < f && f > 0) return -1;
-      return 0;
+    const statusChanged = !!after.status && after.status !== before.status;
+    const stageChanged  = !!after.onboardingStage && after.onboardingStage !== before.onboardingStage;
+    const statusForward = statusChanged
+      && funnelStepIsForward(STATUS_ORDER[after.status as string], STATUS_ORDER[before.status || '']);
+    const stageForward = stageChanged
+      && funnelStepIsForward(STAGE_ORDER[after.onboardingStage as string], STAGE_ORDER[before.onboardingStage || '']);
+    if (!statusForward && !stageForward) return;
+
+    // Веха уже взята этим лидом — повторный заход не засчитываем.
+    const reached = async (col: 'status' | 'stage', value: string): Promise<boolean> => {
+      if (!leadId) return false;
+      const rows: any[] = await this.activityRepo.manager.query(
+        `SELECT 1 FROM lead_progress
+         WHERE lead_id = $1::uuid AND delta > 0
+           AND ${col}_to = $2 AND ${col}_from IS DISTINCT FROM ${col}_to
+         LIMIT 1`,
+        [leadId, value],
+      );
+      return Array.isArray(rows) && rows.length > 0;
     };
-    const statusChanged = after.status && after.status !== before.status;
-    const stageChanged  = after.onboardingStage && after.onboardingStage !== before.onboardingStage;
-    const statusDelta = statusChanged
-      ? deltaOf(STATUS_ORDER[after.status as string], STATUS_ORDER[before.status || ''])
-      : 0;
-    const stageDelta = stageChanged
-      ? deltaOf(STAGE_ORDER[after.onboardingStage as string], STAGE_ORDER[before.onboardingStage || ''])
-      : 0;
-    // Берём ту дельту, что не ноль. Если оба сдвинулись в одну сторону —
-    // считаем как один шаг (одна запись), чтобы не задвоить.
-    const delta = stageDelta !== 0 ? stageDelta : statusDelta;
-    if (delta === 0) return;
+    let statusMilestone = false;
+    let stageMilestone = false;
+    try {
+      statusMilestone = statusForward && !(await reached('status', after.status as string));
+      stageMilestone = stageForward && !(await reached('stage', after.onboardingStage as string));
+    } catch (e: any) {
+      // Не смогли проверить — не начисляем: лучше недосчитать, чем накрутить.
+      this.logger.warn(`lead_progress milestone check failed: ${e?.message || e}`);
+      return;
+    }
+    if (!statusMilestone && !stageMilestone) return;
+
+    // Кому зачёт: владелец-МП (основной или второй ролью), иначе — автор.
+    let creditUserId = actor.id;
+    if (after.ownerId && after.ownerId !== actor.id) {
+      const owner = await this.userRepo.findOne({
+        where: { id: after.ownerId },
+        select: ['id', 'role', 'secondaryRole'] as any,
+      }).catch(() => null);
+      if (owner && salesRoleOf(owner as any)) creditUserId = owner.id;
+    }
 
     // ─── Первичный путь: lead_progress (без enum-зависимостей) ─────────
+    // Одна запись на правку, даже если вехи взяты и по статусу, и по этапу.
     try {
       await this.activityRepo.manager.query(
         `INSERT INTO lead_progress
            (user_id, lead_id, lead_name, stage_from, stage_to, status_from, status_to, delta)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
-          actor.id,
+          creditUserId,
           leadId || null,
           after.name || null,
           before.onboardingStage || null,
           after.onboardingStage || null,
           before.status || null,
           after.status || null,
-          delta,
+          1,
         ],
       );
     } catch (e: any) {
       this.logger.error(`lead_progress insert failed: ${e?.message || e}`);
     }
 
-    // На уровне entity-флагов — что произошло, для legacy activity_logs.
-    const advancedStatus = statusDelta > 0;
-    const advancedStage = stageDelta > 0;
-
-    // Legacy activity_logs: пишем ТОЛЬКО при движении вперёд (delta > 0).
-    // Backward в activity_logs не пишем — там схема не позволяет хранить
-    // знак, и KPI с этого источника считается COUNT (получили бы задвоение).
-    if (delta > 0) {
-      await this.activityLog.log({
-        userId: actor.id,
-        userName: actor.name,
-        action: ActivityAction.LEAD_PROGRESS,
-        entity: 'client_lead',
-        entityId: undefined,
-        entityName: after.name,
-        details: {
-          ownerId: after.ownerId,
-          statusFrom: before.status ?? null,
-          statusTo: after.status ?? null,
-          stageFrom: before.onboardingStage ?? null,
-          stageTo: after.onboardingStage ?? null,
-          advancedStatus: !!advancedStatus,
-          advancedStage: !!advancedStage,
-        },
-      });
-    }
+    // Legacy activity_logs (запасной счёт KPI и журнал действий): автор —
+    // тот, кто подвинул; кому зачтено — в details.
+    await this.activityLog.log({
+      userId: actor.id,
+      userName: actor.name,
+      action: ActivityAction.LEAD_PROGRESS,
+      entity: 'client_lead',
+      entityId: undefined,
+      entityName: after.name,
+      details: {
+        ownerId: after.ownerId,
+        creditedTo: creditUserId,
+        statusFrom: before.status ?? null,
+        statusTo: after.status ?? null,
+        stageFrom: before.onboardingStage ?? null,
+        stageTo: after.onboardingStage ?? null,
+        advancedStatus: statusMilestone,
+        advancedStage: stageMilestone,
+      },
+    });
     this.logger.log(
-      `LEAD_PROGRESS (delta=${delta}) by user=${actor.id} lead="${after.name}" ` +
+      `LEAD_PROGRESS +1 to user=${creditUserId} by=${actor.id} lead="${after.name}" ` +
       `${before.onboardingStage ?? '∅'}→${after.onboardingStage ?? '∅'} / ` +
       `${before.status ?? '∅'}→${after.status ?? '∅'}`,
     );
@@ -453,8 +494,15 @@ export class ClientsService implements OnModuleInit {
    *  KPI «Холодные звонки» считает эти события за период. Best-effort. */
   private async logColdCall(userId: string, leadId: string): Promise<void> {
     try {
+      // Один холодный звонок по лиду в день на менеджера (15.11.2026):
+      // переключение «холодный → нейтральный → холодный» давало +1 за каждый круг.
       await this.repo.manager.query(
-        `INSERT INTO lead_actions (user_id, lead_id, kind) VALUES ($1, $2, 'cold_call')`,
+        `INSERT INTO lead_actions (user_id, lead_id, kind)
+         SELECT $1::uuid, $2::uuid, 'cold_call'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM lead_actions
+           WHERE user_id = $1::uuid AND lead_id = $2::uuid AND kind = 'cold_call'
+             AND (created_at AT TIME ZONE 'Asia/Dushanbe')::date = (NOW() AT TIME ZONE 'Asia/Dushanbe')::date)`,
         [userId, leadId],
       );
     } catch (e: any) {
@@ -870,9 +918,10 @@ export class ClientsService implements OnModuleInit {
       // Если задача когда-то создавалась — удаляем её здесь же.
       const owner = await this.userRepo.findOne({
         where: { id: lead.ownerId },
-        select: ['id', 'role'],
+        select: ['id', 'role', 'secondaryRole'] as any,
       }).catch(() => null);
-      if (owner && SALES_MANAGER_ROLES.includes(owner.role as any)) {
+      // МП — по основной или второй роли (15.11.2026).
+      if (owner && salesRoleOf(owner as any)) {
         if (lead.meetingTaskId) {
           await this.taskRepo.delete(lead.meetingTaskId).catch(() => {});
           await this.repo.update(lead.id, { meetingTaskId: null });
@@ -897,19 +946,25 @@ export class ClientsService implements OnModuleInit {
       let title: string;
 
       if (isScheduled) {
-        // Точное время nextContactAt. Если пришла голая дата (00:00) —
-        // ставим 12:00 как разумный дефолт.
+        // Точное время nextContactAt. Если пришла голая дата (полночь) —
+        // ставим 12:00 по Душанбе (15.11.2026: setHours на сервере в UTC
+        // ставил 17:00 по Душанбе). Голая дата — это полночь UTC (строка
+        // 'YYYY-MM-DD') или полночь по Душанбе (дата из браузера).
         deadline = new Date(nextDate as Date);
-        if (deadline.getHours() === 0 && deadline.getMinutes() === 0) {
-          deadline.setHours(12, 0, 0, 0);
+        const utcMidnight = deadline.getUTCHours() === 0 && deadline.getUTCMinutes() === 0;
+        const localDay = dushanbeDay(deadline);
+        const localMidnight = deadline.getTime() === new Date(`${localDay}T00:00:00+05:00`).getTime();
+        if (utcMidnight || localMidnight) {
+          const day = utcMidnight ? deadline.toISOString().slice(0, 10) : localDay;
+          deadline = new Date(`${day}T12:00:00+05:00`);
         }
         title = this.buildMeetingTaskTitle(lead);
       } else {
-        // Follow-up по новому/активному лиду. Дедлайн — сегодня 10:00.
+        // Follow-up по новому/активному лиду. Дедлайн — сегодня 10:00 по
+        // Душанбе (15.11.2026: раньше setHours в UTC сервера = 15:00 Душанбе).
         // Если задача уже существовала, её дедлайн НЕ перезаписываем (МП
         // мог сам перетащить в календаре), просто обновляем title/desc.
-        deadline = new Date();
-        deadline.setHours(10, 0, 0, 0);
+        deadline = new Date(`${dushanbeDay()}T10:00:00+05:00`);
         title = this.buildFollowUpTaskTitle(lead);
       }
 

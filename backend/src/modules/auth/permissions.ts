@@ -108,7 +108,9 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'reports.delete': { label: 'Отчёты — удаление',       category: 'Аналитика и отчёты', roles: [...TOP], danger: true },
 
   // ─── Аналитика ─────────────────────────────────────────────────────
-  'analytics.view':           { label: 'Аналитика — просмотр',            category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'dev_director', 'sales_manager_smm', 'sales_manager_dev'] },
+  // МП убраны 15.11.2026: сводки компании им отдают 403 (analytics.controller),
+  // их цифры — в analytics.sales. Каталог совпадает с тем, что реально работает.
+  'analytics.view':           { label: 'Аналитика — просмотр',            category: 'Аналитика и отчёты', roles: [...TOP, 'smm_director', 'dev_director'] },
   'analytics.sales':          { label: 'Аналитика — продажи',             category: 'Аналитика и отчёты', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'analytics.payroll':        { label: 'Аналитика — фонд оплаты труда',   category: 'Аналитика и отчёты', roles: [...FOUNDERS], danger: true },
   'analytics.income-expense': { label: 'Аналитика — доходы и расходы',    category: 'Аналитика и отчёты', roles: [...FOUNDERS], danger: true },
@@ -136,7 +138,11 @@ export const GRANTABLE: Record<string, GrantDef> = {
   // (см. project_hidden в projects.service) — им доступ нужен нативно.
   'archive.view':      { label: 'Архив — просмотр',            category: 'Настройки', roles: [...TOP, 'sales_manager_smm', 'sales_manager_dev'] },
   'security-log.view': { label: 'Журнал безопасности — доступ', category: 'Настройки', roles: [...TOP], danger: true },
-  'ai.chat':           { label: 'ИИ-помощник — доступ',         category: 'Настройки', roles: [...TOP] },
+  // ИИ-помощник — у всех ролей, кроме «Проверяющего сторис» (как в меню
+  // фронта). Раньше каталог давал его только TOP, а эндпоинт не проверял
+  // ничего; с проверкой @RequirePerm('ai.chat') доступ никто не теряет,
+  // а запрет в «Доступах сотрудников» начинает работать (15.11.2026).
+  'ai.chat':           { label: 'ИИ-помощник — доступ',         category: 'Настройки', roles: [...ALL_ROLES] },
 
   // ─── Dev-tracker (доска задач разработки) ────────────────────────────
   // Просмотр доски — у всей dev-команды (руководитель, PM, разработчики).

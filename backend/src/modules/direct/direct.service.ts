@@ -91,6 +91,7 @@ export class DirectService implements OnApplicationBootstrap {
   private readonly logger = new Logger(DirectService.name);
   /** Кто сейчас открыл какой чат: conversationId → (userId → последний пульс). */
   private readonly viewers = new Map<string, Map<string, number>>();
+  private viewersPrunedAt = 0;
   /** Кто имеет доступ к «Директу» — кэш на минуту. */
   private audienceCache: { at: number; all: string[]; push: string[] } | null = null;
   private readonly profileAttempts = new Map<string, number>();
@@ -566,11 +567,24 @@ export class DirectService implements OnApplicationBootstrap {
     if (!map) return [];
     const now = Date.now();
     for (const [userId, at] of map) if (now - at > VIEWER_TTL_MS) map.delete(userId);
+    if (!map.size) this.viewers.delete(conversationId);
     return [...map.keys()];
+  }
+
+  /** Зрители, переставшие слать пульс (закрыли вкладку без «leave»), и
+   *  пустые чаты — вон из памяти (15.11.2026): раньше карта только росла. */
+  private pruneViewers(now = Date.now()): void {
+    if (now - this.viewersPrunedAt < VIEWER_TTL_MS) return;
+    this.viewersPrunedAt = now;
+    for (const [conversationId, map] of this.viewers) {
+      for (const [userId, at] of map) if (now - at > VIEWER_TTL_MS) map.delete(userId);
+      if (!map.size) this.viewers.delete(conversationId);
+    }
   }
 
   /** Пульс открытого чата. Новый зритель — сообщаем остальным. */
   ping(userId: string, conversationId: string): void {
+    this.pruneViewers();
     const map = this.viewers.get(conversationId) ?? new Map<string, number>();
     const fresh = !map.has(userId) || Date.now() - (map.get(userId) ?? 0) > VIEWER_TTL_MS;
     map.set(userId, Date.now());
@@ -579,7 +593,10 @@ export class DirectService implements OnApplicationBootstrap {
   }
 
   leave(userId: string, conversationId: string): void {
-    if (this.viewers.get(conversationId)?.delete(userId)) void this.pushConversation(conversationId);
+    const map = this.viewers.get(conversationId);
+    if (!map?.delete(userId)) return;
+    if (!map.size) this.viewers.delete(conversationId);
+    void this.pushConversation(conversationId);
   }
 
   // ─── Что читает CRM ─────────────────────────────────────────────────
@@ -1432,7 +1449,12 @@ export class DirectService implements OnApplicationBootstrap {
 
   onApplicationBootstrap(): void {
     if (process.env.NODE_ENV === 'test') return;
-    this.checkAccount().catch(e => this.logger.warn(`Проверка аккаунта Instagram не удалась: ${e?.message || e}`));
+    // Открытый маркер из старой записи — сразу в шифр (15.11.2026); проверка
+    // аккаунта — после, чтобы две записи одной строки не затёрли друг друга.
+    this.instagram.sealLegacyToken()
+      .catch(e => this.logger.warn(`Маркер Instagram не перешифрован: ${e?.message || e}`))
+      .then(() => this.checkAccount())
+      .catch(e => this.logger.warn(`Проверка аккаунта Instagram не удалась: ${e?.message || e}`));
     this.sweep().catch(e => this.logger.warn(`Подчистка «Директа» при запуске не удалась: ${e?.message || e}`));
   }
 

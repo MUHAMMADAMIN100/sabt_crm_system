@@ -171,14 +171,9 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
     </div>
   </div>
 
-  <button class="print-btn no-print" onclick="window.print()">
+  <button class="print-btn no-print" type="button">
     📄 Сохранить как PDF
   </button>
-
-  <script>
-    // Auto-open print dialog after first render — user can save as PDF or cancel
-    window.addEventListener('load', () => setTimeout(() => window.print(), 400));
-  </script>
 </body>
 </html>`
 
@@ -187,6 +182,14 @@ export function downloadSmmBrief(project: { name: string; smmData?: Record<strin
   win.document.open()
   win.document.write(html)
   win.document.close()
+  // Обработчики вешаем отсюда, а не встроенным onclick/<script> (15.11.2026):
+  // окно about:blank наследует CSP страницы, а она больше не разрешает
+  // встроенные скрипты ('unsafe-inline' убран из script-src в vercel.json).
+  win.document.querySelector('.print-btn')?.addEventListener('click', () => win.print())
+  // Auto-open print dialog after first render — user can save as PDF or cancel
+  const autoPrint = () => setTimeout(() => { try { win.print() } catch { /* окно закрыли */ } }, 400)
+  if (win.document.readyState === 'complete') autoPrint()
+  else win.addEventListener('load', autoPrint, { once: true })
 }
 
 function escapeHtml(s: string): string {

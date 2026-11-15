@@ -35,7 +35,7 @@ export class RiskAlertsService {
       this.checkPmOverload(),
       this.checkTariffOveruse(),
       this.checkWeekNoContent(),
-      this.checkTooManyPmReviews(),
+      // checkTooManyPmReviews убран (15.11.2026) — см. раздел 6 ниже.
       this.checkLaunchIncomplete(),
     ]);
   }
@@ -52,7 +52,7 @@ export class RiskAlertsService {
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // 1. Сотрудник неактивен 2 дня (нет завершённых задач или комментариев)
+  // 1. Сотрудник неактивен 2 дня (ни задач, ни контент-плана, ни смен)
   // ─────────────────────────────────────────────────────────────────────
   async checkInactiveEmployees() {
     const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
@@ -72,6 +72,36 @@ export class RiskAlertsService {
       .andWhere('t.updatedAt > :since', { since: cutoff })
       .getRawMany();
     const activeSet = new Set(activeRows.map(r => r.assigneeId));
+
+    // Активность — не только задачи (15.11.2026): SMM-команда работает в
+    // контент-плане (исполнитель или PM позиции), а рабочая смена
+    // («Начать работу») — сама по себе признак работы. Без этого «неактивен»
+    // приходил людям, которые весь день вели контент-план.
+    let otherRows: Array<{ userId: string }>;
+    try {
+      otherRows = await this.userRepo.manager.query(
+        `SELECT DISTINCT a."userId" FROM (
+           SELECT "assigneeId"::text AS "userId" FROM content_plan_items
+            WHERE "assigneeId" IS NOT NULL AND "updatedAt" > $2
+           UNION
+           SELECT "pmId"::text FROM content_plan_items
+            WHERE "pmId" IS NOT NULL AND "updatedAt" > $2
+           UNION
+           SELECT "employeeId"::text FROM work_shifts
+            -- Незакрытая смена считается, только если начата после порога:
+            -- забытая старая смена не должна навсегда глушить алерт (15.11.2026).
+            WHERE "startedAt" > $2 OR "endedAt" > $2
+         ) a
+         WHERE a."userId" = ANY($1::text[])`,
+        [users.map(u => u.id), cutoff],
+      );
+    } catch (e: any) {
+      // Не смогли проверить контент-план и смены — лучше промолчать, чем
+      // разослать ложное «неактивен» всей SMM-команде.
+      this.logger.warn(`inactive-2d: активность по контент-плану/сменам не прочитана: ${e?.message || e}`);
+      return;
+    }
+    for (const r of otherRows || []) activeSet.add(r.userId);
 
     // /employees/:id ждёт id сотрудника, а не аккаунта — иначе ссылка
     // уводила на «не найден».
@@ -94,7 +124,7 @@ export class RiskAlertsService {
           userId: rid,
           type: NotificationType.EMPLOYEE_INACTIVE_2D,
           title: '😴 Сотрудник неактивен 2 дня',
-          message: `${u.name} не обновлял задачи последние 2 дня.`,
+          message: `${u.name}: 2 дня нет активности — ни задач, ни контент-плана, ни рабочих смен.`,
           link: employeeOf.has(u.id) ? `/employees/${employeeOf.get(u.id)}` : '/employees',
           data: { alertKey: `inactive-2d:${u.id}`, userId: u.id },
         }, 48).catch(() => {});
@@ -124,7 +154,9 @@ export class RiskAlertsService {
           userId: rid,
           type: NotificationType.PM_OVERLOAD,
           title: '🔥 PM перегружен',
-          message: `${pm.pmName}: проектов ${pm.projectCount}, на проверке ${pm.tasksOnReview}, на доработке ${pm.tasksOnRework}.`,
+          // «На проверке/доработке» в 4-статусной модели нет: tasksOnReview —
+          // это задачи в работе (см. getPmWorkload), 15.11.2026.
+          message: `${pm.pmName}: проектов ${pm.projectCount}, задач в работе ${pm.tasksOnReview}.`,
           link: `/employees/${pm.pmId}`,
           data: { alertKey: `pm-overload:${pm.pmId}`, pmId: pm.pmId },
         }, 24).catch(() => {});
@@ -133,7 +165,8 @@ export class RiskAlertsService {
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // 3. Лимит тарифа превышен (по любому типу контента)
+  // 3. Месячный лимит тарифа превышен публикациями текущего месяца по
+  //    Душанбе (по любому типу контента; раньше — за всё время, 15.11.2026)
   // ─────────────────────────────────────────────────────────────────────
   async checkTariffOveruse() {
     const projects = await this.projectRepo.find({
@@ -148,7 +181,7 @@ export class RiskAlertsService {
       if (overusedTypes.length === 0) continue;
 
       const summary = overusedTypes
-        .map(r => `${r.contentType}: +${r.overuse} сверх лимита`)
+        .map(r => `${r.contentType}: +${r.overuse} сверх месячного лимита`)
         .join('; ');
 
       const recipients = new Set<string>();
@@ -243,38 +276,8 @@ export class RiskAlertsService {
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // 6. Слишком много задач в статусе on_pm_review (> 10) у одного PM
-  // ─────────────────────────────────────────────────────────────────────
-  async checkTooManyPmReviews() {
-    const THRESHOLD = 10;
-    const rows: Array<{ managerId: string; cnt: string }> = await this.projectRepo.manager.query(
-      `SELECT p."managerId" AS "managerId", COUNT(*) AS cnt
-       FROM tasks t
-       JOIN projects p ON p.id = t."projectId"
-       -- ::text — статусы легаси, в enum'е их может не быть (см. миграцию
-       -- SimplifyTaskStatuses); без приведения запрос падает на кастинге.
-       WHERE t.status::text IN ('review', 'on_pm_review')
-         AND p."isArchived" = false
-       GROUP BY p."managerId"
-       HAVING COUNT(*) > $1`,
-      [THRESHOLD],
-    );
-
-    const admins = await this.getTopAdmins();
-    for (const row of rows) {
-      if (!row.managerId) continue;
-      const cnt = Number(row.cnt);
-      const recipients = new Set<string>([row.managerId, ...admins.map(a => a.id)]);
-      for (const rid of recipients) {
-        await this.notificationsService.createIfNotRecent({
-          userId: rid,
-          type: NotificationType.TOO_MANY_PM_REVIEWS,
-          title: '🚦 Очередь на проверке растёт',
-          message: `У PM в очереди ${cnt} задач на проверке (порог ${THRESHOLD}).`,
-          link: `/tasks?status=review`,
-          data: { alertKey: `pm-reviews:${row.managerId}:${cnt}`, pmId: row.managerId, count: cnt },
-        }, 12).catch(() => {});
-      }
-    }
-  }
+  // 6. «Слишком много задач на проверке у PM» — УДАЛЁН 15.11.2026.
+  // Искал статусы review/on_pm_review, которых в 4-статусной модели задач
+  // (new / in_progress / done / cancelled, см. task.entity) больше нет:
+  // запрос всегда возвращал пусто. Аналога «на проверке» у задач сейчас нет.
 }

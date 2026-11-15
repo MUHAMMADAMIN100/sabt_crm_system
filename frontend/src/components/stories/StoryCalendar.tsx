@@ -164,8 +164,15 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
   const canArchiveStories = !employeeId && (
     user?.isStoryMaker
     || ['smm_specialist', 'smm_director', 'admin', 'founder'].includes(user?.role || '')
-    || ['smm_director'].includes(user?.secondaryRole || '')
+    || ['smm_specialist', 'smm_director'].includes(user?.secondaryRole || '')
   )
+  // По конкретному проекту (15.11.2026, так же проверяет сервер): руководство —
+  // любой, остальные — только свой (менеджер, участник, назначенный специалист).
+  const isStoriesMgmt = [user?.role, user?.secondaryRole].some(r => !!r && ['admin', 'founder', 'smm_director'].includes(r))
+  const canArchiveProject = (p: any) => canArchiveStories && (isStoriesMgmt
+    || p?.managerId === user?.id
+    || !!p?.members?.some((m: any) => m.id === user?.id)
+    || (Array.isArray(p?.smmData?.smmSpecialistIds) && p.smmData.smmSpecialistIds.includes(user?.id)))
   const archiveMut = useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       projectsApi.setStoriesArchived(id, archived),
@@ -413,7 +420,7 @@ export default function StoryCalendar({ employeeId, compact, adminAll, greenAnyP
                         </span>
                       </>
                     )}
-                    {canArchiveStories && (
+                    {canArchiveProject(project) && (
                       // span[role=button]: вложенный <button> в <button> невалиден.
                       <span
                         role="button"

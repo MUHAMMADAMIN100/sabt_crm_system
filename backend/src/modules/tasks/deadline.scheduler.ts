@@ -11,6 +11,7 @@ import { MailService } from '../mail/mail.service'
 import { TelegramService } from '../telegram/telegram.service'
 import { ActivityLog, ActivityAction } from '../activity-log/activity-log.entity'
 import { TasksService } from './tasks.service'
+import { escapeHtml } from '../../common/html-escape'
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая',
@@ -149,7 +150,9 @@ export class DeadlineScheduler implements OnModuleInit {
         )
       }
 
-      const tgText = `⏰ <b>Напоминание о дедлайне</b>\n\nЗадача: <b>${task.title}</b>\nПроект: ${projectName}\nДедлайн: <b>${deadlineStr}</b>\nОсталось: <b>${daysLeft} ${daysLeft === 1 ? 'день' : 'дня'}</b>`
+      // Название и проект — пользовательский текст: в HTML Telegram только
+      // через escapeHtml (15.11.2026), иначе «<» в названии ронял сообщение.
+      const tgText = `⏰ <b>Напоминание о дедлайне</b>\n\nЗадача: <b>${escapeHtml(task.title)}</b>\nПроект: ${escapeHtml(projectName)}\nДедлайн: <b>${deadlineStr}</b>\nОсталось: <b>${daysLeft} ${daysLeft === 1 ? 'день' : 'дня'}</b>`
       await this.telegramService.sendToUser(task.assigneeId, tgText)
 
       sent++
@@ -201,8 +204,8 @@ export class DeadlineScheduler implements OnModuleInit {
 
       // Common Telegram detail block (re-used per recipient)
       const detailBlock =
-        `📝 <b>${task.title}</b>\n` +
-        `📁 Проект: ${projectName}\n` +
+        `📝 <b>${escapeHtml(task.title)}</b>\n` +
+        `📁 Проект: ${escapeHtml(projectName)}\n` +
         `📊 Статус: ${statusLabel}\n` +
         `🎯 Приоритет: ${priorityLabel}\n` +
         `⏱ Залогировано: <b>${loggedHours}ч</b>\n` +
@@ -255,7 +258,7 @@ export class DeadlineScheduler implements OnModuleInit {
           await this.telegramService.sendToUser(
             pmId,
             `🔴 <b>Просрочка в команде</b>\n\n` +
-            `👤 Исполнитель: <b>${assigneeName}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
+            `👤 Исполнитель: <b>${escapeHtml(assigneeName)}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
           )
         }
       }
@@ -282,7 +285,7 @@ export class DeadlineScheduler implements OnModuleInit {
           await this.telegramService.sendToUser(
             recipient.id,
             `⚠️ <b>Серьёзная просрочка</b>\n\n` +
-            `👤 Исполнитель: <b>${assigneeName}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
+            `👤 Исполнитель: <b>${escapeHtml(assigneeName)}</b>\n${detailBlock}\n\n👉 ${this.telegramService.appUrl}${taskLink}`,
           )
         }
         escalated++
@@ -493,7 +496,7 @@ export class DeadlineScheduler implements OnModuleInit {
         const status = `${STATUS_ICON[t.status] || ''} ${STATUS_LABELS[t.status] || t.status}`
         const hours = Number(t.loggedHours || 0)
         const hoursStr = hours > 0 ? ` · ⏱ ${hours}ч` : ''
-        return `• <b>${t.title}</b>\n   👤 ${t.assignee?.name || 'без исполнителя'} · ${status} · ${prio}${hoursStr}`
+        return `• <b>${escapeHtml(t.title)}</b>\n   👤 ${escapeHtml(t.assignee?.name || 'без исполнителя')} · ${status} · ${prio}${hoursStr}`
       }).join('\n')
       const overflowLine = overflow > 0 ? `\n…и ещё ${overflow}` : ''
 
@@ -530,7 +533,7 @@ export class DeadlineScheduler implements OnModuleInit {
       // Telegram — full detail
       const tgText =
         `📋 <b>Итоги дня — невыполненные задачи</b>\n\n` +
-        `📁 Проект: <b>${group.projectName}</b>\n` +
+        `📁 Проект: <b>${escapeHtml(group.projectName)}</b>\n` +
         `📅 Дата: ${dateStr}\n` +
         `📊 Не выполнено: <b>${count}</b> · ⏱ потрачено ${totalLogged}ч` +
         (critical > 0 ? ` · 🔴 ${critical} критич.` : '') +
@@ -643,7 +646,7 @@ export class DeadlineScheduler implements OnModuleInit {
     for (const row of stats) {
       if (row.doneCount === 0) continue // skip silent weeks
       const taskLines = row.tasks.slice(0, 10)
-        .map(t => `• ${t.title}${t.hours > 0 ? ` (${t.hours}ч)` : ''}`)
+        .map(t => `• ${escapeHtml(t.title)}${t.hours > 0 ? ` (${t.hours}ч)` : ''}`)
         .join('\n')
       const overflow = row.tasks.length > 10 ? `\n…и ещё ${row.tasks.length - 10}` : ''
 
@@ -786,7 +789,8 @@ export class DeadlineScheduler implements OnModuleInit {
               leader.email,
               leader.name,
               `🎂 День рождения сотрудника через 3 дня`,
-              `<b>${emp.fullName}</b> отмечает день рождения <b>${dateStr}</b>${age > 0 ? ` (исполняется ${age} лет)` : ''}.<br/><br/>Должность: ${emp.position || '—'}`,
+              // bodyHtml экранирует вызывающий (15.11.2026).
+              `<b>${escapeHtml(emp.fullName)}</b> отмечает день рождения <b>${dateStr}</b>${age > 0 ? ` (исполняется ${age} лет)` : ''}.<br/><br/>Должность: ${escapeHtml(emp.position || '—')}`,
             )
           }
         } catch {}
@@ -796,9 +800,9 @@ export class DeadlineScheduler implements OnModuleInit {
           await this.telegramService.sendToUser(
             leader.id,
             `🎂 <b>День рождения через 3 дня</b>\n\n` +
-            `👤 ${emp.fullName}\n` +
+            `👤 ${escapeHtml(emp.fullName)}\n` +
             `📅 ${dateStr}${age > 0 ? ` (${age} лет)` : ''}\n` +
-            `💼 ${emp.position || '—'}`,
+            `💼 ${escapeHtml(emp.position || '—')}`,
           )
         } catch {}
       }
