@@ -136,11 +136,12 @@ const int = (v: unknown, def: number) => {
 };
 
 /** Разбор параметров /clients/list и /clients/board. owner по умолчанию —
- *  «me» для менеджера продаж, «all» для руководства. Неизвестный owner —
- *  как по умолчанию, а не ошибка: ссылку со старым параметром не ломаем. */
+ *  «all» для всех (16.11.2026): менеджер видит всю базу своего направления,
+ *  как до обновления (направление ограничивает контроллер). Неизвестный
+ *  owner — как по умолчанию, а не ошибка: старую ссылку не ломаем. */
 export function parseLeadListQuery(q: LeadListQuery, me: { id: string; isSales: boolean }): LeadListParams {
   const rawOwner = String(q.owner ?? '').trim();
-  let owner = me.isSales ? me.id : 'all';
+  let owner = 'all';
   if (rawOwner === 'me') owner = me.id;
   else if (rawOwner === 'all' || rawOwner === 'none') owner = rawOwner;
   else if (UUID_RE.test(rawOwner)) owner = rawOwner;

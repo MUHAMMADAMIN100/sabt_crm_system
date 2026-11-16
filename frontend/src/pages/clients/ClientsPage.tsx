@@ -51,7 +51,10 @@ export default function ClientsPage() {
   const isSales = !!salesDirectionOf(user)
   // «Все» — руководству (и тем, кому раздел открыт доступом без роли
   // продаж: своих лидов у них нет). МП видит только свои.
-  const canSeeAll = top || !isSales
+  // «Мои / Все» — у всех (16.11.2026): менеджер, как и до обновления, видит
+  // всю базу своего направления (и старые лиды без владельца), а «Мои» —
+  // только свои. Чужой лид открывается на просмотр, ничейный можно взять.
+  const canSeeAll = true
   const desktop = useIsDesktop()
   const patchUrl = usePatchUrl()
   const patchRef = useRef(patchUrl)

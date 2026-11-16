@@ -262,9 +262,15 @@ describe('«Взять себе» и удаление ничьих лидов', 
 describe('GET /clients/list и /clients/board', () => {
   const sqlOf = (qb: any) => qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
 
-  it('МП по умолчанию — свои; «Просрочено» — по ближайшему действию; owner только { id, name }', async () => {
+  it('МП по умолчанию видит всю базу направления (16.11.2026)', async () => {
     const { svc, qb } = makeService();
-    const page = await svc.list({ due: 'overdue' }, mp1, 'smm' as any);
+    await svc.list({}, mp1, 'smm' as any);
+    expect(sqlOf(qb)).not.toContain('c.ownerId = :oid');
+  });
+
+  it('МП «Мои»; «Просрочено» — по ближайшему действию; owner только { id, name }', async () => {
+    const { svc, qb } = makeService();
+    const page = await svc.list({ due: 'overdue', owner: 'me' }, mp1, 'smm' as any);
     const sql = sqlOf(qb);
     expect(sql).toContain('c.ownerId = :oid');
     expect(qb.andWhere.mock.calls.find((c: any[]) => c[0] === 'c.ownerId = :oid')[1]).toEqual({ oid: MP1 });

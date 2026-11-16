@@ -62,7 +62,7 @@ describe('parseLeadListQuery — параметры /clients/list', () => {
   const boss = { id: 'B', isSales: false };
 
   it('по умолчанию: МП — свои, руководство — все; страница 1 по 20, сортировка next', () => {
-    expect(parseLeadListQuery({}, mp)).toMatchObject({ owner: 'MP', page: 1, pageSize: 20, sort: 'next', due: null, hold: null });
+    expect(parseLeadListQuery({}, mp)).toMatchObject({ owner: 'all', page: 1, pageSize: 20, sort: 'next', due: null, hold: null });
     expect(parseLeadListQuery({}, boss).owner).toBe('all');
   });
 
@@ -72,7 +72,8 @@ describe('parseLeadListQuery — параметры /clients/list', () => {
     expect(parseLeadListQuery({ owner: 'all' }, mp).owner).toBe('all');
     expect(parseLeadListQuery({ owner: 'none' }, mp).owner).toBe('none');
     expect(parseLeadListQuery({ owner: id }, mp).owner).toBe(id);
-    expect(parseLeadListQuery({ owner: "x' OR 1=1" }, mp).owner).toBe('MP');
+    expect(parseLeadListQuery({ owner: "x' OR 1=1" }, mp).owner).toBe('all');
+    expect(parseLeadListQuery({ owner: 'me' }, mp).owner).toBe('MP');
   });
 
   it('pageSize 10..100, page ≥ 1, неизвестные due/sort — мимо', () => {
