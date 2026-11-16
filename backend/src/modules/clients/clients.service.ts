@@ -869,6 +869,11 @@ export class ClientsService implements OnModuleInit {
 
   private async applyUpdate(before: ClientLead, dto: Partial<ClientLead>, actorId?: string) {
     const patch = this.sanitizePatch(dto);
+    // Старый текст «Контакты» (импорт, старая форма) правками не затираем
+    // (16.11.2026): формы собирали его заново из телефона/Instagram/почты, и
+    // всё, чего в этих полях нет (второй номер, заметки), пропадало
+    // навсегда. Новые контакты живут в отдельных полях.
+    if ('contactInfo' in patch && (before.contactInfo || '').trim()) delete patch.contactInfo;
     // Этап — только из единой воронки; null этапом не бывает.
     if (patch.status === null) delete patch.status;
     if (patch.status !== undefined && patch.status !== before.status) this.assertSettableStatus(patch.status);

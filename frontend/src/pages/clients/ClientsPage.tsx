@@ -33,7 +33,7 @@ const PAGE_SIZE = 20
 const VIEWS = ['board', 'list'] as const
 const OWNERS = ['me', 'all'] as const
 const DUES: readonly DueFilter[] = ['', 'overdue', 'today', 'none']
-const STAGE_FILTERS: readonly string[] = ['', 'all', ...ALL_STAGES.map(s => s.value)]
+const STAGE_FILTERS: readonly string[] = ['', 'all', 'active', ...ALL_STAGES.map(s => s.value)]
 const LEGACY_ACTIVE = ['negotiating', 'on_hold', 'unknown']
 
 /**
@@ -57,7 +57,9 @@ export default function ClientsPage() {
   const patchRef = useRef(patchUrl)
   patchRef.current = patchUrl
 
-  const [view, setView] = useUrlState<'board' | 'list'>('view', desktop ? 'board' : 'list', VIEWS)
+  // По умолчанию — список всей базы (16.11.2026): воронка показывает только
+  // сделки в работе, и после обновления казалось, что база «пропала».
+  const [view, setView] = useUrlState<'board' | 'list'>('view', 'list', VIEWS)
   const [ownerRaw] = useUrlState<'me' | 'all'>('owner', canSeeAll ? 'all' : 'me', OWNERS)
   const owner: 'me' | 'all' = canSeeAll ? ownerRaw : 'me'
   const [due] = useUrlState<DueFilter>('due', '', DUES)
@@ -120,7 +122,8 @@ export default function ClientsPage() {
     due: due || undefined,
     source: source || undefined,
     hold: hold ? '1' : undefined,
-    status: stage === '' ? ACTIVE_STATUSES.join(',') : stage === 'all' ? undefined : stage,
+    // Пусто — все этапы (как раньше в «Базе клиентов»), «active» — только в работе.
+    status: stage === '' || stage === 'all' ? undefined : stage === 'active' ? ACTIVE_STATUSES.join(',') : stage,
     page,
     pageSize: PAGE_SIZE,
     sort: 'next',
@@ -256,6 +259,9 @@ export default function ClientsPage() {
             <p className="mt-0.5 text-sm text-surface-500 dark:text-surface-400">
               {summary ? (
                 <>
+                  {statsQ.data && canSeeAll && (
+                    <><b className="font-semibold text-surface-800 dark:text-surface-100">{statsQ.data.total}</b> всего в базе{' · '}</>
+                  )}
                   <b className="font-semibold text-surface-800 dark:text-surface-100">{summary.inWork}</b> в работе
                   {' · '}в воронке {formatMoney(summary.potential)}
                   {Number.isFinite(summary.forecast) && <> · с учётом вероятности ≈ {formatMoney(summary.forecast)}</>}
@@ -308,8 +314,8 @@ export default function ClientsPage() {
             <>
               <label htmlFor="clients-stage" className="sr-only">Этап</label>
               <select id="clients-stage" value={stage} onChange={e => patchUrl({ stage: e.target.value || null, page: null })} className="input sm:w-48">
-                <option value="">Активные этапы</option>
-                <option value="all">Все этапы</option>
+                <option value="">Все этапы</option>
+                <option value="active">Только в работе</option>
                 {ALL_STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </>

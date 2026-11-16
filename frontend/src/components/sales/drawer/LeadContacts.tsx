@@ -12,6 +12,12 @@ export default function LeadContacts({ lead, canAct }: { lead: SalesLead; canAct
   const [editing, setEditing] = useState(false)
   const ig = instagramHandle(lead.contactInstagram)
   const empty = !lead.contactPerson && !lead.contactPhone && !ig && !lead.contactEmail
+  // Старый текст «Контакты» (импорт, старая форма) — показываем всегда, когда
+  // в нём есть что-то сверх новых полей (16.11.2026): раньше он скрывался,
+  // как только у лида появлялся ЛПР, и телефоны из него «пропадали».
+  const details = leadDetails(lead)
+  const legacy = (lead.contactInfo || '').trim()
+  const showLegacy = !!legacy && legacy !== (contactInfoOf(lead) || '')
 
   const copy = (text: string) => {
     navigator.clipboard?.writeText(text).then(
@@ -27,12 +33,17 @@ export default function LeadContacts({ lead, canAct }: { lead: SalesLead; canAct
     >
       {editing ? (
         <ContactsForm lead={lead} onDone={() => setEditing(false)} />
-      ) : empty ? (
-        <p className="text-sm text-surface-500 dark:text-surface-400">
-          {lead.contactInfo ? <span className="whitespace-pre-line">{lead.contactInfo}</span> : 'Контакты не указаны'}
-        </p>
+      ) : empty && !showLegacy ? (
+        <p className="text-sm text-surface-500 dark:text-surface-400">Контакты не указаны</p>
       ) : (
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {showLegacy && (
+            <div className="sm:col-span-2">
+              <Field label="Контакты (из старой записи)">
+                <span className="whitespace-pre-line break-words">{legacy}</span>
+              </Field>
+            </div>
+          )}
           {lead.contactPerson && <Field label="ЛПР">{lead.contactPerson}</Field>}
           {lead.contactPhone && (
             <Field label="Телефон">
@@ -66,8 +77,36 @@ export default function LeadContacts({ lead, canAct }: { lead: SalesLead; canAct
           )}
         </dl>
       )}
+      {!editing && details.length > 0 && (
+        <dl className="mt-3 grid grid-cols-1 gap-3 border-t border-surface-200 pt-3 dark:border-surface-700 sm:grid-cols-2">
+          {details.map(d => (
+            <div key={d.label} className={d.wide ? 'sm:col-span-2' : undefined}>
+              <Field label={d.label}><span className="whitespace-pre-line break-words">{d.value}</span></Field>
+            </div>
+          ))}
+        </dl>
+      )}
     </Section>
   )
+}
+
+/** Остальные поля лида из базы (16.11.2026): в новой карточке их не было
+ *  видно, и казалось, что данные пропали. Правка — через «Все поля». */
+function leadDetails(lead: SalesLead): Array<{ label: string; value: string; wide?: boolean }> {
+  const out: Array<{ label: string; value: string; wide?: boolean }> = []
+  const add = (label: string, v: unknown, wide = false) => {
+    const t = typeof v === 'string' ? v.trim() : ''
+    if (t) out.push({ label, value: t, wide })
+  }
+  add('Сфера', lead.sphere)
+  add('Адрес', lead.address)
+  add('Канал связи', lead.channel)
+  if (lead.lastContactAt) {
+    const d = new Date(lead.lastContactAt)
+    if (!isNaN(d.getTime())) out.push({ label: 'Последний контакт', value: d.toLocaleDateString('ru-RU') })
+  }
+  add('Проблема клиента', lead.problem, true)
+  return out
 }
 
 function ContactsForm({ lead, onDone }: { lead: SalesLead; onDone: () => void }) {
@@ -81,7 +120,9 @@ function ContactsForm({ lead, onDone }: { lead: SalesLead; onDone: () => void })
 
   const save = () => {
     const data = { contactPerson: t(person), contactPhone: t(phone), contactInstagram: t(ig), contactEmail: t(email) }
-    update.mutate({ id: lead.id, data: { ...data, contactInfo: contactInfoOf(data) } }, {
+    // Старый текст «Контакты» не трогаем (16.11.2026): раньше он
+    // перезаписывался новыми полями, и телефоны из импорта стирались.
+    update.mutate({ id: lead.id, data }, {
       onSuccess: () => { toast.success('Контакты сохранены'); onDone() },
     })
   }

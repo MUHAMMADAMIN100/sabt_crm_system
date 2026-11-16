@@ -149,7 +149,10 @@ export function ClientForm({ initial: editing, prefill, title, onClose, onSubmit
       out.lostReason = (d.lostReason || null) as LostReason | null
       out.rejectionReason = orNull(d.rejectionReason)
     }
-    out.contactInfo = contactInfoOf(out)
+    // Текст «Контакты» собираем только для нового лида (16.11.2026): у
+    // существующего в нём может быть то, чего нет в полях (второй телефон,
+    // заметки из импорта), — перезапись стирала это навсегда.
+    if (!editing?.id) out.contactInfo = contactInfoOf(out)
     return out
   }
 
