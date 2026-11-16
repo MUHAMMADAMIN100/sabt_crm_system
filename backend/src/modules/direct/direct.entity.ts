@@ -129,8 +129,9 @@ export class DirectConversation {
   @Column({ type: 'uuid', nullable: true })
   archivedById: string | null;
 
-  /** «Пометить непрочитанным»: вернуться к чату позже. Снимается, когда
-   *  чат открыл тот, кто вправе снять непрочитанное (см. markRead). */
+  /** «Пометить непрочитанным»: вернуться к чату позже. Снимается кнопкой
+   *  «Пометить прочитанным» или когда чат открыл тот, кто вправе снять
+   *  непрочитанное (см. clearsUnreadOnOpen — админ, открыв, не снимает). */
   @Column({ type: 'boolean', default: false })
   markedUnread: boolean;
 

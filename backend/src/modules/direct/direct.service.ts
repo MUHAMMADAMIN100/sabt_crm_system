@@ -21,7 +21,7 @@ import { AppGateway } from '../gateway/app.gateway';
 import { ClientsService } from '../clients/clients.service';
 import { ClientLeadDirection } from '../clients/client-lead.entity';
 import { getSalesSegment } from '../../common/sales-segment';
-import { bindsOnReply, canLead, canReply, canTransfer, isTop } from './direct-access';
+import { bindsOnReply, canLead, canReply, canTransfer, clearsUnreadOnOpen, isTop } from './direct-access';
 
 /** Имя и фото человека спрашиваем заново раз в неделю — их меняют. */
 const PROFILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -779,16 +779,13 @@ export class DirectService implements OnApplicationBootstrap {
     return { items: [...older.slice(0, JUMP_CONTEXT).reverse(), ...newer.reverse()], hasMore: older.length > JUMP_CONTEXT };
   }
 
-  /** Сотрудник открыл чат: сообщения прочитаны, его уведомления о чате — тоже. */
+  /** Сотрудник открыл чат: его уведомления о чате прочитаны, а сам чат —
+   *  если вправе (см. clearsUnreadOnOpen: админ, открыв, не снимает). */
   async markRead(user: User, id: string): Promise<void> {
     const conversation = await this.conversations.findOne({ where: { id }, relations: ['assignee'] });
     if (!conversation) throw new NotFoundException('Чат не найден');
     this.ping(user.id, id);
-    // Закреплённый чат «прочитан», когда его открыл тот, кто ведёт: коллега
-    // или руководство, заглянув, не снимают у менеджера отметку о новом.
-    // Тот, кто ведёт, больше не может вести клиентов — как свободный.
-    const owner = conversation.assignee;
-    const mayClear = !owner || owner.id === user.id || !canLead(owner);
+    const mayClear = clearsUnreadOnOpen(user as User & { impersonatorRole?: string }, conversation.assignee);
     if ((conversation.unreadCount > 0 || conversation.markedUnread) && mayClear) {
       await this.conversations.update(id, { unreadCount: 0, markedUnread: false });
       await this.pushConversation(id);
@@ -949,9 +946,12 @@ export class DirectService implements OnApplicationBootstrap {
     return this.get(user, id);
   }
 
+  /** «Пометить непрочитанным» (on) или «Пометить прочитанным» (off). Нарочно
+   *  снятая отметка снимает и новые сообщения клиента — раньше оставался
+   *  счётчик и кнопка ничего не меняла (16.11.2026). */
   async setMarkedUnread(user: User, id: string, on: boolean) {
     await this.manageable(user, id);
-    await this.conversations.update(id, { markedUnread: on });
+    await this.conversations.update(id, on ? { markedUnread: true } : { markedUnread: false, unreadCount: 0 });
     await this.pushConversation(id);
     return this.get(user, id);
   }

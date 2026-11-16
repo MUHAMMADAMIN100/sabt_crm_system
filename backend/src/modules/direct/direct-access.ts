@@ -57,3 +57,20 @@ export function bindsOnReply(user: Who, assigneeId: string | null | undefined): 
 export function canTransfer(user: Who, assigneeId: string | null | undefined): boolean {
   return isTop(user) || (!!assigneeId && assigneeId === user.id);
 }
+
+/** Снимает ли «непрочитанное» то, что сотрудник открыл чат.
+ *  - Админ — никогда (решение владельца 16.11.2026): он смотрит переписку для
+ *    контроля, а новое клиента должны увидеть менеджеры продаж. То же, когда
+ *    админ зашёл в кабинет менеджера через «Войти как» — читает всё равно он.
+ *    Снять отметку админ может только нарочно — «Пометить прочитанным».
+ *  - Закреплённый чат «прочитан», когда его открыл тот, кто ведёт: коллега или
+ *    основатель, заглянув, не снимают у менеджера отметку о новом.
+ *  - Тот, кто ведёт, больше не может вести клиентов — чат как свободный:
+ *    снимает любой, кто открыл. */
+export function clearsUnreadOnOpen(
+  viewer: Who & { impersonatorRole?: string | null },
+  owner: Staff | null | undefined,
+): boolean {
+  if (viewer.role === 'admin' || viewer.impersonatorRole === 'admin') return false;
+  return !owner || owner.id === viewer.id || !canLead(owner);
+}

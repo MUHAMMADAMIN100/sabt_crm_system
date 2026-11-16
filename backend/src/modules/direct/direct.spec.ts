@@ -3,9 +3,9 @@ import { describeWebhook, parseInstagramWebhook } from './instagram-events';
 import { isMediaLink, signedByMeta, MessengerError } from './meta-http';
 import { failureOf, messagePreview, replyUntil, splitText } from './direct-text';
 import { DirectFiles } from './direct-files';
-import { snippetOf } from './direct.service';
+import { DirectService, snippetOf } from './direct.service';
 import { InstagramApi, openToken, sealToken } from './instagram.api';
-import { bindsOnReply, canLead, canReply, canTransfer, isSalesManager, isTop } from './direct-access';
+import { bindsOnReply, canLead, canReply, canTransfer, clearsUnreadOnOpen, isSalesManager, isTop } from './direct-access';
 
 const ACCOUNT = '17841400000000001';
 const CLIENT = '987654321';
@@ -352,5 +352,73 @@ describe('маркер основного аккаунта в базе (15.11.20
   it('новый маркер в окружении побеждает сохранённый', async () => {
     const r = repo({ source: fp('old-env'), tokenSealed: sealToken('IGAA-old') });
     expect((await new InstagramApi(r as any).state())?.token).toBe('env-token');
+  });
+});
+
+describe('просмотр админом не снимает «непрочитанное» (решение владельца 16.11.2026)', () => {
+  const smm = { id: 'smm', role: 'sales_manager_smm' };
+  const dev = { id: 'dev', role: 'sales_manager_dev' };
+  const admin = { id: 'adm', role: 'admin' };
+  const founder = { id: 'fnd', role: 'founder' };
+  const adminAsSmm = { ...smm, impersonatorRole: 'admin' };
+  const founderAsSmm = { ...smm, impersonatorRole: 'founder' };
+  const fired = { ...dev, isActive: false };
+
+  it('админ, открыв чат, ничего не снимает — ни в свободном, ни в закреплённом', () => {
+    expect(clearsUnreadOnOpen(admin, null)).toBe(false);
+    expect(clearsUnreadOnOpen(admin, smm)).toBe(false);
+    expect(clearsUnreadOnOpen(admin, fired)).toBe(false);
+  });
+
+  it('«Войти как» от админа: читает админ, а не менеджер — тоже не снимает', () => {
+    expect(clearsUnreadOnOpen(adminAsSmm, null)).toBe(false);
+    expect(clearsUnreadOnOpen(adminAsSmm, smm)).toBe(false);
+    // основатель «Войти как» — как сам менеджер, правило только для админа
+    expect(clearsUnreadOnOpen(founderAsSmm, null)).toBe(true);
+  });
+
+  it('остальные — как раньше: свободный снимает любой, закреплённый — тот, кто ведёт', () => {
+    expect(clearsUnreadOnOpen(founder, null)).toBe(true);
+    expect(clearsUnreadOnOpen(smm, null)).toBe(true);
+    expect(clearsUnreadOnOpen(smm, smm)).toBe(true);
+    expect(clearsUnreadOnOpen(dev, smm)).toBe(false);
+    expect(clearsUnreadOnOpen(founder, smm)).toBe(false);
+    // тот, кто вёл, уволен — чат как свободный
+    expect(clearsUnreadOnOpen(smm, fired)).toBe(true);
+    expect(clearsUnreadOnOpen(founder, fired)).toBe(true);
+  });
+
+  const service = (conversation: any) => {
+    const s: any = Object.create(DirectService.prototype);
+    s.conversations = { findOne: jest.fn(async () => conversation), update: jest.fn(async () => undefined) };
+    s.notifications = { markReadByLink: jest.fn(async () => 1) };
+    s.ping = jest.fn();
+    s.pushConversation = jest.fn(async () => undefined);
+    s.manageable = jest.fn(async () => conversation);
+    s.get = jest.fn(async () => conversation);
+    return s;
+  };
+
+  it('админ открыл чат: отметка в базе не меняется, его уведомления о чате гаснут, «в чате» видно', async () => {
+    const s = service({ id: 'c1', unreadCount: 3, markedUnread: true, assignee: null });
+    await s.markRead(admin, 'c1');
+    expect(s.conversations.update).not.toHaveBeenCalled();
+    expect(s.notifications.markReadByLink).toHaveBeenCalledWith('adm', '/direct?c=c1');
+    expect(s.ping).toHaveBeenCalledWith('adm', 'c1');
+  });
+
+  it('менеджер открыл свободный чат: прочитан у всех', async () => {
+    const s = service({ id: 'c1', unreadCount: 3, markedUnread: true, assignee: null });
+    await s.markRead(smm, 'c1');
+    expect(s.conversations.update).toHaveBeenCalledWith('c1', { unreadCount: 0, markedUnread: false });
+    expect(s.pushConversation).toHaveBeenCalledWith('c1');
+  });
+
+  it('«Пометить прочитанным» снимает и новые сообщения клиента, а не только ручную отметку', async () => {
+    const s = service({ id: 'c1', unreadCount: 2, markedUnread: false, assignee: null });
+    await s.setMarkedUnread(admin, 'c1', false);
+    expect(s.conversations.update).toHaveBeenCalledWith('c1', { markedUnread: false, unreadCount: 0 });
+    await s.setMarkedUnread(admin, 'c1', true);
+    expect(s.conversations.update).toHaveBeenLastCalledWith('c1', { markedUnread: true });
   });
 });
