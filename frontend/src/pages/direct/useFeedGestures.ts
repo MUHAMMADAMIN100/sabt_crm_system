@@ -39,6 +39,8 @@ export function useFeedGestures(ref: RefObject<HTMLElement>, enabled: boolean, h
     let bubble: HTMLElement | null = null
     let timer: ReturnType<typeof setTimeout> | undefined
     let lastTap: { mid: string; at: number } | null = null
+    /** Касание пришлось на кнопку, ссылку, плеер — двойной тап там не ❤️. */
+    let interactive = false
 
     const swallowClick = () => {
       const stop = (e: Event) => { e.stopPropagation(); e.preventDefault() }
@@ -51,6 +53,7 @@ export function useFeedGestures(ref: RefObject<HTMLElement>, enabled: boolean, h
       const t = e.touches[0]
       start = { x: t.clientX, y: t.clientY }
       mode = null
+      interactive = !!(e.target as Element | null)?.closest?.('button,a,audio,video,input,textarea,[role="slider"]')
       const row = (e.target as Element | null)?.closest?.('[data-mid]') as HTMLElement | null
       // Пузырь — только у сообщений клиента и наших (у заметок и отметок жестов нет).
       bubble = row?.querySelector('[data-bubble]') as HTMLElement | null
@@ -114,7 +117,7 @@ export function useFeedGestures(ref: RefObject<HTMLElement>, enabled: boolean, h
           navigator.vibrate?.(10)
           h.current.onReply(mid)
         }
-      } else if (mode === null && mid && bubble) {
+      } else if (mode === null && mid && bubble && !interactive) {
         // Тап: второй подряд по тому же сообщению — ❤️.
         const now = Date.now()
         if (lastTap && lastTap.mid === mid && now - lastTap.at < DOUBLE_TAP_MS) {

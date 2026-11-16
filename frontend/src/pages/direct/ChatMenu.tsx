@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
-  Archive, ArchiveRestore, BellRing, Check, ChevronLeft, Mail, MailOpen, PanelRight, Pin, PinOff, Settings2, Tag,
+  Archive, ArchiveRestore, BellRing, Check, ChevronLeft, Mail, MailOpen, PanelRight, Pin, PinOff, Search, Settings2, Tag, UserPlus,
 } from 'lucide-react'
 import type { DirectConversation } from '@/services/direct.api'
 import { useAuthStore } from '@/store/auth.store'
@@ -93,7 +93,7 @@ export function FloatingMenu({ anchor, onClose, children, width = 260, label }: 
 export function MenuItem({ icon, children, onClick, disabled, hint }: { icon: ReactNode; children: ReactNode; onClick: () => void; disabled?: boolean; hint?: string }) {
   return (
     <button type="button" role="menuitem" onClick={onClick} disabled={disabled} title={hint}
-      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] text-surface-800 hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-surface-100 dark:hover:bg-surface-700">
+      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] text-surface-800 hover:bg-surface-100 disabled:cursor-not-allowed [@media(pointer:coarse)]:min-h-[44px] [@media(pointer:coarse)]:text-[15px] disabled:opacity-50 dark:text-surface-100 dark:hover:bg-surface-700">
       <span className="flex w-4 shrink-0 justify-center text-surface-500">{icon}</span>
       <span className="min-w-0 flex-1">{children}</span>
     </button>
@@ -175,7 +175,7 @@ export function LabelsPicker({ selected, onToggle, busy, onManage }: {
  * непрочитанным, метки, напомнить, в архив. Менять общее (закреп, архив,
  * метки, «непрочитанное») может тот, кто вправе отвечать в чате.
  */
-export default function ChatMenu({ c, anchor, onClose, onMarkedUnread, onOpenCard, start = 'main' }: {
+export default function ChatMenu({ c, anchor, onClose, onMarkedUnread, onOpenCard, onSearch, onCreateLead, start = 'main' }: {
   c: DirectConversation
   anchor: MenuAnchor
   onClose: () => void
@@ -183,6 +183,10 @@ export default function ChatMenu({ c, anchor, onClose, onMarkedUnread, onOpenCar
   onMarkedUnread?: () => void
   /** Узкий экран: открыть карточку клиента. */
   onOpenCard?: () => void
+  /** Телефон: поиск по переписке (в шапке ему нет места). */
+  onSearch?: () => void
+  /** Лида ещё нет и его можно завести. */
+  onCreateLead?: () => void
   start?: 'main' | 'labels' | 'reminder'
 }) {
   const user = useAuthStore(s => s.user)
@@ -237,6 +241,8 @@ export default function ChatMenu({ c, anchor, onClose, onMarkedUnread, onOpenCar
       ) : (
         <>
           {onOpenCard && <MenuItem icon={<PanelRight size={15} />} onClick={() => { onClose(); onOpenCard() }}>Карточка клиента</MenuItem>}
+          {onSearch && <MenuItem icon={<Search size={15} />} onClick={() => { onClose(); onSearch() }}>Найти в переписке</MenuItem>}
+          {onCreateLead && <MenuItem icon={<UserPlus size={15} />} onClick={() => { onClose(); onCreateLead() }}>Создать лид</MenuItem>}
           {can && (
             <MenuItem icon={c.pinned ? <PinOff size={15} /> : <Pin size={15} />}
               onClick={() => { actions.pin.mutate({ id: c.id, on: !c.pinned }); onClose() }}>
