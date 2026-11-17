@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import {
-  Camera, CornerUpLeft, ExternalLink, FileText, Film, Image as ImageIcon, Lock, Mic, Paperclip, Plus, Send, Settings2, Smile, Square,
+  Camera, CornerUpLeft, ExternalLink, FileText, Film, Image as ImageIcon, Lock, Mic, Plus, Settings2, Smile,
   StickyNote, Trash2, X, Zap,
 } from 'lucide-react'
 import { directApi, type DirectMessage, type DirectPerson, type DirectTemplate } from '@/services/direct.api'
@@ -100,8 +100,9 @@ const Composer = forwardRef<ComposerHandle, {
   const user = useAuthStore(s => s.user)
   const top = isTopUser(user)
   const roomy = useMedia('(min-width: 640px)')
-  // Телефон — поле как в Instagram (13.11.2026).
-  const phone = !roomy
+  // Сенсорный экран: камера, голосовое удержанием, Enter — новая строка
+  // (как в Instagram на телефоне); с мышью Enter отправляет.
+  const touch = useMedia('(hover: none) and (pointer: coarse)')
   const [plusOpen, setPlusOpen] = useState(false)
   const cameraInput = useRef<HTMLInputElement>(null)
   const galleryInput = useRef<HTMLInputElement>(null)
@@ -478,16 +479,16 @@ const Composer = forwardRef<ComposerHandle, {
   const canSend = mode === 'note' ? !!text.trim() : (!!text.trim() || files.length > 0) && !preparing
 
   const replyBar = (<>{showReply && replyTo && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border-l-[3px] border-primary-500 bg-white py-1.5 pl-2.5 pr-1.5 dark:bg-surface-900">
-              <CornerUpLeft size={15} className="shrink-0 text-primary-600 dark:text-primary-300" />
+            <div className="-mx-2.5 mb-1.5 flex items-center gap-2 border-t border-surface-100 px-4 pt-2 dark:border-surface-800 sm:-mx-4 sm:px-5">
+              <CornerUpLeft size={15} className="shrink-0 text-surface-400" />
               <div className="min-w-0 flex-1">
-                <div className="text-[11.5px] font-semibold text-primary-700 dark:text-primary-300">
-                  Ответ на сообщение {replyTo.direction === 'in' ? 'клиента' : replyTo.author?.id === user?.id ? '(ваше)' : replyTo.author ? `· ${replyTo.author.name}` : ''}
+                <div className="text-[12.5px] text-surface-600 dark:text-surface-300">
+                  Ответ на сообщение <b className="font-semibold text-surface-900 dark:text-white">{replyTo.direction === 'in' ? 'клиента' : replyTo.author?.id === user?.id ? '(ваше)' : replyTo.author ? replyTo.author.name.split(' ')[0] : 'агентства'}</b>
                 </div>
-                <div className="truncate text-[12.5px] text-surface-600 dark:text-surface-300">{quoteOf(replyTo)}</div>
+                <div className="truncate text-[13px] text-surface-500 dark:text-surface-400">{quoteOf(replyTo)}</div>
               </div>
-              <button type="button" onClick={onCancelReply} className="rounded p-1 text-surface-400 hover:bg-surface-100 hover:text-surface-700 dark:hover:bg-surface-700" aria-label="Не отвечать на сообщение" title="Отменить ответ (Esc)">
-                <X size={15} />
+              <button type="button" onClick={onCancelReply} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-500 hover:bg-surface-100 hover:text-surface-800 dark:hover:bg-surface-800" aria-label="Не отвечать на сообщение" title="Отменить ответ (Esc)">
+                <X size={17} />
               </button>
             </div>
           )}</>)
@@ -562,223 +563,183 @@ const Composer = forwardRef<ComposerHandle, {
                 onKeyDown={e => {
                   if (pickerKey(e)) return
                   if (e.key === 'Escape' && showReply) { e.preventDefault(); e.stopPropagation(); onCancelReply(); return }
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() }
+                  // Телефон: Enter — новая строка, как в Instagram; отправка — кнопкой.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !touch) { e.preventDefault(); submit() }
                 }}
-                placeholder={mode === 'note'
-                  ? (roomy ? 'Заметка видна только команде · @ — упомянуть коллегу' : 'Заметка для команды')
-                  : files.length ? 'Подпись (необязательно)' : roomy ? 'Сообщение клиенту · «/» — шаблоны' : 'Сообщение…'}
-                className="max-h-40 min-h-[36px] min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug outline-none placeholder:text-surface-400"
+                enterKeyHint={touch ? 'enter' : 'send'}
+                placeholder={mode === 'note' ? 'Заметка для команды…' : files.length ? 'Добавьте подпись…' : 'Сообщение…'}
+                className="max-h-40 min-h-[40px] min-w-0 flex-1 resize-none bg-transparent px-2 py-[9px] text-[15px] leading-[1.35] text-surface-900 outline-none placeholder:text-surface-500 dark:text-surface-50 dark:placeholder:text-surface-400"
                 aria-label={mode === 'note' ? 'Заметка для команды' : 'Сообщение клиенту'}
               />)
 
-  if (phone) {
-    const hasContent = !!text.trim() || files.length > 0
-    const pickFiles = (e: React.ChangeEvent<HTMLInputElement>) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = '' }
-    return (
-      <div className="border-t border-surface-200 bg-white px-2 pt-2 dark:border-surface-700 dark:bg-surface-900" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
-        <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickFiles} />
-        <input ref={galleryInput} type="file" multiple accept="image/*,video/mp4,video/quicktime" className="hidden" onChange={pickFiles} />
-        <input ref={pdfInput} type="file" multiple accept=".pdf,application/pdf" className="hidden" onChange={pickFiles} />
-        {readOnlyReason ? (
-          <div className="mb-1.5 flex items-start gap-1.5 px-1 text-[12.5px] leading-snug text-surface-600 dark:text-surface-300">
-            <Lock size={13} className="mt-0.5 shrink-0 text-surface-400" />
-            <span>{readOnlyReason}</span>
-          </div>
-        ) : mode === 'note' && (
-          <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12.5px] font-medium text-amber-700 dark:text-amber-300">
-            <StickyNote size={13} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate">Заметка для команды — клиент её не увидит</span>
-            <button type="button" onClick={() => setMode('message')} className="shrink-0 rounded-full px-2 py-1 text-surface-500 active:bg-surface-100 dark:active:bg-surface-800">
-              Ответ клиенту
-            </button>
-          </div>
-        )}
-        {blocked ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-            {blockedReason}
-            <div className="mt-2 flex gap-2">
-              <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary flex-1 justify-center !py-2 text-xs"><ExternalLink size={13} /> В Instagram</a>
-              <button type="button" onClick={() => setMode('note')} className="btn-secondary flex-1 justify-center !py-2 text-xs"><StickyNote size={13} /> Заметка</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {replyBar}
-            {filesStrip}
-            <div className="relative">
-              {popovers}
-              {plusOpen && (
-                <div ref={plusBox} className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-2xl border border-surface-200 bg-white py-1 shadow-modal dark:border-surface-600 dark:bg-surface-800" role="menu" aria-label="Ещё">
-                  {!readOnlyReason && (
-                    <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); setMode(mode === 'note' ? 'message' : 'note'); area.current?.focus() }}
-                      className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
-                      <StickyNote size={18} className="text-amber-600" /> {mode === 'note' ? 'Ответ клиенту' : 'Заметка для команды'}
-                    </button>
-                  )}
-                  {mode === 'message' && (
-                    <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); pdfInput.current?.click() }}
-                      className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
-                      <FileText size={18} className="text-surface-500" /> Документ PDF
-                    </button>
-                  )}
-                </div>
-              )}
-              <div className="flex items-end gap-2">
-                {mode === 'message' && !recording && (
-                  <button type="button" onClick={() => cameraInput.current?.click()}
-                    className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white active:bg-primary-700"
-                    aria-label="Снять фото" title="Снять фото">
-                    <Camera size={20} />
-                  </button>
-                )}
-                <div className={clsx('flex min-h-[44px] min-w-0 flex-1 items-end rounded-[22px] border pl-3.5 pr-1',
-                  mode === 'note' ? 'border-amber-300 bg-amber-50/50 dark:border-amber-500/40 dark:bg-amber-500/5'
-                    : recording ? 'border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/10'
-                      : 'border-surface-200 bg-surface-50 dark:border-surface-600 dark:bg-surface-800')}>
-                  {recording ? (
-                    <div className="flex min-h-[42px] min-w-0 flex-1 items-center gap-2 text-[15px] text-surface-800 dark:text-surface-100" aria-live="polite">
-                      <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-500" aria-hidden />
-                      <span className="tabular-nums">{clock}</span>
-                      <span className="min-w-0 truncate text-[13px] text-surface-400">‹ влево — отмена</span>
-                    </div>
-                  ) : textarea}
-                  {hasContent && !recording ? (
-                    <button type="button" onClick={submit} disabled={!canSend}
-                      className="mb-1.5 shrink-0 rounded-full px-2.5 py-1 text-[15px] font-semibold text-primary-600 disabled:opacity-40 dark:text-primary-300">
-                      Отправить
-                    </button>
-                  ) : (
-                    <div className="flex shrink-0 items-center pb-[3px]">
-                      {mode === 'message' && !recording ? (
-                        <>
-                          <button type="button" onClick={() => galleryInput.current?.click()}
-                            className="flex h-9 w-9 items-center justify-center rounded-full text-surface-600 active:bg-surface-200 dark:text-surface-300 dark:active:bg-surface-700" aria-label="Фото и видео из галереи">
-                            <ImageIcon size={21} />
-                          </button>
-                          <button type="button" data-picker-toggle
-                            onClick={() => { setPlusOpen(false); setPickerSearch(''); setPicker(picker?.kind === 'templates' ? null : { kind: 'templates', query: '', source: 'button' }) }}
-                            className={clsx('flex h-9 w-9 items-center justify-center rounded-full active:bg-surface-200 dark:active:bg-surface-700', picker?.kind === 'templates' ? 'text-primary-600 dark:text-primary-300' : 'text-surface-600 dark:text-surface-300')}
-                            aria-label="Шаблоны быстрых ответов" aria-expanded={picker?.kind === 'templates'}>
-                            <Zap size={21} />
-                          </button>
-                        </>
-                      ) : null}
-                      {!recording ? (
-                        <button type="button" data-plus-toggle onClick={() => { setPicker(null); setPlusOpen(v => !v) }}
-                          className={clsx('flex h-9 w-9 items-center justify-center rounded-full active:bg-surface-200 dark:active:bg-surface-700', plusOpen ? 'text-primary-600 dark:text-primary-300' : 'text-surface-600 dark:text-surface-300')}
-                          aria-label="Ещё: заметка для команды, документ" aria-expanded={plusOpen}>
-                          <Plus size={22} />
-                        </button>
-                      ) : null}
-                      {mode === 'message' ? (
-                        <button type="button" onPointerDown={micDown} onPointerMove={micMove} onPointerUp={micUp} onPointerCancel={micUp}
-                          onContextMenu={e => e.preventDefault()} disabled={preparing > 0}
-                          className={clsx('direct-phone-bubble flex h-9 w-9 items-center justify-center rounded-full transition-transform',
-                            recording ? 'scale-125 bg-amber-500 text-white' : 'text-surface-600 active:bg-surface-200 dark:text-surface-300 dark:active:bg-surface-700')}
-                          aria-label="Голосовое: удерживайте, чтобы записать" title="Удерживайте, чтобы записать">
-                          <Mic size={21} />
-                        </button>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-        {manageTemplates && <TemplatesManager isTop={top} onClose={() => { setManageTemplates(false); area.current?.focus() }} />}
-      </div>
-    )
-  }
+  const hasContent = !!text.trim() || files.length > 0
+  const pickFiles = (e: React.ChangeEvent<HTMLInputElement>) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = '' }
+  const iconBtn = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-surface-700 hover:bg-surface-100 active:bg-surface-200 dark:text-surface-200 dark:hover:bg-surface-800 dark:active:bg-surface-700'
 
+  // Поле как в Instagram на любом экране (16.11.2026): «таблетка» с иконками
+  // внутри; набрали текст или прикрепили файл — иконки сменяет «Отправить».
+  // Телефон: камера слева, голосовое удержанием, «+» — заметка и PDF.
+  // Компьютер: эмодзи слева, голосовое щелчком, заметка — своей кнопкой.
   return (
-    <div className="border-t border-surface-200 bg-surface-50 p-2.5 dark:border-surface-700 dark:bg-surface-800">
+    <div className="bg-white px-2.5 pt-1.5 dark:bg-surface-900 sm:px-4" style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}>
+      <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pickFiles} />
+      <input ref={galleryInput} type="file" multiple accept="image/*,video/mp4,video/quicktime" className="hidden" onChange={pickFiles} />
+      <input ref={pdfInput} type="file" multiple accept=".pdf,application/pdf" className="hidden" onChange={pickFiles} />
+      <input ref={filePicker} type="file" multiple accept={ACCEPT} className="hidden" onChange={pickFiles} />
       {readOnlyReason ? (
-        <div className="mb-2 flex items-start gap-1.5 px-1 text-[12.5px] leading-snug text-surface-600 dark:text-surface-300">
+        <div className="mb-1.5 flex items-start gap-1.5 px-1.5 text-[12.5px] leading-snug text-surface-600 dark:text-surface-300">
           <Lock size={13} className="mt-0.5 shrink-0 text-surface-400" />
           <span>{readOnlyReason}</span>
         </div>
-      ) : (
-        <div className="mb-2 flex items-center gap-1">
-          {(['message', 'note'] as Mode[]).map(m => (
-            <button key={m} type="button" onClick={() => { setMode(m); setPicker(null) }}
-              className={clsx('inline-flex min-h-[34px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors sm:min-h-0',
-                mode === m
-                  ? m === 'note' ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200' : 'bg-primary-600 text-white'
-                  : 'text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700')}>
-              {m === 'note' ? <><StickyNote size={12} /> Заметка для команды</> : 'Ответ клиенту'}
-            </button>
-          ))}
+      ) : mode === 'note' && (
+        <div className="mb-1.5 flex items-center gap-1.5 px-1.5 text-[12.5px] font-medium text-amber-700 dark:text-amber-300">
+          <StickyNote size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Заметка для команды — клиент её не увидит{roomy ? ' · @ — упомянуть коллегу' : ''}</span>
+          <button type="button" onClick={() => { setMode('message'); setPicker(null); area.current?.focus() }}
+            className="min-h-[32px] shrink-0 rounded-full px-2.5 py-1 text-surface-600 hover:bg-surface-100 active:bg-surface-200 dark:text-surface-300 dark:hover:bg-surface-800">
+            Ответ клиенту
+          </button>
         </div>
       )}
-
       {blocked ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-          <span className="min-w-0 flex-1 basis-[220px]">{blockedReason}</span>
-          <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 text-xs max-sm:w-full max-sm:justify-center max-sm:!py-2.5">
-            <ExternalLink size={13} /> Открыть в Instagram
-          </a>
-        </div>
-      ) : recording ? (
-        <div className="flex items-center gap-3 rounded-xl border border-surface-200 bg-white px-3 py-2 dark:border-surface-600 dark:bg-surface-900">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" aria-hidden />
-          <span className="text-sm tabular-nums text-surface-700 dark:text-surface-200">Запись {clock}</span>
-          <span className="text-xs text-surface-400">до 5:00</span>
-          <button type="button" onClick={() => stopRecording(true)} className="ml-auto rounded-lg p-2 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700" aria-label="Отменить запись" title="Отменить">
-            <Trash2 size={18} />
-          </button>
-          <button type="button" onClick={() => stopRecording(false)} className="btn-primary !px-3" aria-label="Отправить голосовое">
-            <Square size={14} /> Отправить
-          </button>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+          {blockedReason}
+          <div className="mt-2 flex gap-2">
+            <a href={igLink} target="_blank" rel="noreferrer" className="btn-secondary flex-1 justify-center !py-2 text-xs"><ExternalLink size={13} /> В Instagram</a>
+            <button type="button" onClick={() => setMode('note')} className="btn-secondary flex-1 justify-center !py-2 text-xs"><StickyNote size={13} /> Заметка</button>
+          </div>
         </div>
       ) : (
         <>
           {replyBar}
-
           {filesStrip}
-
           <div className="relative">
             {popovers}
-
-            <div className={clsx('flex items-end gap-0.5 rounded-xl border bg-white px-1.5 py-1.5 dark:bg-surface-900',
-              mode === 'note' ? 'border-amber-300 dark:border-amber-500/40' : 'border-surface-200 dark:border-surface-600')}>
-              {mode === 'message' && (
-                <>
-                  <input ref={filePicker} type="file" multiple accept={ACCEPT} className="hidden"
-                    onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
-                  <button type="button" onClick={() => filePicker.current?.click()}
-                    className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700" aria-label="Прикрепить фото, видео или PDF" title="Фото, видео или PDF — можно перетащить в чат или вставить Ctrl+V">
-                    <Paperclip size={18} />
+            {plusOpen && (
+              <div ref={plusBox} className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-2xl border border-surface-200 bg-white py-1 shadow-modal dark:border-surface-600 dark:bg-surface-800" role="menu" aria-label="Ещё">
+                {!readOnlyReason && (
+                  <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); setPicker(null); setMode(mode === 'note' ? 'message' : 'note'); area.current?.focus() }}
+                    className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
+                    <StickyNote size={18} className="text-amber-600" /> {mode === 'note' ? 'Ответ клиенту' : 'Заметка для команды'}
                   </button>
-                  <button type="button" data-picker-toggle
-                    onClick={() => { setShowEmoji(false); setPickerSearch(''); setPicker(picker?.kind === 'templates' ? null : { kind: 'templates', query: '', source: 'button' }) }}
-                    className={clsx('rounded-lg p-2 hover:bg-surface-100 dark:hover:bg-surface-700', picker?.kind === 'templates' ? 'text-primary-600 dark:text-primary-300' : 'text-surface-500')}
-                    aria-label="Шаблоны быстрых ответов" title="Шаблоны (или «/» в начале строки)" aria-expanded={picker?.kind === 'templates'}>
-                    <Zap size={18} />
+                )}
+                {/* Самый узкий экран: шаблоны — здесь, в поле им нет места. */}
+                {mode === 'message' && (
+                  <button type="button" role="menuitem" data-picker-toggle
+                    onClick={() => { setPlusOpen(false); setPickerSearch(''); setPicker({ kind: 'templates', query: '', source: 'button' }) }}
+                    className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 min-[360px]:hidden dark:text-surface-100 dark:active:bg-surface-700">
+                    <Zap size={18} className="text-[#0095f6]" /> Шаблоны ответов
                   </button>
-                </>
+                )}
+                {mode === 'message' && (
+                  <button type="button" role="menuitem" onClick={() => { setPlusOpen(false); pdfInput.current?.click() }}
+                    className="flex h-12 w-full items-center gap-3 px-4 text-left text-[15px] text-surface-900 active:bg-surface-100 dark:text-surface-100 dark:active:bg-surface-700">
+                    <FileText size={18} className="text-surface-500" /> Документ PDF
+                  </button>
+                )}
+              </div>
+            )}
+            <div className={clsx('flex min-h-[44px] items-end rounded-[22px] border pr-1',
+              touch && mode === 'message' && !recording ? 'pl-1' : 'pl-1.5',
+              mode === 'note' ? 'border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5'
+                : recording ? 'border-amber-300 bg-amber-50/70 dark:border-amber-500/40 dark:bg-amber-500/10'
+                  : touch ? 'border-transparent bg-surface-100 dark:bg-surface-800'
+                    : 'border-surface-200 bg-white focus-within:border-surface-300 dark:border-surface-700 dark:bg-surface-900 dark:focus-within:border-surface-600')}>
+              {touch && mode === 'message' && !recording && (
+                <button type="button" onClick={() => cameraInput.current?.click()}
+                  className="mb-[3px] flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0095f6] text-white active:bg-[#0081d6]"
+                  aria-label="Снять фото" title="Снять фото">
+                  <Camera size={19} />
+                </button>
               )}
-              <button type="button" data-emoji-toggle onClick={() => { setPicker(null); setShowEmoji(v => !v) }}
-                className={clsx('rounded-lg p-2 hover:bg-surface-100 dark:hover:bg-surface-700', showEmoji ? 'text-primary-600 dark:text-primary-300' : 'text-surface-500')}
-                aria-label="Эмодзи" aria-expanded={showEmoji}>
-                <Smile size={18} />
-              </button>
-              {textarea}
-              {mode === 'message' && !text.trim() && !files.length ? (
-                <button type="button" onClick={startRecording} disabled={preparing > 0}
-                  className="rounded-lg p-2 text-surface-500 hover:bg-surface-100 disabled:opacity-50 dark:hover:bg-surface-700" aria-label="Записать голосовое" title="Записать голосовое">
-                  <Mic size={18} />
+              {!touch && !recording && (
+                <button type="button" data-emoji-toggle onClick={() => { setPicker(null); setShowEmoji(v => !v) }}
+                  className={clsx(iconBtn, 'mb-[3px]', showEmoji && '!text-[#0095f6]')} aria-label="Эмодзи" aria-expanded={showEmoji} title="Эмодзи">
+                  <Smile size={22} />
                 </button>
-              ) : (
+              )}
+              {recording ? (
+                touch ? (
+                  <div className="flex min-h-[42px] min-w-0 flex-1 items-center gap-2 pl-2 text-[15px] text-surface-800 dark:text-surface-100" aria-live="polite">
+                    <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" aria-hidden />
+                    <span className="tabular-nums">{clock}</span>
+                    <span className="min-w-0 truncate text-[13px] text-surface-400">‹ влево — отмена</span>
+                  </div>
+                ) : (
+                  <div className="flex min-h-[42px] min-w-0 flex-1 items-center gap-2.5 pl-2 text-[14px] text-surface-800 dark:text-surface-100" aria-live="polite">
+                    <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" aria-hidden />
+                    <span className="tabular-nums">Запись {clock}</span>
+                    <span className="text-[12px] text-surface-400">до 5:00</span>
+                    <button type="button" onClick={() => stopRecording(true)} className={clsx(iconBtn, 'ml-auto')} aria-label="Отменить запись" title="Отменить">
+                      <Trash2 size={18} />
+                    </button>
+                    <button type="button" onClick={() => stopRecording(false)}
+                      className="mr-1 shrink-0 rounded-full px-2.5 py-1.5 text-[15px] font-semibold text-[#0095f6] hover:text-[#00376b] dark:hover:text-[#4cb5f9]" aria-label="Отправить голосовое">
+                      Отправить
+                    </button>
+                  </div>
+                )
+              ) : textarea}
+              {hasContent && !recording ? (
                 <button type="button" onClick={submit} disabled={!canSend}
-                  className="rounded-lg bg-primary-600 p-2 text-white hover:bg-primary-700 disabled:opacity-50" aria-label={mode === 'note' ? 'Сохранить заметку' : 'Отправить'}>
-                  <Send size={18} />
+                  className="mb-[5px] mr-1 shrink-0 rounded-full px-2.5 py-1.5 text-[15px] font-semibold text-[#0095f6] hover:text-[#00376b] disabled:opacity-40 dark:hover:text-[#4cb5f9]"
+                  aria-label={mode === 'note' ? 'Сохранить заметку' : 'Отправить'}>
+                  {mode === 'note' ? 'Сохранить' : 'Отправить'}
                 </button>
+              ) : (recording && !touch) ? null : (
+                <div className="flex shrink-0 items-center pb-[3px]">
+                  {mode === 'message' && (
+                    touch ? (
+                      <button type="button" onPointerDown={micDown} onPointerMove={micMove} onPointerUp={micUp} onPointerCancel={micUp}
+                        onContextMenu={e => e.preventDefault()} disabled={preparing > 0}
+                        className={clsx('direct-phone-bubble flex h-9 w-9 items-center justify-center rounded-full transition-transform',
+                          recording ? 'scale-125 bg-red-500 text-white' : 'text-surface-700 active:bg-surface-200 dark:text-surface-200 dark:active:bg-surface-700')}
+                        aria-label="Голосовое: удерживайте, чтобы записать" title="Удерживайте, чтобы записать">
+                        <Mic size={21} />
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => { void startRecording() }} disabled={preparing > 0} className={iconBtn}
+                        aria-label="Записать голосовое" title="Записать голосовое">
+                        <Mic size={21} />
+                      </button>
+                    )
+                  )}
+                  {mode === 'message' && !recording && (
+                    <>
+                      <button type="button" onClick={() => (touch ? galleryInput : filePicker).current?.click()} className={iconBtn}
+                        aria-label={touch ? 'Фото и видео из галереи' : 'Прикрепить фото, видео или PDF'}
+                        title={touch ? 'Фото и видео' : 'Фото, видео или PDF — можно перетащить в чат или вставить Ctrl+V'}>
+                        <ImageIcon size={21} />
+                      </button>
+                      <button type="button" data-picker-toggle
+                        onClick={() => { setPlusOpen(false); setShowEmoji(false); setPickerSearch(''); setPicker(picker?.kind === 'templates' ? null : { kind: 'templates', query: '', source: 'button' }) }}
+                        className={clsx(iconBtn, touch && 'max-[359px]:hidden', picker?.kind === 'templates' && '!text-[#0095f6]')}
+                        aria-label="Шаблоны быстрых ответов" title="Шаблоны (или «/» в начале строки)" aria-expanded={picker?.kind === 'templates'}>
+                        <Zap size={20} />
+                      </button>
+                    </>
+                  )}
+                  {/* Чужой чат — только заметки: в «+» нечего показать. */}
+                  {!recording && !readOnlyReason && (touch ? (
+                    <button type="button" data-plus-toggle onClick={() => { setPicker(null); setPlusOpen(v => !v) }}
+                      className={clsx(iconBtn, plusOpen && '!text-[#0095f6]')}
+                      aria-label="Ещё: заметка для команды, документ" aria-expanded={plusOpen}>
+                      <Plus size={22} />
+                    </button>
+                  ) : !readOnlyReason && (
+                    <button type="button" onClick={() => { setPicker(null); setShowEmoji(false); setMode(mode === 'note' ? 'message' : 'note'); area.current?.focus() }}
+                      className={clsx(iconBtn, mode === 'note' && '!text-amber-600 dark:!text-amber-300')} aria-pressed={mode === 'note'}
+                      aria-label={mode === 'note' ? 'Вернуться к ответу клиенту' : 'Заметка для команды'}
+                      title={mode === 'note' ? 'Вернуться к ответу клиенту' : 'Заметка для команды — клиент её не увидит'}>
+                      <StickyNote size={20} />
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>
           {text.length > 700 && (
-            <p className="mt-1 text-right text-[11px] text-surface-400">
+            <p className="mt-1 px-2 text-right text-[11px] text-surface-400">
               {text.length} / {MAX_CHARS}{mode === 'message' && parts > 1 ? ` · уйдёт ${parts} сообщениями` : ''}
             </p>
           )}

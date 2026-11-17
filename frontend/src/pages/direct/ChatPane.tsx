@@ -1,10 +1,9 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import {
-  Archive, ArrowLeft, BellRing, ChevronDown, Contact, Eye, ExternalLink, MoreVertical, PanelRight, Pin, Search, Upload, UserPlus,
+  Archive, ArrowDown, BellRing, ChevronLeft, Eye, Info, MoreHorizontal, Pin, Search, Upload,
 } from 'lucide-react'
 import { directApi, type DirectAttachment, type DirectMessage } from '@/services/direct.api'
 import { Spinner } from '@/components/ui'
@@ -18,16 +17,15 @@ import MessageItem, { isPictureAttachment } from './MessageItem'
 import Composer, { quoteOf, type ComposerHandle } from './Composer'
 import { dayKey, dayLabel, duration, clockTime } from './directTime'
 import { upsertDirectMessage } from './directCache'
-import { canReplyIn } from './directAccess'
-import AssigneeControl from './AssigneeControl'
+import { canReplyIn, shortName } from './directAccess'
 import ChatMenu, { anchorOf, type MenuAnchor } from './ChatMenu'
 import ChatSidePanel, { LEAD_STATUS } from './ChatSidePanel'
 import ChatSearch from './ChatSearch'
 import Lightbox, { type LightboxItem } from './Lightbox'
 import { remindLabel, useMyReminders } from './chatActions'
-import { labelColor } from './labelColors'
 import { useMedia } from './useMedia'
 import { useFeedGestures } from './useFeedGestures'
+import { useBubbleGradient } from './useBubbleGradient'
 import MessageSheet from './MessageSheet'
 import { canQuote } from './MessageItem'
 
@@ -58,7 +56,18 @@ const fileKind = (f: File): 'image' | 'video' | 'file' => {
   return 'image'
 }
 
-const PANEL_KEY = 'direct-panel'
+/** Карточка клиента справа (широкий экран): как «Информация» в Instagram —
+ *  по умолчанию закрыта, открывается ⓘ и помнит выбор (16.11.2026). */
+const PANEL_KEY = 'direct-panel-v2'
+
+/** Как в Instagram: перерыв в переписке дольше часа (или новый день) — по
+ *  центру строка «Сегодня 14:32». */
+const TIME_GAP = 60 * 60_000
+function timeBreak(prev: DirectMessage | undefined, m: DirectMessage): boolean {
+  if (!prev) return true
+  if (dayKey(prev.sentAt) !== dayKey(m.sentAt)) return true
+  return new Date(m.sentAt).getTime() - new Date(prev.sentAt).getTime() >= TIME_GAP
+}
 
 /** Подряд идущие сообщения одной стороны (до 5 минут между ними) — одна группа. */
 function sameGroup(a: DirectMessage | undefined, b: DirectMessage | undefined, dividerId: string | null): boolean {
@@ -66,6 +75,8 @@ function sameGroup(a: DirectMessage | undefined, b: DirectMessage | undefined, d
   if (b.id === dividerId) return false
   if (a.direction === 'out' && (a.fromApp !== b.fromApp || a.author?.id !== b.author?.id)) return false
   if (dayKey(a.sentAt) !== dayKey(b.sentAt)) return false
+  // Реакция под пузырём — как в Instagram, следующий пузырь не прилипает.
+  if (a.reaction || a.ourReaction) return false
   return Math.abs(new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()) < 5 * 60_000
 }
 
@@ -108,8 +119,11 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   const user = useAuthStore(s => s.user)
   const live = useSocketConnected()
   const wide = useMedia('(min-width: 1280px)')
-  // Телефон — чат как в Instagram: группы, жесты, меню долгим нажатием (13.11.2026).
+  // Чат как в Instagram на любом экране (16.11.2026). Узкий экран — шапка
+  // компактнее; сенсорный — жесты (ответ свайпом, меню долгим нажатием, ❤️
+  // двойным тапом), с мышью — действия при наведении и правый щелчок.
   const phone = useMedia('(max-width: 639px)')
+  const touch = useMedia('(hover: none) and (pointer: coarse)')
   const [sheet, setSheet] = useState<{ m: DirectMessage; rect: DOMRect } | null>(null)
   /** Можно ли сейчас отвечать и ставить ❤️ — для жестов (они живут вне перерисовок). */
   const actRef = useRef(false)
@@ -130,7 +144,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   const [dragging, setDragging] = useState(false)
   const [atBottom, setAtBottom] = useState(true)
   const [unseen, setUnseen] = useState(0)
-  const [panelOpen, setPanelOpen] = useState(() => { try { return localStorage.getItem(PANEL_KEY) !== '0' } catch { return true } })
+  const [panelOpen, setPanelOpen] = useState(() => { try { return localStorage.getItem(PANEL_KEY) === '1' } catch { return false } })
   const [drawer, setDrawer] = useState(false)
   const composer = useRef<ComposerHandle>(null)
   const dragDepth = useRef(0)
@@ -256,7 +270,8 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   }, [loaded])
 
   const findMessage = (id: string) => messagesRef.current.find(x => x.id === id)
-  useFeedGestures(scroller, phone && loaded, {
+  useBubbleGradient(scroller, loaded)
+  useFeedGestures(scroller, touch && loaded, {
     canReply: id => { const m = findMessage(id); return !!m && actRef.current && canQuote(m) },
     onReply: id => { const m = findMessage(id); if (m) setReplyTo(m) },
     onLongPress: (id, rect) => { const m = findMessage(id); if (m && !m.deleted) setSheet({ m, rect }) },
@@ -423,6 +438,7 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   })
   const onReact = useCallback((m: DirectMessage, on: boolean) => react.mutate({ m, on }), [react])
   const onReply = useCallback((m: DirectMessage) => setReplyTo(m), [])
+  const onMessageMenu = useCallback((m: DirectMessage, rect: DOMRect) => setSheet({ m, rect }), [])
   // «Создать лид» (15.11.2026): сервер проверяет дубли (телефон, Instagram,
   // название) и отвечает 409 — форма показывает найденных и даёт создать
   // всё равно (force). Тост — только для прочих ошибок.
@@ -512,6 +528,28 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
   const canAct = canReplyHere && !blockedReason
   actRef.current = canAct
   const myReminder = myReminders?.find(r => r.conversationId === c.id) ?? null
+
+  // Строка под именем — самое важное для работы, коротко, через «·».
+  const subtitle: { key: string; node: ReactNode }[] = []
+  if (c.waitingSince) {
+    subtitle.push({ key: 'wait', node: <span className="font-medium text-amber-700 dark:text-amber-300">ждёт {duration(Date.now() - new Date(c.waitingSince).getTime())}</span> })
+  }
+  subtitle.push({ key: 'who', node: c.assignee ? (c.assignee.id === user?.id ? 'ведёте вы' : `ведёт ${shortName(c.assignee.name)}`) : 'свободный' })
+  if (left !== null && left > 0 && left < 4 * 60 * 60 * 1000) {
+    subtitle.push({
+      key: 'left',
+      node: <span className={clsx(left < 60 * 60 * 1000 && 'font-medium text-amber-700 dark:text-amber-300')} title="Instagram даёт ответить из CRM 24 часа после последнего сообщения клиента">ответ ещё {duration(left)}</span>,
+    })
+  }
+  if (myReminder) {
+    const due = new Date(myReminder.remindAt).getTime() <= Date.now()
+    subtitle.push({ key: 'rem', node: <span className={clsx('inline-flex items-center gap-0.5', due && 'font-medium text-amber-700 dark:text-amber-300')}><BellRing size={11} className="shrink-0" />{due ? 'пора вернуться' : remindLabel(myReminder.remindAt)}</span> })
+  }
+  if (c.lead) subtitle.push({ key: 'lead', node: `лид: ${LEAD_STATUS[c.lead.status] || c.lead.status}` })
+  if (viewers.length) subtitle.push({ key: 'view', node: <span className="inline-flex items-center gap-0.5"><Eye size={12} className="shrink-0" />{viewers.map(v => v.name.split(' ')[0]).join(', ')}</span> })
+  if (viaName) subtitle.push({ key: 'via', node: `через @${viaName}` })
+  if (!phone && c.contact.name && c.contact.username) subtitle.push({ key: 'nick', node: `@${c.contact.username}` })
+  const avatar = <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={28} />
 
   const prefill = {
     name: c.contact.name || (c.contact.username ? `@${c.contact.username}` : ''),
@@ -610,100 +648,50 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
           if (!dropAllowed) { toast.error(readOnlyReason || blockedReason || 'Сейчас клиенту написать нельзя'); return }
           composer.current?.addFiles(files)
         }}>
-        {/* Шапка */}
-        <div className="flex items-center gap-2 border-b border-surface-200 px-3 py-2.5 dark:border-surface-700">
-          <button type="button" onClick={onBack} className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 lg:hidden dark:hover:bg-surface-700" aria-label="К списку чатов">
-            <ArrowLeft size={18} />
+        {/* Шапка — как в Instagram: аватар, имя, под ним одна строка о главном.
+            Лид, метки, напоминание, кто ведёт — в карточке ⓘ и меню «⋯». */}
+        <div className="flex items-center gap-1 border-b border-surface-200 py-1.5 pl-1 pr-1.5 dark:border-surface-800 sm:gap-1.5 sm:py-2.5 sm:pl-4 sm:pr-3">
+          <button type="button" onClick={onBack}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-surface-900 hover:bg-surface-100 active:bg-surface-200 lg:hidden dark:text-white dark:hover:bg-surface-800"
+            aria-label="К списку чатов">
+            <ChevronLeft size={28} strokeWidth={2.2} />
           </button>
-          <button type="button" onClick={openPanel} className="shrink-0 rounded-full" aria-label="Карточка клиента" title="Карточка клиента">
-            <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={40} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <button type="button" onClick={openPanel} className="flex max-w-full items-center gap-1.5 text-left" title="Карточка клиента">
-              <span className="truncate text-[15px] font-semibold text-surface-900 dark:text-white">{c.contact.label}</span>
-              {c.pinned && <Pin size={13} className="shrink-0 text-surface-400" aria-label="Закреплён" />}
-            </button>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-surface-500">
-              {/* На телефоне @ник — в карточке клиента: шапка остаётся в одну строку. */}
-              {c.contact.username && (
-                <a href={`https://www.instagram.com/${c.contact.username}/`} target="_blank" rel="noreferrer" className="hidden items-center gap-0.5 hover:text-surface-800 dark:hover:text-surface-200 sm:inline-flex">
-                  @{c.contact.username} <ExternalLink size={11} />
-                </a>
-              )}
-              {viaName && (
-                <span className="whitespace-nowrap" title={`Клиент написал в @${viaName} — ответ уйдёт оттуда же`}>через @{viaName}</span>
-              )}
-              {left !== null && left > 0 && (
-                <span className={clsx('whitespace-nowrap', left < 60 * 60 * 1000 && 'font-medium text-amber-700 dark:text-amber-300')}
-                  title="Instagram даёт ответить из CRM 24 часа после последнего сообщения клиента">
-                  <span className="hidden sm:inline">ответить из CRM можно ещё </span><span className="sm:hidden">ответ ещё </span>{duration(left)}
-                </span>
-              )}
-              {viewers.length > 0 && (
-                <span className="inline-flex items-center gap-1"><Eye size={12} /> сейчас в чате: {viewers.map(v => v.name.split(' ')[0]).join(', ')}</span>
-              )}
-            </div>
-          </div>
-          <button type="button" onClick={() => setSearching(v => !v)} aria-pressed={searching}
-            className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700', searching ? 'text-primary-600 dark:text-primary-300' : 'text-surface-500')}
-            aria-label="Найти в переписке" title="Найти в переписке">
-            <Search size={17} />
-          </button>
-          <button type="button" onClick={e => setMenu(anchorOf(e.currentTarget))}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-700"
-            aria-label="Действия с чатом" title="Закрепить, метки, напоминание, архив" aria-haspopup="menu" aria-expanded={!!menu}>
-            <MoreVertical size={17} />
-          </button>
-          {/* На телефоне карточку открывает имя или аватар — кнопка не тесняет имя. */}
-          <button type="button" onClick={togglePanel} aria-pressed={wide ? panelOpen : drawer}
-            className={clsx('h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 max-sm:hidden sm:flex',
-              (wide ? panelOpen : drawer) ? 'text-primary-600 dark:text-primary-300' : 'text-surface-500')}
-            aria-label="Карточка клиента" title="Карточка клиента">
-            <PanelRight size={17} />
-          </button>
-          {c.lead ? (
-            <Link to={`/clients?id=${c.lead.id}`} className="btn-secondary !py-1.5 hidden shrink-0 text-xs sm:inline-flex" title="Открыть карточку в Базе клиентов">
-              <Contact size={14} /> <span className="hidden md:inline">Лид:</span> {LEAD_STATUS[c.lead.status] || c.lead.status}
-            </Link>
-          ) : canCreateLead && canReplyHere ? (
-            <button type="button" onClick={() => setShowLead(true)} className="btn-secondary !py-1.5 shrink-0 text-xs max-sm:!px-2.5"
-              aria-label="Создать лид" title="Создать лид">
-              <UserPlus size={14} /> <span className="max-sm:hidden">Создать лид</span>
-            </button>
-          ) : null}
-        </div>
-
-        {/* Кто ведёт клиента, сколько он ждёт, кто ответил последним, метки */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-100 bg-surface-50 px-4 py-1.5 text-[12px] text-surface-500 dark:border-surface-700/60 dark:bg-surface-800/60">
-          <AssigneeControl c={c} me={user} onChanged={refresh} />
-          {c.waitingSince && (
-            <span className="font-medium text-amber-700 dark:text-amber-300">Клиент ждёт ответа {duration(Date.now() - new Date(c.waitingSince).getTime())}</span>
-          )}
-          {/* «Последним ответил» — только если это не тот, кто ведёт: иначе повтор. */}
-          {c.lastReply && (!c.lastReply.by || c.lastReply.by.id !== c.assignee?.id) && (
-            <span className="max-sm:hidden">Последним ответил{c.lastReply.by ? `: ${c.lastReply.by.id === user?.id ? 'вы' : c.lastReply.by.name}` : ' из приложения Instagram'}</span>
-          )}
-          {myReminder && (
-            <button type="button" onClick={e => setMenu(anchorOf(e.currentTarget))}
-              className={clsx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
-                new Date(myReminder.remindAt).getTime() <= Date.now() ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-surface-100 text-surface-600 dark:bg-surface-700 dark:text-surface-300')}
-              title={myReminder.note || 'Напоминание'}>
-              <BellRing size={12} /> {remindLabel(myReminder.remindAt)}
-            </button>
-          )}
-          {c.labels.length > 0 && (
-            <span className="flex flex-wrap items-center gap-1">
-              {c.labels.map(l => (
-                <span key={l.id} className={clsx('inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-medium', labelColor(l.color).chip)}>
-                  <span className={clsx('h-1.5 w-1.5 rounded-full', labelColor(l.color).dot)} />{l.name}
-                </span>
-              ))}
+          <button type="button" onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl py-0.5 pr-1 text-left" title="Карточка клиента">
+            <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={phone ? 36 : 44} />
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="truncate text-[16px] font-semibold leading-tight text-surface-900 dark:text-white">{c.contact.label}</span>
+                {c.pinned && <Pin size={13} className="shrink-0 text-surface-400" aria-label="Закреплён" />}
+              </span>
+              <span className="mt-0.5 block truncate text-[12.5px] leading-tight text-surface-500 dark:text-surface-400">
+                {subtitle.map((part, k) => <Fragment key={part.key}>{k > 0 && ' · '}{part.node}</Fragment>)}
+              </span>
             </span>
+          </button>
+          {!phone && (
+            <button type="button" onClick={() => setSearching(v => !v)} aria-pressed={searching}
+              className={clsx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-100 dark:hover:bg-surface-800', searching ? 'text-[#0095f6]' : 'text-surface-800 dark:text-surface-100')}
+              aria-label="Найти в переписке" title="Найти в переписке">
+              <Search size={21} />
+            </button>
           )}
+          {!phone && (
+            <button type="button" onClick={togglePanel} aria-pressed={wide ? panelOpen : drawer}
+              className={clsx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-100 dark:hover:bg-surface-800',
+                (wide ? panelOpen : drawer) ? 'text-[#0095f6]' : 'text-surface-800 dark:text-surface-100')}
+              aria-label="Информация о клиенте" title="Карточка клиента: лид, метки, напоминания, файлы">
+              <Info size={22} fill={(wide ? panelOpen : drawer) ? 'currentColor' : 'none'} className={(wide ? panelOpen : drawer) ? '[&>path]:stroke-white dark:[&>path]:stroke-surface-900' : undefined} />
+            </button>
+          )}
+          <button type="button" onClick={e => setMenu(anchorOf(e.currentTarget))}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-surface-800 hover:bg-surface-100 active:bg-surface-200 dark:text-surface-100 dark:hover:bg-surface-800"
+            aria-label="Действия с чатом" title="Закрепить, метки, напоминание, архив" aria-haspopup="menu" aria-expanded={!!menu}>
+            <MoreHorizontal size={22} />
+          </button>
         </div>
 
         {c.archived && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-surface-200 bg-surface-100 px-4 py-1.5 text-[12px] text-surface-600 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300">
+          <div className="flex items-center gap-2 border-b border-surface-100 bg-surface-50 px-4 py-1.5 text-[12px] text-surface-600 dark:border-surface-800 dark:bg-surface-800/60 dark:text-surface-300">
             <Archive size={13} className="shrink-0" />
             <span className="min-w-0 flex-1">Чат в архиве{c.archived.by ? ` — убрал(а) ${c.archived.by}` : ''}. Вернётся сам, когда клиент напишет.</span>
           </div>
@@ -724,29 +712,40 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
               // Долистали до верха — подгружаем раньше сами.
               if (el.scrollTop < 60 && feed.hasNextPage && !feed.isFetchingNextPage) loadOlder()
             }}
-            className={clsx('h-full overflow-y-auto bg-white dark:bg-surface-900', phone ? 'direct-feed-phone px-3 pb-2 pt-1' : 'space-y-2 px-3 py-3 sm:px-5')}
+            className={clsx('h-full overflow-y-auto overscroll-contain bg-white px-3 pb-3 pt-1 dark:bg-surface-900 sm:px-5 lg:px-6', touch && 'direct-feed-phone')}
           >
-            {feed.hasNextPage && (
-              <div className="flex justify-center pb-1">
+            {feed.hasNextPage ? (
+              <div className="flex justify-center py-2">
                 <button type="button" onClick={loadOlder} disabled={feed.isFetchingNextPage} className="btn-ghost !py-1 text-xs">
                   {feed.isFetchingNextPage ? 'Загружаю…' : 'Показать раньше'}
                 </button>
               </div>
+            ) : !feed.isLoading && !feed.isError && (
+              // Начало переписки — как в Instagram: кто это и ссылка на профиль.
+              <div className="flex flex-col items-center px-4 pb-6 pt-8 text-center">
+                <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={phone ? 88 : 96} />
+                <div className="mt-3 max-w-full truncate text-[19px] font-semibold text-surface-900 dark:text-white">{c.contact.label}</div>
+                <div className="mt-0.5 text-[14px] text-surface-500">{c.contact.username ? `@${c.contact.username} · Instagram` : 'Instagram'}</div>
+                {c.contact.username && (
+                  <a href={`https://www.instagram.com/${c.contact.username}/`} target="_blank" rel="noreferrer"
+                    className="mt-4 inline-flex min-h-[34px] items-center rounded-lg bg-surface-100 px-4 text-[14px] font-semibold text-surface-900 hover:bg-surface-200 dark:bg-surface-800 dark:text-white dark:hover:bg-surface-700">
+                    Открыть профиль
+                  </a>
+                )}
+              </div>
             )}
             {feed.isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
-            {!feed.isLoading && !feedItems.length && <p className="py-10 text-center text-sm text-surface-400">Сообщений пока нет</p>}
+            {!feed.isLoading && !feedItems.length && <p className="pb-6 text-center text-sm text-surface-400">Сообщений пока нет</p>}
             {feedItems.map((m, i) => (
               <Fragment key={m.id}>
-                {(i === 0 || dayKey(feedItems[i - 1].sentAt) !== dayKey(m.sentAt)) && (
-                  <div className="flex justify-center py-1">
-                    <span className="rounded-full bg-surface-100 px-3 py-0.5 text-[11px] font-medium text-surface-500 dark:bg-surface-800">{dayLabel(m.sentAt)}</span>
-                  </div>
+                {timeBreak(feedItems[i - 1], m) && (
+                  <div className="pb-1 pt-4 text-center text-[12px] font-medium text-surface-400">{dayLabel(m.sentAt)} {clockTime(m.sentAt)}</div>
                 )}
                 {m.id === dividerId && (
-                  <div data-divider className="flex items-center gap-3 py-1" role="separator" aria-label="Новые сообщения">
-                    <span className="h-px flex-1 bg-primary-300 dark:bg-primary-500/50" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-300">Новые сообщения</span>
-                    <span className="h-px flex-1 bg-primary-300 dark:bg-primary-500/50" />
+                  <div data-divider className="flex items-center gap-3 pb-1 pt-3" role="separator" aria-label="Новые сообщения">
+                    <span className="h-px flex-1 bg-surface-200 dark:bg-surface-700" />
+                    <span className="text-[12px] font-semibold text-[#0095f6]">Новые сообщения</span>
+                    <span className="h-px flex-1 bg-surface-200 dark:bg-surface-700" />
                   </div>
                 )}
                 <MessageItem
@@ -763,23 +762,24 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
                   onReact={onReact}
                   onJump={jumpTo}
                   onOpenMedia={openMedia}
+                  onMenu={onMessageMenu}
                   highlighted={highlight === m.id}
                   mentionNames={mentionNames}
-                  phone={phone}
-                  group={phone ? groupOf(feedItems, i, dividerId) : undefined}
-                  avatar={phone ? <ContactAvatar label={c.contact.label} picture={c.contact.picture} size={28} /> : undefined}
-                  caption={phone && m.id === lastOutId ? statusCaption(m, user?.id) : null}
+                  touch={touch}
+                  group={groupOf(feedItems, i, dividerId)}
+                  avatar={avatar}
+                  caption={m.id === lastOutId ? statusCaption(m, user?.id) : null}
                 />
               </Fragment>
             ))}
           </div>
           {!atBottom && (
             <button type="button" onClick={toBottom}
-              className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full border border-surface-200 bg-white text-surface-600 shadow-md hover:text-surface-900 dark:border-surface-600 dark:bg-surface-800 dark:text-surface-300 sm:right-5"
+              className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-surface-800 shadow-[0_2px_12px_rgba(0,0,0,0.18)] hover:text-surface-950 dark:bg-surface-800 dark:text-surface-100 sm:right-5"
               aria-label={unseen ? `Вниз, новых сообщений: ${unseen}` : 'Вниз, к последним сообщениям'} title="К последним сообщениям">
-              <ChevronDown size={20} />
+              <ArrowDown size={20} />
               {unseen > 0 && (
-                <span className="absolute -top-1.5 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary-600 px-1 text-[11px] font-bold text-white">{unseen > 99 ? '99+' : unseen}</span>
+                <span className="absolute -right-1 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#0095f6] px-1 text-[11px] font-bold text-white">{unseen > 99 ? '99+' : unseen}</span>
               )}
             </button>
           )}
@@ -821,7 +821,12 @@ export default function ChatPane({ id, connected, onBack, focusMessageId, onFocu
         </div>
       )}
 
-      {menu && <ChatMenu c={c} anchor={menu} onClose={() => setMenu(null)} onMarkedUnread={onBack} onOpenCard={wide ? undefined : () => setDrawer(true)} />}
+      {menu && (
+        <ChatMenu c={c} anchor={menu} onClose={() => setMenu(null)} onMarkedUnread={onBack}
+          onOpenCard={wide ? undefined : () => setDrawer(true)}
+          onSearch={phone ? () => setSearching(true) : undefined}
+          onCreateLead={!c.lead && canCreateLead && canReplyHere ? () => setShowLead(true) : undefined} />
+      )}
       {sheet && (
         <MessageSheet m={sheet.m} rect={sheet.rect}
           canHeart={canAct && sheet.m.direction === 'in' && !sheet.m.id.startsWith('pending:')}

@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { Copy, CornerUpLeft, Heart, Trash2 } from 'lucide-react'
 import type { DirectMessage } from '@/services/direct.api'
 import { quoteOf } from './Composer'
-import { clockTime } from './directTime'
+import { clockTime, dayLabel } from './directTime'
 
 /**
  * Меню долгого нажатия на телефоне, как в Instagram: фон затемняется,
@@ -54,22 +54,22 @@ export default function MessageSheet({ m, rect, canHeart, canQuote, canDelete, o
           <button type="button" onClick={() => { onHeart(); onClose() }}
             className="flex h-12 items-center gap-2 rounded-full bg-white px-4 text-[15px] font-medium text-surface-800 shadow-modal dark:bg-surface-800 dark:text-surface-100"
             aria-label={m.ourReaction ? 'Убрать ❤️' : 'Поставить ❤️'}>
-            <Heart size={22} className="text-pink-600" fill={m.ourReaction ? 'currentColor' : 'none'} />
+            <Heart size={22} className="text-[#ff3040]" fill={m.ourReaction ? 'currentColor' : 'none'} />
             {m.ourReaction ? 'Убрать' : ''}
           </button>
         )}
-        <div className={clsx('max-h-[260px] overflow-hidden rounded-[20px] px-3.5 py-2 text-[15px] leading-snug shadow-modal',
-          mine ? 'bg-primary-600 text-white' : 'bg-surface-100 text-surface-900 dark:bg-surface-700 dark:text-surface-50')}
-          style={{ maxWidth: Math.max(rect.width, 120) }}>
+        <div className={clsx('max-h-[260px] overflow-hidden rounded-[22px] px-3.5 py-2 text-[15px] leading-snug shadow-modal',
+          mine ? 'direct-out' : 'bg-surface-100 text-surface-900 dark:bg-surface-800 dark:text-surface-50')}
+          style={{ maxWidth: Math.min(Math.max(rect.width, 120), window.innerWidth - 16) }}>
           <p className="line-clamp-[9] whitespace-pre-wrap break-words">{m.text || quoteOf(m)}</p>
-          <p className={clsx('mt-1 text-right text-[11px]', mine ? 'text-white/70' : 'text-surface-400')}>{clockTime(m.sentAt)}</p>
+          <p className={clsx('mt-1 text-right text-[11px]', mine ? 'text-white/75' : 'text-surface-400')}>{dayLabel(m.sentAt)}, {clockTime(m.sentAt)}</p>
         </div>
         {items.length > 0 && (
           <div className="w-56 overflow-hidden rounded-2xl bg-white py-1.5 shadow-modal dark:bg-surface-800" role="menu">
             {items.map(i => (
               <button key={i.key} type="button" role="menuitem" onClick={() => { i.run(); onClose() }}
                 className={clsx('flex h-12 w-full items-center justify-between px-4 text-[15px]',
-                  i.danger ? 'text-red-600 dark:text-red-400' : 'text-surface-900 dark:text-surface-100', 'active:bg-surface-100 dark:active:bg-surface-700')}>
+                  i.danger ? 'text-red-600 dark:text-red-400' : 'text-surface-900 dark:text-surface-100', 'hover:bg-surface-50 active:bg-surface-100 dark:hover:bg-surface-700/60 dark:active:bg-surface-700')}>
                 {i.label}
                 {i.icon}
               </button>

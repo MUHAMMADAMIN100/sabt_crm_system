@@ -57,3 +57,21 @@ describe('напоминания', () => {
     expect(remindLabel(new Date(2026, 10, 20, 9, 30).toISOString(), now)).toMatch(/^20 ноя/)
   })
 })
+
+describe('крупные эмодзи как в Instagram', () => {
+  it('одни эмодзи (до трёх) — крупно, без пузыря', async () => {
+    const { isEmojiOnly } = await import('./MessageItem')
+    expect(isEmojiOnly('❤️')).toBe(true)
+    expect(isEmojiOnly('👍🏻')).toBe(true)
+    expect(isEmojiOnly(' 😂😂 ')).toBe(true)
+    expect(isEmojiOnly('👨‍👩‍👧')).toBe(true)
+  })
+  it('текст, цифры и много эмодзи — обычный пузырь', async () => {
+    const { isEmojiOnly } = await import('./MessageItem')
+    expect(isEmojiOnly('Привет 👋')).toBe(false)
+    expect(isEmojiOnly('123')).toBe(false)
+    expect(isEmojiOnly('😀😀😀😀')).toBe(false)
+    expect(isEmojiOnly('')).toBe(false)
+    expect(isEmojiOnly(null)).toBe(false)
+  })
+})
