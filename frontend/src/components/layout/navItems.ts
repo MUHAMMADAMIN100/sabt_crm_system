@@ -11,7 +11,7 @@ import {
   FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun, Compass,
 } from 'lucide-react'
 import { useDirectUnread } from '@/hooks/useDirectUnread'
-import { notificationsApi } from '@/services/api.service'
+import { notificationsApi, tasksApi } from '@/services/api.service'
 
 /** Роли менеджера продаж. */
 export const SALES_ROLES = ['sales_manager_smm', 'sales_manager_dev'] as const
@@ -63,6 +63,18 @@ export function useNavItems(): NavItem[] {
   })
   // Сервер отдаёт {count}; на всякий случай понимаем и голое число (15.11.2026).
   const notifUnread = Math.max(0, Number(typeof notifCount === 'number' ? notifCount : notifCount?.count) || 0)
+  // «Ждут вашей проверки» — число у пункта «Задачи» (17.11.2026). Кабинет
+  // поручений есть у всех, кроме основателя (пункта нет) и руководителей
+  // разработки (у них полный список задач без проверки). Обновляется и по
+  // событию tasks:changed (ключ в TASK_QUERY_KEYS).
+  const { data: reviewData } = useQuery({
+    queryKey: ['tasks-review-count'],
+    queryFn: tasksApi.reviewCount,
+    enabled: !!user && !user.vacation && user.role !== 'founder' && !isDevLead(user),
+    staleTime: 30_000,
+    refetchInterval: 300_000,
+  })
+  const reviewCount = Math.max(0, Number(reviewData?.count) || 0)
   // В отпуске открыт только профиль (27.10.2026).
   if (user?.vacation) return [{ to: '/profile', icon: UserIcon, label: 'Профиль', permission: 'dashboard' }]
   const isTopExec = role === 'founder'
@@ -83,7 +95,9 @@ export function useNavItems(): NavItem[] {
     { to: '/dev',             icon: Code2,           label: 'Разработка',        permission: 'dashboard' },
     { to: '/my-notes',        icon: StickyNote,      label: 'Заметки',           permission: 'dashboard' },
     { to: '/stories-check',   icon: UserCheck,       label: 'Проверка сторис',   permission: 'stories.view' },
-    { to: '/tasks',           icon: ClipboardCheck,  label: isDevLead(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
+    // «Задачи» у всех (17.11.2026): задачи ставят не только руководители, но и
+    // SMM-специалисты. Число — сколько сданных задач ждут вашей проверки.
+    { to: '/tasks',           icon: ClipboardCheck,  label: 'Задачи',            permission: 'tasks.view', badge: isDevLead(user) ? undefined : reviewCount },
     { to: '/calendar',        icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
     // «Компас компании» (16.11.2026) — цели компании, отделов и свои; всем
     // ролям. Стоит после основных разделов, чтобы не сдвигать закреплённые

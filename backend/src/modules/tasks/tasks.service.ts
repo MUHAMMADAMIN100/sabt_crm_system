@@ -27,6 +27,11 @@ import { projectListFields } from '../../common/project-list-fields';
 import { escapeHtml } from '../../common/html-escape';
 import { dushanbeDay, dushanbeDayEnd, dushanbeDayStart } from '../clients/sales-kpi.logic';
 import { assertTaskReadable } from './task-access';
+import {
+  DELEGATE_DENIED, DELEGATE_PROJECT_DENIED, DELEGATE_ROLES, REVIEW_WINDOW_DAYS,
+  delegateRoleOf, hasOtherAssignee, isAwaitingReview, isSmmSpecialistUser,
+} from './task-delegation';
+import { crewIdsOf, isOwnProject, loadAccessRow } from '../projects/project-access';
 
 // PM_DEV здесь же: проект-менеджер по разработке ставит задачи команде, а не
 // только себе. Раньше он мог назначать других лишь внутри dev-проекта — задача
@@ -62,6 +67,12 @@ const MANAGEMENT_ROLES: string[] = [
   UserRole.ADMIN, UserRole.FOUNDER,
   UserRole.SMM_DIRECTOR, UserRole.DEV_DIRECTOR,
 ];
+/** Кто ставит поручения (17.11.2026, docs/SMM_DELEGATION_SPEC.md §1):
+ *  руководство плюс SMM-специалист — он ставит задачи команде производства.
+ *  Задачи от них видны исполнителю в «Задачах от руководителя» и
+ *  закрываются без обязательного файла-результата. Сам MANAGEMENT_ROLES не
+ *  расширяем: это именно руководство. Основная ИЛИ вторая роль автора. */
+const TASK_GIVER_ROLES: string[] = [...MANAGEMENT_ROLES, UserRole.SMM_SPECIALIST];
 /** Кто вправе ставить задачу «от основателя» и рассылать общую задачу всей
  *  компании (сайт + email + Telegram каждому активному сотруднику). */
 const BROADCAST_ROLES: string[] = [
@@ -208,6 +219,42 @@ export class TasksService implements OnModuleInit {
     } catch {
       return false;
     }
+  }
+
+  /** Правила делегирования SMM-специалиста (17.11.2026, docs/SMM_DELEGATION_SPEC.md §1):
+   *  кроме себя — только активные дизайнеры, продюсер, монтажёры и видеографы
+   *  (основной или второй ролью); проект — без проекта или свой SMM-проект
+   *  (назначенный специалист или участник). Задачу только себе ставит, как
+   *  раньше, — эти проверки её не касаются. */
+  private async assertSmmDelegation(actorId: string, assigneeIds: string[], projectId?: string | null): Promise<void> {
+    const others = [...new Set((assigneeIds || []).filter(id => !!id && id !== actorId))];
+    if (!others.length) return;
+    if (projectId) await this.assertSmmTaskProject(actorId, projectId);
+    const users = await this.userRepo.find({
+      where: { id: In(others) },
+      select: ['id', 'role', 'secondaryRole', 'isActive', 'isBlocked'] as any,
+    });
+    for (const id of others) {
+      const u = users.find(x => x.id === id);
+      if (!u || u.isActive === false || u.isBlocked) {
+        throw new BadRequestException('Исполнитель не найден или неактивен');
+      }
+      if (!delegateRoleOf(u)) throw new ForbiddenException(DELEGATE_DENIED);
+    }
+  }
+
+  /** Проект задачи SMM-специалиста — его SMM-проект, иначе 403. */
+  private async assertSmmTaskProject(actorId: string, projectId: string): Promise<void> {
+    const row = await loadAccessRow(this.projectRepo.manager, projectId);
+    if (!row || row.projectType !== 'SMM' || !isOwnProject({ id: actorId }, row, row.memberIds)) {
+      throw new ForbiddenException(DELEGATE_PROJECT_DENIED);
+    }
+  }
+
+  /** Все исполнители задачи: основной и очередь (task_assignees), без дублей. */
+  private assigneeIdsOf(task: { assigneeId?: string | null; assignees?: any[] | null }): string[] {
+    const ids = [task.assigneeId, ...((task.assignees || []) as any[]).map(a => a?.userId)];
+    return [...new Set(ids.filter((x): x is string => typeof x === 'string' && !!x))];
   }
 
   /** Auto-create a daily_report row when a task transitions to DONE. */
@@ -418,6 +465,15 @@ export class TasksService implements OnModuleInit {
           message: `Задача "${task.title}" отмечена как выполненная.`,
           link: `/tasks/${taskId}`,
         }).catch(() => {});
+        // И в Telegram — как при закрытии задачи одним исполнителем (update):
+        // автор (в т.ч. SMM-специалист, 17.11.2026) идёт принимать работу.
+        this.telegramService.sendToUser(
+          task.createdById,
+          `✅ <b>Задача выполнена</b>\n\n` +
+          `📋 ${escapeHtml(task.title)}` +
+          (user.name ? `\n👤 Последний шаг: ${escapeHtml(user.name)}` : '') +
+          `\n\n👉 ${this.telegramService.appUrl}/tasks/${taskId}`,
+        ).catch(() => {});
       }
     }
 
@@ -640,7 +696,7 @@ export class TasksService implements OnModuleInit {
     await assertTaskReadable(this.repo.manager, taskId, viewer);
   }
 
-  async create(dto: CreateTaskDto, userId: string, userRole?: string) {
+  async create(dto: CreateTaskDto, userId: string, userRole?: string, userSecondaryRole?: string | null) {
     if (!dto.deadline) {
       throw new BadRequestException('Укажите дедлайн задачи');
     }
@@ -652,7 +708,17 @@ export class TasksService implements OnModuleInit {
     // МП по продажам тоже могут назначать задачи на других сотрудников
     // (фича календаря «как у основателя»).
     const canAssignOthers = isPmHere || isSalesManager(userRole);
-    if (!canAssignOthers) {
+    // SMM-специалист (основной или второй ролью, 17.11.2026) ставит задачи
+    // себе и команде производства — по правилам делегирования (403 иначе).
+    // Личная задача — всегда себе, её правило ниже.
+    const smmDelegating = !canAssignOthers
+      && isSmmSpecialistUser({ role: userRole, secondaryRole: userSecondaryRole })
+      && (dto as any).scope !== TaskScope.PERSONAL;
+    const requestedIds = this.extractAssigneeIds(dto);
+    if (smmDelegating && requestedIds?.length) {
+      await this.assertSmmDelegation(userId, requestedIds, dto.projectId);
+    } else if (!canAssignOthers) {
+      // Без исполнителей (и у не-SMM) — как раньше: задача на самого себя.
       dto.assigneeId = userId;
       // Multi-assignee тоже ограничиваем — только сам себе
       (dto as any).assigneeIds = [userId];
@@ -988,7 +1054,7 @@ export class TasksService implements OnModuleInit {
     return { text: action === 'done' ? '✅ Задача отмечена выполненной' : '▶️ Задача взята в работу' };
   }
 
-  async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string }) {
+  async update(id: string, dto: UpdateTaskDto, user: { id: string; role: string; name?: string; secondaryRole?: string | null }) {
     const task = await this.findOne(id);
 
     // Дедлайн нельзя очистить — только перенести на другую дату.
@@ -1034,7 +1100,28 @@ export class TasksService implements OnModuleInit {
         // Автор (не PM) правит свою задачу, но исполнителей — по правилу
         // создания: МП по продажам — любых, остальные — только себя.
         const ids = this.extractAssigneeIds(patch);
-        if (ids !== undefined && !salesRoleOf(user as any)
+        if (!salesRoleOf(user as any) && isSmmSpecialistUser(user)) {
+          // SMM-специалист (17.11.2026) — по правилам делегирования, как при
+          // создании: исполнители из команды производства, проект — свой
+          // SMM-проект или без проекта. Нарушение — 403, а не тихий отсев.
+          // Пустой список исполнителей отбрасываем — без хозяина задача потеряется.
+          if (ids !== undefined && !ids.length) {
+            delete patch.assigneeIds;
+            delete patch.assigneeId;
+          }
+          // Форма присылает задачу целиком: проверяем только добавленных
+          // исполнителей, а при переносе в другой проект — всех и проект.
+          const current = this.assigneeIdsOf(task as any);
+          const after = ids?.length ? ids : current;
+          const projectChanged = 'projectId' in patch
+            && (patch.projectId ?? null) !== (task.projectId ?? null);
+          if (projectChanged) {
+            await this.assertSmmDelegation(user.id, after, patch.projectId);
+          } else {
+            const added = after.filter(x => !current.includes(x));
+            if (added.length) await this.assertSmmDelegation(user.id, added, null);
+          }
+        } else if (ids !== undefined && !salesRoleOf(user as any)
           && !(ids.length === 1 && ids[0] === user.id)) {
           delete patch.assigneeIds;
           delete patch.assigneeId;
@@ -1107,7 +1194,9 @@ export class TasksService implements OnModuleInit {
     // at least one result file/note. SMM-специалист, автор-исполнитель
     // собственной задачи и поручения ОТ РУКОВОДСТВА могут закрывать без файлов
     // (последнее — раздел «Задачи от руководителя»: это поручения, а не
-    // производственные работы с артефактом).
+    // производственные работы с артефактом). С 17.11.2026 так же — задачи от
+    // SMM-специалиста (TASK_GIVER_ROLES): результат он смотрит при приёмке,
+    // файл приложить можно, но не обязательно.
     if (
       dto.status === TaskStatus.DONE &&
       WORKER_ROLES.includes(user.role as UserRole) &&
@@ -1119,18 +1208,18 @@ export class TasksService implements OnModuleInit {
     ) {
       // Роль автора запрашиваем ЛЕНИВО — только когда правило иначе сработает,
       // чтобы не ходить в users на каждом апдейте статуса.
-      let isFromManagement = false;
+      let isFromTaskGiver = false;
       if (task.createdById && task.createdById !== user.id) {
         const creator = await this.userRepo.findOne({
           where: { id: task.createdById },
           select: ['id', 'role', 'secondaryRole'] as any,
         }).catch(() => null);
-        isFromManagement = !!creator && (
-          MANAGEMENT_ROLES.includes(creator.role as string)
-          || MANAGEMENT_ROLES.includes((creator as any).secondaryRole as string)
+        isFromTaskGiver = !!creator && (
+          TASK_GIVER_ROLES.includes(creator.role as string)
+          || TASK_GIVER_ROLES.includes((creator as any).secondaryRole as string)
         );
       }
-      if (!isFromManagement) {
+      if (!isFromTaskGiver) {
         const resultCount = await this.taskResultsService.countByTask(id);
         if (resultCount === 0) {
           throw new BadRequestException('Загрузите результат работы перед тем как отметить задачу выполненной');
@@ -1559,10 +1648,28 @@ export class TasksService implements OnModuleInit {
     return tasks;
   }
 
+  /** Поля кабинета поручений (17.11.2026, docs/SMM_DELEGATION_SPEC.md §1):
+   *  awaitingReview — «Ждёт проверки», project — null, если проекта нет, и
+   *  у исполнителей плоские id/name/avatar поверх прежних полей очереди
+   *  (position, userId, isDone, doneAt, note, user). */
+  private withReviewFields(tasks: Task[]): Task[] {
+    const now = new Date();
+    for (const t of tasks) {
+      const row = t as any;
+      row.assignees = (row.assignees || []).map((a: any) => ({
+        ...a, id: a.userId, name: a.user?.name ?? null, avatar: a.user?.avatar ?? null,
+      }));
+      row.awaitingReview = isAwaitingReview(row, now);
+      if (!row.project) row.project = null;
+    }
+    return tasks;
+  }
+
   /** Задачи ОТ РУКОВОДСТВА, назначенные сотруднику. Раздел «Задачи от
    *  руководителя»: основатель/сооснователь/админ/руководители направлений
    *  ставят задачу — сотрудник видит её и меняет статус. Личные задачи,
-   *  созданные самим сотрудником, и задачи от коллег сюда не попадают. */
+   *  созданные самим сотрудником, и задачи от коллег сюда не попадают.
+   *  С 17.11.2026 — и задачи от SMM-специалиста (TASK_GIVER_ROLES). */
   async getTasksFromManagement(userId: string) {
     const qb = this.repo.createQueryBuilder('t')
       .leftJoinAndSelect('t.assignee', 'assignee')
@@ -1580,7 +1687,7 @@ export class TasksService implements OnModuleInit {
         // Синтаксис СВОЙСТВ TypeORM (createdBy.secondaryRole), не сырые
         // кавычки: иначе алиас не резолвится и запрос падает.
         `(createdBy.role = ANY(:mgmt) OR createdBy.secondaryRole = ANY(:mgmt))`,
-        { mgmt: MANAGEMENT_ROLES },
+        { mgmt: TASK_GIVER_ROLES },
       )
       .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
       .orderBy('t.deadline', 'ASC', 'NULLS LAST');
@@ -1589,7 +1696,7 @@ export class TasksService implements OnModuleInit {
       const map = await this.loadAssignees(tasks.map(t => t.id));
       for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
     }
-    return tasks;
+    return this.withReviewFields(tasks);
   }
 
   /** Задачи, которые ВЫДАЛ текущий пользователь (вкладка «Я выдал») — чтобы
@@ -1609,7 +1716,92 @@ export class TasksService implements OnModuleInit {
       const map = await this.loadAssignees(tasks.map(t => t.id));
       for (const t of tasks) (t as any).assignees = map.get(t.id) || [];
     }
-    return tasks;
+    return this.withReviewFields(tasks);
+  }
+
+  /** Счётчик на пункте меню «Задачи» (17.11.2026): сколько поставленных
+   *  пользователем задач ждут его проверки — то же правило, что
+   *  awaitingReview (isAwaitingReview), одним COUNT. */
+  async getReviewCount(userId: string): Promise<{ count: number }> {
+    const since = new Date(Date.now() - REVIEW_WINDOW_DAYS * 86400_000);
+    const count = await this.repo.createQueryBuilder('t')
+      .where('t."createdById" = :uid', { uid: userId })
+      .andWhere(`t.scope <> 'personal'`)
+      .andWhere(`(t."originStage" IS NULL OR t."originStage" <> 'kp_creation')`)
+      .andWhere('t.status = :done', { done: TaskStatus.DONE })
+      .andWhere('t."reviewedAt" IS NULL')
+      .andWhere('t."completedAt" >= :since', { since })
+      // Делал не только сам автор: основной исполнитель или кто-то в очереди.
+      .andWhere(`(t."assigneeId"::text <> t."createdById"::text
+        OR EXISTS (SELECT 1 FROM task_assignees ta_rv
+                   WHERE ta_rv."taskId" = t.id AND ta_rv."userId"::text <> t."createdById"::text))`)
+      .getCount();
+    return { count };
+  }
+
+  /** Форма «Новая задача» SMM-специалиста (17.11.2026): кому можно поставить
+   *  и по каким проектам. people — активные дизайнеры, продюсер, монтажёры и
+   *  видеографы (основной или второй ролью), кроме самого пользователя;
+   *  inTeam — в команде выбранного проекта (производство из smmData и
+   *  участники); сначала команда, затем по имени. projects — его SMM-проекты
+   *  (назначен специалистом или участник), не в архиве, по имени. */
+  async getDelegationOptions(
+    user: { id: string; role?: string | null; secondaryRole?: string | null },
+    projectId?: string | null,
+  ): Promise<{
+    people: Array<{ id: string; name: string; avatar: string | null; role: string; inTeam: boolean }>;
+    projects: Array<{ id: string; name: string }>;
+  }> {
+    if (!isSmmSpecialistUser(user)) {
+      throw new ForbiddenException('Ставить задачи команде производства может SMM-специалист');
+    }
+    const byName = (a: { name?: string | null }, b: { name?: string | null }) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    const [projectRows, users] = await Promise.all([
+      this.projectRepo.manager.query(
+        `SELECT p.id::text AS id, p.name AS name
+           FROM projects p
+          WHERE p."projectType" = 'SMM'
+            AND COALESCE(p."isArchived", false) = false
+            AND COALESCE(p.status::text, '') <> 'archived'
+            AND COALESCE(p."isOneOffSystem", false) = false
+            AND (jsonb_exists(COALESCE(p."smmData"->'smmSpecialistIds', '[]'::jsonb), $1::text)
+                 OR EXISTS (SELECT 1 FROM project_members pm
+                             WHERE pm."projectsId" = p.id AND pm."usersId"::text = $1::text))`,
+        [user.id],
+      ).catch(() => [] as any[]),
+      this.userRepo.find({
+        where: [
+          { role: In(DELEGATE_ROLES) as any, isActive: true, isBlocked: false },
+          { secondaryRole: In(DELEGATE_ROLES) as any, isActive: true, isBlocked: false },
+        ],
+        select: ['id', 'name', 'avatar', 'role', 'secondaryRole'] as any,
+      }),
+    ]);
+    const projects = (Array.isArray(projectRows) ? projectRows : [])
+      .map((r: any) => ({ id: String(r.id), name: String(r.name || '') }))
+      .sort(byName);
+
+    // Команда — только у своего проекта: чужой состав не раскрываем.
+    const team = new Set<string>();
+    if (projectId && projects.some(p => p.id === projectId)) {
+      const row = await loadAccessRow(this.projectRepo.manager, projectId);
+      if (row) {
+        for (const uid of crewIdsOf(row.smmData)) team.add(uid);
+        for (const uid of row.memberIds) team.add(uid);
+      }
+    }
+    const people = users
+      .filter(u => u.id !== user.id)
+      .map(u => ({
+        id: u.id,
+        name: u.name,
+        avatar: u.avatar || null,
+        role: delegateRoleOf(u) as string,
+        inTeam: team.has(u.id),
+      }))
+      .sort((a, b) => (a.inTeam === b.inTeam ? byName(a, b) : a.inTeam ? -1 : 1));
+    return { people, projects };
   }
 
   getOverdueTasks(viewer?: { id: string; role: string }) {
@@ -1658,34 +1850,53 @@ export class TasksService implements OnModuleInit {
     return qb.getMany();
   }
 
-  async approveTask(id: string, user: { id: string; role: string; name?: string }) {
+  /** «Принять» (17.11.2026, docs/SMM_DELEGATION_SPEC.md §1). Кто: PM (как
+   *  раньше) или автор задачи, если делал её не только он сам. Из работы —
+   *  закрывает (done); сданную (done), но ещё не принятую — принимает.
+   *  Ставит reviewedById/reviewedAt и acceptedOnFirstTry = (возвратов не было);
+   *  исполнителям — уведомление и Telegram. */
+  async approveTask(id: string, user: { id: string; role: string; name?: string; secondaryRole?: string | null }) {
     const task = await this.findOne(id);
     const isPM = (isPmUser(user as any) && !outOfDirection(user as any, task.project?.projectType))
       || await this.hasPmPowersOnProject(user.id, user.role, task.projectId);
-    if (!isPM) {
-      throw new ForbiddenException('Only project managers can approve tasks');
+    // Автор принимает работу других — SMM-специалист у дизайнера, монтажёра…
+    const isReviewingAuthor = task.createdById === user.id && hasOtherAssignee(task as any, user.id);
+    if (!isPM && !isReviewingAuthor) {
+      throw new ForbiddenException('Принять задачу может руководитель или автор задачи');
     }
-    // С 4-статусной моделью «approve» = подтвердить выполнение из IN_PROGRESS.
-    if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED) {
-      throw new BadRequestException('Задача уже закрыта');
+    if (task.status === TaskStatus.CANCELLED) {
+      throw new BadRequestException('Задача отменена');
     }
+    if (task.status === TaskStatus.DONE && task.reviewedAt) {
+      throw new BadRequestException('Задача уже принята');
+    }
+    const wasDone = task.status === TaskStatus.DONE;
+    const now = new Date();
 
     await this.repo.update(id, {
       status: TaskStatus.DONE,
       reviewedById: user.id,
-      reviewedAt: new Date(),
-      completedAt: new Date(),
+      reviewedAt: now,
+      acceptedOnFirstTry: (Number(task.reworkCount) || 0) === 0,
+      // Момент сдачи у уже сданной задачи не трогаем — по нему KPI «в срок».
+      ...(wasDone ? {} : { completedAt: now }),
     });
 
-    // Уведомление исполнителя — только если это другой пользователь.
-    if (task.assigneeId && task.assigneeId !== user.id) {
-      await this.notificationsService.create({
-        userId: task.assigneeId,
+    // Исполнителям (основному и очереди) — кроме самого принявшего.
+    for (const uid of this.assigneeIdsOf(task as any).filter(x => x !== user.id)) {
+      this.notificationsService.create({
+        userId: uid,
         type: NotificationType.TASK_COMPLETED,
-        title: 'Задача подтверждена',
-        message: `Задача "${task.title}" принята и закрыта`,
+        title: '✅ Задача принята',
+        message: `Задача "${task.title}" принята${user.name ? ` (${user.name})` : ''}`,
         link: `/tasks/${id}`,
-      });
+      }).catch(() => {});
+      this.telegramService.sendToUser(
+        uid,
+        `✅ <b>Задача принята</b>\n\n📋 ${escapeHtml(task.title)}` +
+        (user.name ? `\n👤 Принял(а): ${escapeHtml(user.name)}` : '') +
+        `\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+      ).catch(() => {});
     }
 
     await this.activityLog.log({
@@ -1698,29 +1909,42 @@ export class TasksService implements OnModuleInit {
     });
 
     await this.projectsService.updateProgress(task.projectId);
-    await this.autoReportFromTask(task);
+    // Отчёт за выполненную задачу уже создан при переходе в done.
+    if (!wasDone) await this.autoReportFromTask(task);
     this.notifyTasksChanged({ projectId: task.projectId ?? null, taskId: id, actorId: user.id, kind: 'status' });
     return this.findOne(id);
   }
 
-  async returnTask(id: string, user: { id: string; role: string; name?: string }, reason: string) {
+  /** «Вернуть» (17.11.2026): PM или автор задачи (делал не только он);
+   *  причина обязательна, 1–1000 символов. Из работы или сданной (done) —
+   *  в работу: completedAt и приёмка сбрасываются, reworkCount + 1;
+   *  исполнителям — уведомление и Telegram с причиной. */
+  async returnTask(id: string, user: { id: string; role: string; name?: string; secondaryRole?: string | null }, reason: string) {
+    const cleanReason = String(reason ?? '').trim();
+    if (!cleanReason) throw new BadRequestException('Напишите, что поправить');
+    if (cleanReason.length > 1000) throw new BadRequestException('Причина возврата — не длиннее 1000 символов');
+
     const taskRaw = await this.repo
       .createQueryBuilder('t')
       .leftJoin('t.project', 'p')
-      .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId', 't.reworkCount'])
+      .select(['t.id', 't.title', 't.status', 't.assigneeId', 't.projectId', 't.reworkCount', 't.createdById'])
       // Тип проекта нужен, чтобы руководитель направления не мог вернуть на
       // доработку задачу чужой сферы по прямому id.
       .addSelect('p.projectType', 'p_projectType')
       .where('t.id = :id', { id })
       .getRawOne();
     if (!taskRaw) throw new NotFoundException('Task not found');
+    // Очередь исполнителей — для права автора и для уведомлений.
+    const chain = await this.assigneesRepo.find({ where: { taskId: id } }).catch(() => [] as TaskAssignee[]);
+    const assigneeIds = this.assigneeIdsOf({ assigneeId: taskRaw.t_assigneeId, assignees: chain });
     const isPM = (isPmUser(user as any) && !outOfDirection(user as any, taskRaw.p_projectType))
       || await this.hasPmPowersOnProject(user.id, user.role, taskRaw.t_projectId);
-    if (!isPM) {
-      throw new ForbiddenException('Only project managers can return tasks');
+    const isReviewingAuthor = taskRaw.t_createdById === user.id && assigneeIds.some(x => x !== user.id);
+    if (!isPM && !isReviewingAuthor) {
+      throw new ForbiddenException('Вернуть задачу может руководитель или автор задачи');
     }
     // В новой 4-статусной модели «return» = вернуть в IN_PROGRESS из
-    // любого активного состояния. Финальные (DONE/CANCELLED) нельзя.
+    // любого активного состояния и из сданной (done). Отменённую — нельзя.
     if (taskRaw.t_status === TaskStatus.CANCELLED) {
       throw new BadRequestException('Нельзя вернуть отменённую задачу');
     }
@@ -1729,14 +1953,18 @@ export class TasksService implements OnModuleInit {
     const newReworkCount = (Number(taskRaw.t_reworkCount) || 0) + 1;
     await this.repo.update(id, {
       status: TaskStatus.IN_PROGRESS,
-      returnReason: reason,
+      returnReason: cleanReason,
       reworkCount: newReworkCount,
       acceptedOnFirstTry: false,
+      // Сдача и приёмка — заново: после повторной сдачи задача снова «ждёт
+      // проверки», а KPI «в срок» считается по новой сдаче.
+      completedAt: null,
+      reviewedAt: null,
+      reviewedById: null,
     });
 
     // Fire-and-forget: notifications, telegram, activity log
     const taskTitle = taskRaw.t_title;
-    const assigneeId = taskRaw.t_assigneeId;
     const projectId = taskRaw.t_projectId;
 
     // Wave 6: если задача возвращена 2+ раз — отправляем алерт PM-у проекта.
@@ -1758,19 +1986,22 @@ export class TasksService implements OnModuleInit {
         .catch(() => {});
     }
 
-    if (assigneeId) {
+    // Исполнителям (основному и очереди) — кроме самого вернувшего.
+    for (const uid of assigneeIds.filter(x => x !== user.id)) {
       this.notificationsService.create({
-        userId: assigneeId,
+        userId: uid,
         type: NotificationType.TASK_RETURNED,
         title: 'Задача возвращена в работу',
-        message: `"${taskTitle}": ${reason}`,
+        message: `"${taskTitle}": ${cleanReason}`,
         link: `/tasks/${id}`,
-        data: { reason },
+        data: { reason: cleanReason },
       }).catch(() => {});
 
       this.telegramService.sendToUser(
-        assigneeId,
-        `🔁 <b>Задача возвращена в работу</b>\n\n📋 ${escapeHtml(taskTitle)}\n💬 ${escapeHtml(reason)}\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
+        uid,
+        `🔁 <b>Задача возвращена в работу</b>\n\n📋 ${escapeHtml(taskTitle)}\n💬 ${escapeHtml(cleanReason)}` +
+        (user.name ? `\n👤 Вернул(а): ${escapeHtml(user.name)}` : '') +
+        `\n\n👉 ${this.telegramService.appUrl}/tasks/${id}`,
       ).catch(() => {});
     }
 
@@ -1781,13 +2012,13 @@ export class TasksService implements OnModuleInit {
       entity: 'task',
       entityId: id,
       entityName: taskTitle,
-      details: { reason },
+      details: { reason: cleanReason },
     }).catch(() => {});
 
     this.projectsService.updateProgress(projectId).catch(() => {});
     this.notifyTasksChanged({ projectId: projectId ?? null, taskId: id, actorId: user.id, kind: 'status' });
 
-    return { id, status: 'returned', returnReason: reason, title: taskTitle };
+    return { id, status: 'returned', returnReason: cleanReason, title: taskTitle };
   }
 
   getStats(projectId?: string, viewer?: { id: string; role?: string; secondaryRole?: string | null } | null) {

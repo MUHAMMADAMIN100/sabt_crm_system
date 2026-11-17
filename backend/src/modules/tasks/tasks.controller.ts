@@ -88,7 +88,8 @@ export class TasksController {
   }
 
   /** Раздел «Задачи от руководителя»: поручения, выданные сотруднику
-   *  основателем/сооснователем/админом/руководителями направлений. */
+   *  основателем/сооснователем/админом/руководителями направлений и (с
+   *  17.11.2026) SMM-специалистом. Плюс awaitingReview — «ждёт проверки». */
   @Get('from-management')
   getFromManagement(@Request() req) {
     return this.service.getTasksFromManagement(req.user.id);
@@ -99,6 +100,21 @@ export class TasksController {
   @Get('assigned-by-me')
   getAssignedByMe(@Request() req) {
     return this.service.getTasksAssignedByMe(req.user.id);
+  }
+
+  /** Счётчик «ждут вашей проверки» на пункте меню «Задачи» → { count }.
+   *  Объявлено ДО ':id'. */
+  @Get('review-count')
+  getReviewCount(@Request() req) {
+    return this.service.getReviewCount(req.user.id);
+  }
+
+  /** Форма «Новая задача» SMM-специалиста: кому и по каким проектам
+   *  (docs/SMM_DELEGATION_SPEC.md §1). Не SMM-специалисту — 403. ДО ':id'. */
+  @Get('delegation/options')
+  @RequirePerm('tasks.create')
+  getDelegationOptions(@Query('projectId') projectId: string | undefined, @Request() req) {
+    return this.service.getDelegationOptions(req.user, projectId || null);
   }
 
   @Get('overdue')
@@ -119,7 +135,8 @@ export class TasksController {
   @Post()
   @RequirePerm('tasks.create')
   create(@Body() dto: CreateTaskDto, @Request() req) {
-    return this.service.create(dto, req.user.id, req.user.role);
+    // Вторая роль нужна правилам делегирования SMM-специалиста (17.11.2026).
+    return this.service.create(dto, req.user.id, req.user.role, req.user.secondaryRole);
   }
 
   @Patch(':id')
@@ -148,7 +165,8 @@ export class TasksController {
   @Post(':id/return')
   @RequirePerm('tasks.return')
   returnTask(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
-    return this.service.returnTask(id, req.user, reason || 'Требует доработки');
+    // Причина обязательна (17.11.2026) — проверяет сервис (1–1000 символов).
+    return this.service.returnTask(id, req.user, reason);
   }
 
   /** «Повторить прошлую неделю» из сетки «Задачи недели»: копии задач

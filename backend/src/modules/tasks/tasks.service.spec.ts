@@ -26,6 +26,9 @@ const mockTaskRepo = () => ({
     orderBy: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([]),
     getRawMany: jest.fn().mockResolvedValue([]),
+    // Возврат на доработку читает задачу сырой строкой; счётчик «ждут проверки».
+    getRawOne: jest.fn().mockResolvedValue(null),
+    getCount: jest.fn().mockResolvedValue(0),
     // Массовые операции (UPDATE через QueryBuilder) и счётчики со скоупом.
     leftJoin: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
@@ -47,6 +50,8 @@ const mockTaskRepo = () => ({
 
 const mockUserRepo = () => ({
   findOne: jest.fn(),
+  // Исполнители задачи от SMM-специалиста и люди для формы «Новая задача».
+  find: jest.fn().mockResolvedValue([]),
 });
 
 const makeTask = (overrides: Partial<Task> = {}): Task => ({
@@ -80,6 +85,9 @@ describe('TasksService', () => {
   let activityLog: { log: jest.Mock };
   let assigneesRepo: any;
   let projectRepo: any;
+  let userRepo: ReturnType<typeof mockUserRepo>;
+  let telegram: { sendToUser: jest.Mock };
+  let reportRepo: { save: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -122,6 +130,9 @@ describe('TasksService', () => {
     activityLog = module.get(ActivityLogService);
     assigneesRepo = module.get(getRepositoryToken(TaskAssignee));
     projectRepo = module.get(getRepositoryToken(Project));
+    userRepo = module.get(getRepositoryToken(User));
+    telegram = module.get(TelegramService);
+    reportRepo = module.get(getRepositoryToken(DailyReport));
   });
 
   describe('findOne', () => {
@@ -359,6 +370,230 @@ describe('TasksService', () => {
     it('мусорные id отбрасываются', async () => {
       expect(await service.bulkAction(['1; drop'], 'status', TaskStatus.DONE, admin)).toEqual({ affected: 0 });
       expect(taskRepo.find).not.toHaveBeenCalled();
+    });
+  });
+
+  // 17.11.2026 (docs/SMM_DELEGATION_SPEC.md §1): SMM-специалист ставит задачи
+  // себе и команде производства, принимает и возвращает сданное.
+  describe('задачи от SMM-специалиста команде', () => {
+    const P = '11111111-1111-4111-8111-111111111111';
+    const smm = { id: 'smm-1', role: UserRole.SMM_SPECIALIST, name: 'Сабрина' };
+    const designer = { id: 'des-1', role: 'designer', secondaryRole: null, isActive: true, isBlocked: false };
+    const accessRow = (smmData: any, memberIds: string[] = []) => ({
+      id: P, projectType: 'SMM', managerId: 'pm', salesManagerId: null, smmData, isOneOffSystem: false, memberIds,
+    });
+    const dto = (over: any = {}) => ({ title: 'Макет сторис', deadline: '2026-11-20T13:00:00Z', ...over }) as any;
+
+    beforeEach(() => {
+      taskRepo.create.mockImplementation((v: any) => v);
+      taskRepo.save.mockImplementation(async (v: any) => ({ ...v, id: 'task-new' }));
+      taskRepo.findOne.mockResolvedValue(makeTask({ id: 'task-new' }));
+    });
+
+    it('ставит дизайнеру задачу без проекта', async () => {
+      userRepo.find.mockResolvedValue([designer]);
+      await service.create(dto({ assigneeIds: ['des-1'] }), 'smm-1', UserRole.SMM_SPECIALIST);
+      expect(taskRepo.create).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: 'des-1', createdById: 'smm-1' }));
+      expect(assigneesRepo.save).toHaveBeenCalledWith([expect.objectContaining({ taskId: 'task-new', userId: 'des-1', position: 0 })]);
+    });
+
+    it('SMM-специалист второй ролью — видеографу второй ролью тоже можно', async () => {
+      userRepo.find.mockResolvedValue([{ id: 'vg-1', role: 'employee', secondaryRole: 'videographer', isActive: true, isBlocked: false }]);
+      await service.create(dto({ assigneeIds: ['vg-1'] }), 'u-1', UserRole.VIDEO_EDITOR, UserRole.SMM_SPECIALIST);
+      expect(taskRepo.create).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: 'vg-1', createdById: 'u-1' }));
+    });
+
+    it('менеджеру продаж — 403', async () => {
+      userRepo.find.mockResolvedValue([{ id: 'sm-1', role: 'sales_manager_smm', secondaryRole: null, isActive: true, isBlocked: false }]);
+      await expect(service.create(dto({ assigneeIds: ['sm-1'] }), 'smm-1', UserRole.SMM_SPECIALIST))
+        .rejects.toThrow('SMM-специалист ставит задачи дизайнерам, продюсеру, монтажёрам и видеографам');
+      expect(taskRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('неактивному — 400', async () => {
+      userRepo.find.mockResolvedValue([{ ...designer, isActive: false }]);
+      await expect(service.create(dto({ assigneeIds: ['des-1'] }), 'smm-1', UserRole.SMM_SPECIALIST))
+        .rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('чужой проект — 403, свой (назначен специалистом) — можно', async () => {
+      userRepo.find.mockResolvedValue([designer]);
+      projectRepo.manager.query.mockResolvedValueOnce([accessRow({ smmSpecialistIds: ['other'] })]);
+      await expect(service.create(dto({ assigneeIds: ['des-1'], projectId: P }), 'smm-1', UserRole.SMM_SPECIALIST))
+        .rejects.toBeInstanceOf(ForbiddenException);
+      expect(userRepo.find).not.toHaveBeenCalled();
+
+      projectRepo.manager.query.mockResolvedValueOnce([accessRow({ smmSpecialistIds: ['smm-1'] })]);
+      await service.create(dto({ assigneeIds: ['des-1'], projectId: P }), 'smm-1', UserRole.SMM_SPECIALIST);
+      expect(taskRepo.create).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: 'des-1', projectId: P }));
+    });
+
+    it('участник проекта — тоже свой проект', async () => {
+      userRepo.find.mockResolvedValue([designer]);
+      projectRepo.manager.query.mockResolvedValueOnce([accessRow({}, ['smm-1'])]);
+      await service.create(dto({ assigneeIds: ['des-1'], projectId: P }), 'smm-1', UserRole.SMM_SPECIALIST);
+      expect(taskRepo.save).toHaveBeenCalled();
+    });
+
+    it('себе — как раньше, без проверок; без исполнителей — тоже себе', async () => {
+      await service.create(dto({ assigneeIds: ['smm-1'], projectId: P }), 'smm-1', UserRole.SMM_SPECIALIST);
+      expect(taskRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ assigneeId: 'smm-1' }));
+      await service.create(dto(), 'smm-1', UserRole.SMM_SPECIALIST);
+      expect(taskRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ assigneeId: 'smm-1' }));
+      expect(userRepo.find).not.toHaveBeenCalled();
+      expect(projectRepo.manager.query).not.toHaveBeenCalled();
+    });
+
+    it('дизайнер по-прежнему ставит только себе', async () => {
+      await service.create(dto({ assigneeIds: ['other'] }), 'des-1', 'designer');
+      expect(taskRepo.create).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: 'des-1' }));
+    });
+
+    it('автор-SMM меняет исполнителя: видеографу можно, менеджеру продаж — 403', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ assigneeId: 'des-1', createdById: 'smm-1' }));
+      userRepo.find.mockResolvedValue([{ id: 'sm-1', role: 'sales_manager_smm', isActive: true, isBlocked: false }]);
+      await expect(service.update('task-1', { assigneeIds: ['sm-1'] } as any, smm)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(taskRepo.update).not.toHaveBeenCalled();
+
+      userRepo.find.mockResolvedValue([{ id: 'vg-1', role: 'videographer', isActive: true, isBlocked: false }]);
+      await service.update('task-1', { assigneeIds: ['vg-1'] } as any, smm);
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', { assigneeId: 'vg-1' });
+    });
+
+    it('исполнитель закрывает задачу от SMM без файла-результата, автору — Telegram', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ assigneeId: 'des-1', createdById: 'smm-1', status: TaskStatus.IN_PROGRESS }));
+      userRepo.findOne.mockResolvedValue({ id: 'smm-1', role: 'smm_specialist', secondaryRole: null });
+      await service.update('task-1', { status: TaskStatus.DONE }, { id: 'des-1', role: 'designer', name: 'Борис' });
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', { status: TaskStatus.DONE, completedAt: expect.any(Date) });
+      expect(telegram.sendToUser).toHaveBeenCalledWith('smm-1', expect.stringContaining('Задача выполнена'));
+    });
+
+    it('задачу от коллеги-дизайнера без результата закрыть нельзя — как раньше', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ assigneeId: 'des-1', createdById: 'des-2', status: TaskStatus.IN_PROGRESS }));
+      userRepo.findOne.mockResolvedValue({ id: 'des-2', role: 'designer', secondaryRole: null });
+      await expect(service.update('task-1', { status: TaskStatus.DONE }, { id: 'des-1', role: 'designer' }))
+        .rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('приёмка: «Принять» и «Вернуть»', () => {
+    const smm = { id: 'smm-1', role: UserRole.SMM_SPECIALIST, name: 'Сабрина' };
+    const done = (over: Partial<Task> = {}) => makeTask({
+      status: TaskStatus.DONE, createdById: 'smm-1', assigneeId: 'des-1', reworkCount: 0,
+      completedAt: new Date(), reviewedAt: null, ...over,
+    } as any);
+
+    it('автор принимает сданную задачу: приёмка без нового completedAt, исполнителю — Telegram', async () => {
+      taskRepo.findOne.mockResolvedValue(done());
+      await service.approveTask('task-1', smm);
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', {
+        status: TaskStatus.DONE, reviewedById: 'smm-1', reviewedAt: expect.any(Date), acceptedOnFirstTry: true,
+      });
+      expect(notificationsService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'des-1', title: '✅ Задача принята' }));
+      expect(telegram.sendToUser).toHaveBeenCalledWith('des-1', expect.stringContaining('Задача принята'));
+      // Отчёт за выполненную задачу уже был при переходе в done.
+      expect(reportRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('PM закрывает задачу из работы; после возвратов — не «с первого раза»', async () => {
+      taskRepo.findOne.mockResolvedValue(makeTask({ status: TaskStatus.IN_PROGRESS, reworkCount: 2 } as any));
+      await service.approveTask('task-1', { id: 'admin-1', role: UserRole.ADMIN });
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', {
+        status: TaskStatus.DONE, reviewedById: 'admin-1', reviewedAt: expect.any(Date),
+        acceptedOnFirstTry: false, completedAt: expect.any(Date),
+      });
+      expect(reportRepo.save).toHaveBeenCalled();
+    });
+
+    it('уже принятую — 400; чужой или автор-единственный исполнитель — 403', async () => {
+      taskRepo.findOne.mockResolvedValue(done({ reviewedAt: new Date() }));
+      await expect(service.approveTask('task-1', smm)).rejects.toBeInstanceOf(BadRequestException);
+      taskRepo.findOne.mockResolvedValue(done());
+      await expect(service.approveTask('task-1', { id: 'des-2', role: 'designer' })).rejects.toBeInstanceOf(ForbiddenException);
+      taskRepo.findOne.mockResolvedValue(done({ assigneeId: 'smm-1' }));
+      await expect(service.approveTask('task-1', smm)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(taskRepo.update).not.toHaveBeenCalled();
+    });
+
+    const raw = (over: any = {}) => ({
+      t_id: 'task-1', t_title: 'Макет', t_status: TaskStatus.DONE, t_assigneeId: 'des-1',
+      t_projectId: null, t_reworkCount: 0, t_createdById: 'smm-1', p_projectType: null, ...over,
+    });
+
+    it('автор возвращает сданную: в работу, сдача и приёмка сброшены, причина — исполнителю в Telegram', async () => {
+      taskRepo.createQueryBuilder().getRawOne.mockResolvedValue(raw());
+      const res = await service.returnTask('task-1', smm, '  Поправь цвет  ');
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', {
+        status: TaskStatus.IN_PROGRESS, returnReason: 'Поправь цвет', reworkCount: 1, acceptedOnFirstTry: false,
+        completedAt: null, reviewedAt: null, reviewedById: null,
+      });
+      expect(notificationsService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'des-1', data: { reason: 'Поправь цвет' } }));
+      expect(telegram.sendToUser).toHaveBeenCalledWith('des-1', expect.stringContaining('Поправь цвет'));
+      expect(res).toEqual({ id: 'task-1', status: 'returned', returnReason: 'Поправь цвет', title: 'Макет' });
+    });
+
+    it('без причины или длиннее 1000 символов — 400; чужой — 403', async () => {
+      await expect(service.returnTask('task-1', smm, '   ')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.returnTask('task-1', smm, 'x'.repeat(1001))).rejects.toBeInstanceOf(BadRequestException);
+      taskRepo.createQueryBuilder().getRawOne.mockResolvedValue(raw());
+      await expect(service.returnTask('task-1', { id: 'smm-2', role: UserRole.SMM_SPECIALIST }, 'Поправь'))
+        .rejects.toBeInstanceOf(ForbiddenException);
+      expect(taskRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('кабинет поручений', () => {
+    it('«Я поставил»: awaitingReview и исполнители с id/name/avatar, project — null', async () => {
+      taskRepo.createQueryBuilder().getMany.mockResolvedValueOnce([
+        makeTask({ id: 't1', status: TaskStatus.DONE, createdById: 'smm-1', assigneeId: 'des-1', projectId: null,
+          completedAt: new Date(Date.now() - 86400_000), reviewedAt: null } as any),
+      ]);
+      assigneesRepo.find.mockResolvedValueOnce([
+        { taskId: 't1', userId: 'des-1', position: 0, isDone: true, doneAt: null, note: null,
+          user: { id: 'des-1', name: 'Борис', email: 'b@x', avatar: null } },
+      ]);
+      const [t] = await service.getTasksAssignedByMe('smm-1') as any[];
+      expect(t.awaitingReview).toBe(true);
+      expect(t.project).toBeNull();
+      expect(t.assignees).toEqual([expect.objectContaining({ id: 'des-1', userId: 'des-1', name: 'Борис', avatar: null })]);
+    });
+
+    it('«Мне»: задачи и от SMM-специалиста', async () => {
+      await service.getTasksFromManagement('des-1');
+      expect(taskRepo.createQueryBuilder().andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('createdBy.role = ANY(:mgmt)'),
+        { mgmt: ['admin', 'founder', 'smm_director', 'dev_director', 'smm_specialist'] },
+      );
+    });
+
+    it('форма «Новая задача»: не SMM — 403', async () => {
+      await expect(service.getDelegationOptions({ id: 'des-1', role: 'designer' })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('форма «Новая задача»: сначала команда проекта, затем по имени; себя нет', async () => {
+      const P = '11111111-1111-4111-8111-111111111111';
+      const P2 = '22222222-2222-4222-8222-222222222222';
+      projectRepo.manager.query
+        .mockResolvedValueOnce([{ id: P, name: 'Яблоко' }, { id: P2, name: 'Арбуз' }])
+        .mockResolvedValueOnce([{
+          id: P, projectType: 'SMM', managerId: null, salesManagerId: null,
+          smmData: { designerIds: ['des-2'] }, isOneOffSystem: false, memberIds: ['vg-1'],
+        }]);
+      userRepo.find.mockResolvedValue([
+        { id: 'smm-1', name: 'Я', role: 'smm_specialist', secondaryRole: 'designer' },
+        { id: 'des-1', name: 'Борис', avatar: 'a.png', role: 'designer', secondaryRole: null },
+        { id: 'des-2', name: 'Вера', avatar: null, role: 'designer', secondaryRole: null },
+        { id: 'vg-1', name: 'Анна', avatar: null, role: 'employee', secondaryRole: 'videographer' },
+        { id: 'pr-1', name: 'Глеб', role: 'producer', secondaryRole: null },
+      ]);
+      const res = await service.getDelegationOptions({ id: 'smm-1', role: 'smm_specialist' }, P);
+      expect(res.projects).toEqual([{ id: P2, name: 'Арбуз' }, { id: P, name: 'Яблоко' }]);
+      expect(res.people).toEqual([
+        { id: 'vg-1', name: 'Анна', avatar: null, role: 'videographer', inTeam: true },
+        { id: 'des-2', name: 'Вера', avatar: null, role: 'designer', inTeam: true },
+        { id: 'des-1', name: 'Борис', avatar: 'a.png', role: 'designer', inTeam: false },
+        { id: 'pr-1', name: 'Глеб', avatar: null, role: 'producer', inTeam: false },
+      ]);
     });
   });
 

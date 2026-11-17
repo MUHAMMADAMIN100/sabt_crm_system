@@ -1,9 +1,12 @@
 import { ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
+import { dushanbeToday } from '../employees/vacation';
 
-/** TikTok у проекта (14.11.2026): по умолчанию у всех, выключает руководство.
+/** TikTok у проекта (14.11.2026): по умолчанию у всех.
  *  15.11.2026: профиль правит только «свой» SMM-специалист, smmData пишется
- *  атомарным patchSmmData (UPDATE … smmData || $1 - $3). */
+ *  атомарным patchSmmData (UPDATE … smmData || $1 - $3).
+ *  17.11.2026: TikTok переключает и SMM-специалист своего проекта (продюсер —
+ *  нет), действует с дня изменения — журнал smmData.tiktokLog. */
 function make(smmData: any = {}, members: Array<{ id: string }> = []) {
   const project: any = { id: 'p', name: 'Chrono', projectType: 'SMM', smmData, members };
   const svc: any = Object.create(ProjectsService.prototype);
@@ -31,19 +34,47 @@ function make(smmData: any = {}, members: Array<{ id: string }> = []) {
 }
 
 describe('TikTok у SMM-проекта', () => {
-  it('руководство выключает и включает обратно', async () => {
+  it('руководство выключает и в тот же день включает обратно — журнал дня пропадает', async () => {
     const { svc, project } = make();
     await expect(svc.setSmmProfile('p', { tiktok: false }, { id: 'f', role: 'founder' })).resolves.toEqual({ tiktok: false });
     expect(project.smmData.tiktokOff).toBe(true);
+    expect(project.smmData.tiktokLog).toEqual([expect.objectContaining({ from: dushanbeToday(), on: false, by: 'f' })]);
     await svc.setSmmProfile('p', { tiktok: true }, { id: 'd', role: 'smm_director' });
     expect(project.smmData.tiktokOff).toBeUndefined();
+    expect(project.smmData.tiktokLog).toBeUndefined();
   });
 
-  it('СММ-специалист своего проекта выключить не может', async () => {
+  it('СММ-специалист своего проекта выключает — с сегодняшнего дня, в журнале его имя', async () => {
     const { svc, project } = make({ smmSpecialistIds: ['s'] });
+    await expect(svc.setSmmProfile('p', { tiktok: false }, { id: 's', role: 'smm_specialist', name: 'Сабрина' }))
+      .resolves.toEqual({ tiktok: false });
+    expect(project.smmData.tiktokOff).toBe(true);
+    expect(project.smmData.tiktokLog).toEqual([
+      { from: dushanbeToday(), on: false, by: 's', byName: 'Сабрина', at: expect.any(String) },
+    ]);
+  });
+
+  it('СММ-специалист чужого проекта — 403', async () => {
+    const { svc, project } = make({ smmSpecialistIds: ['other'] });
     await expect(svc.setSmmProfile('p', { tiktok: false }, { id: 's', role: 'smm_specialist' }))
       .rejects.toBeInstanceOf(ForbiddenException);
     expect(project.smmData.tiktokOff).toBeUndefined();
+  });
+
+  it('продюсер TikTok не переключает', async () => {
+    const { svc, project } = make({ smmSpecialistIds: ['pr'] });
+    await svc.setSmmProfile('p', { tiktok: false }, { id: 'pr', role: 'producer' });
+    expect(project.smmData).toEqual({ smmSpecialistIds: ['pr'] });
+  });
+
+  it('был выключен без журнала — включение засевает прошлое выключенным', async () => {
+    const { svc, project } = make({ tiktokOff: true });
+    await svc.setSmmProfile('p', { tiktok: true }, { id: 'f', role: 'founder' });
+    expect(project.smmData.tiktokOff).toBeUndefined();
+    expect(project.smmData.tiktokLog).toEqual([
+      expect.objectContaining({ from: '2026-11-15', on: false, by: null, byName: null }),
+      expect.objectContaining({ from: dushanbeToday(), on: true, by: 'f' }),
+    ]);
   });
 });
 

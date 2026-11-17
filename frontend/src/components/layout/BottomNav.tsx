@@ -306,8 +306,13 @@ export default function BottomNav() {
                 {i.badge > 9 ? '9+' : i.badge}
               </span>
             )}
+            {/* Просрочка — красным; если справа уже число «ждут проверки»
+                (17.11.2026), красное встаёт слева, чтобы не перекрывать. */}
             {i.to === '/tasks' && overdue > 0 && (
-              <span className="absolute -top-2 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] leading-none font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]">
+              <span className={clsx(
+                'absolute -top-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] leading-none font-extrabold flex items-center justify-center border-[1.5px] border-[rgb(var(--sidebar-bg))]',
+                i.badge ? '-left-2.5' : '-right-2.5',
+              )}>
                 {overdue > 9 ? '9+' : overdue}
               </span>
             )}

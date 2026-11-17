@@ -1529,8 +1529,9 @@ export class ContentPlanService implements OnModuleInit {
         ).catch(() => [] as any[])).map((r: any) => String(r.id))
       : undefined;
     const nameById = new Map(active.map(p => [p.id, p.name] as const));
-    // Проекты, где TikTok выключили (по умолчанию он у всех).
-    const tiktokOff = new Set(active.filter(p => (p.smmData as any)?.tiktokOff === true).map(p => p.id));
+    // TikTok (17.11.2026): включён ли он — на дату публикации, по журналу
+    // проекта (smmData.tiktokLog); по умолчанию у всех.
+    const smmDataById = new Map(active.map(p => [p.id, p.smmData] as const));
     // «Мои проекты» — то же правило, что в кабинете специалиста: менеджер,
     // участник или назначенный SMM-специалист проекта.
     const memberOf = new Set<string>();
@@ -1661,7 +1662,7 @@ export class ContentPlanService implements OnModuleInit {
         contentType: p.itemKind === 'reel' ? 'reel' : 'design',
         topic: p.title || null, scriptText: p.scriptText || null, status: p.status || undefined, taskId: p.taskId || null,
         // TikTok (14.11.2026): нужен ли он этой публикации и когда отметили.
-        tiktok: tiktokNeeded(tiktokOff.has(p.projectId), p.date), tiktokAt: p.tiktokAt || null,
+        tiktok: tiktokNeeded(smmDataById.get(p.projectId), p.date), tiktokAt: p.tiktokAt || null,
         time: p.time || null,   // время съёмки ('HH:MM') — для часовой сетки недели
         durationMin: Number(p.durationMin) > 0 ? Number(p.durationMin) : null, // длительность (мин)
       })),

@@ -72,8 +72,13 @@ export const GRANTABLE: Record<string, GrantDef> = {
   'tasks.edit':   { label: 'Задачи — редактирование', category: 'Задачи', roles: [...ALL_ROLES] },
   'tasks.delete': { label: 'Задачи — удаление',       category: 'Задачи', roles: [...ALL_ROLES], danger: true },
   'tasks.export': { label: 'Задачи — выгрузка CSV',   category: 'Задачи', roles: [...ALL_ROLES] },
-  'tasks.approve':      { label: 'Задачи — подтверждение результата', category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director'] },
-  'tasks.return':       { label: 'Задачи — возврат на доработку',     category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director'] },
+  // SMM-специалист (17.11.2026, docs/SMM_DELEGATION_SPEC.md §1) принимает и
+  // возвращает задачи, которые сам поставил команде производства. Кого именно —
+  // решает сервис (PM или автор задачи), ключ лишь не отсекает его заранее.
+  // Принять/вернуть может руководитель или автор задачи — это проверяет
+  // TasksService (approveTask/returnTask), поэтому гард пускает все роли (17.11.2026).
+  'tasks.approve':      { label: 'Задачи — подтверждение результата', category: 'Задачи', roles: [...ALL_ROLES] },
+  'tasks.return':       { label: 'Задачи — возврат на доработку',     category: 'Задачи', roles: [...ALL_ROLES] },
   'tasks.bulk':         { label: 'Задачи — массовые операции',        category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director'] },
   'tasks.overdue.view': { label: 'Задачи — просроченные по компании', category: 'Задачи', roles: [...TOP, 'smm_director', 'dev_director'] },
 

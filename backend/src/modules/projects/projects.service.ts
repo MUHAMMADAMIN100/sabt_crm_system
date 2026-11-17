@@ -29,6 +29,7 @@ import { SmmPaymentsService } from '../smm-control/smm-payments.service';
 import { recordLeadEvent } from '../clients/lead-events';
 import { escapeHtml } from '../../common/html-escape';
 import { dushanbeToday } from '../employees/vacation';
+import { tiktokLogOf, tiktokNeeded, tiktokOnAt, toggleTiktokLog } from '../../common/tiktok';
 import {
   AccessUser, assertCanViewProject, canEditSmmProject, directionTypesOf, hasAnyRole, inDirection,
   isAssignedSalesManager, isOwnProject, isSmmManagement, isTop, patchSmmData, rolesOf,
@@ -51,7 +52,7 @@ const LEAD_LINK_ROLES = ['admin', 'founder', 'smm_director', 'dev_director'];
  *  присылала устаревший снимок smmData целиком и откатывала эти настройки. */
 const SMM_DATA_OWNED_KEYS = [
   'cycleStartDay', 'cycleAnchor', 'normReels', 'normPosts', 'storiesPerMonth',
-  'smmSpecialistIds', 'salesManagerId', 'salesManagerHistory', 'tiktokOff', 'autoPlan',
+  'smmSpecialistIds', 'salesManagerId', 'salesManagerHistory', 'tiktokOff', 'tiktokLog', 'autoPlan',
   'adsRunning', 'adsSince', 'adsById', 'financeProjectId',
   'videographerIds', 'videoEditorIds', 'designerIds',
 ];
@@ -1479,6 +1480,8 @@ export class ProjectsService implements OnModuleInit {
         // (PATCH /projects/:id/smm-manager), TikTok выключает руководство.
         if (!hasAnyRole(actor, ['founder'])) { delete sd.salesManagerId; delete sd.salesManagerHistory; }
         if (!hasAnyRole(actor, ['admin', 'founder', 'smm_director'])) delete sd.tiktokOff;
+        // Журнал переключений TikTok ведёт только сервер (PATCH smm-profile).
+        delete sd.tiktokLog;
         (dto as any).smmData = sd;
       } else {
         delete (dto as any).smmData;
@@ -2491,6 +2494,7 @@ export class ProjectsService implements OnModuleInit {
     }
     const mgr = managerId ? byId.get(managerId) : undefined;
     const salesManager = mgr ? mini(mgr) : null;
+    const today = dushanbeToday();
     return {
       ...base, smmSpecialistIds: smmSpecialists.map(u => u.id), smmSpecialists, salesManager, ...crew, crewCandidates, crewDefaults,
       // Ссылка на страницу клиента — видят все, кто открыл проект; логин и
@@ -2498,8 +2502,34 @@ export class ProjectsService implements OnModuleInit {
       pageUrl: typeof sd.pageUrl === 'string' && sd.pageUrl ? sd.pageUrl : null,
       canSeeAccess: !!viewer && this.canSeeClientAccessFor(viewer, specIds, managerId || null),
       // TikTok (14.11.2026): по умолчанию у всех проектов, выключают по одному.
-      tiktok: (sd as any).tiktokOff !== true,
+      // 17.11.2026: состояние — на сегодня по журналу (действует с дня
+      // изменения), история — новые сверху, и сколько прошлых публикаций ещё
+      // ждут отметки TikTok.
+      tiktok: tiktokOnAt(sd, today),
+      tiktokHistory: tiktokLogOf(sd).reverse().map(e => ({ from: e.from, on: e.on, byName: e.byName, at: e.at })),
+      tiktokPending: await this.tiktokPendingCount(id, sd, today),
     };
+  }
+
+  /** Публикации проекта за последние 60 дней (до вчера включительно), которым
+   *  TikTok нужен (на их дату), а отметки «выложено в TikTok» нет. Отменённые,
+   *  сторис и карточки подготовки (съёмка/монтаж/дизайн) не считаются. */
+  private async tiktokPendingCount(projectId: string, smmData: any, today: string): Promise<number> {
+    const since = new Date(Date.parse(`${today}T00:00:00Z`) - 60 * 86400_000).toISOString().slice(0, 10);
+    const rows: Array<{ d: string }> = await this.repo.manager.query(
+      `SELECT to_char(ci."publishDate"::date, 'YYYY-MM-DD') AS d
+         FROM content_plan_items ci
+        WHERE ci."projectId" = $1
+          AND ci."shootForItemId" IS NULL
+          AND ci."contentType" <> 'story'
+          AND ci.status <> 'cancelled'
+          AND ci."tiktokAt" IS NULL
+          AND ci."publishDate" IS NOT NULL
+          AND ci."publishDate"::date >= $2::date
+          AND ci."publishDate"::date < $3::date`,
+      [projectId, since, today],
+    ).catch((e: any) => { this.logger.warn(`tiktokPending failed: ${e?.message || e}`); return [] as Array<{ d: string }>; });
+    return (Array.isArray(rows) ? rows : []).filter(r => tiktokNeeded(smmData, r.d)).length;
   }
 
   async setSmmProfile(
@@ -2535,13 +2565,21 @@ export class ProjectsService implements OnModuleInit {
     if ('keyDateNote' in dto) setOrDel('keyDateNote', str(dto.keyDateNote, 500));
     if ('collabSince' in dto) setOrDel('collabSince', dateOr(dto.collabSince));
     if ('preferences' in dto) setOrDel('preferences', str(dto.preferences, 4000));
-    // TikTok: выключить у проекта может только руководство — иначе дубль в
-    // TikTok выключали бы, чтобы не делать (14.11.2026).
+    // TikTok (17.11.2026, docs/SMM_DELEGATION_SPEC.md §2): включает и
+    // выключает тот же круг, что правит профиль (assertSmmOwn выше): SMM-
+    // специалист своего проекта и руководство. Продюсер — нет (его ключи
+    // отфильтрованы выше). Действует с сегодняшнего дня по Душанбе: журнал
+    // smmData.tiktokLog, tiktokOff = текущее состояние (совместимость).
+    // Уведомлений нет.
     if ('tiktok' in dto) {
-      if (!isSmmManagement(user)) {
-        throw new ForbiddenException('Включать и выключать TikTok у проекта может руководство');
-      }
-      setOrDel('tiktokOff', dto.tiktok === false ? true : null);
+      const on = dto.tiktok !== false;
+      const log = toggleTiktokLog(smmData, on, dushanbeToday(), {
+        by: user?.id ?? null,
+        byName: user?.name ?? null,
+        at: new Date().toISOString(),
+      });
+      setOrDel('tiktokLog', log.length ? log : null);
+      setOrDel('tiktokOff', on ? null : true);
     }
     // Съёмки: адрес, ссылка на карту (только http/https — она уходит ссылкой
     // в Telegram) и человек на месте. Пусто — поле убираем.

@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useLayoutEffect, useRef, type ReactNode }
 import { createPortal } from 'react-dom'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive, MapPin, Music2 } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Calendar, Film, Image as ImageIcon, Camera, Users, Eye, Heart, Target, Pencil, Check, Plus, Minus, TrendingUp, TrendingDown, Gift, FileText, X, Printer, MoreVertical, Archive, MapPin, Music2, Instagram } from 'lucide-react'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { contentPlanApi, projectsApi, usersApi } from '@/services/api.service'
@@ -16,7 +16,10 @@ import ClientAccountCard from './ClientAccountCard'
 import { BackLink } from '@/lib/navMemory'
 import { useUrlState } from '@/lib/urlState'
 import { isProductionOnly } from '@/lib/permissions'
-import { pubDone } from './tiktok'
+import { pubDone, tiktokCaption, tiktokHistoryLine, tiktokPendingText, type TiktokChange } from './tiktok'
+import QuickTaskSheet from '@/components/tasks/QuickTaskSheet'
+import { serverMessage } from '@/lib/taskCabinet'
+import { dushanbeToday } from '@/lib/taskDue'
 
 type Ev = { projectId: string; kind?: string; contentType?: string; status?: string; count?: number; date?: string }
 // mine — «мой проект» для смотрящего (менеджер, участник, назначенный специалист).
@@ -37,6 +40,9 @@ const CREW_ROWS: { field: CrewField; out: CrewOut; label: string; roles?: string
 ]
 
 type SmmProfile = { ownerName: string | null; keyDate: string | null; keyDateNote: string | null; collabSince: string | null; preferences: string | null; shootAddress?: string | null; shootMapUrl?: string | null; shootContact?: string | null; metrics: MPoint[]; smmSpecialistIds?: string[]; smmSpecialists?: SmmSpec[]; tiktok?: boolean }
+  // TikTok с дня изменения (17.11.2026): история переключений (новые сверху) и
+  // сколько прошлых публикаций ещё ждут отметки TikTok.
+  & { tiktokHistory?: TiktokChange[]; tiktokPending?: number }
   & Partial<Record<CrewField, string[]>> & Partial<Record<CrewOut, SmmSpec[]>>
   & { crewCandidates?: Partial<Record<CrewOut, SmmSpec[]>> }
   // Кто закроет этап, если на проекте никого не назначали — подстановка с сервера.
@@ -245,8 +251,14 @@ export default function SmmProjectPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['smm-profile', id] }); toast.success('Сохранено') },
     onError: () => toast.error('Не удалось сохранить'),
   })
-  // TikTok у проекта (14.11.2026): по умолчанию дублируем, выключает руководство.
-  const canTiktok = isMgmt
+  // TikTok у проекта: по умолчанию дублируем (14.11.2026). Включает и
+  // выключает SMM-специалист своего проекта и руководство SMM (17.11.2026) —
+  // те же, кто правит профиль; продюсер — нет. Действует с дня изменения.
+  const canTiktok = canEdit
+  const [tiktokHistOpen, setTiktokHistOpen] = useState(false)
+  // «+ Задача команде» — SMM-специалисту своего проекта (17.11.2026).
+  const canDelegate = myRoles.includes('smm_specialist') && isMine
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false)
   const tiktokMut = useMutation({
     mutationFn: (on: boolean) => projectsApi.setSmmProfile(id!, { tiktok: on } as any),
     onMutate: async (on) => {
@@ -255,10 +267,12 @@ export default function SmmProjectPage() {
       qc.setQueryData(['smm-profile', id], (old: any) => ({ ...(old || {}), tiktok: on }))
       return { prev }
     },
-    onError: (_e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error('Не удалось сохранить') },
+    // Сервер решает, кому можно (403 — его текст покажем как есть).
+    onError: (e, _v, ctx: any) => { if (ctx?.prev) qc.setQueryData(['smm-profile', id], ctx.prev); toast.error(serverMessage(e, 'Не удалось сохранить')) },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['smm-profile', id] })
       qc.invalidateQueries({ queryKey: ['smm-calendar'] })
+      qc.invalidateQueries({ queryKey: ['content-plan'] })
     },
   })
   const cycleMut = useMutation({
@@ -530,7 +544,12 @@ export default function SmmProjectPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <BackLink fallback="/smm/projects" fallbackLabel="Проекты" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700" icon={<ChevronLeft size={16} />} />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {canDelegate && (
+            <button type="button" onClick={() => setTaskSheetOpen(true)} className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 min-h-[44px] lg:min-h-0 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <Plus size={16} /> Задача команде
+            </button>
+          )}
           <button onClick={() => setReportOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl bg-[#3068D8] text-white hover:brightness-110"><FileText size={16} /> Получить отчёт</button>
           {canRename && (
             <div className="relative">
@@ -763,28 +782,61 @@ export default function SmmProjectPage() {
               <div className="flex justify-between text-sm mb-1.5"><span className="text-gray-500 inline-flex items-center gap-1.5"><Camera size={14} /> Сторис за месяц</span><span className="font-bold tabular-nums">{storiesTotal}{spm ? ` / ${spm}` : ''}</span></div>
               <div className="h-[7px] rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct(storiesTotal, spm ?? storiesTotal)}%`, background: '#8b5cf6' }} /></div>
             </div>
-            {/* TikTok (14.11.2026): рилсы и посты дублируем в TikTok — у всех
-                проектов по умолчанию; выключает руководство. */}
-            {profile && (
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-sm">
-                <span className="text-gray-500 inline-flex items-center gap-1.5"><Music2 size={14} /> Дублируем в TikTok</span>
+          </div>
+        </div>
+        {/* Где публикуем (17.11.2026): Instagram — всегда; TikTok включает и
+            выключает SMM-специалист проекта или руководство. Изменение
+            действует с этого дня — прошлые публикации остаются как были. */}
+        {profile && (() => {
+          const tiktokOn = profile.tiktok !== false
+          const history = profile.tiktokHistory ?? []
+          const today = dushanbeToday()
+          const pendingText = tiktokPendingText(profile.tiktokPending)
+          return (
+            <div className={card}>
+              <h2 className={secLabel + ' mb-1'}>Где публикуем</h2>
+              <div className="flex items-center gap-3.5 min-h-[56px] border-b border-gray-100 dark:border-gray-800">
+                <Instagram size={22} className="shrink-0 text-gray-700 dark:text-gray-200" aria-hidden="true" />
+                <span className="flex-1 min-w-0 text-[15px] font-medium">Instagram</span>
+                <span className="text-sm text-gray-500">всегда</span>
+              </div>
+              <div className="flex items-center gap-3.5 min-h-[56px]">
+                <Music2 size={22} className="shrink-0 text-gray-700 dark:text-gray-200" aria-hidden="true" />
+                <span id={`tiktok-label-${id}`} className="flex-1 min-w-0 text-[15px] font-medium">TikTok</span>
                 {canTiktok ? (
-                  <button type="button" role="switch" aria-checked={profile.tiktok !== false} aria-label="Дублировать публикации в TikTok"
-                    disabled={tiktokMut.isPending} onClick={() => tiktokMut.mutate(profile.tiktok === false)}
-                    className={clsx('relative w-10 h-[22px] rounded-full transition shrink-0 disabled:opacity-60',
-                      profile.tiktok !== false ? 'bg-[#3f7a58]' : 'bg-gray-300 dark:bg-gray-700')}>
-                    <span className={clsx('absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all',
-                      profile.tiktok !== false ? 'left-[21px]' : 'left-[3px]')} />
+                  <button type="button" role="switch" aria-checked={tiktokOn} aria-labelledby={`tiktok-label-${id}`}
+                    disabled={tiktokMut.isPending} onClick={() => tiktokMut.mutate(!tiktokOn)}
+                    // Видимый переключатель 52×30, область нажатия — больше 44 px.
+                    className={clsx("relative w-[52px] h-[30px] rounded-full transition shrink-0 disabled:opacity-60 after:absolute after:-inset-2 after:content-['']",
+                      tiktokOn ? 'bg-[#3f7a58]' : 'bg-gray-300 dark:bg-gray-600')}>
+                    <span className={clsx('absolute top-1 w-[22px] h-[22px] rounded-full bg-white shadow transition-all',
+                      tiktokOn ? 'left-[26px]' : 'left-1')} />
                   </button>
                 ) : (
-                  <span className={profile.tiktok !== false ? 'font-semibold text-gray-700 dark:text-gray-200' : 'text-gray-400'}>
-                    {profile.tiktok !== false ? 'да' : 'нет'}
+                  <span className={tiktokOn ? 'text-sm font-semibold text-gray-700 dark:text-gray-200' : 'text-sm text-gray-400'}>
+                    {tiktokOn ? 'да' : 'нет'}
                   </span>
                 )}
               </div>
-            )}
-          </div>
-        </div>
+              <p className="text-[13px] leading-relaxed text-gray-500">
+                {tiktokCaption(tiktokOn, history, today, canTiktok)}{pendingText && ` ${pendingText}`}
+              </p>
+              {history.length > 0 && (
+                <>
+                  <button type="button" aria-expanded={tiktokHistOpen} onClick={() => setTiktokHistOpen(o => !o)}
+                    className="mt-1 min-h-[44px] lg:min-h-[36px] text-[13px] font-medium text-primary-600 dark:text-primary-300 hover:underline">
+                    История изменений
+                  </button>
+                  {tiktokHistOpen && (
+                    <ul className="flex flex-col gap-1.5 pb-1 text-[13px] text-gray-500">
+                      {history.map((h, i) => <li key={`${h.from}-${i}`}>{tiktokHistoryLine(h, today)}</li>)}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })()}
         </div>
       </div>
       )}
@@ -985,6 +1037,11 @@ export default function SmmProjectPage() {
           </div>
         </div>,
         document.body,
+      )}
+
+      {/* «+ Задача команде»: быстрая форма с уже выбранным проектом. */}
+      {canDelegate && (
+        <QuickTaskSheet open={taskSheetOpen} onClose={() => setTaskSheetOpen(false)} projectId={id ?? null} />
       )}
     </div>
   )

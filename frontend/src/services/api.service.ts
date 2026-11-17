@@ -1,6 +1,7 @@
 import api from '@/lib/api'
 import { celebrateTask } from '@/lib/taskCelebration'
 import type { ChainGoal, DeptKey, KrLevel } from '@/types/goals'
+import type { CabinetTask, DelegationOptions, TaskFileItem, TaskResultItem } from '@/types/taskCabinet'
 
 // ─── Auth ────────────────────────────────────────────────
 export const authApi = {
@@ -170,10 +171,17 @@ export const tasksApi = {
   my: () => api.get('/tasks/my').then(r => r.data),
   /** Свои (личные) задачи для календаря кабинета — лёгкий список. */
   own: () => api.get('/tasks/own').then(r => r.data),
-  /** Раздел «Задачи от руководителя»: поручения, выданные мне руководством. */
-  fromManagement: () => api.get('/tasks/from-management').then(r => r.data),
-  /** Вкладка «Я выдал»: задачи, которые поставил текущий пользователь. */
-  assignedByMe: () => api.get('/tasks/assigned-by-me').then(r => r.data),
+  /** Вкладка «Мне» раздела «Задачи»: поручения от руководства и от
+   *  SMM-специалистов (17.11.2026). */
+  fromManagement: (): Promise<CabinetTask[]> => api.get('/tasks/from-management').then(r => r.data),
+  /** Вкладка «Я поставил»: задачи, которые поставил текущий пользователь. */
+  assignedByMe: (): Promise<CabinetTask[]> => api.get('/tasks/assigned-by-me').then(r => r.data),
+  /** Быстрая форма SMM-специалиста: кому можно поставить и в какие проекты.
+   *  projectId — выбранный проект: его команда приходит первой (inTeam). */
+  delegationOptions: (projectId?: string | null): Promise<DelegationOptions> =>
+    api.get('/tasks/delegation/options', { params: projectId ? { projectId } : undefined }).then(r => r.data),
+  /** Сколько сданных задач ждут моей проверки — число у пункта меню «Задачи». */
+  reviewCount: (): Promise<{ count: number }> => api.get('/tasks/review-count').then(r => r.data),
   overdue: () => api.get('/tasks/overdue').then(r => r.data),
   stats: (projectId?: string) => api.get('/tasks/stats', { params: { projectId } }).then(r => r.data),
   approve: (id: string) => api.post(`/tasks/${id}/approve`).then(r => r.data),
@@ -215,7 +223,7 @@ export const taskChecklistApi = {
 
 // ─── Task Results ─────────────────────────────────────────
 export const taskResultsApi = {
-  list: (taskId: string) => api.get(`/tasks/${taskId}/results`).then(r => r.data),
+  list: (taskId: string): Promise<TaskResultItem[]> => api.get(`/tasks/${taskId}/results`).then(r => r.data),
   create: (taskId: string, data: { type: string; content: string; fileName?: string; filePath?: string }) =>
     api.post(`/tasks/${taskId}/results`, data).then(r => r.data),
   remove: (taskId: string, id: string) => api.delete(`/tasks/${taskId}/results/${id}`).then(r => r.data),
@@ -478,7 +486,7 @@ export const goalsApi = {
 // ─── Files ───────────────────────────────────────────────
 export const filesApi = {
   byProject: (projectId: string) => api.get(`/files/project/${projectId}`).then(r => r.data),
-  byTask: (taskId: string) => api.get(`/files/task/${taskId}`).then(r => r.data),
+  byTask: (taskId: string): Promise<TaskFileItem[]> => api.get(`/files/task/${taskId}`).then(r => r.data),
   upload: (file: File, projectId?: string, taskId?: string) => {
     const fd = new FormData()
     fd.append('file', file)

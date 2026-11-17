@@ -4,7 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { SmmProjectCheck } from './smm-project-check.entity';
 import { Project } from '../projects/project.entity';
 import { SmmPaymentsService } from './smm-payments.service';
-import { TIKTOK_FROM } from '../../common/tiktok';
+import { TIKTOK_FROM, tiktokOffRanges } from '../../common/tiktok';
 import { isAssignedSalesManager, patchSmmData } from '../projects/project-access';
 
 const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -125,10 +125,16 @@ export class SmmControlService {
     const userName = new Map(users.map(u => [u.id, u.name]));
 
     // TikTok (14.11.2026): «вышло» по плану — в Instagram и, если нужен, в
-    // TikTok. Не нужен — у проекта, где его выключили, и у публикаций раньше
-    // TIKTOK_FROM. Свежесть и полоса дней — по Instagram, как прежде.
-    const tiktokOffIds = live.filter(p => (p.smmData as any)?.tiktokOff === true).map(p => p.id);
-    const tiktokOk = `AND (ci."tiktokAt" IS NOT NULL OR ci."publishDate"::date < '${TIKTOK_FROM}'::date OR ci."projectId" = ANY($4::uuid[]))`;
+    // TikTok. Не нужен — у публикаций раньше TIKTOK_FROM и в дни, когда
+    // TikTok у проекта был выключен (17.11.2026: выключение действует с дня
+    // изменения — периоды из журнала smmData.tiktokLog, to — исключительно).
+    // Свежесть и полоса дней — по Instagram, как прежде.
+    const tiktokOff = JSON.stringify(live.flatMap(p =>
+      tiktokOffRanges(p.smmData).map(r => ({ pid: p.id, f: r.from, t: r.to }))));
+    const tiktokOk = `AND (ci."tiktokAt" IS NOT NULL OR ci."publishDate"::date < '${TIKTOK_FROM}'::date
+          OR EXISTS (SELECT 1 FROM jsonb_to_recordset($4::jsonb) AS toff(pid uuid, f date, t date)
+                      WHERE toff.pid = ci."projectId" AND ci."publishDate"::date >= toff.f
+                        AND (toff.t IS NULL OR ci."publishDate"::date < toff.t)))`;
     // Опубликованные рилсы и посты за месяц — по норме.
     const counts: Array<{ projectId: string; kind: string; n: number }> = await this.ds.query(
       `SELECT ci."projectId" AS "projectId",
@@ -142,7 +148,7 @@ export class SmmControlService {
           AND ci."contentType" IN ('reel', 'video', 'post', 'design', 'carousel')
           AND ci."publishDate"::date BETWEEN $2::date AND $3::date
         GROUP BY 1, 2`,
-      [ids, monthStart, monthEnd, tiktokOffIds],
+      [ids, monthStart, monthEnd, tiktokOff],
     );
     // Последняя публикация до опорного дня — «свежесть».
     const lasts: Array<{ projectId: string; last: string }> = await this.ds.query(
@@ -194,7 +200,7 @@ export class SmmControlService {
           ${tiktokOk}
           AND ci."contentType" IN ('reel', 'video', 'post', 'design', 'carousel')
           AND ci."publishDate"::date BETWEEN $2::date AND $3::date`,
-      [ids, minStart, ref, tiktokOffIds],
+      [ids, minStart, ref, tiktokOff],
     );
     const postSet = new Set(postDays.map(r => `${r.projectId}|${r.d}`));
     const storySet = new Set(storyDays.map(r => `${r.projectId}|${r.d}`));

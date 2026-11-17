@@ -72,6 +72,8 @@ export const TASK_QUERY_KEYS: readonly string[] = [
   'workload-pm', 'workload-team-all',
   // Кабинет поручений: выданная задача должна появиться у исполнителя сразу.
   'tasks-from-management', 'tasks-assigned-by-me',
+  // Число «ждут вашей проверки» у пункта меню «Задачи» (17.11.2026).
+  'tasks-review-count',
 ]
 
 /** Всё, что считается из карточек контент-плана (рилсы, посты, съёмки).
