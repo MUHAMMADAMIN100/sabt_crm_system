@@ -2801,12 +2801,27 @@ export class FinanceService implements OnModuleInit {
         salary: ofGroup('salary'), rent: ofGroup('rent_subs'), debts: ofGroup('debts'),
         installments: ofGroup('installments'), other: this.sum(monthExp.filter(t => this.isOtherExpense(t, ctx.m))),
       };
+      // Зарплата месяца по месяцу НАЧИСЛЕНИЯ (17.11.2026): карточка «Зарплата»
+      // в «Расходе» показывает то же число, что и график, с разбивкой —
+      // доплата за прошлый месяц (выдаётся ~10-го), авансы за этот месяц и
+      // выплаты за другие месяцы.
+      const prevYm = shiftYm(ym, -1);
+      const salarySplit = { prevYm, prev: 0, current: 0, other: 0 };
+      for (const t of monthExp) {
+        if (this.groupOf(t, ctx.m) !== 'salary') continue;
+        const amount = Number(t.amount) || 0;
+        const sym = salaryYmOf(t);
+        if (sym === prevYm) salarySplit.prev = r2(salarySplit.prev + amount);
+        else if (sym === ym) salarySplit.current = r2(salarySplit.current + amount);
+        else salarySplit.other = r2(salarySplit.other + amount);
+      }
       const plan = ym >= cur ? await this.planMonth(ym, ctx) : null;
       rows.push({
         ym, kind: ym < cur ? 'fact' : ym === cur ? 'current' : 'plan',
         fact,
         left: plan ? { salary: plan.salary, rent: plan.rent, debts: plan.debts, installments: plan.installments, other: plan.other } : zero,
         otherSource: plan?.otherSource ?? null,
+        salarySplit,
       });
     }
     return { from, months: count, current: cur, rows };

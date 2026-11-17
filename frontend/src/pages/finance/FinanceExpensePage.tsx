@@ -15,6 +15,12 @@ import { INSTALLMENT_COLOR } from './InstallmentsSection';
 import ExpenseLineChart, { SERIES as CHART_SERIES } from './ExpenseLineChart';
 import './finance.css';
 
+/** «октябрь» — месяц словом, для подписей «за октябрь». */
+function monthName(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long' });
+}
+
 const PERIODS = [{ n: 12, label: '1 год' }, { n: 6, label: '6 месяцев' }, { n: 3, label: '3 месяца' }];
 const MONTHS_PREP = ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'];
 const prepOf = (ym: string) => MONTHS_PREP[Number(ym.slice(5, 7)) - 1] ?? 'этом месяце';
@@ -85,35 +91,35 @@ function MonthView({ ym }: { ym: string }) {
   });
   // График грузим сразу, вместе с карточками (08.11.2026). Раньше он начинал
   // грузиться, только когда карточки уже пришли: «Расход» открывался 3,4 с.
-  useQuery({
+  const chartQ = useQuery({
     queryKey: ['finance', 'expenseChart', ym],
     queryFn: () => financeApi.expenseChart(ym, 0),
     ...keepMonth,
   });
 
-  // Зарплату платим 10-го числа за ПРОШЛЫЙ месяц. Поэтому в «Расход/M» карточка
-  // ЗП показывает payroll месяца M−1 — то же число и логику, что в календаре.
+  // Карточка «Зарплата» (17.11.2026, решение владельца): все деньги на
+  // зарплату в этом месяце — то же число, что у графика (уже ушло + ещё по
+  // плану), с разбивкой по месяцу начисления: доплата за прошлый месяц
+  // (выдаётся ~10-го), авансы за этот месяц, выплаты за другие месяцы.
+  // Раньше здесь была только доплата за прошлый месяц (без авансов) — число,
+  // которого не было ни на странице «Зарплата», ни на графике.
   const salaryYm = shiftYm(ym, -1);
-  const salaryQ = useQuery({
-    queryKey: ['finance', 'expenseDetail', 'salary', salaryYm],
-    queryFn: () => financeApi.expenseDetail('salary', salaryYm),
-    ...keepMonth,
-  });
-  const stale = isPlaceholderData || salaryQ.isPlaceholderData;
-  const salCards: any = salaryQ.data?.cards || {};
-  const salAdvances = Number(salCards.advances || 0);
-  const salPaid = Number(salCards.paid || 0);
-  const salToPay = Number(salCards.toPay || 0);
-  const salDone = salToPay <= 0.005;
-  // Не выплачено → остаток к выплате; выплачено → сумма, ушедшая ~10-го (без авансов).
-  const salaryValue = salDone ? Math.max(0, Math.round((salPaid - salAdvances) * 100) / 100) : salToPay;
-  const salRows: any[] = salaryQ.data?.rows || [];
-  const salCount = salRows.length;
-  const salPaidCount = salRows.filter((r) => Number(r.toPay || 0) <= 0.005).length;
+  const chartRow: any = (chartQ.data?.rows || []).find((r: any) => r.ym === ym) || null;
+  const salSplit = chartRow?.salarySplit || { prev: 0, current: 0, other: 0 };
+  const salFact = Number(chartRow?.fact?.salary || 0);
+  const salLeft = Number(chartRow?.left?.salary || 0);
+  const salaryValue = Math.round((salFact + salLeft) * 100) / 100;
+  const salLinesAll: Array<[string, number]> = [
+    [`за ${monthName(salaryYm)}`, Number(salSplit.prev || 0)],
+    [`авансы за ${monthName(ym)}`, Number(salSplit.current || 0)],
+    ['за другие месяцы', Number(salSplit.other || 0)],
+    [chartRow?.kind === 'plan' ? 'по плану' : 'ещё по плану', salLeft],
+  ];
+  const salLines = salLinesAll.filter(([, v]) => v > 0.005);
+  const stale = isPlaceholderData || chartQ.isPlaceholderData;
 
-  if (isLoading || salaryQ.isLoading) return <FinLoading cards={5} />;
-  // Ведомость не загрузилась — ошибка с «Повторить», а не «0 с.» (14.11.2026).
-  if (isError || salaryQ.isError) return <FinLoadError onRetry={() => { refetch(); salaryQ.refetch(); }} />;
+  if (isLoading) return <FinLoading cards={5} />;
+  if (isError) return <FinLoadError onRetry={() => { refetch(); chartQ.refetch(); }} />;
 
   const salary = EXPENSE_GROUPS.find((g) => g.key === 'salary')!;
   const rent = EXPENSE_GROUPS.find((g) => g.key === 'rent_subs')!;
@@ -136,13 +142,29 @@ function MonthView({ ym }: { ym: string }) {
   return (
     <div className={stale ? 'fin-stale-box' : undefined}>
     <div className="cards grid-5">
-      <BreakdownHover className="card clickable" ym={salaryYm} kind="group" id="salary" title={salary.label} color={salary.color} icon={salary.icon}
+      <BreakdownHover className="card clickable" ym={ym} kind="group" id="salary" title={salary.label} color={salary.color} icon={salary.icon}
         onClick={() => navigate(withYm('/finance/expense/salary', salaryYm))}>
         {head(salary)}
-        <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(salaryValue)}</div>
-        <div className="mini muted" style={{ marginTop: 6 }}>{salCount} сотрудников · за {monthLabel(salaryYm)}</div>
-        {progress(salPaidCount, salCount, 'выплачено', 'всё выплачено')}
-        <div className="mini muted" style={{ marginTop: 12 }}>Открыть →</div>
+        {chartQ.isLoading ? (
+          <div className="value muted" style={{ fontSize: 24, fontWeight: 700 }}>…</div>
+        ) : chartQ.isError ? (
+          <div className="mini muted" style={{ marginTop: 6 }}>Не удалось посчитать — обновите страницу</div>
+        ) : (
+          <>
+            <div className="value" style={{ fontSize: 24, fontWeight: 700 }}>{money(salaryValue)}</div>
+            <div className="mini muted" style={{ marginTop: 6 }}>все выплаты по зарплате · {monthLabel(ym)}</div>
+            {salLines.length > 0 && (
+              <div className="mini" style={{ marginTop: 8, display: 'grid', gap: 3 }}>
+                {salLines.map(([label, v]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <span className="muted">{label}</span><span>{money(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <div className="mini muted" style={{ marginTop: 12 }}>Ведомость за {monthName(salaryYm)} →</div>
       </BreakdownHover>
 
       <BreakdownHover className="card clickable" ym={ym} kind="group" id="rent_subs" title={rent.label} color={rent.color} icon={rent.icon}
