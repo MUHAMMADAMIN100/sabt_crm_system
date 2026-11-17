@@ -1,15 +1,23 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { KpiService, UserKpi } from '../kpi/kpi.service';
 import { WorkShiftsService } from '../work-shifts/work-shifts.service';
 import { directionScopeOf, isInDirection } from '../../common/direction-scope';
 import { cachedResponse } from '../../common/response-cache';
+// «Компас компании» (16.11.2026): общие правила отделов и источники цифр —
+// простые файлы без DI, модуль компаса сюда не импортируется.
+import { DEPT_NAME, departmentOfRole, isDeptKey, leadsOf, resolveLeaders } from '../goals/departments';
+import { leadsMember } from '../goals/goals-access';
+import { contentOntime, tasksOntime, wonDeals } from '../goals/goal-sources';
+import { monthWindow } from '../goals/goals.logic';
+import type { ChainKeyResult, DeptKey, KrLevel } from '../goals/goals.types';
 import { EmployeeGoal } from './employee-goal.entity';
 import {
-  BONUS_RULE, Delivery, GOAL_METRICS, GoalMetrics, MonthEff, PRODUCTION_UNIT, ShiftDay, StoryDay, WorkKind,
-  achievementsOf, deliveryStreak, goalProgress, levelOf, pointsOf, storyDayOk, storyStreak, streaks,
+  BONUS_RULE, Delivery, GOAL_METRICS, GoalMetrics, GoalRow, MAX_GOALS_PER_MONTH, MonthEff, PRODUCTION_UNIT,
+  SOURCE_GOAL_METRICS, ShiftDay, StoryDay, WorkKind,
+  achievementsOf, deliveryStreak, goalProgress, levelOf, metricFits, pointsOf, storyDayOk, storyStreak, streaks,
 } from './profile-stats.logic';
 
 type Actor = { id: string; role?: string | null; secondaryRole?: string | null };
@@ -22,7 +30,7 @@ const TOP_ROLES = ['admin', 'founder'];
 const SMM_TEAM = ['smm_specialist', 'videographer', 'video_editor', 'designer', 'targetologist', 'stories_checker'];
 const PRODUCTION = ['videographer', 'video_editor', 'designer'];
 /** Сколько целей на месяц (макет: «1–3 цели»). */
-const MAX_GOALS = 3;
+const MAX_GOALS = MAX_GOALS_PER_MONTH;
 /** История смен для серии и очков — полгода. */
 const SHIFT_MONTHS = 6;
 /** История эффективности для достижений — полгода прошедших месяцев. */
@@ -45,6 +53,30 @@ const addDays = (iso: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 const YM = /^\d{4}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Цель месяца с цифрой — для «Компаса компании» (цепочка и цели людей). */
+export interface GoalRowView {
+  id: string;
+  title: string;
+  metric: string | null;
+  target: number | null;
+  done: boolean;
+  value: number | null;
+  reached: boolean;
+  keyResultId: string | null;
+}
+
+/** Результат компаса в списке «Работает на» редактора целей. */
+export interface KeyResultOption {
+  id: string;
+  title: string;
+  level: KrLevel;
+  department: DeptKey | null;
+  departmentName: string | null;
+}
+
+const NO_METRICS: GoalMetrics = { efficiency: null, kpi: {}, storyOkDays: 0, ontimeShifts: 0 };
 
 /**
  * Личный профиль сотрудника (вариант Б, решение владельца 17.10.2026):
@@ -307,6 +339,9 @@ export class ProfileStatsService {
       storyOkDays: storyOkMonth,
       ontimeShifts: curShifts ? curShifts.worked - curShifts.late : 0,
     };
+    // Показатели компаса (сделки, публикации и задачи в срок) — только если
+    // есть такие цели.
+    Object.assign(metrics, await this.sourceMetrics(user.id, ym, goals.map(g => g.metric)));
 
     const unit = kind === 'smm' ? 'days' : kind === 'production' ? 'cards' : 'tasks';
     return {
@@ -327,7 +362,7 @@ export class ProfileStatsService {
         items: (kpiNow?.items || []).map(it => ({ key: it.key, label: it.label, value: it.value, target: it.target, percent: it.percent })),
       },
       bonus: { ...BONUS_RULE, percent: nowEff },
-      goals: goals.map(g => goalProgress(this.goalRow(g), metrics)),
+      goals: await this.withKeyResults(goals.map(g => goalProgress(this.goalRow(g), metrics))),
       achievements,
       productionLabel: PRODUCTION_UNIT[user.role]?.label || null,
     };
@@ -335,33 +370,59 @@ export class ProfileStatsService {
 
   // ── Цели месяца ──
 
-  private goalRow(g: EmployeeGoal) {
-    return { id: g.id, title: g.title, metric: g.metric, target: g.target, done: g.done };
+  private goalRow(g: EmployeeGoal): GoalRow {
+    return { id: g.id, title: g.title, metric: g.metric, target: g.target, done: g.done, keyResultId: g.keyResultId ?? null };
   }
 
   /** Ставить цели: основатель и админ — всем, руководитель направления —
-   *  своей команде. Себе цели не ставят. */
-  private canManage(actor: Actor, target: User): boolean {
+   *  своей команде, руководитель отдела «Компаса» — членам своего отдела
+   *  (16.11.2026). Себе цели не ставят. */
+  private async canManage(actor: Actor, target: User): Promise<boolean> {
     if (TOP_ROLES.includes(target.role)) return false;
     const roles = this.rolesOf(actor);
     if (roles.some(r => TOP_ROLES.includes(r))) return true;
     if (actor.id === target.id) return false;
     const scope = directionScopeOf(actor);
     if (scope && isInDirection(scope, target)) return true;
-    if (roles.includes('smm_director')) {
-      return SMM_TEAM.includes(target.role) || SMM_TEAM.includes(target.secondaryRole || '');
-    }
-    return false;
+    if (roles.includes('smm_director')
+      && (SMM_TEAM.includes(target.role) || SMM_TEAM.includes(target.secondaryRole || ''))) return true;
+    const leaders = await resolveLeaders(this.ds).catch(() => null);
+    return !!leaders && leadsMember(actor, leadsOf(actor, leaders), target);
   }
 
-  /** Цифры текущего месяца для прогресса измеримых целей. */
-  private async goalMetrics(user: User, ym: string): Promise<GoalMetrics> {
+  /** Показатели компаса по самому сотруднику: выигранные сделки (его лиды),
+   *  публикации своих проектов и свои задачи в срок. Считаем только нужные. */
+  private async sourceMetrics(userId: string, ym: string, need: Array<string | null>): Promise<Partial<GoalMetrics>> {
+    const want = need.filter((m): m is string => !!m && SOURCE_GOAL_METRICS.includes(m));
+    if (!want.length) return {};
+    const win = monthWindow(ym, todayDushanbe());
+    if (!win) return {};
+    const [won, content, tasks] = await Promise.all([
+      want.includes('won_deals') ? wonDeals(this.ds, win, { ownerId: userId }) : Promise.resolve(null),
+      want.includes('content_ontime') ? contentOntime(this.ds, win, { userId }) : Promise.resolve(null),
+      want.includes('tasks_ontime') ? tasksOntime(this.ds, win, { userId }) : Promise.resolve(null),
+    ]);
+    const out: Partial<GoalMetrics> = {};
+    if (won) out.wonDeals = won.value;
+    if (content) out.contentOntime = content.value;
+    if (tasks) out.tasksOntime = tasks.value;
+    return out;
+  }
+
+  /** Цифры месяца для прогресса измеримых целей. need — какие показатели
+   *  нужны (KPI считается дорого — без нужды не трогаем); не задано — все
+   *  прежние. */
+  private async goalMetrics(user: User, ym: string, need?: Array<string | null>): Promise<GoalMetrics> {
     const today = todayDushanbe();
     const to = [monthEnd(ym), today].sort()[0];
-    const [k, sh, days] = await Promise.all([
-      this.kpiOf(user.id, ym),
-      this.shifts.myMonth(user.id, ym).catch(() => null),
-      this.kindOf(user) === 'smm' ? this.storyDays(user.id, `${ym}-01`, to) : Promise.resolve([] as StoryDay[]),
+    const list = need ? need.filter((m): m is string => !!m) : null;
+    const wants = (m: string) => !list || list.includes(m);
+    const needKpi = !list || list.some(m => m === 'efficiency' || m.startsWith('kpi:'));
+    const [k, sh, days, extra] = await Promise.all([
+      needKpi ? this.kpiOf(user.id, ym) : Promise.resolve(null),
+      wants('ontime_shifts') ? this.shifts.myMonth(user.id, ym).catch(() => null) : Promise.resolve(null),
+      wants('stories_days') && this.kindOf(user) === 'smm' ? this.storyDays(user.id, `${ym}-01`, to) : Promise.resolve([] as StoryDay[]),
+      list ? this.sourceMetrics(user.id, ym, list) : Promise.resolve({} as Partial<GoalMetrics>),
     ]);
     const it: any = sh?.item;
     const worked = Object.values(it?.days || {}).filter(v => Number(v) > 0).length;
@@ -370,33 +431,132 @@ export class ProfileStatsService {
       kpi: Object.fromEntries((k?.items || []).map(x => [x.key, x.percent])),
       storyOkDays: days.filter(storyDayOk).length,
       ontimeShifts: Math.max(0, worked - (it?.lateDays?.length || 0)),
+      ...extra,
     };
+  }
+
+  /** Результаты компаса по id — для цепочки «→ отдел … · → компания …».
+   *  Прогресс и статус здесь не считаем (это работа модуля компаса). */
+  private async keyResultsByIds(ids: Array<string | null | undefined>): Promise<Map<string, ChainKeyResult>> {
+    const list = [...new Set(ids.filter((x): x is string => !!x && UUID_RE.test(x)))];
+    if (!list.length) return new Map();
+    const rows = await this.q(
+      `SELECT k.id::text AS id, k.title, k.level, k.department,
+              p.id::text AS "parentId", p.title AS "parentTitle"
+         FROM goal_key_results k
+         LEFT JOIN goal_key_results p ON p.id = k."parentId"
+        WHERE k.id = ANY($1::uuid[])`,
+      [list], 'goal key results',
+    );
+    return new Map(rows.map((r: any) => {
+      const level: KrLevel = r.level === 'company' ? 'company' : 'department';
+      const dept = level === 'department' && isDeptKey(r.department) ? r.department : null;
+      const kr: ChainKeyResult = {
+        id: r.id,
+        title: r.title,
+        level,
+        department: dept,
+        departmentName: dept ? DEPT_NAME[dept] : null,
+        progress: null,
+        status: 'none',
+        parent: r.parentId ? { id: r.parentId, title: r.parentTitle, progress: null, status: 'none' } : null,
+      };
+      return [r.id, kr] as [string, ChainKeyResult];
+    }));
+  }
+
+  /** Добавить к целям keyResultId и keyResult (цепочка наверх). */
+  private async withKeyResults<T extends { keyResultId?: string | null }>(rows: T[]) {
+    const map = await this.keyResultsByIds(rows.map(r => r.keyResultId));
+    return rows.map(r => ({
+      ...r,
+      keyResultId: r.keyResultId ?? null,
+      keyResult: r.keyResultId ? map.get(r.keyResultId) ?? null : null,
+    }));
+  }
+
+  /** «Работает на» в редакторе целей: КР компании месяца и КР отдела сотрудника. */
+  private async keyResultOptions(user: User, ym: string): Promise<KeyResultOption[]> {
+    const dept = departmentOfRole(user.role);
+    const rows = await this.q(
+      `SELECT k.id::text AS id, k.title, k.level, k.department
+         FROM goal_key_results k
+         LEFT JOIN goal_objectives o ON o.id = k."objectiveId"
+        WHERE k.ym = $1 AND (k.level = 'company' OR k.department = $2)
+        ORDER BY CASE WHEN k.level = 'company' THEN 0 ELSE 1 END,
+                 o."sortOrder" NULLS LAST, o."createdAt" NULLS LAST, k."sortOrder", k."createdAt"`,
+      [ym, dept], 'goal key result options',
+    );
+    return rows.map((r: any) => {
+      const level: KrLevel = r.level === 'company' ? 'company' : 'department';
+      const d = level === 'department' && isDeptKey(r.department) ? r.department : null;
+      return { id: r.id, title: r.title, level, department: d, departmentName: d ? DEPT_NAME[d] : null };
+    });
+  }
+
+  /** Цели месяца людей с цифрами — для «Компаса компании» (цепочка
+   *  сотрудника и таблица «Цели людей»). Показатели считаем только тем, у
+   *  кого есть измеримые цели, и только нужные. */
+  async goalRowsFor(userIds: string[], ym: string): Promise<Map<string, GoalRowView[]>> {
+    const out = new Map<string, GoalRowView[]>();
+    const ids = [...new Set((userIds || []).filter(id => UUID_RE.test(String(id || ''))))];
+    if (!ids.length || !YM.test(String(ym || ''))) return out;
+    const goals = await this.goalRepo.find({ where: { userId: In(ids), ym }, order: { createdAt: 'ASC' } });
+    const byUser = new Map<string, EmployeeGoal[]>();
+    for (const g of goals) byUser.set(g.userId, [...(byUser.get(g.userId) || []), g]);
+    const measurable = [...byUser.entries()].filter(([, list]) => list.some(g => !!g.metric)).map(([id]) => id);
+    const users = measurable.length ? await this.userRepo.find({ where: { id: In(measurable) } }) : [];
+    const metrics = new Map<string, GoalMetrics>();
+    await Promise.all(users.map(async u => {
+      const m = await this.goalMetrics(u, ym, (byUser.get(u.id) || []).map(g => g.metric))
+        .catch((e: any) => { this.logger.warn(`goal metrics for ${u.id} failed: ${e?.message || e}`); return NO_METRICS; });
+      metrics.set(u.id, m);
+    }));
+    for (const [userId, list] of byUser) {
+      out.set(userId, list.map(g => {
+        const p = goalProgress(this.goalRow(g), metrics.get(userId) || NO_METRICS);
+        return {
+          id: p.id, title: p.title, metric: p.metric, target: p.target, done: p.done,
+          value: p.value, reached: p.reached, keyResultId: g.keyResultId ?? null,
+        };
+      }));
+    }
+    return out;
   }
 
   /** Цели сотрудника за месяц — для его карточки у руководителя. */
   async goalsOf(userId: string, actor: Actor, ymRaw?: string) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Сотрудник не найден');
-    const canEdit = this.canManage(actor, user);
+    const canEdit = await this.canManage(actor, user);
     const ym = YM.test(String(ymRaw || '')) ? String(ymRaw) : todayDushanbe().slice(0, 7);
     // Чужие цели видит только тот, кто их ставит. Отвечаем пустым списком, а
     // не отказом: карточку сотрудника открывают и другие руководители.
-    if (!canEdit && actor.id !== userId) return { ym, canEdit: false, max: MAX_GOALS, goals: [], metrics: [] };
-    const [goals, metrics, k] = await Promise.all([
-      this.goalRepo.find({ where: { userId, ym }, order: { createdAt: 'ASC' } }),
-      this.goalMetrics(user, ym),
+    if (!canEdit && actor.id !== userId) return { ym, canEdit: false, max: MAX_GOALS, goals: [], metrics: [], keyResults: [] };
+    const goals = await this.goalRepo.find({ where: { userId, ym }, order: { createdAt: 'ASC' } });
+    const [metrics, k, keyResults] = await Promise.all([
+      this.goalMetrics(user, ym, goals.map(g => g.metric)),
       this.kpiOf(user.id, ym),
+      canEdit ? this.keyResultOptions(user, ym) : Promise.resolve([] as KeyResultOption[]),
     ]);
+    const roles = [user.role, user.secondaryRole];
+    const offer = (key: string) => (metricFits(key, roles) ? [{ key, label: GOAL_METRICS[key].label, unit: GOAL_METRICS[key].unit }] : []);
     return {
       ym, canEdit, max: MAX_GOALS,
-      goals: goals.map(g => goalProgress(this.goalRow(g), metrics)),
-      // Что можно поставить измеримой целью: общие и метрики KPI этого человека.
+      goals: await this.withKeyResults(goals.map(g => goalProgress(this.goalRow(g), metrics))),
+      // Что можно поставить измеримой целью: общие, показатели компаса,
+      // которые подходят человеку, и метрики KPI этого человека.
       metrics: [
         { key: 'efficiency', label: GOAL_METRICS.efficiency.label, unit: '%' },
         ...(this.kindOf(user) === 'smm' ? [{ key: 'stories_days', label: GOAL_METRICS.stories_days.label, unit: 'days' }] : []),
         { key: 'ontime_shifts', label: GOAL_METRICS.ontime_shifts.label, unit: 'shifts' },
+        ...offer('won_deals'),
+        ...offer('content_ontime'),
+        ...offer('tasks_ontime'),
         ...(k?.items || []).map(it => ({ key: `kpi:${it.key}`, label: it.label, unit: '%' })),
       ],
+      // «Работает на»: КР компании этого месяца и КР отдела сотрудника.
+      keyResults,
     };
   }
 
@@ -412,14 +572,36 @@ export class ProfileStatsService {
     return { title, metric, target };
   }
 
+  /** Показатель должен подходить сотруднику (сделки — менеджерам продаж,
+   *  публикации — SMM-специалистам). */
+  private checkMetricFits(metric: string | null, user: User) {
+    if (metric && !metricFits(metric, [user.role, user.secondaryRole])) {
+      throw new BadRequestException('Этот показатель не подходит сотруднику');
+    }
+  }
+
+  /** «Работает на»: КР компаса того же месяца; null/пусто — без связи. */
+  private async cleanKeyResultId(raw: unknown, ym: string): Promise<string | null> {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const id = String(raw);
+    if (!UUID_RE.test(id)) throw new BadRequestException('Результат не найден');
+    const [kr] = await this.q(`SELECT ym FROM goal_key_results WHERE id = $1 LIMIT 1`, [id], 'goal key result');
+    if (!kr) throw new BadRequestException('Результат не найден');
+    if (kr.ym !== ym) throw new BadRequestException('Цель может работать только на результат того же месяца');
+    return id;
+  }
+
   async createGoal(actor: Actor, body: any) {
     const user = await this.userRepo.findOne({ where: { id: String(body?.userId || '') } });
     if (!user) throw new NotFoundException('Сотрудник не найден');
-    if (!this.canManage(actor, user)) throw new ForbiddenException('Цели ставят руководитель направления и основатель');
+    if (!(await this.canManage(actor, user))) throw new ForbiddenException('Цели ставят руководитель направления и основатель');
     const ym = YM.test(String(body?.ym || '')) ? String(body.ym) : todayDushanbe().slice(0, 7);
     const count = await this.goalRepo.count({ where: { userId: user.id, ym } });
     if (count >= MAX_GOALS) throw new BadRequestException(`На месяц — не больше ${MAX_GOALS} целей`);
-    await this.goalRepo.save(this.goalRepo.create({ ...this.cleanGoal(body), userId: user.id, ym, createdById: actor.id }));
+    const fields = this.cleanGoal(body);
+    this.checkMetricFits(fields.metric, user);
+    const keyResultId = await this.cleanKeyResultId(body?.keyResultId, ym);
+    await this.goalRepo.save(this.goalRepo.create({ ...fields, keyResultId, userId: user.id, ym, createdById: actor.id }));
     return this.goalsOf(user.id, actor, ym);
   }
 
@@ -428,7 +610,7 @@ export class ProfileStatsService {
     if (!goal) throw new NotFoundException('Цель не найдена');
     const user = await this.userRepo.findOne({ where: { id: goal.userId } });
     if (!user) throw new NotFoundException('Сотрудник не найден');
-    const manager = this.canManage(actor, user);
+    const manager = await this.canManage(actor, user);
     const self = actor.id === goal.userId;
     if (!manager && !self) throw new ForbiddenException('Нет доступа к цели');
 
@@ -438,6 +620,11 @@ export class ProfileStatsService {
         metric: body?.metric !== undefined ? body.metric : goal.metric,
         target: body?.target ?? goal.target,
       }));
+      if (body?.metric !== undefined) this.checkMetricFits(goal.metric, user);
+    }
+    // «Работает на» — ставит тот, кто ставит цели.
+    if (manager && body?.keyResultId !== undefined) {
+      goal.keyResultId = await this.cleanKeyResultId(body.keyResultId, goal.ym);
     }
     // Галочку ставит сотрудник (или руководитель) — только у цели без показателя.
     if (body?.done !== undefined) {
@@ -453,7 +640,7 @@ export class ProfileStatsService {
     const goal = await this.goalRepo.findOne({ where: { id } });
     if (!goal) throw new NotFoundException('Цель не найдена');
     const user = await this.userRepo.findOne({ where: { id: goal.userId } });
-    if (!user || !this.canManage(actor, user)) throw new ForbiddenException('Цели убирают руководитель направления и основатель');
+    if (!user || !(await this.canManage(actor, user))) throw new ForbiddenException('Цели убирают руководитель направления и основатель');
     await this.goalRepo.delete(goal.id);
     return this.goalsOf(goal.userId, actor, goal.ym);
   }

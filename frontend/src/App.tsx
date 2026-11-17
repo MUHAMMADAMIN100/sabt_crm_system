@@ -58,6 +58,10 @@ const DirectPage        = lazy(() => import('@/pages/direct/DirectPage'))
 // «Продажи» (15.11.2026): аналитика продаж, заявки от продаж, настройки норм
 // и комиссии — руководство; руководителям направлений — только «Заявки».
 const SalesPage         = lazy(() => import('@/pages/sales/SalesPage'))
+// «Компас компании» (16.11.2026, docs/GOALS_SPEC.md §9): цели компании,
+// отделов и сотрудников — открыт всем ролям; /compass/:dept — экран отдела.
+const CompassPage       = lazy(() => import('@/pages/compass/CompassPage'))
+const CompassDepartmentPage = lazy(() => import('@/pages/compass/DepartmentPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const TestNewPage       = lazy(() => import('@/pages/test-new/TestNewPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
@@ -217,6 +221,8 @@ export default function App() {
               живёт видом «Воронка» в «Клиентах». Старые ссылки ведут туда. */}
           <Route path="onboarding" element={<Navigate to="/clients?view=board" replace />} />
           <Route path="sales" element={<RoleGuard><SalesPage /></RoleGuard>} />
+          <Route path="compass" element={<RoleGuard><CompassPage /></RoleGuard>} />
+          <Route path="compass/:dept" element={<RoleGuard><CompassDepartmentPage /></RoleGuard>} />
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="test-new" element={<RoleGuard><TestNewPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />

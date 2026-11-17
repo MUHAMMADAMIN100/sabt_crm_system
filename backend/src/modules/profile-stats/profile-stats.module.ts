@@ -13,5 +13,8 @@ import { ProfileStatsController } from './profile-stats.controller';
   imports: [TypeOrmModule.forFeature([EmployeeGoal, User]), KpiModule, WorkShiftsModule],
   controllers: [ProfileStatsController],
   providers: [ProfileStatsService],
+  // «Компас компании» берёт отсюда цели месяца людей с цифрами
+  // (goalRowsFor). Зависимость в одну сторону: этот модуль компас не импортирует.
+  exports: [ProfileStatsService],
 })
 export class ProfileStatsModule {}

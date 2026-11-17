@@ -3,7 +3,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, Update
 /** Цель месяца сотрудника (профиль, идея 2 — решение владельца 17.10.2026).
  *  Ставят руководитель направления и основатель, до трёх на месяц.
  *  metric = null — выполнение отмечает сотрудник; иначе CRM считает сама
- *  (efficiency | stories_days | ontime_shifts | kpi:<ключ метрики>). */
+ *  (efficiency | stories_days | ontime_shifts | won_deals | content_ontime |
+ *  tasks_ontime | kpi:<ключ метрики>). */
 @Entity('employee_goals')
 @Index(['userId', 'ym'])
 export class EmployeeGoal {
@@ -31,6 +32,11 @@ export class EmployeeGoal {
 
   @Column({ type: 'timestamptz', nullable: true })
   doneAt: Date | null;
+
+  /** Результат «Компаса компании», на который работает цель (КР отдела
+   *  или компании того же месяца; миграция 1836000000000). */
+  @Column({ type: 'uuid', nullable: true })
+  keyResultId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   createdById: string | null;

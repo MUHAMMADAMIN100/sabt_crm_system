@@ -1,5 +1,6 @@
 import api from '@/lib/api'
 import { celebrateTask } from '@/lib/taskCelebration'
+import type { ChainGoal, DeptKey, KrLevel } from '@/types/goals'
 
 // ─── Auth ────────────────────────────────────────────────
 export const authApi = {
@@ -407,6 +408,10 @@ export type ProfileGoal = {
   /** null — отмечает сотрудник; иначе CRM считает сама. */
   metric: string | null; target: number | null
   done: boolean; value: number | null; reached: boolean
+  /** «Компас компании» (16.11.2026): результат отдела или компании, на
+   *  который работает цель, и цепочка наверх. Старый ответ — без полей. */
+  keyResultId?: string | null
+  keyResult?: ChainGoal['keyResult']
 }
 export type ProfileAchievement = { key: string; title: string; unlocked: boolean; progress?: { value: number; target: number } }
 export type ProfileStats = { visible: false } | {
@@ -426,7 +431,10 @@ export type ProfileStats = { visible: false } | {
 export type GoalsOfUser = {
   ym: string; canEdit: boolean; max: number
   goals: ProfileGoal[]
-  metrics: { key: string; label: string; unit: '%' | 'days' | 'shifts' }[]
+  metrics: { key: string; label: string; unit: '%' | 'days' | 'shifts' | 'count' }[]
+  /** На что может работать цель: результаты отдела сотрудника и компании
+   *  за этот месяц («Компас компании»). */
+  keyResults?: Array<{ id: string; title: string; level: KrLevel; department: DeptKey | null; departmentName: string | null }>
 }
 
 /** План продаж менеджеров (19.10.2026): сумму на месяц ставит основатель,
@@ -460,9 +468,9 @@ export const salesPlanApi = {
 export const goalsApi = {
   ofUser: (userId: string, ym?: string): Promise<GoalsOfUser> =>
     api.get(`/goals/user/${userId}`, { params: ym ? { ym } : undefined }).then(r => r.data),
-  create: (data: { userId: string; ym?: string; title: string; metric?: string | null; target?: number | null }): Promise<GoalsOfUser> =>
+  create: (data: { userId: string; ym?: string; title: string; metric?: string | null; target?: number | null; keyResultId?: string | null }): Promise<GoalsOfUser> =>
     api.post('/goals', data).then(r => r.data),
-  update: (id: string, data: { title?: string; metric?: string | null; target?: number | null; done?: boolean }) =>
+  update: (id: string, data: { title?: string; metric?: string | null; target?: number | null; done?: boolean; keyResultId?: string | null }) =>
     api.patch(`/goals/${id}`, data).then(r => r.data),
   remove: (id: string): Promise<GoalsOfUser> => api.delete(`/goals/${id}`).then(r => r.data),
 }

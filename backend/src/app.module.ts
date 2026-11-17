@@ -51,6 +51,7 @@ import { DevTrackerModule } from './modules/dev-tracker/dev-tracker.module';
 import { SmmControlModule } from './modules/smm-control/smm-control.module';
 import { TransportModule } from './modules/transport/transport.module';
 import { ProfileStatsModule } from './modules/profile-stats/profile-stats.module';
+import { GoalsModule } from './modules/goals/goals.module';
 import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
@@ -144,6 +145,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     SmmControlModule,
     TransportModule,
     ProfileStatsModule,
+    GoalsModule,
   ],
 })
 export class AppModule {}

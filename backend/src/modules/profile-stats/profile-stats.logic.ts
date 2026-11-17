@@ -212,14 +212,39 @@ export interface GoalRow {
   metric: string | null;
   target: number | null;
   done: boolean;
+  /** Результат «Компаса компании», на который работает цель. */
+  keyResultId?: string | null;
 }
 
-/** Что можно поставить измеримой целью. */
-export const GOAL_METRICS: Record<string, { label: string; unit: '%' | 'days' | 'shifts' }> = {
+/** Сколько целей на месяц (макет: «1–3 цели»). */
+export const MAX_GOALS_PER_MONTH = 3;
+
+export type GoalUnit = '%' | 'days' | 'shifts' | 'count';
+
+/** Что можно поставить измеримой целью. won_deals, content_ontime и
+ *  tasks_ontime (16.11.2026) считаются источниками «Компаса компании»
+ *  (goals/goal-sources.ts) по самому сотруднику. */
+export const GOAL_METRICS: Record<string, { label: string; unit: GoalUnit }> = {
   efficiency: { label: 'Эффективность', unit: '%' },
   stories_days: { label: 'Сторис без пропусков', unit: 'days' },
   ontime_shifts: { label: 'Смены без опозданий', unit: 'shifts' },
+  won_deals: { label: 'Выигранные сделки', unit: 'count' },
+  content_ontime: { label: 'Публикации в срок', unit: '%' },
+  tasks_ontime: { label: 'Задачи в срок', unit: '%' },
 };
+
+/** Показатели, которые считаются источниками компаса. */
+export const SOURCE_GOAL_METRICS = ['won_deals', 'content_ontime', 'tasks_ontime'];
+
+/** Кому подходит показатель: выигранные сделки — менеджерам продаж,
+ *  публикации в срок — SMM-специалистам, остальное — всем. Роли — основная
+ *  и вторая. */
+export function metricFits(metric: string, roles: Array<string | null | undefined>): boolean {
+  const list = roles.filter(Boolean) as string[];
+  if (metric === 'won_deals') return list.some(r => r === 'sales_manager_smm' || r === 'sales_manager_dev');
+  if (metric === 'content_ontime') return list.includes('smm_specialist');
+  return true;
+}
 
 export interface GoalMetrics {
   efficiency: number | null;
@@ -227,6 +252,12 @@ export interface GoalMetrics {
   kpi: Record<string, number>;
   storyOkDays: number;
   ontimeShifts: number;
+  /** Выигранные сделки сотрудника за месяц (его лиды). */
+  wonDeals?: number | null;
+  /** Публикации своих проектов в срок, %. */
+  contentOntime?: number | null;
+  /** Свои задачи в срок, %. */
+  tasksOntime?: number | null;
 }
 
 /** Прогресс цели: измеримая выполнена сама, когда дошла до цели. */
@@ -237,6 +268,9 @@ export function goalProgress(g: GoalRow, m: GoalMetrics): GoalRow & { value: num
   if (g.metric === 'efficiency') value = m.efficiency;
   else if (g.metric === 'stories_days') value = m.storyOkDays;
   else if (g.metric === 'ontime_shifts') value = m.ontimeShifts;
+  else if (g.metric === 'won_deals') value = m.wonDeals ?? null;
+  else if (g.metric === 'content_ontime') value = m.contentOntime ?? null;
+  else if (g.metric === 'tasks_ontime') value = m.tasksOntime ?? null;
   else if (g.metric.startsWith('kpi:')) value = m.kpi[g.metric.slice(4)] ?? null;
   const reached = value !== null && target > 0 && value >= target;
   return { ...g, value, reached };

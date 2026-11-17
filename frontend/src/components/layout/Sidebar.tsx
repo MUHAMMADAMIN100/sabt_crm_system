@@ -130,8 +130,9 @@ export default function Sidebar({ open: pinnedOpen, onClose, onToggle }: Sidebar
   // Прочие роли видят полный список без изменений.
   const isFounder = role === 'founder'
   // «Продажи» (15.11.2026) — на виду: аналитика и заявки от продаж.
+  // «Компас» (16.11.2026) — тоже на виду: цели компании ставит основатель.
   const FOUNDER_CORE = new Set<string>([
-    '/', '/direct', '/finance', '/smm', '/dev', '/calendar',
+    '/', '/direct', '/finance', '/smm', '/dev', '/calendar', '/compass',
     '/employees', '/clients', '/sales', '/ai',
   ])
   const coreItems = isFounder ? filtered.filter(i => FOUNDER_CORE.has(i.to)) : filtered

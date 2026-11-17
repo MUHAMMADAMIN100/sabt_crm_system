@@ -8,7 +8,7 @@ import {
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
   Archive, Users, ShieldCheck, Contact, Tag, Shield, Sparkles, Code2, UserCheck,
-  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun,
+  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun, Compass,
 } from 'lucide-react'
 import { useDirectUnread } from '@/hooks/useDirectUnread'
 import { notificationsApi } from '@/services/api.service'
@@ -85,6 +85,10 @@ export function useNavItems(): NavItem[] {
     { to: '/stories-check',   icon: UserCheck,       label: 'Проверка сторис',   permission: 'stories.view' },
     { to: '/tasks',           icon: ClipboardCheck,  label: isDevLead(user) ? 'Задачи' : 'Задачи от руководителя', permission: 'tasks.view' },
     { to: '/calendar',        icon: Calendar,        label: t('nav.calendar'),   permission: 'calendar.view' },
+    // «Компас компании» (16.11.2026) — цели компании, отделов и свои; всем
+    // ролям. Стоит после основных разделов, чтобы не сдвигать закреплённые
+    // вкладки нижней панели на телефоне — там он в «Ещё».
+    { to: '/compass',         icon: Compass,         label: 'Компас',            permission: 'dashboard' },
     { to: '/archive',         icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',       icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,     label: 'Доступы сотрудников', permission: 'users.manage' },
@@ -111,6 +115,8 @@ export function useNavItems(): NavItem[] {
       return hasAnyRole(role, secondaryRole, SALES_ANALYTICS_ROLES)
         && canAccessRoute(role, '/sales', secondaryRole, user?.extraPermissions, user?.deniedPermissions, user?.isStoryMaker)
     }
+    // «Компас» — всем (персональные запреты его не касаются, как и маршрут).
+    if (item.to === '/compass') return true
     if (item.to === '/my-notes') return canSeeProjectStories(user?.isStoryMaker) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)
     if (item.to === '/stories-check') return canStoriesCheck

@@ -530,6 +530,9 @@ export function canAccessRoute(
 
   // Always allowed routes
   if (['/profile', '/notifications', '/'].includes(route)) return true
+  // «Компас компании» (16.11.2026) — всем ролям: цели компании видят все,
+  // что показать на экране отдела, сервер решает сам (GOALS_SPEC §6).
+  if (route === '/compass' || route.startsWith('/compass/')) return true
   // Онбординг — только менеджеры по продажам (основной или второй ролью).
   if (route === '/onboarding') return hasAnyRole(role, secondaryRole, ['sales_manager_smm', 'sales_manager_dev']) && userCan(u, 'clients.view')
   // «Доска проектов» удалена из системы (сент. 2026) — вся работа в Умном

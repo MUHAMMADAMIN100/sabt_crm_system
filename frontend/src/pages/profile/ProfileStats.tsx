@@ -2,6 +2,7 @@
 // серии, эффективность месяца (та же, что в KPI команды), бонус, цели месяца
 // и достижения. Подсказок нет — только цифры и короткие подписи.
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -214,12 +215,39 @@ function Bonus({ stats }: { stats: Stats }) {
   )
 }
 
-/** «15 / 30 дней», «88 %» — сколько есть у измеримой цели. */
-function goalValue(g: ProfileGoal): string {
+/** Показатели-счётчики (копятся за месяц), остальные — проценты. */
+export const COUNT_GOAL_METRICS = ['stories_days', 'ontime_shifts', 'won_deals']
+
+/** «15 / 30 дней», «3 / 5 шт.», «88 %» — сколько есть у измеримой цели. */
+export function goalValue(g: Pick<ProfileGoal, 'metric' | 'value' | 'target'>): string {
   const v = g.value ?? 0
   if (g.metric === 'stories_days') return `${v} / ${g.target} ${plural(g.target || 0, 'дня', 'дней', 'дней')}`
   if (g.metric === 'ontime_shifts') return `${v} / ${g.target} ${plural(g.target || 0, 'смены', 'смен', 'смен')}`
+  if (g.metric === 'won_deals') return `${v} / ${g.target ?? '—'} шт.`
   return g.value === null ? '—' : `${v} %`
+}
+
+/** Цепочка цели наверх («Компас компании», макет PhoneGoals):
+ *  «→ отдел Продажи · Новые клиенты», «→ компания · Выручка 300 000 с.».
+ *  Цель привязана прямо к результату компании — только вторая строка. */
+export function GoalChain({ kr, className }: { kr: ProfileGoal['keyResult']; className?: string }) {
+  if (!kr) return null
+  const company = kr.level === 'company' ? kr.title : kr.parent?.title ?? null
+  return (
+    <div className={clsx('flex flex-col gap-0.5 text-xs text-surface-400 dark:text-surface-500 min-w-0', className)}>
+      {kr.level === 'department' && (
+        <span className="break-words">
+          → отдел {kr.departmentName && <>{kr.departmentName} · </>}
+          <b className="font-semibold text-surface-600 dark:text-surface-300">{kr.title}</b>
+        </span>
+      )}
+      {company && (
+        <span className="break-words">
+          → компания · <b className="font-semibold text-surface-600 dark:text-surface-300">{company}</b>
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function GoalRowView({ g, onToggle, children }: { g: ProfileGoal; onToggle?: () => void; children?: React.ReactNode }) {
@@ -271,10 +299,21 @@ function Goals({ goals }: { goals: ProfileGoal[] }) {
       <div className="flex items-baseline gap-2">
         <h2 className="text-[15px] font-semibold text-surface-900 dark:text-surface-100">Цели месяца</h2>
         {goals.length > 0 && <span className="text-xs text-surface-400 dark:text-surface-500">{done} из {goals.length}</span>}
+        {/* «Компас компании»: куда ведут цели — цели компании и отдела. */}
+        <Link to="/compass"
+          className="ml-auto -my-2 min-h-[44px] lg:min-h-0 inline-flex items-center text-xs font-semibold text-primary-600 dark:text-primary-300 hover:underline whitespace-nowrap">
+          Компас компании →
+        </Link>
       </div>
       {goals.length === 0
         ? <p className="text-[13px] text-surface-400 dark:text-surface-500">Целей на этот месяц нет</p>
-        : goals.map(g => <GoalRowView key={g.id} g={g} onToggle={g.metric ? undefined : () => toggle.mutate(g)} />)}
+        : goals.map(g => (
+          <div key={g.id} className="flex flex-col gap-1.5">
+            <GoalRowView g={g} onToggle={g.metric ? undefined : () => toggle.mutate(g)} />
+            {/* Отступ под кружок-галочку у цели без показателя. */}
+            <GoalChain kr={g.keyResult ?? null} className={g.metric ? undefined : 'pl-[34px]'} />
+          </div>
+        ))}
     </section>
   )
 }

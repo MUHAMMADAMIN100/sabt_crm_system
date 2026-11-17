@@ -42,6 +42,10 @@ export enum NotificationType {
   DIRECT_MENTION          = 'direct_mention',
   /** «Директ»: сработало напоминание «вернуться к клиенту». */
   DIRECT_REMINDER         = 'direct_reminder',
+  /** «Компас»: руководителю — отметить статус недели (миграция 1836000000000). */
+  GOAL_CHECKIN            = 'goal_checkin',
+  /** «Компас»: основателю — дайджест целей и «поставьте цели на месяц». */
+  GOAL_DIGEST             = 'goal_digest',
 }
 
 @Entity('notifications')

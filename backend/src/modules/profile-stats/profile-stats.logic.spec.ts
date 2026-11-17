@@ -1,5 +1,5 @@
 import {
-  AchievementInput, Delivery, achievementsOf, deliveryStreak, goalProgress, levelOf, pointsOf, storyStreak, streaks,
+  AchievementInput, Delivery, achievementsOf, deliveryStreak, goalProgress, levelOf, metricFits, pointsOf, storyStreak, streaks,
 } from './profile-stats.logic';
 
 // Личный профиль, вариант Б (решение владельца 17.10.2026): уровень, серии,
@@ -124,5 +124,30 @@ describe('goalProgress — цели месяца', () => {
     expect(goalProgress(g({ metric: 'stories_days', target: 30 }), metrics)).toEqual(expect.objectContaining({ value: 15, reached: false }));
     expect(goalProgress(g({ metric: 'kpi:content_on_time', target: 85 }), metrics)).toEqual(expect.objectContaining({ value: 88, reached: true }));
     expect(goalProgress(g({ metric: 'efficiency', target: 90 }), { ...metrics, efficiency: null })).toEqual(expect.objectContaining({ value: null, reached: false }));
+  });
+  it('показатели компаса: сделки, публикации и задачи в срок', () => {
+    const m = { ...metrics, wonDeals: 4, contentOntime: 92, tasksOntime: null };
+    expect(goalProgress(g({ metric: 'won_deals', target: 5 }), m)).toEqual(expect.objectContaining({ value: 4, reached: false }));
+    expect(goalProgress(g({ metric: 'content_ontime', target: 90 }), m)).toEqual(expect.objectContaining({ value: 92, reached: true }));
+    expect(goalProgress(g({ metric: 'tasks_ontime', target: 90 }), m)).toEqual(expect.objectContaining({ value: null, reached: false }));
+    // Без посчитанного показателя — нет данных, а не ноль.
+    expect(goalProgress(g({ metric: 'won_deals', target: 5 }), metrics)).toEqual(expect.objectContaining({ value: null, reached: false }));
+  });
+  it('связь с результатом компаса проходит насквозь', () => {
+    expect(goalProgress(g({ keyResultId: 'kr1' }), metrics)).toEqual(expect.objectContaining({ keyResultId: 'kr1' }));
+  });
+});
+
+describe('metricFits — кому подходит показатель', () => {
+  it('сделки — менеджерам продаж (и второй ролью)', () => {
+    expect(metricFits('won_deals', ['sales_manager_smm'])).toBe(true);
+    expect(metricFits('won_deals', ['designer', 'sales_manager_dev'])).toBe(true);
+    expect(metricFits('won_deals', ['developer', null])).toBe(false);
+  });
+  it('публикации — SMM-специалисту, задачи — всем', () => {
+    expect(metricFits('content_ontime', ['smm_specialist'])).toBe(true);
+    expect(metricFits('content_ontime', ['videographer'])).toBe(false);
+    expect(metricFits('tasks_ontime', ['developer'])).toBe(true);
+    expect(metricFits('efficiency', ['employee'])).toBe(true);
   });
 });
