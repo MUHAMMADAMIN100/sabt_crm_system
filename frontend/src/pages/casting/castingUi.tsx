@@ -44,12 +44,13 @@ export function useDebounced<T>(value: T, ms = 250): T {
   return v
 }
 
-/** Фото для кастинга: сторона до 1600 px, ~700 КБ, JPEG — снимок с телефона
- *  весит 5–12 МБ и упёрся бы в лимит сервера (8 МБ). Не получилось сжать
- *  (редкий формат) — отправляем как есть, сервер сам скажет, если не годится. */
+/** Фото для кастинга: сторона до 2048 px, ~1,6 МБ, JPEG — хватает на весь
+ *  экран телефона без мыла (17.11.2026: было 1600 px / 700 КБ). Снимок с
+ *  телефона весит 5–12 МБ и упёрся бы в лимит сервера (8 МБ). Не получилось
+ *  сжать (редкий формат) — отправляем как есть, сервер сам скажет. */
 export async function preparePhoto(file: File): Promise<File> {
   try {
-    const { blob } = await compressImage(file, { maxSide: 1600, targetBytes: 700 * 1024 })
+    const { blob } = await compressImage(file, { maxSide: 2048, targetBytes: 1600 * 1024 })
     const base = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo'
     return new File([blob], `${base}.jpg`, { type: 'image/jpeg' })
   } catch {

@@ -5,18 +5,18 @@
 // «Забронировать» не уводит в Telegram, а отправляет заявку: на сервере она
 // становится лидом в «Продажах».
 //
-// 17.11.2026, вторая версия для телефона (замечания владельца):
-//  · кнопки — тёмный текст на лаймовом фоне (сброс `.wbc button` перебивал
-//    цвет и шрифт кнопок — теперь он через :where, без веса);
-//  · логотип не растягивается на всю ширину;
-//  · карточка на телефоне: закреплённая полоса «‹ Каталог» сверху вместо
-//    плавающего «×», «Забронировать» всегда внизу экрана;
-//  · «Подборка»: можно отметить несколько человек и отправить одну заявку;
-//  · телефон с +992, после заявки — «Смотреть каталог», запасной Telegram.
+// 17.11.2026, правки владельца по телефону:
+//  · кнопки — тёмный текст на лаймовом фоне (сброс для кнопок — через :where);
+//  · логотип слева; категории — пять равных кнопок без прокрутки, «Опыт» —
+//    раскрывающийся список (горизонтальная прокрутка на телефоне не работала);
+//  · фото: слайдер со «щелчком» по кадрам, фото целиком на размытом фоне,
+//    по нажатию — на весь экран с листанием и приближением пальцами;
+//  · карточка: полоса «‹ Каталог» сверху, «Забронировать» всегда внизу;
+//  · «Подборка» — несколько человек одной заявкой; +992 в телефоне.
 //
 // Стили — свои, с префиксом wbc-, а не Tailwind: страница повторяет макет
 // артефакта, и общие классы CRM (.chip, .badge) её не задевают.
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { photoUrl, publicCastingApi } from '@/services/casting.api'
@@ -71,9 +71,19 @@ const CHEVRON_LEFT = (
     <path d="m15 18-6-6 6-6" />
   </svg>
 )
+const CHEVRON_DOWN = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+)
 const CHECK = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M5 12.5 10 17 19 7" />
+  </svg>
+)
+const EXPAND = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
   </svg>
 )
 
@@ -103,8 +113,10 @@ export default function PublicCastingPage() {
   const [tab, setTab] = useState<CastingTab>('all')
   const [tags, setTags] = useState<CastingTag[]>([])
   const [q, setQ] = useState('')
+  const [expOpen, setExpOpen] = useState(false)
   const counts = useMemo(() => tabCounts(all), [all])
   const list = useMemo(() => filterCatalog(all, { tab, tags, q }), [all, tab, tags, q])
+  const visibleTabs = CASTING_TABS.filter(t => t.key === 'all' || counts[t.key] > 0)
   const filtered = tab !== 'all' || tags.length > 0 || q.trim() !== ''
   const resetFilters = () => { setTab('all'); setTags([]); setQ('') }
   // Имя и телефон клиента помним, пока страница открыта: вторую заявку
@@ -149,18 +161,22 @@ export default function PublicCastingPage() {
       <style>{CSS}</style>
       <div className="wbc-controls">
         <div className="wbc-wrap">
-          <div className="wbc-row wbc-top">
-            <img className="wbc-brand" src="/webrand-casting-logo.png" alt="WeBrand" />
-            <div className="wbc-row wbc-scroll" role="group" aria-label="Категория">
-              {CASTING_TABS.map(t => (t.key === 'all' || counts[t.key] > 0) && (
+          <div className="wbc-top">
+            <img className="wbc-brand" src="/webrand-casting-logo.png" alt="WeBrand" width={388} height={81} />
+            <div className="wbc-tabs" role="group" aria-label="Категория" style={{ '--n': visibleTabs.length } as CSSProperties}>
+              {visibleTabs.map(t => (
                 <button key={t.key} type="button" className="wbc-tab" aria-pressed={tab === t.key} onClick={() => setTab(t.key)}>
-                  {t.label} <em>{counts[t.key]}</em>
+                  <span>{t.label}</span> <em>{counts[t.key]}</em>
                 </button>
               ))}
             </div>
           </div>
-          <div className="wbc-row">
-            <div className="wbc-row wbc-scroll" role="group" aria-label="Опыт">
+          <div className="wbc-filters">
+            <button type="button" className="wbc-exp-toggle" aria-expanded={expOpen} aria-controls="wbc-chips"
+              onClick={() => setExpOpen(v => !v)}>
+              Опыт{tags.length > 0 && <b>{tags.length}</b>}{CHEVRON_DOWN}
+            </button>
+            <div id="wbc-chips" className={`wbc-chips${expOpen ? ' is-open' : ''}`} role="group" aria-label="Опыт">
               {TAG_ORDER.map(k => (
                 <button key={k} type="button" className="wbc-chip" aria-pressed={tags.includes(k)} onClick={() => toggleTag(k)}>
                   {TAG_LABEL[k]}
@@ -201,7 +217,9 @@ export default function PublicCastingPage() {
                 </div>
               ) : (
                 <div className="wbc-grid">
-                  {list.map(p => <Card key={p.id} p={p} picked={picked.includes(p.id)} onOpen={() => openTalent(p.id)} />)}
+                  {list.map((p, i) => (
+                    <Card key={p.id} p={p} eager={i < 4} picked={picked.includes(p.id)} onOpen={() => openTalent(p.id)} />
+                  ))}
                 </div>
               )}
             </>
@@ -240,7 +258,7 @@ export default function PublicCastingPage() {
  *  его не видно, и качать его незачем. */
 const CAN_HOVER = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: hover)').matches
 
-function Card({ p, picked, onOpen }: { p: PublicTalent; picked: boolean; onOpen: () => void }) {
+function Card({ p, eager, picked, onOpen }: { p: PublicTalent; eager: boolean; picked: boolean; onOpen: () => void }) {
   const [a, b] = splitName(p.name)
   const tags = orderedTags(p.tags)
   const img = photoUrl(p.photos[0])
@@ -248,10 +266,11 @@ function Card({ p, picked, onOpen }: { p: PublicTalent; picked: boolean; onOpen:
   return (
     <button className="wbc-card" type="button" aria-label={picked ? `${p.name}, в подборке` : p.name} onClick={onOpen}>
       <div className="wbc-ph">
-        {img && <img src={img} alt="" loading="lazy" decoding="async" />}
+        {img && <img src={img} alt="" loading={eager ? 'eager' : 'lazy'} decoding="async" />}
         {alt && <img className="wbc-alt" src={alt} alt="" loading="lazy" decoding="async" />}
         {p.categories.length > 0 && <span className="wbc-badge">{categoriesText(p.categories, p.kid)}</span>}
         {picked && <span className="wbc-picked" aria-hidden="true">{CHECK}</span>}
+        {p.photos.length > 1 && <span className="wbc-nphotos" aria-hidden="true">{p.photos.length} фото</span>}
         <div className="wbc-meta">
           {p.height && <span><small>Рост</small>{heightText(p.height)}</span>}
           {p.age != null && <span><small>Возраст</small>{ageText(p.age)}</span>}
@@ -303,59 +322,98 @@ function Sheet({ onClose, labelledBy, narrow, children }: {
   )
 }
 
+/** Лента кадров со «щелчком» (scroll-snap): листается пальцем с инерцией,
+ *  индекс берём из прокрутки. scrollTo — программный переход (миниатюры,
+ *  стрелки, клавиши). */
+function useSnapTrack(count: number, initial = 0) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [index, setIndex] = useState(initial)
+  const raf = useRef(0)
+  const onScroll = () => {
+    cancelAnimationFrame(raf.current)
+    raf.current = requestAnimationFrame(() => {
+      const el = ref.current
+      if (!el || !el.clientWidth) return
+      const i = Math.max(0, Math.min(count - 1, Math.round(el.scrollLeft / el.clientWidth)))
+      setIndex(prev => (prev === i ? prev : i))
+    })
+  }
+  const scrollTo = (i: number, smooth = true) => {
+    const el = ref.current
+    if (!el || count < 1) return
+    const target = ((i % count) + count) % count
+    el.scrollTo({ left: target * el.clientWidth, behavior: smooth ? 'smooth' : 'auto' })
+    setIndex(target)
+  }
+  useEffect(() => () => cancelAnimationFrame(raf.current), [])
+  return { ref, index, onScroll, scrollTo }
+}
+
 type BookState = 'idle' | 'form' | 'sent'
 
 function Detail({ p, onClose, contact, setContact, picked, pickFull, onTogglePick }: {
   p: PublicTalent; onClose: () => void; contact: Contact; setContact: (c: Contact) => void
   picked: boolean; pickFull: boolean; onTogglePick: () => void
 }) {
-  const [cur, setCur] = useState(0)
   const [book, setBook] = useState<BookState>('idle')
+  const [viewer, setViewer] = useState<number | null>(null)
   const bookRef = useRef<HTMLDivElement>(null)
-  const startX = useRef<number | null>(null)
   const photos = p.photos.map(s => photoUrl(s)).filter((s): s is string => !!s)
   const n = photos.length
+  const track = useSnapTrack(n)
   const tags = orderedTags(p.tags)
   const links = linkItems(p.links)
   const cats = categoriesText(p.categories)
 
-  const go = (dlt: number) => n > 1 && setCur(i => (i + dlt + n) % n)
   const startBooking = () => {
     setBook('form')
     // Форма — в конце карточки: прокручиваем к ней, когда она появится.
     window.requestAnimationFrame(() => bookRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (viewer != null || n < 2) return
+    const t = e.target as HTMLElement
+    if (t && /^(INPUT|TEXTAREA)$/.test(t.tagName)) return
+    if (e.key === 'ArrowRight') { e.preventDefault(); track.scrollTo(track.index + 1) }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); track.scrollTo(track.index - 1) }
   }
   const pickLabel = picked ? 'В подборке' : 'В подборку'
   const pickDisabled = !picked && pickFull
 
   return (
     <Sheet onClose={onClose} labelledBy="wbc-dlg-name">
-      <div className="wbc-sheet">
+      <div className="wbc-sheet" onKeyDown={onKey}>
         <div className="wbc-bar">
           <button type="button" className="wbc-back" onClick={onClose}>{CHEVRON_LEFT}Каталог</button>
         </div>
         <div className="wbc-gal">
-          <div className="wbc-big"
-            onTouchStart={e => { startX.current = e.touches[0].clientX }}
-            onTouchEnd={e => {
-              if (startX.current == null) return
-              const dx = e.changedTouches[0].clientX - startX.current
-              startX.current = null
-              if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1)
-            }}>
-            {n > 0 && <img src={photos[cur]} alt={`${p.name}, фото ${cur + 1}`} />}
-            {n > 1 && <span className="wbc-counter" aria-hidden="true">{cur + 1} / {n}</span>}
+          <div className="wbc-big">
+            <div className="wbc-track" ref={track.ref} onScroll={track.onScroll}>
+              {photos.map((src, i) => (
+                <button key={src + i} type="button" className="wbc-slide" onClick={() => setViewer(i)}
+                  aria-label={`Фото ${i + 1} из ${n} — открыть на весь экран`}>
+                  <img className="wbc-slide-bg" src={src} alt="" aria-hidden="true" loading={i === 0 ? 'eager' : 'lazy'} decoding="async" />
+                  <img className="wbc-slide-img" src={src} alt={`${p.name}, фото ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} decoding="async" />
+                </button>
+              ))}
+            </div>
+            {n > 1 && <span className="wbc-counter" aria-hidden="true">{track.index + 1} / {n}</span>}
+            {n > 0 && <span className="wbc-zoomhint" aria-hidden="true">{EXPAND}</span>}
             {n > 1 && (
               <>
-                <button type="button" className="wbc-nav wbc-prev" aria-label="Предыдущее фото" onClick={() => go(-1)}>{CHEVRON_LEFT}</button>
-                <button type="button" className="wbc-nav wbc-next" aria-label="Следующее фото" onClick={() => go(1)}>{CHEVRON_LEFT}</button>
+                <button type="button" className="wbc-nav wbc-prev" aria-label="Предыдущее фото" onClick={() => track.scrollTo(track.index - 1)}>{CHEVRON_LEFT}</button>
+                <button type="button" className="wbc-nav wbc-next" aria-label="Следующее фото" onClick={() => track.scrollTo(track.index + 1)}>{CHEVRON_LEFT}</button>
+                <div className="wbc-dots" aria-hidden="true">
+                  {photos.map((_, i) => <span key={i} className={i === track.index ? 'is-on' : ''} />)}
+                </div>
               </>
             )}
           </div>
           {n > 1 && (
             <div className="wbc-thumbs">
               {photos.map((s, i) => (
-                <button key={s + i} className="wbc-thumb" type="button" aria-label={`Фото ${i + 1}`} aria-current={i === cur} onClick={() => setCur(i)}>
+                <button key={s + i} className="wbc-thumb" type="button" aria-label={`Фото ${i + 1}`} aria-current={i === track.index}
+                  onClick={() => track.scrollTo(i)}>
                   <img src={s} alt="" loading="lazy" />
                 </button>
               ))}
@@ -415,7 +473,52 @@ function Detail({ p, onClose, contact, setContact, picked, pickFull, onTogglePic
           </div>
         )}
       </div>
+      {viewer != null && (
+        <Viewer photos={photos} start={viewer} name={p.name}
+          onClose={i => { setViewer(null); track.scrollTo(i, false) }} />
+      )}
     </Sheet>
+  )
+}
+
+/** Фото на весь экран: чёрный фон, фото целиком, листание пальцем,
+ *  приближение двумя пальцами (жест браузера), «×» и Escape закрывают. */
+function Viewer({ photos, start, name, onClose }: {
+  photos: string[]; start: number; name: string; onClose: (index: number) => void
+}) {
+  const n = photos.length
+  const track = useSnapTrack(n, start)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = track.ref.current
+    if (el) el.scrollLeft = start * el.clientWidth
+    rootRef.current?.focus({ preventScroll: true })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(track.index) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); track.scrollTo(track.index + 1) }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); track.scrollTo(track.index - 1) }
+  }
+  return (
+    <div ref={rootRef} className="wbc-viewer" role="dialog" aria-modal="true" aria-label={`Фото: ${name}`} tabIndex={-1} onKeyDown={onKey}>
+      <div className="wbc-viewer-top">
+        <span>{track.index + 1} / {n}</span>
+        <button type="button" className="wbc-viewer-x" aria-label="Закрыть просмотр" onClick={() => onClose(track.index)}>×</button>
+      </div>
+      <div className="wbc-viewer-track" ref={track.ref} onScroll={track.onScroll}>
+        {photos.map((src, i) => (
+          <div key={src + i} className="wbc-viewer-slide">
+            <img src={src} alt={`${name}, фото ${i + 1}`} decoding="async" />
+          </div>
+        ))}
+      </div>
+      {n > 1 && (
+        <>
+          <button type="button" className="wbc-nav wbc-prev" aria-label="Предыдущее фото" onClick={() => track.scrollTo(track.index - 1)}>{CHEVRON_LEFT}</button>
+          <button type="button" className="wbc-nav wbc-next" aria-label="Следующее фото" onClick={() => track.scrollTo(track.index + 1)}>{CHEVRON_LEFT}</button>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -572,28 +675,35 @@ const CSS = `
 :where(.wbc) a{color:inherit}
 :where(.wbc) button{font:inherit;color:inherit}
 .wbc svg{flex:none}
+.wbc img{image-rendering:auto}
 .wbc-wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .wbc-label{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .wbc-lime{color:var(--lime)}
 
-.wbc-controls{position:sticky;top:0;z-index:5;background:rgba(11,13,18,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+/* шапка */
+.wbc-controls{position:sticky;top:0;z-index:5;background:rgba(11,13,18,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
 .wbc-controls .wbc-wrap{padding-top:16px;padding-bottom:16px;display:flex;flex-direction:column;gap:12px}
-.wbc-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}
-.wbc-brand{display:block;flex:none;align-self:center;height:26px;width:auto;max-width:160px;object-fit:contain;object-position:left center;margin-right:12px}
-.wbc-tab{font:700 13px var(--mono);letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--line);background:transparent;color:var(--text);padding:9px 14px;border-radius:999px;cursor:pointer;display:inline-flex;gap:8px;align-items:center;flex:none;white-space:nowrap;transition:background .2s var(--ease),border-color .2s var(--ease)}
+.wbc-top{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;min-width:0}
+.wbc-brand{display:block;flex:none;height:26px;width:auto;max-width:none}
+.wbc-tabs{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.wbc-tab{font:700 13px var(--mono);letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--line);background:transparent;color:var(--text);padding:9px 14px;border-radius:999px;cursor:pointer;display:inline-flex;gap:8px;align-items:center;justify-content:center;white-space:nowrap;transition:background .2s var(--ease),border-color .2s var(--ease)}
 .wbc-tab em{font-style:normal;color:var(--muted)}
 .wbc-tab:hover{border-color:var(--muted)}
 .wbc-tab[aria-pressed="true"]{background:var(--lime);color:var(--ink);border-color:var(--lime)}
 .wbc-tab[aria-pressed="true"] em{color:var(--lime-ink)}
-.wbc-chip{font:600 13px var(--body);border:1px dashed var(--line);background:transparent;color:var(--muted);padding:7px 12px;border-radius:999px;cursor:pointer;flex:none;white-space:nowrap}
+.wbc-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.wbc-exp-toggle{display:none}
+.wbc-chips{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.wbc-chip{font:600 13px var(--body);border:1px dashed var(--line);background:transparent;color:var(--muted);padding:7px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
 .wbc-chip[aria-pressed="true"]{border-style:solid;border-color:var(--brand-2);color:var(--text);background:rgba(43,94,211,.18)}
 .wbc-search{flex:1;min-width:200px;max-width:340px;margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:0 14px;background:var(--ink-2)}
 .wbc-search input{flex:1;min-width:0;background:transparent;border:0;color:var(--text);font:600 16px var(--body);padding:9px 0;outline:none;-webkit-appearance:none;appearance:none}
 .wbc-search input::placeholder{color:var(--muted);opacity:1}
 .wbc-search svg{width:16px;height:16px;color:var(--muted)}
 .wbc-search:focus-within{border-color:var(--muted)}
-.wbc-tab:focus-visible,.wbc-chip:focus-visible,.wbc-card:focus-visible,.wbc-cta:focus-visible,.wbc-x:focus-visible,.wbc-thumb:focus-visible,.wbc-ghost:focus-visible,.wbc-links a:focus-visible,.wbc-back:focus-visible,.wbc-pick:focus-visible,.wbc-nav:focus-visible,.wbc-textbtn:focus-visible,.wbc-reset:focus-visible,.wbc-pickbar-btn:focus-visible,.wbc-sl-x:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+.wbc-tab:focus-visible,.wbc-chip:focus-visible,.wbc-card:focus-visible,.wbc-cta:focus-visible,.wbc-x:focus-visible,.wbc-thumb:focus-visible,.wbc-ghost:focus-visible,.wbc-links a:focus-visible,.wbc-back:focus-visible,.wbc-pick:focus-visible,.wbc-nav:focus-visible,.wbc-textbtn:focus-visible,.wbc-reset:focus-visible,.wbc-pickbar-btn:focus-visible,.wbc-sl-x:focus-visible,.wbc-exp-toggle:focus-visible,.wbc-slide:focus-visible,.wbc-viewer-x:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
 
+/* сетка */
 .wbc-main{padding-top:22px;padding-bottom:max(48px,env(safe-area-inset-bottom,0px))}
 .wbc-main.wbc-has-pick{padding-bottom:calc(112px + env(safe-area-inset-bottom,0px))}
 .wbc-countrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px}
@@ -604,14 +714,15 @@ const CSS = `
 .wbc-card:hover{transform:translateY(-4px);border-color:#3A4254}
 .wbc-card:active{transform:scale(.98)}
 .wbc-ph{position:relative;aspect-ratio:3/4;background:#1E2330;overflow:hidden}
-.wbc-ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .45s var(--ease),transform .8s var(--ease)}
+.wbc-ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 20%;transition:opacity .45s var(--ease)}
 .wbc-ph img.wbc-alt{opacity:0}
-@media (hover:hover){.wbc-card:hover .wbc-ph img.wbc-alt{opacity:1}.wbc-card:hover .wbc-ph img{transform:scale(1.03)}}
+@media (hover:hover){.wbc-card:hover .wbc-ph img.wbc-alt{opacity:1}}
 .wbc-ph::after{content:"";position:absolute;inset:auto 0 0 0;height:45%;background:linear-gradient(to top,rgba(11,13,18,.85),rgba(11,13,18,0));pointer-events:none}
 .wbc-badge{position:absolute;top:12px;left:12px;width:max-content;max-width:calc(100% - 64px);z-index:1;font:700 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;background:var(--lime);color:var(--ink);padding:5px 10px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wbc-picked{position:absolute;top:10px;right:10px;z-index:1;width:30px;height:30px;border-radius:50%;background:var(--lime);color:var(--ink);display:grid;place-items:center;box-shadow:0 0 0 3px rgba(11,13,18,.55)}
 .wbc-picked svg{width:16px;height:16px}
-.wbc-meta{position:absolute;left:14px;right:14px;bottom:12px;z-index:1;display:flex;gap:14px;font:700 13px var(--mono);color:#fff}
+.wbc-nphotos{position:absolute;right:10px;bottom:12px;z-index:1;font:700 10px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.85);background:rgba(11,13,18,.55);border-radius:999px;padding:3px 8px}
+.wbc-meta{position:absolute;left:14px;right:70px;bottom:12px;z-index:1;display:flex;gap:14px;font:700 13px var(--mono);color:#fff}
 .wbc-meta span{display:flex;flex-direction:column;line-height:1.1;min-width:0}
 .wbc-meta small{font-size:10px;font-weight:500;color:rgba(255,255,255,.7);letter-spacing:.06em;text-transform:uppercase}
 .wbc-body{padding:14px 14px 16px;display:flex;flex-direction:column;gap:10px;flex:1}
@@ -627,6 +738,7 @@ const CSS = `
 .wbc-skel .wbc-ph,.wbc-skel .wbc-body span{animation:wbc-pulse 1.4s ease-in-out infinite}
 @keyframes wbc-pulse{50%{opacity:.55}}
 
+/* подборка */
 .wbc-pickbar{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:center;padding:12px max(16px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(11,13,18,.95) 55%,rgba(11,13,18,0));pointer-events:none}
 .wbc-pickbar-btn{pointer-events:auto;display:flex;align-items:center;gap:12px;width:100%;max-width:520px;min-height:56px;padding:8px 10px 8px 8px;border:0;border-radius:999px;background:var(--lime);color:var(--ink);cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.45);text-align:left}
 .wbc-faces{display:flex;flex:none}
@@ -636,6 +748,7 @@ const CSS = `
 .wbc-pickbar-go{flex:none;display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:var(--lime);border-radius:999px;padding:10px 14px;font:700 12px var(--display);text-transform:uppercase}
 .wbc-pickbar-go svg{width:14px;height:14px}
 
+/* карточка человека */
 .wbc-dlg{border:0;padding:0;background:transparent;max-width:min(1040px,calc(100vw - 24px));width:100%;color:var(--text);font-family:var(--body);font-size:15px;line-height:1.5;color-scheme:dark}
 .wbc-dlg:focus{outline:none}
 .wbc-dlg-narrow{max-width:min(560px,calc(100vw - 24px))}
@@ -644,10 +757,19 @@ const CSS = `
 .wbc-sheet-one{display:block;overflow:auto}
 .wbc-bar{display:none}
 .wbc-gal{background:#000;display:flex;flex-direction:column;min-height:0}
-.wbc-big{flex:1;min-height:0;position:relative;aspect-ratio:3/4;touch-action:pan-y;overflow:hidden}
-.wbc-big img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.wbc-counter{position:absolute;right:12px;bottom:12px;z-index:1;font:700 12px var(--mono);letter-spacing:.04em;background:rgba(11,13,18,.72);color:#fff;border-radius:999px;padding:5px 10px}
-.wbc-nav{display:none;position:absolute;top:50%;z-index:1;width:44px;height:44px;margin-top:-22px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(11,13,18,.62);color:#fff;place-items:center;cursor:pointer;padding:0}
+.wbc-big{position:relative;flex:1;min-height:0;aspect-ratio:3/4;background:#000;overflow:hidden}
+.wbc-track{position:absolute;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.wbc-track::-webkit-scrollbar{display:none}
+.wbc-slide{position:relative;flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;scroll-snap-stop:always;overflow:hidden;border:0;padding:0;margin:0;background:#000;cursor:zoom-in}
+.wbc-slide-bg{position:absolute;inset:-10%;width:120%;height:120%;object-fit:cover;filter:blur(24px) brightness(.45) saturate(1.15);pointer-events:none}
+.wbc-slide-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.wbc-counter{position:absolute;left:12px;top:12px;z-index:2;font:700 12px var(--mono);letter-spacing:.04em;background:rgba(11,13,18,.72);color:#fff;border-radius:999px;padding:5px 10px;pointer-events:none}
+.wbc-zoomhint{position:absolute;right:12px;top:12px;z-index:2;width:32px;height:32px;border-radius:50%;background:rgba(11,13,18,.62);color:#fff;display:grid;place-items:center;pointer-events:none}
+.wbc-zoomhint svg{width:16px;height:16px}
+.wbc-dots{position:absolute;left:0;right:0;bottom:12px;z-index:2;display:flex;justify-content:center;gap:6px;pointer-events:none}
+.wbc-dots span{width:6px;height:6px;border-radius:999px;background:rgba(255,255,255,.45);transition:width .25s var(--ease),background .25s}
+.wbc-dots span.is-on{width:18px;background:var(--lime)}
+.wbc-nav{display:none;position:absolute;top:50%;z-index:3;width:44px;height:44px;margin-top:-22px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(11,13,18,.62);color:#fff;place-items:center;cursor:pointer;padding:0}
 .wbc-nav svg{width:20px;height:20px}
 .wbc-prev{left:12px}
 .wbc-next{right:12px}
@@ -655,9 +777,9 @@ const CSS = `
 @media (hover:hover) and (min-width:821px){.wbc-nav{display:grid}}
 .wbc-thumbs{display:flex;gap:6px;padding:8px;background:var(--ink-2);overflow-x:auto;scrollbar-width:none}
 .wbc-thumbs::-webkit-scrollbar{display:none}
-.wbc-thumb{flex:1 0 48px;aspect-ratio:1;border:2px solid transparent;border-radius:10px;overflow:hidden;padding:0;cursor:pointer;background:none;max-width:80px;min-width:48px}
+.wbc-thumb{flex:1 0 52px;aspect-ratio:3/4;border:2px solid transparent;border-radius:10px;overflow:hidden;padding:0;cursor:pointer;background:none;max-width:72px;min-width:52px;opacity:.6;transition:opacity .2s}
 .wbc-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.wbc-thumb[aria-current="true"]{border-color:var(--lime)}
+.wbc-thumb[aria-current="true"]{border-color:var(--lime);opacity:1}
 .wbc-info{padding:28px;display:flex;flex-direction:column;gap:18px;overflow:auto;position:relative;min-width:0}
 .wbc-x{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
 .wbc-x-desk{position:absolute;top:16px;right:16px}
@@ -672,6 +794,17 @@ const CSS = `
 .wbc-links a{font:700 12px var(--mono);text-transform:uppercase;letter-spacing:.04em;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:0 14px;min-height:44px;display:inline-flex;align-items:center}
 .wbc-links a:hover{border-color:var(--brand-2)}
 
+/* полноэкранный просмотр */
+.wbc-viewer{position:fixed;inset:0;z-index:20;background:#000;display:flex;flex-direction:column;outline:none;touch-action:pan-x pinch-zoom}
+.wbc-viewer-top{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 12px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.65),rgba(0,0,0,0));pointer-events:none}
+.wbc-viewer-top span{font:700 13px var(--mono);letter-spacing:.04em;color:#fff}
+.wbc-viewer-x{pointer-events:auto;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:26px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+.wbc-viewer-track{flex:1;min-height:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.wbc-viewer-track::-webkit-scrollbar{display:none}
+.wbc-viewer-slide{flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;scroll-snap-stop:always;display:flex;align-items:center;justify-content:center;padding:calc(56px + env(safe-area-inset-top,0px)) 0 calc(16px + env(safe-area-inset-bottom,0px))}
+.wbc-viewer-slide img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;user-select:none;-webkit-user-select:none}
+
+/* заявка */
 .wbc-book-wrap{margin-top:auto;scroll-margin-top:72px}
 .wbc-book{background:var(--brand);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:12px;color:#fff}
 .wbc-book p{margin:0;font-weight:700}
@@ -735,16 +868,25 @@ const CSS = `
   .wbc-dock .wbc-cta{flex:1;align-self:auto}
 }
 @media (max-width:520px){
+  /* шапка телефона: логотип слева, категории — равные кнопки без прокрутки,
+     «Опыт» — раскрывается по нажатию */
   .wbc-controls{position:static}
-  .wbc-controls .wbc-wrap{gap:10px;padding-top:12px;padding-bottom:12px}
-  .wbc-top{flex-direction:column;align-items:flex-start;gap:12px}
-  .wbc-brand{height:22px;max-width:130px;margin:0}
-  .wbc-top .wbc-scroll{align-self:stretch}
-  .wbc-scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px;scroll-padding:0 16px;
-    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}
-  .wbc-scroll::-webkit-scrollbar{display:none}
-  .wbc-tab{font-size:12px;padding:0 12px;gap:6px}
-  .wbc-chip{font-size:13px;padding:0 12px}
+  .wbc-controls .wbc-wrap{gap:10px;padding-top:14px;padding-bottom:14px}
+  .wbc-top{flex-direction:column;align-items:stretch;gap:14px}
+  .wbc-brand{align-self:flex-start;height:24px}
+  .wbc-tabs{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));gap:6px}
+  .wbc-tab{flex-direction:column;gap:1px;padding:6px 2px;min-height:54px;border-radius:14px;font-size:10px;letter-spacing:.02em;min-width:0}
+  .wbc-tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .wbc-tab em{font:800 15px var(--display);color:var(--text);letter-spacing:0}
+  .wbc-filters{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px}
+  .wbc-exp-toggle{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px 0 14px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text);font:700 13px var(--body);cursor:pointer;white-space:nowrap}
+  .wbc-exp-toggle b{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--brand-2);color:#fff;font:700 11px var(--mono);display:inline-grid;place-items:center}
+  .wbc-exp-toggle svg{width:16px;height:16px;color:var(--muted);transition:transform .2s var(--ease)}
+  .wbc-exp-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+  .wbc-search{order:2;min-width:0;flex-basis:auto}
+  .wbc-chips{order:3;grid-column:1/-1;display:none;gap:6px}
+  .wbc-chips.is-open{display:flex}
+  .wbc-chip{min-height:40px;padding:0 12px}
   .wbc-main{padding-top:16px}
   .wbc-countrow{margin-bottom:12px}
   .wbc-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -756,10 +898,12 @@ const CSS = `
   .wbc-tags .wbc-tag:nth-child(n+3){display:none}
   .wbc-info .wbc-tags .wbc-tag:nth-child(n+3){display:inline}
   .wbc-meta{gap:10px;font-size:12px;left:10px;right:10px;bottom:10px}
+  .wbc-nphotos{display:none}
   .wbc-badge{top:8px;left:8px;max-width:calc(100% - 52px);font-size:10px;padding:4px 8px}
   .wbc-picked{top:7px;right:7px;width:28px;height:28px}
   .wbc-dlg,.wbc-dlg-narrow{max-width:100vw;width:100vw;height:100vh;height:100dvh;max-height:none;margin:0}
   .wbc-sheet{border-radius:0;border:0;height:100%;max-height:none}
+  .wbc-thumbs{display:none}
   .wbc-info{padding:20px 16px 24px;gap:16px}
   .wbc-sheet-one .wbc-info{padding-bottom:max(24px,env(safe-area-inset-bottom,0px))}
   .wbc-info h2{font-size:24px}
@@ -768,9 +912,11 @@ const CSS = `
   .wbc-pick{padding:0}
   .wbc-pickbar-text{font-size:12px}
 }
+@media (min-width:521px){.wbc-dots{display:none}}
 @media (max-width:360px){
   .wbc-pickbar-go{padding:10px 12px}
   .wbc-faces > *:nth-child(n+3){display:none}
+  .wbc-tab{font-size:9px}
 }
-@media (prefers-reduced-motion:reduce){.wbc *{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){.wbc *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 `
