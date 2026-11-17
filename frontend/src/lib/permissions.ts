@@ -446,6 +446,36 @@ export function canCreateHandoffProject(
   return hasAnyRole(role, secondaryRole, [direction === 'smm' ? 'smm_director' : 'dev_director'])
 }
 
+// ─── Раздел «Кастинг» (/casting) — 17.11.2026 ─────────────────────────
+// База актёров, блогеров и моделей (docs/CASTING_SPEC.md). Роль — основная
+// ИЛИ вторая; сервер проверяет то же самое сам (casting.service).
+
+/** Видят раздел: руководство, руководитель SMM, продюсер, SMM-специалисты, видеографы. */
+export const CASTING_VIEW_ROLES = ['founder', 'admin', 'smm_director', 'producer', 'smm_specialist', 'videographer'] as const
+/** Добавляют и правят людей. */
+export const CASTING_EDIT_ROLES = ['founder', 'admin', 'smm_director', 'producer'] as const
+/** Загружают базу из data.json и фото. */
+export const CASTING_IMPORT_ROLES = ['founder', 'admin', 'smm_director'] as const
+
+export function canSeeCasting(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, CASTING_VIEW_ROLES)
+}
+
+export function canEditCasting(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, CASTING_EDIT_ROLES)
+}
+
+export function canImportCasting(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, CASTING_IMPORT_ROLES)
+}
+
+/** Ставить актёров в съёмку, менять статус, убирать: кто правит кастинг,
+ *  продюсер и SMM-специалист (сервер дополнительно проверяет, что он —
+ *  специалист проекта этой съёмки). */
+export function canBookCasting(role?: string | null, secondaryRole?: string | null): boolean {
+  return hasAnyRole(role, secondaryRole, [...CASTING_EDIT_ROLES, 'smm_specialist'])
+}
+
 /** Комбинированный лейбл ролей: «Видеограф / Монтажёр». */
 export function getCombinedRoleLabel(
   role: string | undefined | null,
@@ -573,6 +603,8 @@ export function canAccessRoute(
   // «Продажи» (15.11.2026): руководство и руководители направлений; вкладки
   // внутри страницы режет сама страница (директорам — только «Заявки»).
   if (route === '/sales' || route.startsWith('/sales/')) return canSeeSalesHub(role, secondaryRole)
+  // «Кастинг» (17.11.2026) и карточка человека /casting/:id.
+  if (route === '/casting' || route.startsWith('/casting/')) return canSeeCasting(role, secondaryRole)
   // «Активность команды» — мониторинг для основателя/админа.
   if (route === '/team-activity') return hasAnyRole(role, secondaryRole, ['founder', 'admin'])
   // «Тест новый» — черновой раздел: основатель и админ.

@@ -17,6 +17,7 @@ import { isProductionOnly } from '@/lib/permissions'
 import AutoPlanModal, { type AutoRules } from './AutoPlanModal'
 import { tiktokPending } from './tiktok'
 import { useHistoryOverlay } from '@/lib/navMemory'
+import ShootActors from '@/components/casting/ShootActors'
 import { usePatchUrl } from '@/lib/urlState'
 
 export type Ev = {
@@ -2409,6 +2410,14 @@ function EventModal({ e, onClose, onMark, onTiktok, marking, onUnschedule, onDur
               <div className="space-y-1.5 text-sm mt-3">
                 {e.location && <Row k="Место" v={e.location} />}
                 {e.note && <Row k="Заметка" v={e.note} />}
+              </div>
+            )}
+
+            {/* «Актёры» из кастинга (17.11.2026) — только у съёмки. Блок сам
+                решает по роли, показываться ли и можно ли править. */}
+            {isShoot && !!e.itemId && prepStageOf(e) === 'shoot' && (
+              <div className="mt-4 empty:hidden">
+                <ShootActors contentItemId={e.itemId} readOnly={readOnly} />
               </div>
             )}
           </>

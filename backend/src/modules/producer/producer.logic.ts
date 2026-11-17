@@ -37,6 +37,8 @@ export interface ProducerShoot {
   placeKind?: 'studio' | 'client' | 'other';
   /** Монтаж этого рилса уже готов — значит, снят он раньше сегодняшнего дня. */
   edited?: boolean;
+  /** Кого из кастинга позвали (17.11.2026): имена, кроме отказавшихся. */
+  actors?: string[];
 }
 
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -138,6 +140,15 @@ const placeLine = (s: ProducerShoot) => {
   return `📍 ${escapeHtml(addr)}${map ? ` · <a href="${attr(map)}">карта</a>` : ''}`;
 };
 
+/** «🎭 Актёры: Имя, Имя» — кого из кастинга позвали на съёмку (17.11.2026). */
+const actorsLine = (s: Pick<ProducerShoot, 'actors'>) => {
+  const names = (s.actors || []).map(n => String(n || '').trim()).filter(Boolean);
+  return names.length ? `🎭 Актёры: ${escapeHtml(names.join(', '))}` : null;
+};
+
+/** Актёры выезда: все, кого позвали на любой рилс группы, без повторов. */
+const groupActors = (g: ProducerShoot[]) => [...new Set(g.flatMap(x => x.actors || []))];
+
 /** Под съёмкой — ссылка на страницу съёмки: там проект, адрес и сценарий.
  *  Без сценария ссылка всё равно нужна — ради адреса и контактов. */
 const scriptLine = (s: ProducerShoot, link: (s: ProducerShoot) => string) =>
@@ -154,6 +165,7 @@ function shootDetails(s: ProducerShoot, opts: MessageOpts): string[] {
     placeLine(s),
     s.contact?.trim() ? `👤 На месте: ${escapeHtml(s.contact.trim())}` : null,
     smm ? `💬 СММ: ${smm}` : null,
+    actorsLine(s),
     opts.own ? null : `снимает ${who(s)}`,
   ].filter((x): x is string => !!x);
 }
@@ -202,7 +214,7 @@ export function dailyMessage(
     const s = g[0];
     const at = s.time ? `${s.time} · ` : 'Время не указано · ';
     if (g.length === 1) return [`<b>${at}${escapeHtml(s.projectName)}</b>`, quoted(s), ...shootBlock(s, link, opts)].join('\n');
-    return [`<b>${at}${escapeHtml(s.projectName)} — ${reels(g.length)}</b>`, groupLinks(g, link), ...shootDetails(s, opts)].join('\n');
+    return [`<b>${at}${escapeHtml(s.projectName)} — ${reels(g.length)}</b>`, groupLinks(g, link), ...shootDetails({ ...s, actors: groupActors(g) }, opts)].join('\n');
   });
   const head = opts.own ? 'Ваши съёмки на завтра' : 'Съёмки на завтра';
   return `🎬 <b>${head} — ${groups.length}</b>\n${ruLongDay(dateIso)}\n\n${blocks.join('\n\n')}\n\n👉 ${appUrl}/`;
@@ -226,9 +238,10 @@ export function weeklyMessage(
       const s = g[0];
       const head = `${s.time ? `<b>${s.time}</b> · ` : ''}${escapeHtml(s.projectName)}`;
       if (g.length === 1) {
-        return [head, `${quoted(s)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), scriptLine(s, link)].filter(Boolean).join('\n');
+        return [head, `${quoted(s)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), actorsLine(s), scriptLine(s, link)].filter(Boolean).join('\n');
       }
-      return [`${head} — ${reels(g.length)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), groupLinks(g, link)].filter(Boolean).join('\n');
+      return [`${head} — ${reels(g.length)}${opts.own ? '' : ` · ${who(s)}`}`, placeLine(s), actorsLine({ actors: groupActors(g) }), groupLinks(g, link)]
+        .filter(Boolean).join('\n');
     });
     days.push(`<b>${ruShortDay(day)}</b>\n${lines.join('\n\n')}`);
   }

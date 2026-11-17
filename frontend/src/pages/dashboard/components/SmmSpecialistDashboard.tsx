@@ -16,6 +16,7 @@ import toast from 'react-hot-toast'
 import { useOwnTasks, OwnDayTasks, OwnMark, OwnPopover, OwnBox, CellLines, CellPlus, CellBadge, ownLines, type CellLine } from './OwnTasks'
 import { Ring, Metric } from './DaySummary'
 import { useHistoryOverlay } from '@/lib/navMemory'
+import ShootActors from '@/components/casting/ShootActors'
 
 const WEEK = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dk = (d: Date) => format(d, 'yyyy-MM-dd')
@@ -1189,6 +1190,14 @@ export function TaskPanel({ e, pos, total, onPrev, onNext, onClose, onToggle, on
               <p className="text-[13px] italic text-surface-400 dark:text-surface-500">Описание пока не заполнено — добавьте его в контент-плане проекта.</p>
             )}
           </section>
+
+          {/* «Актёры» из кастинга (17.11.2026) — у съёмки: видеограф видит,
+              кого ждать, СММ-специалист приглашает и отмечает ответы. */}
+          {e.kind === 'shoot' && prepStageOf(e) === 'shoot' && !!e.itemId && (
+            <div className="empty:hidden">
+              <ShootActors contentItemId={e.itemId} readOnly={readOnly} />
+            </div>
+          )}
 
           {assign && (
             <section className="relative">

@@ -62,6 +62,9 @@ const SalesPage         = lazy(() => import('@/pages/sales/SalesPage'))
 // отделов и сотрудников — открыт всем ролям; /compass/:dept — экран отдела.
 const CompassPage       = lazy(() => import('@/pages/compass/CompassPage'))
 const CompassDepartmentPage = lazy(() => import('@/pages/compass/DepartmentPage'))
+// «Кастинг» (17.11.2026, docs/CASTING_SPEC.md §5): база актёров, блогеров и
+// моделей; /casting/:id открывает карточку поверх списка.
+const CastingPage       = lazy(() => import('@/pages/casting/CastingPage'))
 const TariffsPage       = lazy(() => import('@/pages/tariffs/TariffsPage'))
 const TestNewPage       = lazy(() => import('@/pages/test-new/TestNewPage'))
 const RisksPage         = lazy(() => import('@/pages/risks/RisksPage'))
@@ -84,6 +87,8 @@ const PublicBriefPage   = lazy(() => import('@/pages/public/PublicBriefPage'))
 // поэтому открывается без авторизации и вне Layout.
 const PrivacyPolicyPage = lazy(() => import('@/pages/public/PrivacyPolicyPage'))
 const PublicScriptPage  = lazy(() => import('@/pages/public/PublicScriptPage'))
+// Каталог кастинга для клиентов — без входа, фирменный вид WeBrand Casting.
+const PublicCastingPage = lazy(() => import('@/pages/public/PublicCastingPage'))
 // «Доска разработки» — канбан dev-трекера (Jira/Notion-стиль).
 const DevBoardPage      = lazy(() => import('@/pages/dev-board/DevBoardPage'))
 const DevTaskDetailPage = lazy(() => import('@/pages/dev-board/DevTaskDetailPage'))
@@ -168,6 +173,8 @@ export default function App() {
         <Route path="/public/brief/:token" element={<PublicBriefPage />} />
         {/* Сценарий съёмки по ссылке из Telegram продюсеру — без авторизации. */}
         <Route path="/public/script/:token" element={<PublicScriptPage />} />
+        {/* Каталог кастинга для клиентов — без авторизации. */}
+        <Route path="/public/casting" element={<PublicCastingPage />} />
         {/* Политика конфиденциальности — публичная, без авторизации. */}
         <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route path="/privacy" element={<Navigate to="/privacy-policy" replace />} />
@@ -223,6 +230,8 @@ export default function App() {
           <Route path="sales" element={<RoleGuard><SalesPage /></RoleGuard>} />
           <Route path="compass" element={<RoleGuard><CompassPage /></RoleGuard>} />
           <Route path="compass/:dept" element={<RoleGuard><CompassDepartmentPage /></RoleGuard>} />
+          <Route path="casting" element={<RoleGuard><CastingPage /></RoleGuard>} />
+          <Route path="casting/:id" element={<RoleGuard><CastingPage /></RoleGuard>} />
           <Route path="tariffs" element={<RoleGuard><TariffsPage /></RoleGuard>} />
           <Route path="test-new" element={<RoleGuard><TestNewPage /></RoleGuard>} />
           <Route path="risks" element={<RoleGuard><RisksPage /></RoleGuard>} />

@@ -215,4 +215,26 @@ describe('producer.logic', () => {
     expect(added).toContain('«5 видов кофе за 30 секунд»\nвторник, 10 ноября, <b>16:00</b>');
     expect(added).not.toContain('было:');
   });
+
+  it('кастинг: строка «Актёры» — на завтра, на неделю, в выезде и при переносе', () => {
+    // Имена выдуманные.
+    const day = dailyMessage('2026-10-30', [shoot({ actors: ['Анна Тестова', 'Борис <Пример>'] })], 'x', link)!;
+    expect(day).toContain('🎭 Актёры: Анна Тестова, Борис &lt;Пример&gt;\nснимает Бехруз');
+    expect(dailyMessage('2026-10-30', [shoot()], 'x', link)).not.toContain('Актёры');
+    expect(dailyMessage('2026-10-30', [shoot({ actors: [] })], 'x', link)).not.toContain('Актёры');
+
+    const trip = dailyMessage('2026-10-30', [
+      shoot({ id: 'a', actors: ['Анна'] }),
+      shoot({ id: 'b', title: 'Второй рилс', actors: ['Анна', 'Борис'] }),
+    ], 'x', link)!;
+    expect(trip).toContain('— 2 рилса');
+    expect(trip).toContain('🎭 Актёры: Анна, Борис');
+
+    const week = weeklyMessage('2026-11-02', '2026-11-08', [shoot({ date: '2026-11-03', actors: ['Анна Тестова'] })], 'x', link)!;
+    expect(week).toContain('🎭 Актёры: Анна Тестова');
+
+    const before: ShootSnapshot = { date: '2026-10-29', time: '10:00', place: null, assigneeId: null, status: 'planned' };
+    const moved = changeMessage('Съёмку перенесли', before, shoot({ actors: ['Анна Тестова'] }), link);
+    expect(moved).toContain('🎭 Актёры: Анна Тестова');
+  });
 });

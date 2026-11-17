@@ -3,12 +3,12 @@ import { useTranslation } from '@/i18n'
 import { useAuthStore } from '@/store/auth.store'
 import {
   canManageAccess, canSeeProjectStories, canSeeSmmSection, canSeeDevSection, canCheckStories, isDevLead, userCan,
-  hasAnyRole, canAccessRoute, type Permission,
+  hasAnyRole, canAccessRoute, canSeeCasting, type Permission,
 } from '@/lib/permissions'
 import {
   LayoutDashboard, Wallet, Megaphone, StickyNote, ClipboardCheck, Calendar,
   Archive, Users, ShieldCheck, Contact, Tag, Shield, Sparkles, Code2, UserCheck,
-  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun, Compass,
+  FileText, User as UserIcon, MessageCircle, Bell, FolderOpen, TrendingUp, Sun, Compass, Clapperboard,
 } from 'lucide-react'
 import { useDirectUnread } from '@/hooks/useDirectUnread'
 import { notificationsApi, tasksApi } from '@/services/api.service'
@@ -103,6 +103,9 @@ export function useNavItems(): NavItem[] {
     // ролям. Стоит после основных разделов, чтобы не сдвигать закреплённые
     // вкладки нижней панели на телефоне — там он в «Ещё».
     { to: '/compass',         icon: Compass,         label: 'Компас',            permission: 'dashboard' },
+    // «Кастинг» (17.11.2026) — актёры, блогеры и модели для съёмок: руководство,
+    // руководитель SMM, продюсер, SMM-специалисты, видеографы (canSeeCasting).
+    { to: '/casting',         icon: Clapperboard,    label: 'Кастинг',           permission: 'dashboard' },
     { to: '/archive',         icon: Archive,         label: t('nav.archive'),    permission: 'archive.view' },
     { to: '/employees',       icon: Users,           label: t('nav.employees'),  permission: 'employees.view' },
     { to: '/employee-access', icon: ShieldCheck,     label: 'Доступы сотрудников', permission: 'users.manage' },
@@ -131,6 +134,7 @@ export function useNavItems(): NavItem[] {
     }
     // «Компас» — всем (персональные запреты его не касаются, как и маршрут).
     if (item.to === '/compass') return true
+    if (item.to === '/casting') return canSeeCasting(role, secondaryRole)
     if (item.to === '/my-notes') return canSeeProjectStories(user?.isStoryMaker) && userCan(user, 'notes.use')
     if (item.to === '/employee-access') return canManageAccess(role)
     if (item.to === '/stories-check') return canStoriesCheck

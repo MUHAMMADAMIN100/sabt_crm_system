@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   canAccessRoute, hasPermission, userCan, canSeeSmmSection, canSeeDevSection, isSmmViewOnly, isProductionOnly, hasAnyRole,
   canSeeSalesAnalytics, canEditSalesNorms, canEditSalesCommission, canLinkHandoff, canCreateHandoffProject,
+  canSeeCasting, canEditCasting, canImportCasting, canBookCasting,
 } from './permissions'
 import type { UserRole } from '@/store/auth.store'
 
@@ -254,5 +255,38 @@ describe('раздел «Продажи» (/sales)', () => {
     expect(canCreateHandoffProject('smm_director', null, 'development')).toBe(false)
     expect(canCreateHandoffProject('dev_director', null, 'development')).toBe(true)
     expect(canCreateHandoffProject('sales_manager_smm', null, 'smm')).toBe(false)
+  })
+})
+
+// «Кастинг» (17.11.2026, docs/CASTING_SPEC.md): видят руководство, руководитель
+// SMM, продюсер, SMM-специалисты и видеографы — основной или второй ролью.
+// Без правила маршрут открывался бы всем (для путей без права — true).
+describe('раздел «Кастинг» (/casting)', () => {
+  it.each(['founder', 'admin', 'smm_director', 'producer', 'smm_specialist', 'videographer'] as UserRole[])('роль «%s» открывает /casting и карточку', (role) => {
+    expect(canAccessRoute(role, '/casting')).toBe(true)
+    expect(canAccessRoute(role, '/casting/11111111-1111-1111-1111-111111111111')).toBe(true)
+  })
+
+  it.each(['designer', 'video_editor', 'developer', 'sales_manager_smm', 'targetologist', 'employee'] as UserRole[])('роль «%s» — /casting закрыт', (role) => {
+    expect(canAccessRoute(role, '/casting')).toBe(false)
+  })
+
+  it('вторая роль тоже открывает раздел', () => {
+    expect(canAccessRoute('video_editor', '/casting', 'videographer')).toBe(true)
+    expect(canSeeCasting('designer', 'producer')).toBe(true)
+  })
+
+  it('правят — руководство, руководитель SMM и продюсер; импорт — без продюсера', () => {
+    expect(canEditCasting('producer', null)).toBe(true)
+    expect(canEditCasting('smm_specialist', null)).toBe(false)
+    expect(canEditCasting('videographer', null)).toBe(false)
+    expect(canImportCasting('smm_director', null)).toBe(true)
+    expect(canImportCasting('producer', null)).toBe(false)
+  })
+
+  it('ставить в съёмку — ещё и SMM-специалист, но не видеограф', () => {
+    expect(canBookCasting('smm_specialist', null)).toBe(true)
+    expect(canBookCasting('producer', null)).toBe(true)
+    expect(canBookCasting('videographer', null)).toBe(false)
   })
 })

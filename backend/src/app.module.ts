@@ -52,6 +52,7 @@ import { SmmControlModule } from './modules/smm-control/smm-control.module';
 import { TransportModule } from './modules/transport/transport.module';
 import { ProfileStatsModule } from './modules/profile-stats/profile-stats.module';
 import { GoalsModule } from './modules/goals/goals.module';
+import { CastingModule } from './modules/casting/casting.module';
 import { DbIndexesService } from './common/db-indexes.service';
 
 @Module({
@@ -146,6 +147,7 @@ import { DbIndexesService } from './common/db-indexes.service';
     TransportModule,
     ProfileStatsModule,
     GoalsModule,
+    CastingModule,
   ],
 })
 export class AppModule {}

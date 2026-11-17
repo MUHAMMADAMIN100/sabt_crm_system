@@ -86,6 +86,7 @@ export class ProducerService implements OnModuleDestroy {
       ).catch(() => []);
       for (const u of users) names.set(u.id, u.name);
     }
+    const actors = await this.actorsOf(rows.map(r => r.id));
     return rows.map(r => {
       const sd = r.smmData || {};
       const place = str(r.place);
@@ -101,10 +102,30 @@ export class ProducerService implements OnModuleDestroy {
         mapUrl: kind === 'client' ? str(sd.shootMapUrl) : null, contact: str(sd.shootContact),
         smm: smmIds.map(id => names.get(id)).join(', ') || null,
         projectId: r.projectId, smmIds,
+        actors: actors.get(r.id) || [],
         stage: r.stage || null, parentType: r.parentType || null,
         snapshot: { date: r.date || null, time: r.time || null, place, assigneeId: r.assigneeId || null, status: r.status || '' },
       };
     });
+  }
+
+  /** Кастинг (17.11.2026): кого позвали на съёмки — имена по карточкам
+   *  съёмки, кроме отказавшихся. Таблицы ещё нет или сбой — без строки
+   *  «Актёры», сообщения уходят как раньше. */
+  private async actorsOf(itemIds: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    const ids = [...new Set(itemIds.filter(id => typeof id === 'string' && !!id))];
+    if (!ids.length) return out;
+    const rows: Array<{ itemId: string; name: string }> = await this.ds.query(
+      `SELECT b."contentItemId" AS "itemId", t.name
+         FROM casting_bookings b
+         JOIN casting_talents t ON t.id = b."talentId"
+        WHERE b."contentItemId" = ANY($1::uuid[]) AND b.status <> 'declined'
+        ORDER BY b."createdAt" ASC`,
+      [ids],
+    ).catch(() => []);
+    for (const r of rows) out.set(r.itemId, [...(out.get(r.itemId) || []), r.name]);
+    return out;
   }
 
   /** Съёмки SMM-проектов за дни «с — по». */
