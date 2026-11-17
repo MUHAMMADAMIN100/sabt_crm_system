@@ -87,7 +87,7 @@ describe('TasksService', () => {
   let projectRepo: any;
   let userRepo: ReturnType<typeof mockUserRepo>;
   let telegram: { sendToUser: jest.Mock };
-  let reportRepo: { save: jest.Mock };
+  let reportRepo: { create: jest.Mock; save: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -112,7 +112,7 @@ describe('TasksService', () => {
             where: jest.fn().mockReturnThis(), getCount: jest.fn().mockResolvedValue(0),
           }),
         } },
-        { provide: getRepositoryToken(DailyReport), useValue: { save: jest.fn(async (v) => v) } },
+        { provide: getRepositoryToken(DailyReport), useValue: { create: jest.fn((v) => v), save: jest.fn(async (v) => v) } },
         { provide: getRepositoryToken(Project), useValue: {
           findOne: jest.fn().mockResolvedValue(null),
           // Участник проекта (project_members) — по умолчанию нет.
