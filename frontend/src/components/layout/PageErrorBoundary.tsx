@@ -17,6 +17,46 @@ export function isChunkLoadError(error: unknown): boolean {
 
 const RELOAD_KEY = '__chunkReloadTs'
 
+/** Адрес чанка из текста ошибки (Chrome пишет его в сообщение). */
+function chunkUrlFromError(error: unknown): string[] {
+  const msg = String((error as { message?: string } | null)?.message || '')
+  const m = msg.match(/https?:\/\/[^\s'"]+?\.(?:js|css)\b/)
+  return m ? [m[0]] : []
+}
+
+/** Испорченный кеш браузера (17.11.2026): если во время выкладки браузер
+ *  запросил файл, которого ещё/уже не было, Vercel отдавал вместо него
+ *  index.html с заголовком «хранить год» — и обычная перезагрузка снова
+ *  брала эту HTML-страницу из кеша («Вышла новая версия CRM» по кругу).
+ *  Перекачиваем файлы /assets/ этой страницы мимо кеша (cache: 'reload'
+ *  перезаписывает запись в HTTP-кеше), потом перезагружаемся. */
+export async function purgeAssetCache(extra: string[] = []): Promise<void> {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return
+  const urls = new Set<string>(extra)
+  try {
+    for (const entry of performance.getEntriesByType('resource')) {
+      const url = String(entry.name || '').split('#')[0]
+      if (/\/assets\/[^/?]+\.(?:js|css)(?:\?|$)/.test(url)) urls.add(url)
+    }
+  } catch { /* нет Performance API — чистим только то, что знаем */ }
+  const list = [...urls].slice(0, 120)
+  const timeout = new Promise<void>(resolve => setTimeout(resolve, 6000))
+  await Promise.race([
+    Promise.all(list.map(u => fetch(u, { cache: 'reload', credentials: 'same-origin' }).catch(() => undefined))),
+    timeout,
+  ])
+}
+
+/** Ошибка загрузки чанка: чистим испорченный кеш и перезагружаемся (не чаще
+ *  раза в 8 сек). Возвращает false, если перезагрузка уже была только что. */
+export async function recoverFromChunkError(error?: unknown): Promise<boolean> {
+  let last = 0
+  try { last = Number(sessionStorage.getItem(RELOAD_KEY) || '0') } catch { /* ignore */ }
+  if (Date.now() - last <= 8000) return false
+  await purgeAssetCache(chunkUrlFromError(error))
+  return reloadForChunkError()
+}
+
 /** Перезагрузка за свежим index.html — не чаще раза в 8 сек. Если сразу после
  *  перезагрузки снова та же ошибка, reload не помог: не зацикливаемся, а
  *  показываем экран с кнопкой. Возвращает true, если перезагрузка запущена. */
@@ -40,9 +80,13 @@ export function ErrorScreen({ chunk, fullScreen, onHome }: {
   /** Переход на главную без перезагрузки (внутри Layout). */
   onHome?: () => void
 }) {
+  const [busy, setBusy] = React.useState(false)
   const reload = () => {
     try { sessionStorage.removeItem(RELOAD_KEY) } catch { /* ignore */ }
-    window.location.reload()
+    setBusy(true)
+    // Сначала перекачиваем файлы страницы мимо кеша — иначе перезагрузка
+    // может снова взять испорченную копию.
+    void purgeAssetCache().finally(() => window.location.reload())
   }
   const goHome = () => {
     // Уже на главной — переход ничего не сбросит, нужна перезагрузка.
@@ -66,7 +110,7 @@ export function ErrorScreen({ chunk, fullScreen, onHome }: {
           : 'Произошла ошибка. Обновите страницу или вернитесь на главную. Если повторится — сообщите администратору.'}
       </p>
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-        <button type="button" onClick={reload} className="btn-primary">Обновить страницу</button>
+        <button type="button" onClick={reload} disabled={busy} className="btn-primary">{busy ? 'Обновляем…' : 'Обновить страницу'}</button>
         <button type="button" onClick={goHome} className="btn-secondary">На главную</button>
       </div>
     </div>
@@ -98,7 +142,7 @@ export default class PageErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     if (isChunkLoadError(error)) {
-      reloadForChunkError()
+      void recoverFromChunkError(error)
       return
     }
     // eslint-disable-next-line no-console

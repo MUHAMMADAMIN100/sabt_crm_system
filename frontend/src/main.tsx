@@ -9,6 +9,7 @@ import { initThemeFromStorage } from './lib/theme'
 import { queryClient } from './lib/queryClient'
 import { startPersistedCache, setPersistedCacheUser, wipePersistedCache } from './lib/persistCache'
 import { useAuthStore, type User } from './store/auth.store'
+import { purgeAssetCache } from './components/layout/PageErrorBoundary'
 
 // Тёмная тема зафиксирована на всю компанию — включаем класс `dark` ДО первого
 // рендера, чтобы не мигало светлым (сохранённый выбор режима игнорируется).
@@ -62,6 +63,11 @@ try {
   // Слушатель вызывается внутри set() стора — ни при каких данных не бросает.
   useAuthStore.subscribe(s => { try { setPersistedCacheUser(cacheOwner(s.user)) } catch { /* ignore */ } })
 } catch { /* ignore */ }
+
+// Vite не смог заранее загрузить части страницы (обычно сразу после
+// выкладки): перекачиваем файлы мимо кеша, чтобы испорченная копия не
+// мешала. Саму ошибку ловит PageErrorBoundary и перезагружает страницу.
+window.addEventListener('vite:preloadError', () => { void purgeAssetCache() })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
