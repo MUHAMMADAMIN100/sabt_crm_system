@@ -86,9 +86,12 @@ describe('доступ к лиду', () => {
     expect(canViewLead(MP2, { ownerId: MP.id, direction: 'development' })).toBe(false);
   });
 
-  it('«Заявки от продаж»: руководство — все, директора — своё направление, остальные — никакие', () => {
+  it('«Заявки от продаж»: основатель — все, директора — своё направление, остальные (и админ) — никакие', () => {
     expect(handoffDirectionsFor(FOUNDER)).toBeNull();
-    expect(handoffDirectionsFor({ id: 'a', role: 'admin' })).toBeNull();
+    // 21.11.2026: «Продажи» — только основателю; админ заявок не видит,
+    // а админ с второй ролью руководителя — как руководитель.
+    expect(handoffDirectionsFor({ id: 'a', role: 'admin' })).toEqual([]);
+    expect(handoffDirectionsFor({ id: 'a', role: 'admin', secondaryRole: 'smm_director' })).toEqual(['smm']);
     expect(handoffDirectionsFor(DIRECTOR)).toEqual(['smm']);
     expect(handoffDirectionsFor({ id: 'd', role: 'developer', secondaryRole: 'dev_director' })).toEqual(['development']);
     expect(handoffDirectionsFor(MP)).toEqual([]);
@@ -304,6 +307,16 @@ describe('POST /sales/leads/:id/handoff', () => {
     // id задачи — в данных передачи.
     expect(t.calls.some(c => c.sql.includes(`jsonb_build_object('taskId'`))).toBe(true);
 
+    // Кого ищем для уведомления: основателя и руководителя направления, админа
+    // — нет (21.11.2026, «Продажи» — только основателю).
+    const notifyWhere: any[] = t.userRepo.find.mock.calls.map((c: any[]) => c[0]?.where)
+      .find((w: any) => Array.isArray(w) && w.some((x: any) => x?.role === 'founder'));
+    expect(notifyWhere).toBeDefined();
+    const askedRoles = notifyWhere.flatMap((x: any) => [x.role, x.secondaryRole])
+      .flatMap((r: any) => (r && typeof r === 'object' && 'value' in r ? r.value : [r])).filter(Boolean);
+    expect(askedRoles).not.toContain('admin');
+    expect(askedRoles).toEqual(expect.arrayContaining(['founder', 'smm_director']));
+
     // Уведомления — основателю и руководителю, не самому менеджеру.
     const to = t.notifications.create.mock.calls.map((c: any[]) => c[0].userId).sort();
     expect(to).toEqual([DIRECTOR.id, FOUNDER.id].sort());
@@ -331,9 +344,11 @@ describe('POST /sales/handoffs/:leadId/link', () => {
   const PROJECT = 'pppppppp-pppp-pppp-pppp-pppppppppppp';
   const projectRow = (over: any = {}) => ({ id: PROJECT, name: 'Сафо SMM', leadId: null, projectType: 'SMM', salesManagerId: null, smmData: {}, ...over });
 
-  it('только руководство', async () => {
+  it('только основатель: руководителю и админу — 403 (21.11.2026)', async () => {
     const t = makeSales();
     await expect(t.svc.linkProject(LEAD_ID, { projectId: PROJECT }, DIRECTOR as any)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(t.svc.linkProject(LEAD_ID, { projectId: PROJECT }, { id: 'a', name: 'Админ', role: 'admin', secondaryRole: null } as any))
+      .rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('проект другого лида — 409', async () => {

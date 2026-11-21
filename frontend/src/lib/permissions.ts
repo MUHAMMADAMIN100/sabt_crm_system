@@ -398,29 +398,31 @@ export function canSeeDevSection(role?: string | null, secondaryRole?: string | 
 // приходит с ролью admin (effectiveRoleOf на сервере), co_founder слит в
 // admin миграцией 1809 — держим его в списке на случай старых токенов.
 
-/** Руководство компании в разделе «Продажи». */
-const SALES_TOP_ROLES = ['founder', 'co_founder', 'admin'] as const
+/** Владелец раздела «Продажи» — только основатель (решение владельца,
+ *  21.11.2026; раньше и админ). Админ работает с клиентами в «Базе
+ *  клиентов», но раздела не видит. Сервер проверяет то же (isSalesOwner). */
+const SALES_OWNER_ROLES = ['founder'] as const
 /** Руководители направлений: видят только «Заявки» своего направления. */
 const SALES_DIRECTOR_ROLES = ['smm_director', 'dev_director'] as const
 
 /** Открыт ли раздел «Продажи» (маршрут /sales и пункт меню). */
 export function canSeeSalesHub(role?: string | null, secondaryRole?: string | null): boolean {
-  return hasAnyRole(role, secondaryRole, [...SALES_TOP_ROLES, ...SALES_DIRECTOR_ROLES])
+  return hasAnyRole(role, secondaryRole, [...SALES_OWNER_ROLES, ...SALES_DIRECTOR_ROLES])
 }
 
-/** «Аналитика» и «Настройки» раздела — только руководство. */
+/** «Аналитика» и «Настройки» раздела — только основатель. */
 export function canSeeSalesAnalytics(role?: string | null, secondaryRole?: string | null): boolean {
-  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+  return hasAnyRole(role, secondaryRole, SALES_OWNER_ROLES)
 }
 
-/** «Заявки от продаж» — руководство и руководители направлений. */
+/** «Заявки от продаж» — основатель и руководители направлений. */
 export function canSeeSalesHandoffs(role?: string | null, secondaryRole?: string | null): boolean {
   return canSeeSalesHub(role, secondaryRole)
 }
 
-/** Нормы KPI правят основатель и админ (PUT /sales/settings, §5). */
+/** Нормы KPI правит только основатель (PUT /sales/settings, 21.11.2026). */
 export function canEditSalesNorms(role?: string | null, secondaryRole?: string | null): boolean {
-  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+  return hasAnyRole(role, secondaryRole, SALES_OWNER_ROLES)
 }
 
 /** Комиссию менеджеров меняет только основатель. */
@@ -428,13 +430,13 @@ export function canEditSalesCommission(role?: string | null, secondaryRole?: str
   return hasAnyRole(role, secondaryRole, ['founder'])
 }
 
-/** Связать заявку с уже существующим проектом — руководство
+/** Связать заявку с уже существующим проектом — основатель
  *  (POST /sales/handoffs/:leadId/link). */
 export function canLinkHandoff(role?: string | null, secondaryRole?: string | null): boolean {
-  return hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)
+  return hasAnyRole(role, secondaryRole, SALES_OWNER_ROLES)
 }
 
-/** Создать проект по заявке: руководство — любой, руководитель SMM —
+/** Создать проект по заявке: основатель — любой, руководитель SMM —
  *  SMM, руководитель разработки — разработку (так же проверяет сервер при
  *  создании проекта). */
 export function canCreateHandoffProject(
@@ -442,7 +444,7 @@ export function canCreateHandoffProject(
   secondaryRole: string | null | undefined,
   direction: 'smm' | 'development',
 ): boolean {
-  if (hasAnyRole(role, secondaryRole, SALES_TOP_ROLES)) return true
+  if (hasAnyRole(role, secondaryRole, SALES_OWNER_ROLES)) return true
   return hasAnyRole(role, secondaryRole, [direction === 'smm' ? 'smm_director' : 'dev_director'])
 }
 

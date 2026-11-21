@@ -226,30 +226,39 @@ describe('проверяющий сторис с запретом', () => {
 // руководители направлений; аналитика и настройки — только руководство,
 // комиссия — только основатель. Без правила маршрут открывался бы всем:
 // для путей без права canAccessRoute отвечает true.
+// 21.11.2026: раздел — только основателю (и «Заявки» руководителям
+// направлений); админ его не видит ни в меню, ни по прямой ссылке.
 describe('раздел «Продажи» (/sales)', () => {
-  it.each(['founder', 'admin', 'smm_director', 'dev_director'] as UserRole[])('роль «%s» открывает /sales', (role) => {
+  it.each(['founder', 'smm_director', 'dev_director'] as UserRole[])('роль «%s» открывает /sales', (role) => {
     expect(canAccessRoute(role, '/sales')).toBe(true)
   })
 
-  it.each(['sales_manager_smm', 'sales_manager_dev', 'designer', 'developer', 'employee'] as UserRole[])('роль «%s» — /sales закрыт', (role) => {
+  it.each(['admin', 'sales_manager_smm', 'sales_manager_dev', 'designer', 'developer', 'employee'] as UserRole[])('роль «%s» — /sales закрыт', (role) => {
     expect(canAccessRoute(role, '/sales')).toBe(false)
+    expect(canAccessRoute(role, '/sales/analytics')).toBe(false)
   })
 
-  it('вторая роль руководителя направления тоже открывает раздел', () => {
+  it('вторая роль руководителя направления тоже открывает раздел — и админу тоже', () => {
     expect(canAccessRoute('sales_manager_dev', '/sales', 'dev_director')).toBe(true)
+    expect(canAccessRoute('admin', '/sales', 'smm_director')).toBe(true)
+    expect(canSeeSalesAnalytics('admin', 'smm_director')).toBe(false)
   })
 
-  it('директорам — только «Заявки»; комиссия — только основателю', () => {
+  it('аналитика, нормы, комиссия и привязка заявки — только основателю', () => {
+    expect(canSeeSalesAnalytics('founder', null)).toBe(true)
     expect(canSeeSalesAnalytics('smm_director', null)).toBe(false)
-    expect(canSeeSalesAnalytics('admin', null)).toBe(true)
-    expect(canEditSalesNorms('admin', null)).toBe(true)
+    expect(canSeeSalesAnalytics('admin', null)).toBe(false)
+    expect(canEditSalesNorms('founder', null)).toBe(true)
+    expect(canEditSalesNorms('admin', null)).toBe(false)
     expect(canEditSalesCommission('admin', null)).toBe(false)
     expect(canEditSalesCommission('founder', null)).toBe(true)
     expect(canLinkHandoff('dev_director', null)).toBe(false)
+    expect(canLinkHandoff('admin', null)).toBe(false)
     expect(canLinkHandoff('founder', null)).toBe(true)
   })
 
-  it('проект по заявке — руководство любой, директор — своего направления', () => {
+  it('проект по заявке — основатель любой, директор — своего направления', () => {
+    expect(canCreateHandoffProject('admin', null, 'smm')).toBe(false)
     expect(canCreateHandoffProject('founder', null, 'smm')).toBe(true)
     expect(canCreateHandoffProject('smm_director', null, 'smm')).toBe(true)
     expect(canCreateHandoffProject('smm_director', null, 'development')).toBe(false)

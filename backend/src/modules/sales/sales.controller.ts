@@ -1,11 +1,12 @@
 import {
-  Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Request, UseGuards,
+  Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Put, Query, Request, UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePerm } from '../auth/guards/permissions.guard';
 import { SalesService } from './sales.service';
 import { SalesAnalyticsService } from './sales-analytics.service';
+import { isSalesOwner } from './sales-access';
 import {
   CallDto, CommentDto, EmailDto, HandoffDto, LinkProjectDto, MeetingResultDto, SalesSettingsDto,
 } from './dto/sales.dto';
@@ -16,10 +17,12 @@ import {
  * Права — @RequirePerm на КАЖДОМ обработчике (классовый @Roles RolesGuard не
  * читает). Тонкие правила — в сервисах:
  *  - действия над лидом: владелец / ничей лид своего направления / руководство;
- *  - «Заявки от продаж»: руководство и руководители направлений (ключ
- *    projects.edit есть ровно у них), связь с проектом — руководство;
- *  - настройки: читать — clients.view (МП — нормы и свой процент), менять —
- *    clients.kpi.all (руководство), комиссию — только основатель.
+ *  - «Заявки от продаж»: основатель и руководители направлений, связь с
+ *    проектом — основатель;
+ *  - аналитика — только основатель (21.11.2026: раздел «Продажи» админу
+ *    закрыт; clients.kpi.all у админа остаётся ради KPI в «Базе клиентов»);
+ *  - настройки: читать — clients.view (полный вид — основателю, остальным —
+ *    нормы и свой процент), менять — только основатель.
  */
 @ApiTags('Sales')
 @ApiBearerAuth()
@@ -87,11 +90,13 @@ export class SalesController {
 
   @Get('analytics')
   @RequirePerm('clients.kpi.all')
-  analytics(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('direction') direction?: string,
+  async analytics(
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('direction') direction: string | undefined,
+    @Request() req,
   ) {
+    if (!isSalesOwner(req?.user)) throw new ForbiddenException('Аналитика продаж доступна только основателю');
     return this.analyticsService.analytics(from, to, direction);
   }
 

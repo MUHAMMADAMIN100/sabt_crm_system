@@ -55,6 +55,15 @@ describe('GET /sales/settings', () => {
     ]);
   });
 
+  it('админ — как менеджер: нормы без чужой комиссии и списка менеджеров (21.11.2026)', async () => {
+    const t = makeService();
+    t.store.commission = { [MP.id]: 5, [MP_DEV.id]: 3 };
+    const s = await t.svc.getSettings(ADMIN);
+    expect(s.norms.smm).toEqual(DEFAULT_SALES_NORMS);
+    expect(s.commission).toEqual({});
+    expect(s.managers).toEqual([]);
+  });
+
   it('МП — нормы и только свой процент, без списка менеджеров', async () => {
     const t = makeService();
     t.store.commission = { [MP.id]: 5, [MP_DEV.id]: 3 };
@@ -67,12 +76,16 @@ describe('GET /sales/settings', () => {
 });
 
 describe('PUT /sales/settings — кто что меняет', () => {
-  it('нормы — основатель и админ; МП — 403', async () => {
-    const admin = makeService();
-    const s = await admin.svc.saveSettings(ADMIN, { norms: { smm: { cold_calls: 30 } } });
+  it('нормы — только основатель (21.11.2026); админу и МП — 403', async () => {
+    const founder = makeService();
+    const s = await founder.svc.saveSettings(FOUNDER, { norms: { smm: { cold_calls: 30 } } });
     expect(s.norms.smm.cold_calls).toBe(30);
     expect(s.norms.development).toEqual(DEFAULT_SALES_NORMS);
-    expect(admin.store.kpi_norms.smm.cold_calls).toBe(30);
+    expect(founder.store.kpi_norms.smm.cold_calls).toBe(30);
+
+    const admin = makeService();
+    await expect(admin.svc.saveSettings(ADMIN, { norms: { smm: { cold_calls: 30 } } })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(admin.store.kpi_norms).toBeUndefined();
 
     const mp = makeService();
     await expect(mp.svc.saveSettings(MP, { norms: { smm: { cold_calls: 30 } } })).rejects.toBeInstanceOf(ForbiddenException);

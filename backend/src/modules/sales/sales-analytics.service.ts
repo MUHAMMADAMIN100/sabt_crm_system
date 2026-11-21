@@ -10,7 +10,7 @@ import { SalesPlan } from '../smm-control/sales-plan.entity';
 import { SmmPaymentsService } from '../smm-control/smm-payments.service';
 import { getSalesSegment, salesRoleOf } from '../../common/sales-segment';
 import { SalesSettingsDto } from './dto/sales.dto';
-import { SalesUser, canEditCommission, canEditNorms, isSalesTop } from './sales-access';
+import { SalesUser, canEditCommission, canEditNorms, isSalesOwner } from './sales-access';
 import {
   CohortLead, FunnelRow, Milestone, SourceRow, buildFunnel, bySource, cycleDaysMedian, expectedInPeriod,
   groupMilestones, lostReasonCounts, pct, sumOrNull, wholeMonths,
@@ -311,10 +311,11 @@ export class SalesAnalyticsService {
     return [...byId.values()].map(u => ({ id: u.id, name: u.name, role: salesRoleOf(u) || u.role }));
   }
 
-  /** Руководство — всё; остальные (МП) — нормы и свой процент. */
+  /** Основатель — всё; остальные (МП, админ) — нормы и свой процент
+   *  (21.11.2026: «Продажи» — только основателю). */
   async getSettings(user: SalesUser): Promise<SalesSettingsView> {
     const s = await loadSalesSettings(this.leadRepo.manager);
-    if (isSalesTop(user)) {
+    if (isSalesOwner(user)) {
       return { norms: s.norms, commission: s.commission, managers: await this.managers() };
     }
     const own = s.commission[user.id];
@@ -325,12 +326,12 @@ export class SalesAnalyticsService {
     };
   }
 
-  /** Нормы — основатель и админ; комиссия — только основатель. */
+  /** Нормы и комиссия — только основатель (нормы — с 21.11.2026). */
   async saveSettings(user: SalesUser, dto: SalesSettingsDto): Promise<SalesSettingsView> {
     const wantsNorms = dto?.norms !== undefined && dto?.norms !== null;
     const wantsCommission = dto?.commission !== undefined && dto?.commission !== null;
     if (!wantsNorms && !wantsCommission) throw new BadRequestException('Нечего сохранять: передайте norms или commission');
-    if (wantsNorms && !canEditNorms(user)) throw new ForbiddenException('Нормы KPI меняют основатель и администратор');
+    if (wantsNorms && !canEditNorms(user)) throw new ForbiddenException('Нормы KPI меняет только основатель');
     if (wantsCommission && !canEditCommission(user)) throw new ForbiddenException('Комиссию менеджеров меняет только основатель');
 
     const m = this.leadRepo.manager;

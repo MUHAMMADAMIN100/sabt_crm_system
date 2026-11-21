@@ -21,7 +21,7 @@ import {
   CallDto, CommentDto, EmailDto, HandoffDto, LinkProjectDto, MeetingResultDto,
 } from './dto/sales.dto';
 import {
-  SalesUser, canActOnLead, canViewLead, directorRoleFor, handoffDirectionsFor, isSalesTop,
+  SalesUser, canActOnLead, canViewLead, directorRoleFor, handoffDirectionsFor, isSalesOwner, isSalesTop,
 } from './sales-access';
 import { AGENDA_ACTIVE_STATUSES, Agenda, buildAgenda } from './sales-agenda.logic';
 import { ActionPlan, PlannedEvent, callPlan, emailPlan, meetingPlan } from './sales-actions.logic';
@@ -421,7 +421,8 @@ export class SalesService implements OnModuleInit {
     const dirRole = directorRoleFor(data.direction) as UserRole;
     const people = await this.userRepo.find({
       where: [
-        { role: In([UserRole.FOUNDER, UserRole.ADMIN]), isActive: true, isBlocked: false },
+        // Админу — нет (21.11.2026): «Продажи» и заявки — только основателю.
+        { role: UserRole.FOUNDER, isActive: true, isBlocked: false },
         { role: dirRole, isActive: true, isBlocked: false },
         { secondaryRole: dirRole, isActive: true, isBlocked: false },
       ],
@@ -464,7 +465,7 @@ export class SalesService implements OnModuleInit {
   async handoffs(user: SalesUser, status?: string): Promise<HandoffView[]> {
     const dirs = handoffDirectionsFor(user);
     if (dirs && !dirs.length) {
-      throw new ForbiddenException('Заявки от продаж видят руководство и руководители направлений');
+      throw new ForbiddenException('Заявки от продаж видят основатель и руководители направлений');
     }
     if (status !== undefined && status !== '' && status !== 'open' && status !== 'done') {
       throw new BadRequestException('status — open или done');
@@ -493,13 +494,13 @@ export class SalesService implements OnModuleInit {
   }
 
   /**
-   * Связать лид с проектом (руководство): client_leads.projectId и
+   * Связать лид с проектом (основатель, 21.11.2026): client_leads.projectId и
    * projects.leadId — у проекта один лид, у лида один проект. Событие
    * «project_linked», менеджеру — «Проект создан», задача «Создать проект»
    * закрывается.
    */
   async linkProject(leadId: string, dto: LinkProjectDto, user: SalesUser): Promise<LeadView> {
-    if (!isSalesTop(user)) throw new ForbiddenException('Связать заявку с проектом может только руководство');
+    if (!isSalesOwner(user)) throw new ForbiddenException('Связать заявку с проектом может только основатель');
     const lead = await this.leadRepo.findOne({ where: { id: leadId } });
     if (!lead) throw new NotFoundException('Лид не найден');
     const m = this.leadRepo.manager;

@@ -28,8 +28,9 @@ export function isSalesUser(user: { role?: string | null; secondaryRole?: string
  *  остальное — в прежнем порядке. */
 export const SALES_NAV_ORDER = ['/', '/clients', '/direct', '/calendar']
 
-/** «Продажи» (аналитика, заявки, нормы) — руководство и директора направлений. */
-const SALES_ANALYTICS_ROLES = ['founder', 'admin', 'smm_director', 'dev_director']
+/** «Продажи» (аналитика, заявки, нормы) — основатель и директора направлений
+ *  (21.11.2026: админу раздел закрыт). */
+const SALES_ANALYTICS_ROLES = ['founder', 'smm_director', 'dev_director']
 
 export interface NavItem {
   to: string
@@ -112,7 +113,8 @@ export function useNavItems(): NavItem[] {
     // «Клиенты» у продаж — воронка и список лидов. «Онбординг» убран
     // (15.11.2026): старый адрес ведёт в «Клиенты → Воронка».
     { to: '/clients',         icon: Contact,         label: isSales ? 'Клиенты' : 'База клиентов', permission: 'clients.view' },
-    // «Продажи» — аналитика, заявки от продаж и нормы (15.11.2026).
+    // «Продажи» — аналитика, заявки от продаж и нормы (15.11.2026);
+    // с 21.11.2026 — основателю и руководителям направлений, админу нет.
     { to: '/sales',           icon: TrendingUp,      label: 'Продажи',           permission: 'dashboard' },
     { to: '/tariffs',         icon: Tag,             label: 'SMM-тарифы',        permission: 'tariffs.manage' },
     { to: '/security-log',    icon: Shield,          label: 'Журнал безопасности', permission: 'security-log.view' },
