@@ -2,10 +2,11 @@ import { projectListFields } from '../../common/project-list-fields';
 import { shootPlaceKind, shootPlaceLabel } from '../../common/shoot-place';
 import { tiktokNeeded } from '../../common/tiktok';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Optional, OnModuleInit } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { dushanbeToday, VACATION_NOW_SQL } from '../employees/vacation';
-import { Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
+import { USER_LEAVING, UserLeavingEvent } from '../../common/user-events';
 import {
   ContentPlanItem,
   ContentPlanStatus,
@@ -304,13 +305,16 @@ export class ContentPlanService implements OnModuleInit {
   private static readonly PREP_FIELD = { shoot: 'videographerIds', edit: 'videoEditorIds', design: 'designerIds' } as const;
 
   /** Единственный активный сотрудник с ролью (или второй ролью). Если таких
-   *  ноль или несколько — null: угадывать за людей не беремся. */
-  private async soleUserWithRole(role: string): Promise<string | null> {
+   *  ноль или несколько — null: угадывать за людей не беремся.
+   *  exclude — уходящий сотрудник: при удалении он ещё активен, но в счёт
+   *  уже не идёт. */
+  private async soleUserWithRole(role: string, exclude?: string | null): Promise<string | null> {
     const users = await this.repo.manager.getRepository(User).find({
       where: [{ role: role as any, isActive: true }, { secondaryRole: role as any, isActive: true }],
       select: ['id'], take: 3,
     });
-    return users.length === 1 ? users[0].id : null;
+    const ids = users.map(u => u.id).filter(id => id !== exclude);
+    return ids.length === 1 ? ids[0] : null;
   }
 
   /** Кто сейчас в отпуске — им карточки сами не назначаем (27.10.2026). */
@@ -337,29 +341,96 @@ export class ContentPlanService implements OnModuleInit {
    *    3. иначе — единственный в агентстве сотрудник с ролью этапа. Так решается
    *       случай «дизайнер у нас один»: весь дизайн уходит ему сам;
    *    4. если таких несколько и на проекте никто не назначен — никто.
-   *  Вторую роль учитываем: «Видеограф / Монтажёр» — обычная у нас связка. */
+   *  Вторую роль учитываем: «Видеограф / Монтажёр» — обычная у нас связка.
+   *
+   *  Неактивного (уволенного) из команды проекта пропускаем, как отпускника
+   *  (21.11.2026): раньше макеты уходили уволенному дизайнеру, которого
+   *  забыли убрать из проекта, и их никто не видел. exclude — уходящий
+   *  сотрудник, у которого забираем карточки (см. handOverPrepCards). */
   private async resolvePrepAssignee(
-    stage: 'shoot' | 'edit' | 'design', project: Project | null,
+    stage: 'shoot' | 'edit' | 'design', project: Project | null, exclude?: string | null,
   ): Promise<string | null> {
     try {
       // Кто в отпуске — пропускаем: карточка достанется следующему по правилам
       // или останется ничьей, и руководитель назначит сам.
       const away = await this.usersOnVacation();
+      if (exclude) away.add(exclude);
       const assigned = (project?.smmData as any)?.[ContentPlanService.PREP_FIELD[stage]];
       if (Array.isArray(assigned)) {
-        const first = assigned.find((x: any) => typeof x === 'string' && x && !away.has(x));
-        if (first) return first;
+        const ids = assigned.filter((x: any): x is string => typeof x === 'string' && UUID_RE.test(x) && !away.has(x));
+        if (ids.length) {
+          const active = new Set((await this.repo.manager.getRepository(User)
+            .find({ where: { id: In(ids), isActive: true }, select: ['id'] })).map(u => u.id));
+          // Порядок — как в проекте: первый назначенный, кто сейчас работает.
+          const first = ids.find(x => active.has(x));
+          if (first) return first;
+        }
       }
       if (stage === 'shoot') {
         const main = await this.repo.manager.getRepository(User)
           .findOne({ where: { isDefaultVideographer: true, isActive: true }, select: ['id'] });
         if (main && !away.has(main.id)) return main.id;
       }
-      const sole = await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage]);
+      const sole = await this.soleUserWithRole(ContentPlanService.PREP_ROLE[stage], exclude);
       return sole && !away.has(sole) ? sole : null;
     } catch (e) {
       this.logger.warn(`resolvePrepAssignee(${stage}) failed: ${(e as Error).message}`);
       return null;
+    }
+  }
+
+  /** Сотрудник ушёл из работы — учётку сделали неактивной или удаляют
+   *  (21.11.2026). Его незакрытые карточки подготовки — съёмки, монтаж,
+   *  макеты — переходят к следующему по тем же правилам, что и при создании
+   *  карточки (resolvePrepAssignee). Раньше они оставались на уволенном: он в
+   *  CRM не входит, а у остальных их нет в «Моих задачах» — так 20 макетов
+   *  уволенного дизайнера никто не видел, а СММ каждый день переносил их на
+   *  завтра. Преемника нет (например, дизайнеров двое и на проекте никто не
+   *  закреплён) — карточка остаётся без исполнителя, и её назначает
+   *  руководство в «Задачах недели». Готовые и отменённые не трогаем. */
+  async handOverPrepCards(userId: string): Promise<{ total: number; reassigned: number }> {
+    if (!UUID_RE.test(String(userId || ''))) return { total: 0, reassigned: 0 };
+    const cards = (await this.repo.find({
+      where: { assigneeId: userId, shootForItemId: Not(IsNull()) },
+    })).filter(c => c.status !== ContentPlanStatus.PUBLISHED && c.status !== ContentPlanStatus.CANCELLED);
+    if (!cards.length) return { total: 0, reassigned: 0 };
+
+    // Легаси-карточки без этапа: под пост — дизайн, остальное — съёмка
+    // (как в календаре и в «Моих задачах»).
+    const legacyParents = [...new Set(cards.filter(c => !c.prepStage).map(c => c.shootForItemId))];
+    const parentType = new Map((legacyParents.length
+      ? await this.repo.find({ where: { id: In(legacyParents) }, select: ['id', 'contentType'] })
+      : []).map(p => [p.id, String(p.contentType)] as const));
+    const projects = new Map<string, Project | null>();
+
+    let reassigned = 0;
+    for (const card of cards) {
+      const stage = (card.prepStage as 'shoot' | 'edit' | 'design' | null)
+        || (parentType.get(card.shootForItemId) === ContentItemType.POST ? 'design' : 'shoot');
+      if (!projects.has(card.projectId)) {
+        projects.set(card.projectId, await this.repo.manager.getRepository(Project)
+          .findOne({ where: { id: card.projectId } }).catch(() => null));
+      }
+      const next = await this.resolvePrepAssignee(stage, projects.get(card.projectId) ?? null, userId);
+      await this.repo.update(card.id, { assigneeId: next as any });
+      if (next) reassigned++;
+      // Съёмку на сегодня/завтра продюсер узнаёт, что снимает другой.
+      if (stage === 'shoot') this.shootChanged(card, null);
+    }
+    // Один сигнал на всё: карточки могут быть в десятке проектов.
+    this.emitTasksChanged(undefined);
+    this.logger.log(`handOverPrepCards ${userId}: ${cards.length} карточек, передано ${reassigned}, без исполнителя ${cards.length - reassigned}`);
+    return { total: cards.length, reassigned };
+  }
+
+  @OnEvent(USER_LEAVING)
+  async onUserLeaving(ev: UserLeavingEvent) {
+    try {
+      await this.handOverPrepCards(ev?.userId);
+    } catch (e) {
+      // Уход сотрудника не должен падать из-за карточек: в худшем случае они
+      // остаются на нём, как было до 21.11.2026, и видны в логах.
+      this.logger.warn(`handOverPrepCards(${ev?.userId}) failed: ${(e as Error).message}`);
     }
   }
 

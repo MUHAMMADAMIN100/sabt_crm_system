@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, NotFoundException, ConflictException, ForbiddenException, BadRequestException, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User, UserRole } from './user.entity';
@@ -11,6 +12,7 @@ import { SecurityEventType } from '../auth/security-event.entity';
 import { RefreshToken } from '../auth/refresh-token.entity';
 import { sanitizeGrants, hasGrant, GRANTABLE } from '../auth/permissions';
 import { generateTempPassword } from '../../common/temp-password';
+import { USER_LEAVING, UserLeavingEvent } from '../../common/user-events';
 import { v4 as uuidv4 } from 'uuid';
 
 /** Кто совершает действие: req.user целиком или (по-старому) только роль. */
@@ -44,6 +46,7 @@ export class UsersService implements OnModuleInit {
     private activityLog: ActivityLogService,
     private gateway: AppGateway,
     private securityAudit: SecurityAuditService,
+    @Optional() private events?: EventEmitter2,
   ) {}
 
   /** В проде synchronize выключён — колонку под фотографию заводим сами.
@@ -213,6 +216,16 @@ export class UsersService implements OnModuleInit {
     return this.findOne(id);
   }
 
+  /** Сотрудник ушёл из работы — слушатели забирают у него открытую работу
+   *  (см. common/user-events). Сбой передачи уход не отменяет. */
+  private async announceLeaving(userId: string) {
+    try {
+      await this.events?.emitAsync(USER_LEAVING, { userId } as UserLeavingEvent);
+    } catch (e) {
+      this.logger.warn(`user.leaving ${userId} не обработано: ${(e as Error).message}`);
+    }
+  }
+
   async remove(id: string, actor?: Actor) {
     const user = await this.findOne(id);
     // Защита от самоудаления — admin/founder не должен случайно стереть
@@ -222,6 +235,9 @@ export class UsersService implements OnModuleInit {
       throw new ForbiddenException('Нельзя удалить самого себя');
     }
     await this.assertCanManage(user, actor);
+    // Карточки подготовки — до удаления: потом ключ обнулит исполнителя, и
+    // карточки станут ничьими, а не перейдут к коллеге (21.11.2026).
+    await this.announceLeaving(user.id);
     // Delete linked employee record first (FK references user)
     const employee = await this.employeeRepo.findOne({ where: { userId: id } });
     if (employee) await this.employeeRepo.remove(employee);
@@ -240,6 +256,9 @@ export class UsersService implements OnModuleInit {
     await this.assertCanManage(user, actor);
     user.isActive = !user.isActive;
     await this.repo.save(user);
+    // Выключили — его съёмки, монтаж и макеты переходят к следующему
+    // (21.11.2026), а не висят на человеке, который не входит.
+    if (!user.isActive) await this.announceLeaving(user.id);
 
     await this.activityLog.log({
       action: user.isActive ? ActivityAction.USER_ACTIVATE : ActivityAction.USER_DEACTIVATE,

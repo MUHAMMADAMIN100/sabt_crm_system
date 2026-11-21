@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, InternalServerErrorException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, InternalServerErrorException, OnModuleInit, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, FindOptionsWhere } from 'typeorm';
 import { Employee, EmployeeStatus } from './employee.entity';
@@ -16,6 +17,7 @@ import { directionScopeOf, isInDirectory } from '../../common/direction-scope';
 import { escapeHtml } from '../../common/html-escape';
 import { generateTempPassword } from '../../common/temp-password';
 import { dushanbeToday, ymd } from './vacation';
+import { USER_LEAVING, UserLeavingEvent } from '../../common/user-events';
 
 /** Пометка дней отпуска, поставленных статусом, — их и только их убираем
  *  при смене дат; ручные отметки (больничный, отгул) не трогаем. */
@@ -54,6 +56,7 @@ export class EmployeesService implements OnModuleInit {
     private gateway: AppGateway,
     private mailService: MailService,
     private telegramService: TelegramService,
+    @Optional() private events?: EventEmitter2,
   ) {}
 
   /** Идемпотентно добавляем колонку isStoryMaker — это рантайм-замена
@@ -499,6 +502,11 @@ export class EmployeesService implements OnModuleInit {
       if (Object.keys(userUpdate).length > 0) {
         await this.userRepo.update(emp.userId, userUpdate);
         this.gateway.notifyUser(emp.userId, 'me:changed', userUpdate);
+        // Сделали неактивным — его съёмки, монтаж и макеты переходят к
+        // следующему (21.11.2026), а не висят на человеке, который не входит.
+        if (userUpdate.isActive === false && oldUser?.isActive !== false) {
+          await this.announceLeaving(emp.userId);
+        }
       } else if (changesVacation || (dto.status !== undefined && dto.status !== emp.status)) {
         // Отпуск начался/кончился — открытая вкладка сама перезапросит профиль.
         this.gateway.notifyUser(emp.userId, 'me:changed', {});
@@ -562,6 +570,16 @@ export class EmployeesService implements OnModuleInit {
     return updated;
   }
 
+  /** Сотрудник ушёл из работы — слушатели забирают у него открытую работу
+   *  (см. common/user-events). Сбой передачи уход не отменяет. */
+  private async announceLeaving(userId: string) {
+    try {
+      await this.events?.emitAsync(USER_LEAVING, { userId } as UserLeavingEvent);
+    } catch (e) {
+      this.logger.warn(`user.leaving ${userId} не обработано: ${(e as Error).message}`);
+    }
+  }
+
   async remove(id: string, actor?: { id?: string; role?: string; secondaryRole?: string | null }) {
     const emp = await this.findOne(id);
     const userId = emp.userId;
@@ -582,6 +600,10 @@ export class EmployeesService implements OnModuleInit {
       entityName: emp.fullName,
       details: { email: emp.email },
     });
+
+    // Карточки подготовки — до удаления: потом ключ обнулит исполнителя, и
+    // карточки станут ничьими, а не перейдут к коллеге (21.11.2026).
+    if (userId) await this.announceLeaving(userId);
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

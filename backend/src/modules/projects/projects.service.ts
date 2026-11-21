@@ -2461,7 +2461,9 @@ export class ProjectsService implements OnModuleInit {
       // видеографа, а для монтажа и дизайна — единственного в агентстве человека
       // с этой ролью. Ровно та же логика, по которой content-plan раздаёт
       // карточки подготовки, — экран показывает того, кто реально получит работу.
-      Promise.all(ProjectsService.CREW_FIELDS.filter(f => !crewIds[f.key].length).map(async f => {
+      // Для всех трёх этапов: в списке может стоять только неактивный, и тогда
+      // работа тоже уходит по общим правилам (кто активен — ясно ниже).
+      Promise.all(ProjectsService.CREW_FIELDS.map(async f => {
         let u: User | null = null;
         if (f.out === 'videographers') {
           u = await this.userRepo.findOne({ where: { isDefaultVideographer: true, isActive: true } }).catch(() => null);
@@ -2477,14 +2479,19 @@ export class ProjectsService implements OnModuleInit {
     const resolve = (ids: string[]) => ids.map(uid => byId.get(uid)).filter((u): u is User => !!u).map(mini);
 
     const smmSpecialists = resolve(specIds);
+    // В команде проекта — только работающие (21.11.2026): неактивному работа
+    // не уходит (content-plan пропускает его), значит и экран его не
+    // показывает, а показывает того, кто реально получит карточки.
+    const resolveActive = (ids: string[]) => ids.map(uid => byId.get(uid))
+      .filter((u): u is User => !!u && u.isActive !== false).map(mini);
     const crew: Record<string, any> = {};
     for (const f of ProjectsService.CREW_FIELDS) {
-      const people = resolve(crewIds[f.key]);
+      const people = resolveActive(crewIds[f.key]);
       crew[f.key] = people.map(u => u.id);
       crew[f.out] = people;
     }
     const crewDefaults: Record<string, any> = {};
-    for (const [out, u] of defaults) if (u) crewDefaults[out] = mini(u);
+    for (const [out, u] of defaults) if (u && !(crew[out] as any[]).length) crewDefaults[out] = mini(u);
     const crewCandidates: Record<string, any[]> = {};
     for (const f of ProjectsService.CREW_FIELDS) {
       const roles = f.roles as readonly UserRole[];
@@ -2622,8 +2629,11 @@ export class ProjectsService implements OnModuleInit {
       if (uniq.length) {
         const users = await this.userRepo.find({ where: { id: In(uniq) } });
         const roles = f.roles as readonly UserRole[];
+        // Неактивного в команду не берём (21.11.2026): работа ему всё равно
+        // не уйдёт, а в списке он сбивал бы с толку.
         const allowed = new Set(
-          users.filter(u => roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole))).map(u => u.id),
+          users.filter(u => u.isActive !== false
+            && (roles.includes(u.role) || (u.secondaryRole && roles.includes(u.secondaryRole)))).map(u => u.id),
         );
         valid = uniq.filter(x => allowed.has(x));
       }
